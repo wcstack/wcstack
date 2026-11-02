@@ -410,11 +410,17 @@ export class Block {
     return (v === null ? null : v.headAt(this.first)) ?? this.first;
   }
 
+  /**
+   * Moves the block's nodes, which are in `parent`, before `ref`. With moveBefore (where the browser
+   * has it) the move keeps what a removal resets: focus, an iframe's page, a running CSS animation
+   * (docs/a11y-design.md §4). A disconnected tree has none of that to keep.
+   */
   insertBefore(parent: Node, ref: Node | null): void {
     const last = this.last;
+    const move = parent.isConnected && "moveBefore" in parent ? "moveBefore" : "insertBefore";
     for (let n = this.head(); ; ) {
       const next = n.nextSibling!;
-      parent.insertBefore(n, ref);
+      (parent as any)[move](n, ref);
       if (n === last) return;
       n = next;
     }
@@ -856,7 +862,7 @@ export class ForView {
         ne--;
       }
       // with one row between, the subsequence below moves that row and the second, and keeps the
-      // first where it is: two moves either way, but a moved row loses its focus (insertBefore)
+      // first where it is: two moves either way, but without moveBefore a moved row loses its focus
       if (s >= oe || s >= ne || oe - s === 2) break;
       // the two ends changed places (a swap of two rows): exchange them and trim on, so the rows
       // between them are not all put through the longest increasing subsequence below. `old` is

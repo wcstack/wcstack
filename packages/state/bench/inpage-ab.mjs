@@ -12,7 +12,8 @@
 //   --gcbefore  a forced GC before every sample (tells execution apart from GC timing)
 // ops: update10k (repeated on one 10k table), append (clear, 10k, then +1k), clear10k (10k, then
 // clear), create1k (clear, then 1k), replace1k (1k, then 1k again), swap1k (repeated on one 1k
-// table: rows 1 and 998 change places).
+// table: rows 1 and 998 change places), reverse1k (repeated on one 1k table, written through
+// createState: 999 rows move).
 // Used for the size reduction of 2026-09-29 (docs/state-engine-rewrite/v4-remaining.ja.md §8).
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -20,7 +21,7 @@ import { resolve, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const E2E = process.cwd();
-const { chromium } = await import(pathToFileURL(resolve(E2E, 'node_modules/@playwright/test/index.mjs')).href);
+const browsers = await import(pathToFileURL(resolve(E2E, 'node_modules/@playwright/test/index.mjs')).href);
 const args = process.argv.slice(2);
 const arg = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
 const PORT = Number(arg('port', '4270'));
@@ -29,6 +30,8 @@ const PAGES = Number(arg('pages', '8'));
 const ITERS = Number(arg('iters', '40'));
 const WARMUP = Number(arg('warmup', '5'));
 const THROTTLE = Number(arg('throttle', '1'));
+// chromium (the default) or firefox; --throttle, --profile, --alloc and --gcbefore need Chromium's CDP
+const BROWSER = arg('browser', 'chromium');
 const BUNDLES = arg('bundles').split(',').map((b) => resolve(b));
 const OUT = arg('out', null);
 const PROFILE = args.includes('--profile');
@@ -55,12 +58,13 @@ async function loop({ op, iters, warmup, gcBefore }) {
   });
   const click = (sel) => document.querySelector(sel).click();
   const settle = () => new Promise((r) => setTimeout(r, 0));
-  const timed = async (sel, cond) => {
+  // `act`: a button's selector, or a function that writes the state
+  const timed = async (act, cond) => {
     await settle();
     if (gcBefore) { globalThis.gc(); await settle(); }
     const t0 = performance.now();
     const done = until(cond);
-    click(sel);
+    if (typeof act === 'function') act(); else click(act);
     await done;
     return performance.now() - t0;
   };
@@ -91,6 +95,12 @@ async function loop({ op, iters, warmup, gcBefore }) {
       const tr = document.querySelector('tbody').rows;
       const prev = tr[1].cells[0].textContent;
       t = await timed('#swaprows', () => tr[1].cells[0].textContent !== prev);
+    } else if (op === 'reverse1k') {
+      if (rows().length !== 1000) { click('#run'); await until(() => rows().length === 1000); }
+      const tr = document.querySelector('tbody').rows;
+      const prev = tr[0].cells[0].textContent;
+      const state = document.querySelector('wcs-state');
+      t = await timed(() => state.createState('writable', (s) => { s.data = s.data.slice().reverse(); }), () => tr[0].cells[0].textContent !== prev);
     } else {
       throw new Error(`unknown op ${op}`);
     }
@@ -111,14 +121,15 @@ const cpu = {};
 const allocs = {};
 try {
   await waitForServer();
-  browser = await chromium.launch({ headless: true, args: GCBEFORE ? ['--js-flags=--expose-gc'] : [] });
+  if (BROWSER !== 'chromium' && (THROTTLE > 1 || PROFILE || ALLOC || GCBEFORE)) throw new Error('--throttle, --profile, --alloc and --gcbefore need chromium');
+  browser = await browsers[BROWSER].launch({ headless: true, args: GCBEFORE ? ['--js-flags=--expose-gc'] : [] });
   for (let p = 0; p < PAGES; p++) {
     const order = p % 2 === 0 ? BUNDLES : [...BUNDLES].reverse();
     for (const b of order) {
       const ctx = await browser.newContext();
       const page = await ctx.newPage();
       await page.route('**/packages/state/dist/auto.min.js', (r) => r.fulfill({ path: b, contentType: 'text/javascript; charset=utf-8' }));
-      const cdp = await ctx.newCDPSession(page);
+      const cdp = BROWSER === 'chromium' ? await ctx.newCDPSession(page) : null;
       if (THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
       await page.goto(URL_, { waitUntil: 'networkidle' });
       if (PROFILE) {

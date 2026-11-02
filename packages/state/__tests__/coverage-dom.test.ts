@@ -290,6 +290,41 @@ describe("複数の最上位ノードを持つ行", () => {
   });
 });
 
+describe("行の移動と moveBefore", () => {
+  const list = `<ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul>`;
+  const items = (s: string) => s.split("").map((v) => ({ v }));
+  /** A moveBefore on `el` (happy-dom has none) that records the nodes and moves them with insertBefore. */
+  const stub = (el: Element): Node[] => {
+    const moved: Node[] = [];
+    (el as any).moveBefore = function (this: Element, n: Node, ref: Node | null) {
+      moved.push(n);
+      this.insertBefore(n, ref);
+    };
+    return moved;
+  };
+
+  it("親が moveBefore を持てば、残した行を moveBefore で動かす（フォーカスや iframe の中身を保つ）", async () => {
+    const { root, write } = await page(list, { items: items("abcd") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    const moved = stub(ul);
+    await write((s) => { const it = s.items; s.items = [it[3], it[1], it[2], it[0]]; });
+    expect(new Set(moved)).toEqual(new Set([li[3], li[0]]));
+    expect(Array.from(ul.querySelectorAll("li"))).toEqual([li[3], li[1], li[2], li[0]]);
+  });
+
+  it("文書から外れた親の中では moveBefore を使わず insertBefore で動かす", async () => {
+    const { root, write } = await page(list, { items: items("abcd") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    const moved = stub(ul);
+    ul.remove();
+    await write((s) => { const it = s.items; s.items = [it[3], it[1], it[2], it[0]]; });
+    expect(moved).toEqual([]);
+    expect(Array.from(ul.querySelectorAll("li"))).toEqual([li[3], li[1], li[2], li[0]]);
+  });
+});
+
 describe("両端が入れ替わった行（swap）", () => {
   const list = `<ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul>`;
   const items = (s: string) => s.split("").map((v) => ({ v }));

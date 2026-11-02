@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <title>fixture: focus survives keyed list reorder (moveBefore)</title>
-  <!-- docs/a11y-design.md §4: the single physical move site (Content.mountAfter)
-       uses Node.moveBefore() for connected same-parent reorders, so the row the
-       user is interacting with keeps focus, selection, and typed value across a
-       keyed swap. happy-dom has no moveBefore — this real-browser spec is the
-       only place the new branch actually runs against the platform. -->
+  <!-- docs/a11y-design.md §4: the engine moves a kept row with Block.insertBefore
+       (packages/state/src/dom/view.ts), which uses Node.moveBefore() under a
+       connected parent, so the row the user is interacting with keeps focus,
+       selection, and typed value across a keyed swap. happy-dom has no
+       moveBefore — this real-browser spec is the only place the branch actually
+       runs against the platform. -->
   <script type="module" src="/packages/state/dist/auto.min.js"></script>
   <style>
     ul { list-style: none; padding: 0; }

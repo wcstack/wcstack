@@ -160,6 +160,8 @@ navEvent.intercept({
 
 ## 4. state — `moveBefore` によるフォーカス保存
 
+> **4.x のエンジン（2026-11-02 追記）。** 以下は 3.x のコードの記述。4.0 で書き直したエンジンは `moveBefore` を持たず（4.0.0〜4.13）、動かした行はフォーカスを失っていた。e2e の `state-move-before` は、リストの差分がフォーカスのある行をその場に残すので通っていた。4.14 から、行を動かす唯一の場所 `Block.insertBefore`（`packages/state/src/dom/view.ts`）が、文書につながった親で `moveBefore` があればそれを使う。動かすのは常に同じ親の中の行なので、3.x の same-parent ガードの代わりに `parent.isConnected` だけを見る（切断された木には保つものが無く、古い実装が切断された木での `moveBefore` を拒んでも当たらない）。spec は動かされる行のフォーカスも確かめる。Chromium 149 と Firefox 151 で確かめたこと: `moveBefore` はフォーカス・iframe の中のページ（読み込み直さない）・実行中の CSS アニメーションを保ち、`insertBefore` はどれも失う（キャレットの位置と `<details>` の開閉はどちらでも残る）。切断された親・DocumentFragment・ShadowRoot の中、テキストとコメントのノードでも投げない。`connectedMoveCallback` の無いカスタム要素には `insertBefore` と同じく disconnected → connected が呼ばれ、MutationObserver の記録も同じ形（削除 1・追加 1）。WebKit 26.5 には無い。計測（逆順 1,000 行で Chromium 63 → 25 ms、Firefox 20 → 14 ms、swap は同じ）は CHANGELOG を参照。
+
 ### 4-1. 対象は 1 文だけ
 
 物理的に「接続済みノードを移動する」文は全リポジトリで **`createContent.ts:105`** の `parentNode.insertBefore(node, anchor.nextSibling)` のみ（`Content.mountAfter` 内・reorder settle walk `applyChangeToFor.ts:307-308` から到達）。LIS 最適化（swap 移動 997→2）の**残った 2 回が正確に「今触っている行」を壊す**構図。
