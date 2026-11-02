@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/fetch`, `@wcstack/upload`, `@wcstack/credential`, `@wcstack/eyedropper`, `@wcstack/contacts`, `@wcstack/share`: **a page left open no longer keeps a record of every request it has finished.** The request lane these packages share (`io-core/operation-lane.ts`) remembered each finished operation in a map it never emptied — 100,000 entries after 100,000 fetches, so a `<wcs-fetch>` polled through a shift grew it without bound. It now keeps the requests still live and nothing else. Two more defects of the lane, which no page saw, went with it: a request disconnected while it committed and settled after the next one had begun counted that one down (`inFlightCount`, which only tests read) and was reported as dropped twice on the lane's trace channel; and `retry()`, which no Core calls, handed a fresh signal to a request that could no longer commit. Enumerating every sequence of calls on the lane found them; that enumeration is now a test ([docs/formal-methods-study.md](./docs/formal-methods-study.md)).
+
 ## [4.14.0] — 2026-11-02
 
 A minor that brings back what 3.x did for a reorder and the 4.0 engine had dropped, found while landing 4.13's swap: a row the list moves keeps its focus, its iframe's page and its running CSS animations, where the browser has `moveBefore()`. Only `@wcstack/state` changed; every other package is 4.13.0 with a new version.
