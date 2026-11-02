@@ -313,7 +313,16 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策はありません。
 
-## 4.13.0 でもまだ要るもの
+### 4.14.0
+
+2026-11-02 — [CHANGELOG](../CHANGELOG.md#4140--2026-11-02)
+
+- `@wcstack/state`: ブラウザに `moveBefore()` があるとき（Chromium 133 以降、Firefox 144 以降）、並べ替えで動かした行はフォーカス、iframe の中のページ、実行中の CSS アニメーションを保つ（3.x と同じ）。フォーカスのある input は、行が動いてもフォーカスを保つ（Chromium は `blur` と `focusout` を出し、Firefox はイベント無しにフォーカスを外していた）。クラスが `connectedMoveCallback` を定義しているカスタム要素は、`disconnectedCallback` と `connectedCallback` の代わりにそれを受ける。
+
+要らなくなった回避策はありません。
+
+## 4.14.0 でもまだ要るもの
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。
+- Safari には `moveBefore()` が無い: そこでは並べ替えで動かした行は今もフォーカスを失う（state の README、「ループ (`for`)」）。リストがその場に残した行は、どのブラウザでもフォーカスを保つ。
