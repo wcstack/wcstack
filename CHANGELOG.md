@@ -6,7 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.14.0] — 2026-11-02
+
+A minor that brings back what 3.x did for a reorder and the 4.0 engine had dropped, found while landing 4.13's swap: a row the list moves keeps its focus, its iframe's page and its running CSS animations, where the browser has `moveBefore()`. Only `@wcstack/state` changed; every other package is 4.13.0 with a new version.
+
+### Upgrading
+
+- `@wcstack/state`: in Chromium 133+ and Firefox 144+, **a row a reorder moves keeps its focus**, its iframe's page and its running CSS animations: a focused input stays focused, where Chromium fired `blur` and `focusout` and Firefox dropped the focus without an event. A custom element in a moved row still gets `disconnectedCallback` and `connectedCallback`, unless its class defines `connectedMoveCallback`, which the browser then calls instead. Safari is unchanged.
+- No workaround becomes unnecessary.
 
 ### Fixed
 

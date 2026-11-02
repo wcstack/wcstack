@@ -313,7 +313,16 @@ No workaround became unnecessary.
 
 No workaround became unnecessary.
 
-## Still needed on 4.13.0
+### 4.14.0
+
+2026-11-02 — [CHANGELOG](../CHANGELOG.md#4140--2026-11-02)
+
+- `@wcstack/state`: where the browser has `moveBefore()` (Chromium 133+, Firefox 144+), a row a reorder moves keeps its focus, its iframe's page and its running CSS animations, as in 3.x. A focused input stays focused when its row moves (Chromium fired `blur` and `focusout`, Firefox dropped the focus without an event), and a custom element whose class defines `connectedMoveCallback` gets that instead of `disconnectedCallback` and `connectedCallback`.
+
+No workaround became unnecessary.
+
+## Still needed on 4.14.0
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element. Since 4.11 the diagnostics warn when the definition never comes (`[wcs/element-undefined]`), and the lint names a `wcs-*` tag whose package the page does not load (`wcs/tag-package-missing`).
+- Safari has no `moveBefore()`: there a row a reorder moves still loses its focus (state README, "Loop (`for`)"). A row the list leaves in place keeps it in every browser.
