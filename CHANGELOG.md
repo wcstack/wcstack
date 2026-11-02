@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/state`: **a row a reorder moves keeps its focus again**, and its iframe's page and running CSS animations, where the browser has `moveBefore()` (Chromium 133+, Firefox 144+). 3.x moved rows with it (#197). The 4.0 engine moved them with `insertBefore()`, which takes a node out and puts it back, so a moved row lost its focus; e2e's `state-move-before` passed only because the list's diff left the focused row in place, and it now checks a moved row too. The engine moves a row with `moveBefore()` under a connected parent, and with `insertBefore()` elsewhere and in Safari. A custom element in a moved row still gets `disconnectedCallback` and `connectedCallback`, unless its class defines `connectedMoveCallback`, which the browser then calls instead. Moving this way is faster: reversing 1,000 rows on the benchmark page went from 63 to 25 ms in Chromium (4× CPU slowdown, a GC before each sample; the same bundle twice: 63 / 66 ms) and from 20 to 14 ms in Firefox; a swap of two rows is unchanged. The core gains 23 B gzip.
+
 ## [4.13.0] — 2026-11-02
 
 A minor from a review of the engine on js-framework-benchmark, with no seam app behind it: swapping two rows put every row between them through the longest increasing subsequence, and now exchanges the two. Only `@wcstack/state` changed; every other package is 4.12.0 with a new version.

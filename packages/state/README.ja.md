@@ -814,6 +814,8 @@ export default {
 
 つまり、**行オブジェクトの参照さえ保たれていれば、行の追加・削除・並べ替えに明示的なキー属性（React の `key` や Vue の `:key`）は不要です**。非破壊の配列メソッド（`toSorted` / `toReversed` / `filter` / `with` / `toSpliced`）はいずれも要素の参照を保つため、ソートやフィルタは構造的に keyed に動作し、「キーの付け方を間違える」種類のバグが原理的に発生しません。
 
+**並べ替えで動かした行は、取り外しでリセットされるもの —— フォーカス、iframe の中のページ、実行中の CSS アニメーションやトランジション —— を保ちます**。ブラウザに [`moveBefore()`](https://developer.mozilla.org/ja/docs/Web/API/Element/moveBefore) があるとき（Chromium 133 以降、Firefox 144 以降）で、4.14（未リリース）からです。差分はできるだけ少ない行だけを動かし、その場に残した行はどのブラウザでもそれを保ちます。`moveBefore()` の無いブラウザ —— Safari —— では、動かした行はそれを失います（4.13 まではどのブラウザでもそうでした）。動かした行の中のカスタム要素には、今までどおり `disconnectedCallback` と `connectedCallback` が呼ばれます。そのクラスが `connectedMoveCallback` を定義していれば、ブラウザは代わりにそれを呼びます。
+
 例外は、**新しく生成されたオブジェクトとして届くデータ**です。`fetch(...).json()`、ストレージからの `JSON.parse`、WebSocket / SSE の全件スナップショット、Worker の `postMessage` などがこれにあたります。これらの行は参照で照合できないため、全行が破棄・再構築されます。次の [`$listKeys`](#listkeys--再取得された行の同一性) を参照してください。
 
 **`for:` は出力フィルタを取りません。** `for: items|take(2)` は、フィルタが何であれ `[wcs/binding-syntax] #121` で初期化を失敗させます。`for: items` の行は `items.<index>` なので、フィルタ後の配列の行は別の要素を指してしまい、その行を通した書き込みが間違った要素に届きます。絞り込んだリストを返す getter を宣言し、それをループしてください:
