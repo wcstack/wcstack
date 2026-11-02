@@ -1581,3 +1581,24 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.14.0 の公開（2026-11-02）
+
+- 中身: minor。4.13.0 の取り込みで見つけた残り（3.x にあって 4.0 で落ちていた `moveBefore`）に、著者が「速度・サイズ・機能のペナルティを測り、問題なければ実装」と決めた。
+  - #603 state: 行を動かす唯一の場所 `Block.insertBefore`（`dom/view.ts`）が、親が文書につながっていて `moveBefore` があればそれで動かす（`parent.isConnected && "moveBefore" in parent`）。それ以外 —— Safari（WebKit 26.5 には無い）、happy-dom（`@wcstack/testing`・`@wcstack/server`）、文書から外れた木 —— は `insertBefore` のまま。エンジンは行を必ず同じ親の中で動かすので、3.x の同じ親の確認は要らない。切断された木には保つものが無く、古い実装が切断された木での `moveBefore` を拒んでも当たらない。#599 の「間が 1 行なら部分列に任せる」は残した（`moveBefore` の無いブラウザで、フォーカスのある行を残す選び方が要る）。
+  - 速度（ベンチページ、4.13.0 の束 2 つと比べた）: 逆順 1,000 行（999 行が動く）が Chromium の 4 倍＋GC で 63.3 / 66.1 → 24.5 ms、GC なしで 33.6 / 25.5 → 9.4 ms、Firefox（減速なし）で 20 / 20 → 14 ms。swap（2 行）は 3.4 / 3.5 → 3.4 ms、Firefox では 1 ms の分解能未満。`insertBefore` は動かすノードごとに取り外しの処理を走らせ、`moveBefore` は走らせない。`bench/inpage-ab.mjs` に `reverse1k`（`createState` で書く）と `--browser firefox`。
+  - サイズ: core +23 B（20,334 B、残り 146 B）。
+  - 挙動（Chromium 149 と Firefox 151 で、`insertBefore` と比べた）: `moveBefore` はフォーカス・iframe の中のページ（読み込み直さない）・実行中の CSS アニメーションを保ち、`insertBefore` はどれも失う。キャレットの位置と `<details>` の開閉はどちらでも残る。フォーカスのある input は、`insertBefore` では Chromium が `blur` と `focusout` を出し、Firefox はイベント無しにフォーカスを外した。`moveBefore` ではどちらも何も出ない。`connectedMoveCallback` の無いカスタム要素には disconnected → connected が呼ばれ（`insertBefore` と同じ）、あるものにはそれだけが呼ばれる。wcstack のパッケージはどれも定義していない。MutationObserver の記録は同じ形（削除 1・追加 1）で、jsfb の keyed の判定も変わらない。切断された親・DocumentFragment・ShadowRoot、テキストとコメントのノードでも投げない。
+  - 試験: e2e `state-move-before` を「その場に残る行」と「動かされる行」の 2 件にし、キャレットも見る。動かされる行は 4.13.0 の dist で落ちる。単体試験はリストの親に `moveBefore` の代役を置く（つながった親で使い、外れた親では使わない）。手元の e2e 全数（2 ワーカー）は 455 件通過、homeroom の 2 件はサーバーが起動しない手元の環境の問題（4.13.0 の dist でも同じ。CI では通る）。
+  - 文書: state の README（英日）の「ループ (`for`)」に動かした行が保つもの（4.14 の印はリリースが外した）、docs/a11y-design.md §4 に 4.x のエンジンの注記。
+- 準備: PR #604（merge commit e134df3e）。CHANGELOG を `[4.14.0] — 2026-11-02` として締め（要約、Upgrading＝Chromium 133 以降と Firefox 144 以降で動かした行がフォーカスを保つ・`blur` の実測・`connectedMoveCallback`・Safari は変わらない、外せる回避策は無い）、docs/upgrading-4x.md（日英）に 4.14.0 の節と「4.14.0 でもまだ要るもの」に Safari、固定版 18 か所を 4.14.0 にした。
+- main で `minor`（run 41458241611）。成功した: 版を上げたコミット 3403e97d、タグ `v4.14.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い（state の README の 4.14 の印 2 つはリリースが外した）。1 回目の照合は公開の直後で、最後のほうに公開された `@wcstack/sse` と `wcstack` がまだレジストリに無かった（47/49）。反映を待った 2 回目で全部通った。
+- 公開後の作業（同日）:
+  - PR #605（merge commit ccb10dd1）: サイズの基準値を 4.14.0 の dist で取り直した（`core.min.js` 20,311 → 20,334 B、分割の core 25,120 → 25,141 B、`index.esm.js` 55,246 → 55,269 B、`auto.min.js` 52,040 → 52,063 B、add-on は 0〜2 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字。拡張は出さない（lint と拡張の運ぶものは変わっていない）。
+  - wcstack-skill: PR #56（merge commit c8ebb94）で state の参照に「並べ替えで動かした行はフォーカスを保つ（4.14、Safari を除く）」の 1 項目、刻印と固定 URL（7 本とも 200）。注釈付きタグ `v4.14.0`。
+  - LP（wcstack.github.io b01ed53）: リリースの表示、v4.14.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-P6lxP2…`。jsDelivr は最後に公開された `wcstack` を数分返さなかった）、大きさは約 77 KB のまま、llms。ローカル 7/7、本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。
+- 残り:
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
