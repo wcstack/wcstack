@@ -71,7 +71,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/notification","version":"4.14.0"};
+var pkg = {"name":"@wcstack/notification","version":"4.15.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

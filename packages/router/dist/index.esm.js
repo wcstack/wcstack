@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.14.0";
+var version = "4.15.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -1310,11 +1310,23 @@ function takenSet() {
  * `options` goes to the binder with the subtree. A subtree held for a later binder
  * is handed over without it: that binder's first walk of the page binds what is
  * still in place there.
+ *
+ * The queue holds what is in the document, each subtree once. The router offers a
+ * route's content on every placement, so on a page that never loads a binder the
+ * queue grew by every navigation, and kept the content of routes hidden since
+ * (docs/formal-methods-study.md §8). A subtree that has left is dropped here: one
+ * that comes back is offered again by whoever put it back.
  */
 function bindSubtree(subtree, options) {
     const binder = getBinder();
     if (binder === null) {
-        pendingQueue().push(subtree);
+        const queue = pendingQueue();
+        for (let i = queue.length - 1; i >= 0; i--) {
+            if (!queue[i].isConnected)
+                queue.splice(i, 1);
+        }
+        if (!queue.includes(subtree))
+            queue.push(subtree);
         return false;
     }
     takenSet().add(subtree);

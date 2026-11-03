@@ -263,6 +263,11 @@ var WcsDiagnosticCode = {
   // router。router は自前の outlet を直後に作り、ページはそこに描かれ、置いた outlet は空のまま。
   // ランタイムも同じ code で警告する（docs/router-outlet-placement.md）。
   RouterOutletMisplaced: "wcs/router-outlet-misplaced",
+  // `query-keys` を持つ `<wcs-link>` の `to` が付けるキーが、どれも `query-keys` に無い。リンクは名指したキーだけを
+  // 比べるので、自分のクエリは判定に効かず、名指したキーが合えばどこでも現在になる（そう書いたタブは同時にすべて
+  // 現在）。`to` のキーの一部だけを比べない形（`to="?cat=a&page=1" query-keys="cat"`）は意図どおりなので黙る
+  // （docs/formal-methods-study.md §4.2）。warning。
+  LinkQueryKeyIgnored: "wcs/link-query-key-ignored",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
   // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その
@@ -2815,7 +2820,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.14.0";
+var version = "4.15.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -12009,6 +12014,7 @@ var ja = {
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u304B\u3089\u3060\u3068\u3001DevTools \u306E\u30BF\u30A4\u30E0\u30E9\u30A4\u30F3\u306F\u4ED8\u3044\u305F\u6642\u70B9\u304B\u3089\u59CB\u307E\u308A\u307E\u3059\u3002\u65E2\u306B\u3042\u308B\u914D\u7DDA\u306F 4.0 \u304C\u9001\u308A\u76F4\u3057\u307E\u3059\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/">\uFF08\u307E\u305F\u306F\u305D\u308C\u3092\u4F5C\u308B <head> \u306E\u540C\u671F\u30B9\u30AF\u30EA\u30D7\u30C8 \u2014 basename \u306B\u30ED\u30B1\u30FC\u30EB\u3092\u7F6E\u304F\u5F62\uFF09\u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
+  linkQueryKeyIgnored: (toKeys, named) => `\u3053\u306E <wcs-link> \u306E to \u304C\u4ED8\u3051\u308B\u30AD\u30FC\uFF08${toKeys}\uFF09\u306F\u3001\u3069\u308C\u3082 query-keys\uFF08${named}\uFF09\u306B\u3042\u308A\u307E\u305B\u3093\u3002query-keys \u306E\u3042\u308B\u30EA\u30F3\u30AF\u306F\u540D\u6307\u3057\u305F\u30AD\u30FC\u3060\u3051\u3092\u6BD4\u3079\u308B\u306E\u3067\u3001\u30EA\u30F3\u30AF\u81EA\u8EAB\u306E\u30AF\u30A8\u30EA\u306F\u5224\u5B9A\u306B\u52B9\u304B\u305A\u3001${named} \u304C\u5408\u3048\u3070 ${toKeys} \u304C\u4F55\u3067\u3082\u73FE\u5728\u306E\u30EA\u30F3\u30AF\u306B\u306A\u308A\u307E\u3059 \u2014 \u3053\u3046\u66F8\u3044\u305F\u30BF\u30D6\u306F\u540C\u6642\u306B\u3059\u3079\u3066\u73FE\u5728\u306B\u306A\u308A\u307E\u3059\u3002\u30EA\u30F3\u30AF\u304C\u8868\u3059\u30AD\u30FC\u3092\u540D\u6307\u3057\u3066\u304F\u3060\u3055\u3044\uFF08query-keys="${toKeys}"\uFF09`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
   tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join("\u30FB")} \u306F ${pkg} \u306E\u30BF\u30B0\u3067\u3059\u304C\u3001\u3053\u306E\u30DA\u30FC\u30B8\u306F ${pkg} \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u3044\u307E\u305B\u3093\u3002\u8981\u7D20\u306F\u5B9A\u7FA9\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u675F\u7E1B\u306F\u5F85\u3061\u7D9A\u3051\u3066\u4F55\u3082\u8D77\u304D\u305A\u3001\u30B3\u30F3\u30BD\u30FC\u30EB\u306B\u3082\u4F55\u3082\u51FA\u307E\u305B\u3093 \u2014 <script type="module" src="${url}"></script> \u3067\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`,
@@ -12225,6 +12231,7 @@ var en = {
   devtoolsAfterState: () => `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one \u2014 the form for a locale in the basename (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
+  linkQueryKeyIgnored: (toKeys, named) => `None of the keys this <wcs-link>'s to sets (${toKeys}) is named in query-keys (${named}). A link with query-keys compares only the keys it names, so its own query plays no part: it is current wherever ${named} match, whatever ${toKeys} is \u2014 tabs written this way are all current at once. Name the keys the link is for (query-keys="${toKeys}")`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
   signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
   tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join(", ")} ${tags.length === 1 ? "is a tag" : "are tags"} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
@@ -15769,6 +15776,15 @@ function validateDocumentEnv(html, locale2) {
       message: msgs.routerOutletMisplaced()
     });
   }
+  for (const link of findLinksIgnoringOwnQuery(scanText)) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.LinkQueryKeyIgnored,
+      start: link.start,
+      end: link.end,
+      severity: "warning",
+      message: msgs.linkQueryKeyIgnored(link.toKeys.join(" "), link.named.join(" "))
+    });
+  }
   const refs = collectSignalsRefs(scanText);
   const dom = refs.find((r) => r.kind === "dom");
   const bare = refs.find((r) => r.kind === "bare");
@@ -16060,6 +16076,27 @@ function findMisplacedOutlets(html) {
     }
   });
   return routerWithoutOutlet ? misplaced : [];
+}
+var LINK_TAG = "wcs-link";
+function findLinksIgnoringOwnQuery(html) {
+  const found = [];
+  for (const region of findStartTagRegions(html)) {
+    if (region.tagName !== LINK_TAG) continue;
+    const content = html.slice(region.start, region.end);
+    const to = extractAttribute(content, "to");
+    const span = extractAttributeSpan(content, "query-keys", region.start);
+    if (to === null || span === null) continue;
+    const named = html.slice(span.valueStart, span.valueEnd).split(/[\s,]+/).filter((key) => key !== "");
+    const target = to.replace(/&amp;/gi, "&");
+    const hash = target.indexOf("#");
+    const beforeHash = hash === -1 ? target : target.slice(0, hash);
+    const question = beforeHash.indexOf("?");
+    if (question === -1 || named.length === 0) continue;
+    const toKeys = [...new Set(new URLSearchParams(beforeHash.slice(question + 1)).keys())];
+    if (toKeys.length === 0 || toKeys.some((key) => named.includes(key))) continue;
+    found.push({ start: span.start, end: span.end, toKeys, named });
+  }
+  return found;
 }
 
 // src/service/packageLoadValidator.ts

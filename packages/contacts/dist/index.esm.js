@@ -64,7 +64,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/contacts","version":"4.14.0"};
+var pkg = {"name":"@wcstack/contacts","version":"4.15.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -87,14 +87,13 @@ class OperationLane {
     _activeOperationIds = new Set();
     // queue policy の FIFO。
     _queue = [];
-    _inFlightCount = 0;
-    // opId → 終端状態 (absence = pending)。
-    _terminal = new Map();
-    // claimTerminal で確定した outcome (finalize が 'committing' を最終値へ移す)。
+    // opId → claimTerminal で確定した outcome。存在 = committing (finalize が確定させる)。
     _claimedOutcome = new Map();
     // opId → AbortController (identity は opId が保証。cross-op clobber は構造上起きない)。
     _controllers = new Map();
-    // opId → attempt 数。
+    // opId → attempt 数。存在 = live (begin 済みで finalize / dispose 前) で、in-flight はこの大きさ。
+    // 終わった operation は何も残さない — 終端済みの記録を持つと長く開いたページで際限なく増える
+    // (docs/formal-methods-study.md §4.1)。
     _attempts = new Map();
     _withSignal;
     _trace;
@@ -108,7 +107,7 @@ class OperationLane {
         return this._ownerGeneration;
     }
     get inFlightCount() {
-        return this._inFlightCount;
+        return this._attempts.size;
     }
     get latestEpoch() {
         return this._latestEpoch;
@@ -164,7 +163,6 @@ class OperationLane {
                 this._activeOperationIds.add(operationId);
                 break;
         }
-        this._inFlightCount += 1;
         this._attempts.set(operationId, 1);
         const attempt = this._makeAttempt(operationId, 1);
         if (this._trace !== undefined) {
@@ -174,15 +172,17 @@ class OperationLane {
     }
     /**
      * retry: 同じ operationId に新しい attempt を作る。attempt number と resource signal
-     * だけを更新する (§5)。既に終端した operation には作れない (null)。
+     * だけを更新する (§5)。終端した・claim 済みの operation と、もう commit できない operation
+     * (supersede された latest / queue の先頭の後ろで待つもの) には作れない (null) — 結果を
+     * 捨てるしかない要求に新しい signal を渡さない (docs/formal-methods-study.md §4.1)。
      */
     retry(ticket) {
         if (ticket.ownerGeneration !== this._ownerGeneration)
             return null;
-        if (this._terminal.has(ticket.operationId))
-            return null;
         const previous = this._attempts.get(ticket.operationId);
-        if (previous === undefined)
+        if (previous === undefined || this._claimedOutcome.has(ticket.operationId))
+            return null;
+        if (!this._isEligible(ticket))
             return null;
         const attemptNo = previous + 1;
         this._attempts.set(ticket.operationId, attemptNo);
@@ -201,9 +201,8 @@ class OperationLane {
     canCommit(ticket) {
         if (ticket.ownerGeneration !== this._ownerGeneration)
             return false;
-        const status = this._terminal.get(ticket.operationId);
-        // absence = pending / 'committing' = multi-setter commit 中。どちらも settle 前。
-        if (status !== undefined && status !== "committing")
+        // live でなければ settle 済み。pending と committing (multi-setter commit 中) はどちらも settle 前。
+        if (!this._attempts.has(ticket.operationId))
             return false;
         return this._isEligible(ticket);
     }
@@ -215,11 +214,11 @@ class OperationLane {
     claimTerminal(ticket, outcome) {
         if (ticket.ownerGeneration !== this._ownerGeneration)
             return false;
-        if (this._terminal.has(ticket.operationId))
-            return false; // 既に committing / 終端
+        // 終端済み (live でない) / 既に committing
+        if (!this._attempts.has(ticket.operationId) || this._claimedOutcome.has(ticket.operationId))
+            return false;
         if (!this._isEligible(ticket))
             return false;
-        this._terminal.set(ticket.operationId, "committing");
         this._claimedOutcome.set(ticket.operationId, outcome);
         return true;
     }
@@ -233,25 +232,15 @@ class OperationLane {
      */
     finalize(ticket) {
         const operationId = ticket.operationId;
-        const status = this._terminal.get(operationId);
-        if (status !== undefined && status !== "committing") {
-            // 既に確定済み。冪等に return。
+        // live でなければ確定済み (finalize 済み、または dispose が stale として確定した)。冪等に return —
+        // dispose 前の ticket が先へ進むと、新しい owner の in-flight を数え下げてしまう。
+        if (!this._attempts.has(operationId))
             return;
-        }
-        let outcome;
-        if (status === "committing") {
-            outcome = this._claimedOutcome.get(operationId) ?? "stale";
-        }
-        else {
-            // 一度も claim されなかった (supersede / dispose で eligibility を失った)。
-            outcome = "stale";
-        }
-        this._terminal.set(operationId, outcome);
+        // 一度も claim されなかった (supersede で eligibility を失った) なら stale。
+        const outcome = this._claimedOutcome.get(operationId) ?? "stale";
         this._claimedOutcome.delete(operationId);
         this._releaseController(operationId);
         this._attempts.delete(operationId);
-        if (this._inFlightCount > 0)
-            this._inFlightCount -= 1;
         this._advanceBookkeeping(operationId);
         if (this._trace !== undefined) {
             if (outcome === "stale") {
@@ -287,30 +276,28 @@ class OperationLane {
      * dispose (§4.1 world generation)。owner generation を bump して全 ticket を無効化し、
      * 生きている controller を全て abort する。dispose 後に settle した operation は
      * owner gen 不一致で外部 commit しない。retention gate (§10.3) のため live な
-     * 全 operation を即時に stale として finalize し、controller / attempt を解放する。
+     * 全 operation を即時に stale として確定し、controller / attempt を解放する。committing 中の
+     * operation も同じ — 残りの setter は owner gen で弾かれ、後の finalize は何もしない (終端の
+     * 報告は operation ごとに 1 回、docs/io-node-trace-conformance.md §6.3)。
      */
     disposeOwner() {
         this._ownerGeneration += 1;
         for (const operationId of Array.from(this._controllers.keys())) {
             this._abortController(operationId);
-            // finalize は dispose 後 (terminal='stale') に early-return するため controller を
-            // 解放しない。retention gate (§10.3) を満たすためここで明示的に解放する。
+            // finalize は dispose 後に early-return するため controller を解放しない。
+            // retention gate (§10.3) を満たすためここで明示的に解放する。
             this._releaseController(operationId);
         }
-        for (const operationId of Array.from(this._attempts.keys())) {
-            if (!this._terminal.has(operationId)) {
-                this._terminal.set(operationId, "stale");
-            }
-            this._claimedOutcome.delete(operationId);
-            this._attempts.delete(operationId);
-            if (this._trace !== undefined) {
+        if (this._trace !== undefined) {
+            for (const operationId of this._attempts.keys()) {
                 this._trace({ type: "io:stale-dropped", operationId, laneKey: this.laneKey });
             }
         }
+        this._attempts.clear();
+        this._claimedOutcome.clear();
         this._activeOperationId = undefined;
         this._activeOperationIds.clear();
         this._queue.length = 0;
-        this._inFlightCount = 0;
     }
     // --- internal ---
     _makeAttempt(operationId, attemptNo) {

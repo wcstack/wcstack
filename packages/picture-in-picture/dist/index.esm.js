@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/picture-in-picture","version":"4.14.0"};
+var pkg = {"name":"@wcstack/picture-in-picture","version":"4.15.0"};
 
 /**
  * pictureInPictureCapabilities.ts
