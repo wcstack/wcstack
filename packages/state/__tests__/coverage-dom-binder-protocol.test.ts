@@ -14,6 +14,8 @@ afterEach(() => {
   delete slot[BINDER_KEY];
   delete slot[PENDING_KEY];
   delete slot[TAKEN_KEY];
+  document.head.querySelectorAll("title, meta").forEach((node) => node.remove());
+  document.body.innerHTML = "";
 });
 
 /** A binder that records what it was handed. */
@@ -64,6 +66,8 @@ describe("bindSubtree / wasBoundBy / flushPendingBinds", () => {
   it("binder がまだ無ければ保留して false を返し、後から来た binder が flush で順に受け取る", () => {
     const a = document.createElement("title");
     const b = document.createElement("meta");
+    // (the queue holds what is in the document: the router offers what it has placed)
+    document.head.append(a, b);
     expect(bindSubtree(a)).toBe(false);
     expect(bindSubtree(b)).toBe(false);
     expect(wasBoundBy(a)).toBe(false);
@@ -85,7 +89,35 @@ describe("bindSubtree / wasBoundBy / flushPendingBinds", () => {
     const earlier = document.createElement("div");
     slot[PENDING_KEY] = [earlier];
     const mine = document.createElement("div");
+    document.body.append(earlier, mine);
     bindSubtree(mine);
     expect(slot[PENDING_KEY]).toEqual([earlier, mine]);
+  });
+
+  it("保留キューは同じ部分木を 1 回だけ持ち、文書から外れたものは次に積むときに捨てる（docs/formal-methods-study.md §8）", () => {
+    const shown = document.createElement("div");
+    const hidden = document.createElement("div");
+    document.body.append(shown, hidden);
+    bindSubtree(shown);
+    bindSubtree(hidden);
+    bindSubtree(shown);
+    expect(slot[PENDING_KEY]).toEqual([shown, hidden]);
+    hidden.remove();
+    bindSubtree(shown);
+    expect(slot[PENDING_KEY]).toEqual([shown]);
+  });
+
+  it("後から来た binder には、積んだ後に文書から外れたものを渡さない", () => {
+    const shown = document.createElement("div");
+    const hidden = document.createElement("div");
+    document.body.append(shown, hidden);
+    bindSubtree(shown);
+    bindSubtree(hidden);
+    hidden.remove();
+    const { bound } = fakeBinder();
+    flushPendingBinds();
+    expect(bound).toEqual([shown]);
+    expect(wasBoundBy(hidden)).toBe(false);
+    expect(slot[PENDING_KEY]).toEqual([]);
   });
 });

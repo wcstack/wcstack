@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/router`: **a page without `@wcstack/state` no longer keeps every route it has shown.** The router offers each route it places to a binder, and `<wcs-head>` the clones it puts in `<head>`; with no binder on the page, the binder protocol (`protocol/binder.ts`) held them on a global queue until one came — 100 entries after 100 navigations between two routes, for as long as the page was open, the content of routes hidden since among them. The queue now holds what is in the document, each subtree once, and a binder that arrives later is handed only that. `@wcstack/state` 4.x already passed over a subtree no longer in the document; its core gains 4 B gzip. Enumerating the router's navigations found it ([docs/formal-methods-study.md](./docs/formal-methods-study.md) §8).
+
 ## [4.14.0] — 2026-11-02
 
 A minor that brings back what 3.x did for a reorder and the 4.0 engine had dropped, found while landing 4.13's swap: a row the list moves keeps its focus, its iframe's page and its running CSS animations, where the browser has `moveBefore()`. Only `@wcstack/state` changed; every other package is 4.13.0 with a new version.
