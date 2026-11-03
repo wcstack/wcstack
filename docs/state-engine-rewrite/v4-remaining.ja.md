@@ -1616,11 +1616,10 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8/8。1 回目で問題なし。
 - 公開後の作業（同日）:
   - PR #613（merge commit 970f29f1）: サイズの基準値を 4.15.0 の dist で取り直した（`core.min.js` 20,334 → 20,338 B、分割の core 25,141 → 25,148 B、`index.esm.js` 55,269 → 55,274 B、`auto.min.js` 52,063 → 52,066 B、add-on は 0〜2 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字、Testing に有界全列挙のスイート。拡張を 2.12.0 に（新しい規則 1 つ）。
-  - 拡張 2.12.0: 970f29f1 から worktree で作成、試験 1,428、890 ファイル、SHA-256 `e79b8d14bffe53ffc5932e4b03b4f81f4d8cf32698ca71979109a24fdf8a3b4b`。公開は著者。
+  - 拡張 2.12.0: 970f29f1 から worktree で作成、試験 1,428、890 ファイル、SHA-256 `e79b8d14bffe53ffc5932e4b03b4f81f4d8cf32698ca71979109a24fdf8a3b4b`。2026-11-04 に著者が公開し、Marketplace の配布物（vspackage）と SHA が一致した。注釈付きタグ `vscode-wcs-v2.12.0`（970f29f1）。
   - wcstack-skill: PR #57（merge commit 10fcd90）で router の参照に `query-keys` で `to` のキーを名指す規則と重複キーの 2 つの読み方、SKILL.md の lint の一覧に新しい code、刻印と固定 URL（7 本とも 200）。注釈付きタグ `v4.15.0`。
   - LP（wcstack.github.io e12d6e2）: リリースの表示、v4.15.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-LHDAv5…`）、大きさは約 77 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
 - 残り:
-  - 拡張 2.12.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.12.0`。
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
