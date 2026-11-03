@@ -321,8 +321,19 @@ No workaround became unnecessary.
 
 No workaround became unnecessary.
 
-## Still needed on 4.14.0
+### 4.15.0
+
+2026-11-03 — [CHANGELOG](../CHANGELOG.md#4150--2026-11-03)
+
+- `@wcstack/fetch`, `upload`, `credential`, `eyedropper`, `contacts`, `share`: a page left open no longer keeps a record of every request it has finished (100,000 entries after 100,000 fetches).
+- `@wcstack/router`: a page without `@wcstack/state` no longer keeps every route it has shown (and `<wcs-head>` every clone) for a binder that never comes.
+- `@wcstack/lint`: `wcs/link-query-key-ignored` (a `<wcs-link>` whose `query-keys` names none of the keys its `to` sets) is a new warning, which fails `--strict`.
+
+No workaround became unnecessary.
+
+## Still needed on 4.15.0
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
+- A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").
 - A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element. Since 4.11 the diagnostics warn when the definition never comes (`[wcs/element-undefined]`), and the lint names a `wcs-*` tag whose package the page does not load (`wcs/tag-package-missing`).
 - Safari has no `moveBefore()`: there a row a reorder moves still loses its focus (state README, "Loop (`for`)"). A row the list leaves in place keeps it in every browser.

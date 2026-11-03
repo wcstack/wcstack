@@ -321,8 +321,19 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策はありません。
 
-## 4.14.0 でもまだ要るもの
+### 4.15.0
+
+2026-11-03 — [CHANGELOG](../CHANGELOG.md#4150--2026-11-03)
+
+- `@wcstack/fetch`・`upload`・`credential`・`eyedropper`・`contacts`・`share`: 開いたままのページが、終わった要求をすべて覚えておくことはなくなった（10 万回の fetch で 10 万件だった）。
+- `@wcstack/router`: `@wcstack/state` を読まないページが、来ない binder のために、表示したルートをすべて（`<wcs-head>` は複製をすべて）持ち続けることはなくなった。
+- `@wcstack/lint`: `wcs/link-query-key-ignored`（`query-keys` が `to` の付けるキーをどれも名指さない `<wcs-link>`）が新しい warning で、`--strict` では落ちる。
+
+要らなくなった回避策はありません。
+
+## 4.15.0 でもまだ要るもの
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
+- 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。
 - まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。
 - Safari には `moveBefore()` が無い: そこでは並べ替えで動かした行は今もフォーカスを失う（state の README、「ループ (`for`)」）。リストがその場に残した行は、どのブラウザでもフォーカスを保つ。
