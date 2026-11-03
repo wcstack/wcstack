@@ -6,7 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.15.0] — 2026-11-03
+
+A minor from a study of extracting the specification from the code and refuting it ([docs/formal-methods-study.md](./docs/formal-methods-study.md)): every sequence of calls on the I/O nodes' request lane and every interleaving of the router's navigations, guards and view-transition frames, run against the real code, and `<wcs-link>`'s current state over configurations and URLs. They found what a page left open kept for every request and every navigation, and a link that compared none of its own query keys. `@wcstack/fetch`, `upload`, `credential`, `eyedropper`, `contacts` and `share` (their request lane), `@wcstack/router` and `@wcstack/state` (their copy of the binder protocol) and the lint changed; every other package is 4.14.0 with a new version.
+
+### Upgrading
+
+- A page left open no longer keeps a record of every request a `<wcs-fetch>`, `<wcs-upload>` or another node with a request lane has finished, and a page without `@wcstack/state` no longer keeps every route it has shown. Nothing to change.
+- `@wcstack/lint`: `wcs/link-query-key-ignored` is a new warning, which fails `--strict`: a `<wcs-link>` whose `query-keys` names none of the keys its `to` sets is current wherever those keys match. Name the keys the link is for.
+- No workaround becomes unnecessary.
 
 ### Added
 
