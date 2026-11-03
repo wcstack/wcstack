@@ -75,16 +75,10 @@ const shownPages = (): string[] =>
   [...document.querySelectorAll('[data-page]')].map((node) => node.getAttribute('data-page')!);
 const currentUrl = (): string => location.pathname + location.search;
 
-/**
- * binder の居ないページで差し込んだルートの中身は、大域の保留キューに積まれたまま残る
- * （protocol/binder.ts の bindSubtree。docs/formal-methods-study.md §8 の所見）。列ごとに作るルーターの DOM を
- * 次の列へ持ち越さないよう、列の間で空にする
- */
-const PENDING_BINDS = Symbol.for('wcstack.binder.pending');
-
 async function mount(): Promise<World> {
+  // (binder の居ないこのページで差し込んだルートの中身は保留キューに積まれるが、キューは文書の中にあるものしか
+  // 持たない — 前の列のルーターの DOM は次に積むときに落ちる。docs/formal-methods-study.md §8 の ⑥)
   document.body.innerHTML = '';
-  delete (globalThis as unknown as Record<symbol, unknown>)[PENDING_BINDS];
   history.replaceState(null, '', '/a');
   const frames: Array<() => void> = [];
   (globalThis as unknown as Record<symbol, unknown>)[TRANSITION_RUNNER_KEY] = {
