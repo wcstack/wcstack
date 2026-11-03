@@ -243,11 +243,11 @@ export class WcsState extends HTMLElementBase {
     const engine = this.engine;
     if (engine === null) raise(M.NotInitialized);
     await callback(mutability === "writable" ? engine.proxy : new Proxy(engine.proxy, {
-      // as in createState("readonly"), the writes of $setAll and $resolve (path, indexes, value) refuse;
+      // as in createState("readonly"), the writes of $setAll, $update and $resolve (path, indexes, value) refuse;
       // read with this view as the receiver, a method comes as it is and runs on this view
       get(t, k, receiver) {
         const v = Reflect.get(t, k, receiver);
-        return k === "$setAll" || k === "$resolve" ? (...a: unknown[]) => (a.length > 2 && raise(M.Readonly), v(...a)) : v;
+        return k === "$setAll" || k === "$resolve" || k === "$update" ? (...a: unknown[]) => (a.length > 2 && raise(M.Readonly), v(...a)) : v;
       },
       set() {
         raise(M.Readonly);

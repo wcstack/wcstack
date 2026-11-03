@@ -3,7 +3,7 @@
  *
  * 「構文は正しく、パスも実在するのに、意味論が噛み合っていない」取り違えの検査。
  *
- *   wcs/index-arity   — `$getAll` / `$resolve` の添字の本数 vs パス中の `*` の本数
+ *   wcs/index-arity   — `$getAll` / `$setAll` / `$resolve` / `$update` の添字の本数 vs パス中の `*` の本数
  *   wcs/wildcard-rank — ワイルドカードの階数 vs for の段数（`$N` を含む）
  *   wcs/getter-cycle  — パス getter どうしの循環参照
  *
@@ -64,6 +64,19 @@ describe("wcs/index-arity — 添字の本数", () => {
 
     const empty = script(`{ m() { this.$setAll("items.*.price", [], 0); } }`);
     expect(codes(validateSemantics(empty, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
+  });
+
+  it("$update は $resolve と同じく厳密一致を求めること（1 つのアドレスを書き換える — 4.16）", () => {
+    const under = script(`{ m() { this.$update("matrix.*.*", [0], (v) => v); } }`);
+    const found = codes(validateSemantics(under, "wcs-state", "en"), WcsDiagnosticCode.IndexArity);
+    expect(found).toHaveLength(1);
+    expect(found[0].message).toContain('$update("matrix.*.*") requires exactly 2 index(es)');
+
+    const over = script(`{ m() { this.$update("items.*.price", [0, 1], 0); } }`);
+    expect(codes(validateSemantics(over, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(1);
+
+    const exact = script(`{ m() { this.$update("items.*.price", [0], (v) => v + 1); this.$update("total", [], 0); } }`);
+    expect(codes(validateSemantics(exact, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
   });
 
   it("報告レンジが添字の配列リテラルを指すこと", () => {

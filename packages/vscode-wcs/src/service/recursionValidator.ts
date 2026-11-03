@@ -57,11 +57,11 @@ import {
 
 /**
  * パスを第 1 引数に取る API。`$getAll` / `$setAll` だけが `**` を解釈する。
- * `$resolve` / `$postUpdate` / `$dependOn`（旧名 `$trackDependency`）は受け付けない ＝
+ * `$resolve` / `$update`（4.16）/ `$postUpdate` / `$dependOn`（旧名 `$trackDependency`）は受け付けない ＝
  * 受け付けないことを報告する（ランタイムは `getPathInfo` の不変条件で `wcs/recursion-unsupported`）。
  * 正式名と旧名の**両方**を並べること — 片方だけだと、そちらを書いた人にしか診断が出ない。
  */
-const RECURSION_APIS = ['getAll', 'setAll', 'resolve', 'postUpdate', 'dependOn', 'trackDependency'] as const;
+const RECURSION_APIS = ['getAll', 'setAll', 'resolve', 'update', 'postUpdate', 'dependOn', 'trackDependency'] as const;
 
 /**
  * `**` を解釈しない API（`$getAll` / `$setAll` 以外）→ `recursionUnsupported` の site。
@@ -70,6 +70,7 @@ const RECURSION_APIS = ['getAll', 'setAll', 'resolve', 'postUpdate', 'dependOn',
  */
 const UNSUPPORTED_API_SITE = {
   $resolve: 'resolve',
+  $update: 'update',
   $postUpdate: 'postUpdate',
   $dependOn: 'dependOn',
   $trackDependency: 'trackDependency',
@@ -348,7 +349,7 @@ function validateListKeys(
  * 直す順番が増えるだけ）。判定順はランタイムに合わせる — アンカー照合 → 添字の形 →
  * 値の形 → 構造への書き込み → 読み取り専用。
  *
- * `**` を含まない具体パスも、`$setAll` / 値付き `$resolve` なら見る — 宣言済み `**` getter の
+ * `**` を含まない具体パスも、`$setAll` / `$update` / 値付き `$resolve` なら見る — 宣言済み `**` getter の
  * 展開形（`nodes.*.children.*.total`）やその値の内側への書き込みは、`**` を経なくても
  * ランタイムが `setByAddress` の入口で `wcs/recursion-readonly` にする。
  */
@@ -383,8 +384,8 @@ function validateApiCalls(
     const end = offset + parsed.starts[0] + pathArg.trimEnd().length;
 
     if (!hasRecursionWildcard(path)) {
-      // 具体パス綴りでの再帰 getter への書き込み（`$setAll(path, …)` / `$resolve(path, idx, value)`）
-      const writes = api === '$setAll' || (api === '$resolve' && parsed.args.length >= 3);
+      // 具体パス綴りでの再帰 getter への書き込み（`$setAll(path, …)` / `$update(path, idx, fn)` / `$resolve(path, idx, value)`）
+      const writes = api === '$setAll' || api === '$update' || (api === '$resolve' && parsed.args.length >= 3);
       if (writes && spec !== null) {
         const owning = owningGetterSuffix(spec, getterSuffixes, path);
         if (owning !== null) {

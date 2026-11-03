@@ -134,7 +134,7 @@
 | **フォーム** | `input` / `select` / `textarea` の双方向バインディング、ラジオグループと単一値、チェックボックスグループと配列、`#ro` / `#onchange` / `#prevent` / `#stop` | [双方向バインディング](#双方向バインディング) · [修飾子](#修飾子) |
 | **フィルタ** | 48 種類の組み込み、チェーン可能、`<html lang>` を見るロケール依存フォーマット | [フィルタ](#フィルタ) · [ロケール](#ロケール) |
 | **派生状態** | パス getter がデータツリーの任意の深さの仮想プロパティを 1 箇所にフラットに宣言する。チェーンでき、setter も書ける | [パス getter](#パス-getter算出プロパティ) |
-| **集計と一括書き込み** | `$getAll` / `$setAll` / `$resolve` が `items.*.price` を横断して読み書きする。配列は作り直さない | [Proxy API](#proxy-api) |
+| **集計と一括書き込み** | `$getAll` / `$setAll` / `$update` / `$resolve` が `items.*.price` を横断して読み書きする。配列は作り直さない | [Proxy API](#proxy-api) |
 | **再帰パス** | `$recursion` が木の形の繰り返し地点を宣言し、1 本の `**` getter が全深さを覆う | [再帰パス](#再帰パスrecursion) |
 | **リアクティビティ** | ES Proxy がアドレス単位で読み取りを追跡・キャッシュし、依存順に無効化し、DOM 書き込みをマイクロタスクでまとめる | [状態の更新](#状態の更新) · [依存追跡の境界](#依存追跡の境界) |
 | **getter が動く条件** | getter は遅延評価。評価需要は live binding・`$watch`・`$stream` の `args` の 3 箇所からしか生まれない | [評価のきっかけ](#評価のきっかけdemand-root) |
@@ -420,7 +420,7 @@ state ごとにアドオンを読み込むのは分割版の auto エントリ�
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームはデータ・getter・setter・メソッドを持ち、`$connectedCallback` / `$disconnectedCallback` を宣言できます。そのどれの中でも `this` はマウントパスを基点にします: `this.items` はツリーの `cart.items` で、パスを取る `$` API（`$getAll`・`$setAll`・`$resolve`・`$postUpdate`・`$dependOn`・`$eq`・`$eqPath`・`$eqIndex`）もマウント相対のパスを取ります。getter と setter はツリーの `cart.<キー>` のアクセサになり、メソッドはパスで呼べます —— `onclick: cart.checkout`、ルートからは `this["cart.checkout"]()`。読み込み順は自由です: ルートより先に接続されたボリュームは、ルートのエンジンが作られるとき、ページがバインドされる前に接ぎ木されます。ルートの `<wcs-state>` がページから外れている間に接続されたボリュームは、それが戻されたときに接ぎ木されます。
+ボリュームはデータ・getter・setter・メソッドを持ち、`$connectedCallback` / `$disconnectedCallback` を宣言できます。そのどれの中でも `this` はマウントパスを基点にします: `this.items` はツリーの `cart.items` で、パスを取る `$` API（`$getAll`・`$setAll`・`$update`・`$resolve`・`$postUpdate`・`$dependOn`・`$eq`・`$eqPath`・`$eqIndex`）もマウント相対のパスを取ります。getter と setter はツリーの `cart.<キー>` のアクセサになり、メソッドはパスで呼べます —— `onclick: cart.checkout`、ルートからは `this["cart.checkout"]()`。読み込み順は自由です: ルートより先に接続されたボリュームは、ルートのエンジンが作られるとき、ページがバインドされる前に接ぎ木されます。ルートの `<wcs-state>` がページから外れている間に接続されたボリュームは、それが戻されたときに接ぎ木されます。
 
 ボリュームは、ツリー全体に反応する宣言を実行しません。`$watch`・`$stream`・`$listKeys`・`$renderedCallback`・`$recursion`・`$behavior`・`$features` —— そして削除された `$scan`・`$streams`・`$updatedCallback` —— を宣言したボリュームは拒否されます: 接ぎ木されず、`console.error` が要素を名指して `$watch is not run in a volume — declare it on the root state.` と伝えます。これらはルートの state にフルパスで宣言してください —— ルートのハンドラの中では `this` はルートで（`$watch: { "cart.total"(cur) { … } }`）、ルートの `$renderedCallback(paths)` はルートから書いたパス（`cart.items.*.name`）を受け取るので、接頭辞で絞り込みます。`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback` は、`console.warn` を出して実行されません。ボリュームは注入も受けません: ボリューム要素に `data-wcs`（`state.taxRate: settings.taxRate`）があると、そのボリュームは拒否されます —— ルートのパスはルートの getter で読んでください（`get cartTotalWithTax() { return this["cart.subtotal"] * (1 + this["settings.taxRate"]); }`）。
 
@@ -1336,6 +1336,7 @@ export default {
 |---|---|
 | `this.$getAll(path, indexes?)` | ワイルドカードパスにマッチする全ての値を取得 |
 | `this.$setAll(path, indexes, value, options?)` | ワイルドカードパスにマッチする全アドレスへ一括書き込み |
+| `this.$update(path, indexes, fn)` | 4.16（未リリース）から: 1 つのアドレスを今の値から書き換える。`fn` はその行の文脈で走る（[`$update`](#update--1-つのアドレスを書き換える) 参照） |
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行。中の `*` は getter と同じく今の行の添字で、行のイベントのハンドラから呼ぶと `$postUpdate("rows.*.cells.*.text")` はその行のセルだけを通知する。複数の行を通知するには、それぞれを名指す（`` this.$postUpdate(`rows.${r}.cells.${c}.text`) ``） |
 | `this.$dependOn(path)` | キャッシュ無効化のための依存関係を手動で登録 |
@@ -1413,6 +1414,8 @@ export default {
 
 `indexes` の意味は `$getAll` と同じ**前方一致の接頭辞**（不足はその階層を全展開）ですが、**省略はできません**。書き込みには暗黙のループ文脈を与えないため、`for` テンプレートの中でも `this.$setAll("users.*.selected", [], true)` は現在行ではなく**全行**を意味します。
 
+4.16（未リリース）から、mapper は書き込む行の文脈で走ります: その中の `this.$1` や `this["users.*.name"]` は、`$setAll` を呼んだハンドラの行ではなく、書き込む行を指します（アロー関数でも）。4.15 までは、行のハンドラから呼んだ mapper はクリックされた行を読んでいました。`function` で書いた mapper の `this` は state です。
+
 ```javascript
 this.$setAll("matrix.*.*", [0], 0);                    // 0 行目だけ全列
 this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったまま各行を差し替え
@@ -1421,6 +1424,32 @@ this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったま�
 `undefined` はどの形でも書き込まれず「このアドレスはスキップ」を意味します。mapper が `return` を忘れて全行を潰す事故を防ぐためで、クリアしたい場合は `null` を使います。戻り値は実際に書き込んだ件数です。
 
 なお `$setAll` は依存解決を一括化する仕組みではありません。描画は 1 バッチに畳まれますが、書き込みは 1 件ずつ登録されるので、コストは置き換え対象の手書きループと同じです。得られるのはリストが保たれることであって、実行回数の削減ではありません。
+
+#### `$update` — 1 つのアドレスを書き換える
+
+4.16（未リリース）から。`$update(path, indexes, fn)` は `$resolve(path, indexes)` と同じアドレスを読み、`fn(current, ...indexes)` を呼んで、その戻り値を書きます。`$setAll(path, [i], fn)` でもできる 1 行の書き換えを、「全行」に読めない名前で書けます:
+
+```javascript
+export default {
+  data: [],
+  onUpdate() {
+    for (let i = 0; i < this.data.length; i += 10) {
+      this.$update("data.*.label", [i], label => label + " !!!");
+    }
+  },
+  onRename(e, $1) {
+    // fn はクリックされた行ではなく 0 行目で走る: this["data.*.id"] は 0 行目の id
+    this.$update("data.*.label", [0], () => `renamed by ${$1}, row ${this["data.*.id"]}`);
+  },
+};
+```
+
+- `indexes` は `$resolve` と同じく `*` 1 本につき 1 つです（違えば `wcs/index-arity`）。`*` の無いパスには `[]` を渡します。リストの末尾より先の添字は、`fn` を呼ぶ前に `no row for "data.*.label"` を throw します。
+- `fn` はその行の文脈で走ります: どの行のハンドラから呼んでも、その中の `this.$1` は渡した添字で、`this["data.*.id"]` はその行のものです（アロー関数でも）。
+- `undefined` は `$setAll` と同じく何も書きません。関数でない値を渡すと、その値を書きます。
+- readonly のプロキシと getter の中では、`fn` を呼ぶ前に `This state is readonly.` を throw します。`**` は `$resolve` と同じく拒否します —— 全深さへは `$setAll(path, [], value)` で書いてください。
+
+パスを文字列で組み立てる `` this[`data.${i}.label`] += " !!!" `` と比べると、パスは lint が検査できるリテラルになり、エンジンは呼ぶたびにパスの文字列を解析しません。
 
 #### `$resolve` — 明示的なインデックスでのアクセス
 
@@ -1520,7 +1549,7 @@ k=2   nodes.*.children.*.children.*
 | `$getAll(path, [])`（**明示**） | **全深さの合併** —— 深さ優先・行きがけ・添字昇順 |
 | `$getAll(path, [i, …])` | 拒否。接頭辞ではどの深さの話か言えない（`wcs/recursion-getall-form`） |
 | `$setAll(path, [], value)` | 全深さへのブロードキャスト（合併と同じ走査・同じ順序） |
-| `$resolve` / `$postUpdate` / `$dependOn` / `$watch` のキー / `$listKeys` のキー / markup の `data-wcs` / 直接代入 | 拒否（`wcs/recursion-unsupported`） |
+| `$resolve` / `$update` / `$postUpdate` / `$dependOn` / `$watch` のキー / `$listKeys` のキー / markup の `data-wcs` / 直接代入 | 拒否（`wcs/recursion-unsupported`） |
 
 束縛形は束縛先の深さを必要とするので、**再帰 getter の中**でしか解決できません（アンカー配下の普通の行 getter や、その行に紐づくイベントハンドラも同じく、深さを読み取れる実体の行について実行されるので使えます）。トップレベルで `this["nodes.**.value"]` を読むと `wcs/recursion-context` になります —— どのノードのつもりだったかを黙って推測することはありません。深さは行の添字と同じく**最も内側の評価フレームだけ**から読みます。再帰 getter が呼ぶ普通の getter（`get "nodes.**.x"() { return this.helper }` と `get helper() { return this["nodes.**.value"] }`）は自分の行を持たないので、これも `wcs/recursion-context` になります —— `**` は再帰 getter の側で読み、値を渡してください。合併形は深さを要求しないので、トップレベルの getter でも普通の行 getter でもメソッドでも読めます。
 
@@ -1594,7 +1623,7 @@ this.$setAll("nodes.**.selected", [], false);   // 全深さの全ノード
 
 それ以外は葉です。子ノードの下の葉もそうで、`$setAll("nodes.**.children.*.value", [], v)` は各ノードの子の `value`（根以外のすべてのノード）に書き込みます。
 
-読み取り専用の規則は `**` の綴りに依存しません。再帰 getter の具体的な展開形 —— `nodes.*.total` / `nodes.*.children.*.total` / … —— への書き込みも、固定本数の `$setAll` でも値付きの `$resolve(path, indexes, value)` でも直接代入でも、またその深さが実体化済みかどうかに関わらず、書き込みの入口で拒否します。この検査が無かったときは、未実体化の展開形が「無いキー」に見えてノードのオブジェクトに書き込まれ、代入値が getter のキャッシュ結果として固定されていました。
+読み取り専用の規則は `**` の綴りに依存しません。再帰 getter の具体的な展開形 —— `nodes.*.total` / `nodes.*.children.*.total` / … —— への書き込みも、固定本数の `$setAll` でも `$update` でも値付きの `$resolve(path, indexes, value)` でも直接代入でも、またその深さが実体化済みかどうかに関わらず、書き込みの入口で拒否します。この検査が無かったときは、未実体化の展開形が「無いキー」に見えてノードのオブジェクトに書き込まれ、代入値が getter のキャッシュ結果として固定されていました。
 
 ### 入力は木でなければならない
 
@@ -1650,7 +1679,7 @@ customElements.define("tree-node", class extends HTMLElement {
 - 再帰 setter、接尾辞が構造そのものを名指す `**` getter（`get "nodes.**.children"()`）、`**` getter の展開形と同名の具体 getter、そして代入による `**` 経由の書き込み（`this["nodes.**.x"] = v`、`++` も含む）
 - 再帰 `$setAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞・配列でない `indexes`。書き込み API には深さを束縛する評価文脈が無いので、`[]` は必須です
 - 再帰 `$getAll` の非空の接頭辞・配列でない `indexes`。**添字省略は正当です** —— 再帰 getter の中では束縛形で、評価中の深さを読みます
-- `data-wcs` / `$watch` や `$listKeys` のキー / `$resolve` / `$postUpdate` / `$dependOn` への `**`
+- `data-wcs` / `$watch` や `$listKeys` のキー / `$resolve` / `$update` / `$postUpdate` / `$dependOn` への `**`
 - ボリューム（`mount=`）やマウントされたコンポーネント（`bind-component`）の `$recursion` と `**` getter —— ルートの state に置きます
 - 再帰 `<template>`、`$depth` 変数、公開の `maxDepth` オプション（3 つとも存在しません）
 
@@ -1967,10 +1996,10 @@ customElements.define("user-card", UserCard);
 >
 > **マウントの `#ro` を尊重します:** `state#ro: user` や `state.title#ro: doc.title` では、
 > コンポーネントはそのエントリを読めても書けません — `element.state.title = …`・メソッド内の
-> `this.title = …`・`$setAll` / `$resolve` の書き込みは `[wcs/mount-readonly]` で落ち、コンポーネント内の
+> `this.title = …`・`$setAll` / `$update` / `$resolve` の書き込みは `[wcs/mount-readonly]` で落ち、コンポーネント内の
 > 双方向束縛（`value: title`）は書き戻しません。ホストはそのパスに書けます。Light DOM のマウントに
 > `name` は不要で、`element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` /
-> `$resolve` / `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
+> `$update` / `$resolve` / `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
 > 添字は自動で前置されます。
 
 #### 公開 getter（コンポーネントの getter を外から読む）
@@ -3105,12 +3134,12 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 
 | 診断 | 何を見るか | 直し方 |
 |---|---|---|
-| `wcs/index-arity` | `$resolve(path, indexes)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
+| `wcs/index-arity` | `$resolve(path, indexes)` と `$update(path, indexes, fn)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
 | `wcs/wildcard-rank` | マークアップで、パスの `*` の本数（と `$N` の N）が囲む `for` の段数を超えていないか（`#1401`）、`.` パスを囲む `for` があるか（`#1402`）、各 `*` がその段で囲んでいる `for` の行であって、別のリストの行ではないか（`for: a` の中の `{{ b.*.y }}`、`#1403`） | `for` を足すか、別のリストの行は getter の中で `$resolve(path, indexes)` で読む |
 | `wcs/getter-cycle` | パス getter どうしが循環参照していないか: 評価が、すでに評価中の getter の出現に戻ってきた | 循環を断つ |
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じ出現を 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
-| `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$postUpdate` / `$dependOn`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
+| `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$update` / `$postUpdate` / `$dependOn`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
 | `wcs/recursion-declaration-invalid` | `$recursion` 宣言か `**` getter のキーが、このバージョンが受け付けない形 —— 要素を指さない・途中に添字セグメントを持つ（`"nodes.0.items.*"`）アンカー / 反復サブパス、複数アンカー、getter でない・setter を持つ `**` キー —— そして `diagnostics` アドオンがあれば、構造を名指す getter、同じ具体パスへ展開する 2 本の getter、展開形と同名の具体 getter。lint が先に出し、実行時は宣言を読んだ時点で throw する | 文面のとおり宣言を直す |
 | `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー）、または `**` の後ろが整形されていない —— 何も無い（`get "nodes.**"`）、空セグメント（`nodes.**.` / `nodes.**..x`）や `**` 直後の素の `*`（`nodes.**.*`） | 宣言どおりに綴り、その後ろに実在するパスを書く |
 | `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |

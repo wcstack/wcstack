@@ -26,7 +26,7 @@ export function resolveLocale(locale?: string): WcsLocale {
 /** 型期待の対象種別（BindingTypeExpectation 用）。 */
 export type ExpectedTypeKind = 'array' | 'boolean' | 'string';
 
-/** 添字本数の要求（`$resolve` は厳密一致・`$getAll` / `$setAll` は接頭辞なので上限）。 */
+/** 添字本数の要求（`$resolve` と `$update` は厳密一致・`$getAll` / `$setAll` は接頭辞なので上限）。 */
 export type IndexArityRequirement = 'exact' | 'atMost';
 
 export interface WcsMessageCatalog {
@@ -50,7 +50,7 @@ export interface WcsMessageCatalog {
   patternPathOutsideFor(path: string): string;
   omittedPathOutsideFor(path: string): string;
   loopIndexOutsideFor(path: string): string;
-  /** `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
+  /** `$getAll` / `$setAll` / `$resolve` / `$update` の添字の本数がパスの `*` の本数と噛み合わない。 */
   indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
   /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
   wildcardRank(subject: string, needed: number, available: number): string;
@@ -307,7 +307,7 @@ export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'whitespa
 
 /** `**` が現れた場所（`**` を解釈しない消費者）。 */
 export type RecursionWildcardSite =
-  | 'binding' | 'watch' | 'resolve' | 'undeclared'
+  | 'binding' | 'watch' | 'resolve' | 'update' | 'undeclared'
   | 'assignment' | 'postUpdate' | 'dependOn' | 'trackDependency' | 'listKeys';
 /** `$getAll` が `**` に対して拒否する添字の形。 */
 export type RecursionGetAllProblem = 'prefix' | 'notArray';
@@ -541,6 +541,8 @@ const ja: WcsMessageCatalog = {
         return `$watch のキー "${p}" に "**" は使えません。監視は具体パス（固定本数の "*"）に対してのみ成立します`;
       case 'resolve':
         return `$resolve("${p}") に "**" は渡せません。$resolve は展開後の具体パスと添字タプルの厳密一致だけを受け付けます`;
+      case 'update':
+        return `$update("${p}") に "**" は渡せません。$update は 1 つのアドレス（展開後の具体パスと添字タプルの厳密一致）だけを書き換えます — 全深さへは $setAll("${p}", [], value) で書いてください`;
       case 'assignment':
         return `this["${p}"] への代入に "**" は使えません（再帰 setter は初版では持てず、代入は展開後の具体パスにしか成立しません）。$setAll("${p}", [], value) で全深さへブロードキャストするか、具体パスへ書いてください`;
       case 'postUpdate':
@@ -838,6 +840,8 @@ const en: WcsMessageCatalog = {
         return `$watch key "${p}" cannot contain "**" — watching is defined against a concrete path (a fixed number of "*")`;
       case 'resolve':
         return `$resolve("${p}") cannot take "**" — it accepts only an expanded concrete path with an exactly matching index tuple`;
+      case 'update':
+        return `$update("${p}") cannot take "**" — it changes one address (an expanded concrete path with an exactly matching index tuple). Write every depth with $setAll("${p}", [], value)`;
       case 'assignment':
         return `this["${p}"] = … cannot use "**" (there are no recursive setters in this version; an assignment only resolves against an expanded concrete path). Broadcast with $setAll("${p}", [], value), or write a concrete path`;
       case 'postUpdate':

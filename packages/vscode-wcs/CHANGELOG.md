@@ -2,6 +2,10 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **`$update(path, indexes, fn)`（`@wcstack/state` 4.16）を知る** — インラインスクリプトの型に加え、`wcs/index-arity` は `$resolve` と同じく `*` 1 本につき 1 つの添字を求める（不足も超過も error）。`**` を渡すと `wcs/recursion-unsupported`（全深さへは `$setAll(path, [], value)`）、再帰 getter の展開形へ書くと `wcs/recursion-readonly`。`$update` の書き込みは `wcs/getter-untracked-read` と `wcs/input-nested-write` の入れ子書き込みの証拠にも数える。
+
 ## 2.12.0 — 2026-11-03
 
 `@wcstack/state` 4.15.0 のパーサと manifest、4.15.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.15.0・`@wcstack/typescript` 4.15.0 と同じ判定）。新しい規則 1 つで minor。
