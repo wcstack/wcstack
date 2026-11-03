@@ -11,12 +11,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Upgrading
 
 - `@wcstack/state`: a `$setAll` mapper called from a row's event handler reads, through `this.$1` and a relative path, the row it writes and no longer the clicked row. A mapper that meant the clicked row: read its values into a variable before the call.
+- `@wcstack/lint`: `wcs/write-path-missing` warns about a nested path a script writes and the state lacks beside a near one, and `wcs/read-path-missing` reads a path built with a template under a list. Both are warnings, which fail `--strict`. Fix the spelling they name.
 - No workaround becomes unnecessary.
 
 ### Added
 
 - `@wcstack/state`: **`$update(path, indexes, fn)`**, one address changed from its current value. It reads the address `$resolve(path, indexes)` names, calls `fn(current, ...indexes)` at that row — `this.$1` and `this["items.*.id"]` inside it are that row's — and writes what it returns; `undefined` writes nothing, and a value that is not a function is written as it is. `indexes` takes one index per `*` (`#901` otherwise), an index past the end of the list throws `no row` before `fn` runs, a readonly proxy or a getter throws before `fn` runs, and `**` is refused. `$setAll(path, [i], fn)` made the same change under a name that reads as every row; and against a path built as a string (`` this[`items.${i}.label`] += "!" ``) the path is a literal, and the engine does not parse a path string on each call. In a volume the path is relative to the mount. The core grows by 54 B.
 - `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `$update` in `wcs/index-arity` (one index per `*`, as `$resolve`), in `wcs/recursion-unsupported` and `wcs/recursion-readonly`, in the nested-write evidence of `wcs/getter-untracked-read` and `wcs/input-nested-write`, and in the inline-script types.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/write-path-missing` reads a nested path a script writes** — `this["items.*.nmae"] = …`, a compound assignment, `` this[`items.${i}.nmae`] = … ``, the path of `$setAll` / `$update` — that the state does not have, beside a near one it has (warning). It was read at the top level only (`this.selectedID = …`); a nested write creates a key in each row's object, and the declared path's bindings stay as they were. The path is looked up as a read's is: the candidates, a `stateSchema`, a volume's mount path. A key with no near name is not reported.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/read-path-missing` reads a path built with a template** whose expressions each fill a segment under a list — `` this[`items.${i}.nmae`] `` is read as `items.*.nmae`, as the runtime reads it. Under an object that is not a list the expression is a key (`` `drafts.${key}` ``), and nothing is said.
 
 ### Changed
 

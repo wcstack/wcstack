@@ -34,6 +34,8 @@
  *   - `this.form.name` → path は `form`、chain は `["form", "name"]`（untracked-read の材料）
  *   - `this.a += 1` / `this.a++` / `this.a ??= x` → path（ランタイムは get → set の順に動く。`written: true`）
  *   - `this[key]` / 非リテラル引数 → 集めない（断定できない）
+ *   - `` this[`items.${i}.label`] `` → `CollectOptions.templates` のときだけ path `items.*.label`（`indexed: ["items"]`）
+ *   - 単純代入の左辺・`$setAll` / `$update` のパス → `CollectOptions.writes` のときだけ（`form: 'write'` / `'api-write'`）
  *   - `this.$untracked(fn)`（旧名 `this.$untrackDependency(fn)`）の中 → 集めない（意図的な抑止）
  *   - 単純代入 `this.a = x` の左辺 → 集めない（読みではない。`wcs/nested-assign` の担当）
  *   - `$` 始まりのルート → 集めない（API 名前空間）
@@ -51,14 +53,34 @@ export interface GetterRead {
    * `form: 'api' | 'track'` では常に null。
    */
   readonly chain: readonly string[] | null;
-  /** 読み取りの形。 */
-  readonly form: 'member' | 'api' | 'track' | 'destructure';
+  /**
+   * 読み取りの形。`write` / `api-write` は `CollectOptions.writes` のときだけ出る書き込み:
+   * 単純代入の左辺（`this["a.b"] = v`）と、`$setAll` / `$update` のパス引数（範囲はパスのリテラル）。
+   */
+  readonly form: 'member' | 'api' | 'track' | 'destructure' | 'write' | 'api-write';
   /** チェーンが呼び出しの callee だったか（`this.form.validate()` の `validate` が末尾） */
   readonly callee: boolean;
   /** 複合代入・増減の対象として読まれたか（`this.a += 1` / `this.a++`）。読み兼書き。 */
   readonly written: boolean;
+  /**
+   * `CollectOptions.templates` で読んだテンプレートリテラルの添字（`` this[`items.${i}.label`] `` → path
+   * `items.*.label`）のとき、各 `*` の手前のパス（`["items"]`）。そこがリストでなければ式は添字ではなく
+   * キー（`` `drafts.${key}` ``）なので、消費者が state の形で確かめる。
+   */
+  readonly indexed?: readonly string[];
   readonly start: number;
   readonly end: number;
+}
+
+/**
+ * `collectGetterReads` の任意の収集。既定ではどちらも集めない — 依存解析の規則（getter-cycle・
+ * getter-untracked-read・live region）は従来の集合のまま。
+ */
+export interface CollectOptions {
+  /** 式がセグメントを丸ごと埋めるテンプレートリテラルの添字を、式を `*` にしたパスとして集める（`indexed` 付き）。 */
+  readonly templates?: boolean;
+  /** 書き込みも集める（`form: 'write'` / `'api-write'`）。 */
+  readonly writes?: boolean;
 }
 
 const PREFIX = '(async function* () {\n';
@@ -70,12 +92,17 @@ const PATH_ARG_APIS = new Set(['$getAll', '$resolve', '$dependOn', '$trackDepend
 const TRACK_APIS = new Set(['$dependOn', '$trackDependency']);
 /** この呼び出しの引数の中は依存追跡が抑止される（`$untracked` が正式名、`$untrackDependency` は旧名）。 */
 const UNTRACK_APIS = new Set(['$untracked', '$untrackDependency']);
+/** 第 1 引数のパスへ書き込む API（`$resolve` の書き込みは、読みとして `PATH_ARG_APIS` が拾う）。 */
+const WRITE_APIS = new Set(['$setAll', '$update']);
+
+/** 走査中の `collectGetterReads` の任意の収集（呼び出しの間だけ設定する — 走査は同期で入れ子にならない）。 */
+let collecting: CollectOptions = {};
 
 /**
  * getter 本体（`{ … }` の中身）から `this` 経由の読み取りを集める。
  * パースできなければ null。
  */
-export function collectGetterReads(body: string): GetterRead[] | null {
+export function collectGetterReads(body: string, options: CollectOptions = {}): GetterRead[] | null {
   let program: AnyNode;
   try {
     program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -86,7 +113,12 @@ export function collectGetterReads(body: string): GetterRead[] | null {
   if (fn === null) return null;
   const out: GetterRead[] = [];
   const root: Scope = { thisIsState: true, aliases: new Set() };
-  visit(fn.body, enterFunction(fn, root, true), out);
+  collecting = options;
+  try {
+    visit(fn.body, enterFunction(fn, root, true), out);
+  } finally {
+    collecting = {};
+  }
   return out;
 }
 
@@ -221,6 +253,29 @@ interface Segment {
   readonly text: string | null;
   /** 動的添字のときの式（中の `this` 読み取りを別途走査する） */
   readonly dynamic: Expression | null;
+  /** テンプレートリテラルの添字を `*` のパスとして読んだとき、各 `*` の手前のパス（GetterRead.indexed） */
+  readonly lists?: readonly string[];
+}
+
+/**
+ * `` `items.${i}.label` `` → `items.*.label` と、各 `*` の手前のパス（`["items"]`）。式がドット区切りの
+ * セグメントを丸ごと埋めるときだけ（先頭のセグメント・`` `a.b${i}` ``・`` `a.${i}${j}` `` は null — ランタイムも
+ * 先頭の数字の段はルートのキーとして読む）。
+ */
+function templateKey(node: AnyNode & { type: 'TemplateLiteral' }): { path: string; lists: string[] } | null {
+  let path = '';
+  const lists: string[] = [];
+  for (let k = 0; k < node.quasis.length; k++) {
+    const quasi = node.quasis[k].value.cooked;
+    if (quasi === null || quasi === undefined) return null;
+    if (k > 0 && quasi !== '' && !quasi.startsWith('.')) return null;
+    path += quasi;
+    if (k === node.expressions.length) break;
+    if (!path.endsWith('.')) return null;
+    lists.push(path.slice(0, -1));
+    path += '*';
+  }
+  return lists.length === 0 ? null : { path, lists };
 }
 
 /** 文字列リテラル / 式なしテンプレートリテラルならその文字列、それ以外は null。 */
@@ -242,6 +297,11 @@ function segmentOf(member: MemberExpression): Segment {
   }
   const text = literalString(property);
   if (text !== null) return { text, dynamic: null };
+  if (collecting.templates && property.type === 'TemplateLiteral') {
+    // (the expressions are still walked: `${this.sel}` reads the state)
+    const key = templateKey(property);
+    if (key !== null) return { text: key.path, dynamic: property, lists: key.lists };
+  }
   return property.type === 'PrivateIdentifier' ? { text: null, dynamic: null } : { text: null, dynamic: property };
 }
 
@@ -279,8 +339,10 @@ function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOpti
     if (text === null || (i > 0 && text.includes('.'))) { chain = null; break; }
     chain.push(text);
   }
+  const lists = segments[0].lists;
   out.push({
     path: root, chain, form: options.form, callee: options.callee, written: options.written,
+    ...(lists !== undefined ? { indexed: lists } : {}),
     start: start - PREFIX.length, end: end - PREFIX.length,
   });
 }
@@ -359,6 +421,18 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
         for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
+      if (collecting.writes && WRITE_APIS.has(api)) {
+        const first = node.arguments[0];
+        const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
+        if (path !== null && path.length > 0 && !path.startsWith('$')) {
+          out.push({
+            path, chain: null, form: 'api-write', callee: false, written: false,
+            start: first!.start - PREFIX.length, end: first!.end - PREFIX.length,
+          });
+        }
+        for (const argument of node.arguments) visit(argument, scope, out);
+        return;
+      }
     }
     visitMember(callee, scope, out, { form: 'member', callee: true, written: false });
   } else {
@@ -367,7 +441,10 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
   for (const argument of node.arguments) visit(argument, scope, out);
 }
 
-/** 単純代入の左辺。`this` ルートのチェーンは読みではないので集めない（動的添字の式だけ走査）。 */
+/**
+ * 単純代入の左辺。`this` ルートのチェーンは読みではないので集めない（動的添字の式だけ走査）。
+ * `CollectOptions.writes` のときは書き込み（`form: 'write'`）として集める。
+ */
 function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: GetterRead[]): void {
   const unwrapped = unwrapChain(target);
   if (unwrapped.type !== 'MemberExpression') {
@@ -376,6 +453,7 @@ function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: Gette
   }
   const { segments, base } = resolveChain(unwrapped);
   if (!isThisRoot(base, scope)) visit(base, scope, out);
+  else if (collecting.writes) emit(out, segments, { form: 'write', callee: false, written: false }, unwrapped.start, unwrapped.end);
   for (const segment of segments) {
     if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }

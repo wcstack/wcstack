@@ -79,6 +79,54 @@ describe('wcs/read-path-missing — getter・メソッドの中で読むパス�
   });
 });
 
+describe('wcs/write-path-missing — 入れ子のパスへの書き込みが state に無い', () => {
+  it('代入・複合代入・テンプレートリテラルの添字・$setAll・$update の打ち間違いを、近い名前付きで warning にする', () => {
+    const html = page(`items: [{ name: "a", amount: 1 }],
+  form: { title: "" },
+  rename() { this["items.*.nmae"] = "x"; },
+  bump() { this.$setAll("items.*.amout", [], 0); this.$update("items.*.amuont", [0], (v) => v + 1); },
+  edit(i) { this["form.titel"] = "y"; this[\`items.\${i}.nmea\`] += "!"; },`, `<p>{{ items.0.name }}</p>`);
+    const found = find(html, WcsDiagnosticCode.WritePathMissing);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual([
+      'this["items.*.nmae"]', '"items.*.amout"', '"items.*.amuont"', 'this["form.titel"]', 'this[`items.${i}.nmea`]',
+    ]);
+    expect(found.every((d) => d.severity === 'warning')).toBe(true);
+    expect(found[0].message).toBe('Path "items.*.nmae" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path. Did you mean "name"?');
+    // a compound assignment is a write first: not a read as well
+    expect(find(html, WcsDiagnosticCode.ReadPathMissing)).toEqual([]);
+  });
+
+  it('正しいパス・リストでないオブジェクトの下のキー・近い名前の無いキー・行の形が分からないリストは黙る', () => {
+    const html = page(`items: [{ name: "a" }],
+  drafts: {},
+  rows: [],
+  ok(i, key) {
+    this["items.*.name"] = "x"; this.$setAll("items.*.name", [], ""); this.$update("items.*.name", [0], (v) => v + "!");
+    this[\`drafts.\${key}.title\`] = "t"; this["items.*.zzzzzz"] = 1; this[\`rows.\${i}.label\`] += " !!!";
+  },`, `<p>{{ items.0.name }}</p>`);
+    expect(texts(html, WcsDiagnosticCode.WritePathMissing)).toEqual([]);
+  });
+
+  it('ボリュームのスクリプトの書き込みはマウントパスの下で引く', () => {
+    const html = `<wcs-state><script type="module">export default { title: "" };</script></wcs-state>
+<wcs-state mount="cart"><script type="module">export default {
+  lines: [{ qty: 1 }],
+  bump(i) { this[\`lines.\${i}.qyt\`] = 2; this.$update("lines.*.qty", [i], (v) => v + 1); },
+};</script></wcs-state><p>{{ cart.lines.0.qty }}</p>`;
+    expect(texts(html, WcsDiagnosticCode.WritePathMissing)).toEqual(['this[`lines.${i}.qyt`]']);
+  });
+});
+
+describe('wcs/read-path-missing — テンプレートリテラルの添字', () => {
+  it('リストの添字を組み立てた読みを * のパスとして引き、オブジェクトの下のキーは黙る・式の中の this も読む', () => {
+    const html = page(`items: [{ name: "a" }],
+  drafts: {},
+  sel: 0,
+  get a() { const i = 0; return this[\`items.\${i}.nmae\`] ?? this[\`drafts.\${i}.x\`] ?? this[\`items.\${this.sle}.name\`] ?? this[\`items.\${i}.name\`]; },`, `<p>{{ a }}</p>`);
+    expect(texts(html, WcsDiagnosticCode.ReadPathMissing)).toEqual(['this[`items.${i}.nmae`]', 'this.sle']);
+  });
+});
+
 describe('トップレベルの spread（wcs/path-dynamic-unknown — lint の限界の告知）', () => {
   const spread = (markup: string) => page(`...sanitizeInputs({}).inputs,
   $listKeys: { incomes: "id" },

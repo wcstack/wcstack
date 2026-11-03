@@ -11,7 +11,13 @@
  *   a near one it has. A nested read gives undefined, and what is computed from it is wrong without a word (the
  *   runtime's diagnostics add-on warns once, with the same code, when a getter has read it); a top-level key the
  *   state lacks throws when it is read. Only with a near name, as at runtime: `this["opts.flag"] ?? false` reads an
- *   optional key on purpose. A path built at run time (`this[key]`, `` this[`drafts.${key}`] ``) is not read.
+ *   optional key on purpose. A path built at run time (`this[key]`, `` this[`drafts.${key}`] `` under an object) is not
+ *   read; a template whose expressions each fill a segment under a list (`` this[`items.${i}.amout`] ``) is read as
+ *   `items.*.amout`, as the runtime reads it.
+ * - `wcs/write-path-missing` (warning): a nested path a script writes — `this["items.*.nmae"] = …`, a compound
+ *   assignment, the template form, `$setAll` / `$update`'s path — that the state does not have, beside a near one it has.
+ *   The write creates a key in the object, and the declared path's bindings stay as they were. The top-level
+ *   `this.<key> = …` is scriptStateUseValidator's.
  * - `wcs/path-dynamic-unknown` (info): a top-level spread in `export default { … }` (`...sanitizeInputs({}).inputs`)
  *   with no stateSchema. The keys it brings in cannot be read, so the state's paths are not checked at all — said
  *   once, at the spread, with what turns the checks on (a stateSchema, which `wcs-schema` derives from the types).
@@ -99,10 +105,15 @@ export function validateScriptReads(
       }
     }
     for (const callable of analyzeCallableBodies(block.content)) {
-      for (const read of collectGetterReads(callable.body) ?? []) {
-        // (a compound assignment's read is a write first: wcs/write-path-missing)
-        if (read.written || read.path.split('.').some((s) => s === '' || s.startsWith('$')) || hasRecursionWildcard(read.path)) continue;
+      for (const read of collectGetterReads(callable.body, { templates: true, writes: true }) ?? []) {
+        // a compound assignment reads and then writes: a write first
+        const write = read.written || read.form === 'write' || read.form === 'api-write';
+        // (`this.<key> = …` at the top level is scriptStateUseValidator's wcs/write-path-missing)
+        if (write && read.form !== 'api-write' && !read.path.includes('.')) continue;
+        if (read.path.split('.').some((s) => s === '' || s.startsWith('$')) || hasRecursionWildcard(read.path)) continue;
         const path = prefix + read.path;
+        // `` this[`drafts.${key}`] ``: under an object that is not a list, the expression is a key, not an index
+        if (read.indexed !== undefined && !read.indexed.every((list) => isList(prefix + list, candidates, candidateSet))) continue;
         if (pathExistsInCandidates(path, candidates, candidateSet)) continue;
         if (applicationSchema !== undefined ? resolveIndexedSchemaPath(applicationSchema, path).kind !== 'nonexistent' : isUnresolvedPath(path, index.scopes)) continue;
         const near = nearName(path, (tree ??= treeOf(candidates)));
@@ -110,18 +121,25 @@ export function validateScriptReads(
         const said = suggestion(near.segment, near.names, msgs);
         if (said === '') continue;
         const at = block.contentStart + callable.bodyStart;
+        const member = read.form === 'member' || read.form === 'write';
         out.push({
-          code: WcsDiagnosticCode.ReadPathMissing,
+          code: write ? WcsDiagnosticCode.WritePathMissing : WcsDiagnosticCode.ReadPathMissing,
           start: at + read.start,
-          end: read.form === 'member' ? at + read.start + statePart(callable.body.slice(read.start, read.end)) : at + read.end,
-          message: msgs.readPathMissing(read.path, !read.path.includes('.')) + said,
-          // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent`
-          severity: applicationSchema !== undefined ? 'error' : 'warning',
+          end: member ? at + read.start + statePart(callable.body.slice(read.start, read.end)) : at + read.end,
+          message: (write ? msgs.nestedWritePathMissing(read.path) : msgs.readPathMissing(read.path, !read.path.includes('.'))) + said,
+          // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent` (a write stays a
+          // warning, as the top-level one: a key the state adds on purpose is not a mistake)
+          severity: !write && applicationSchema !== undefined ? 'error' : 'warning',
         });
       }
     }
   }
   return out;
+}
+
+/** Is `path` a list of the state: a list candidate, or one with rows (`items.*`)? */
+function isList(path: string, candidates: readonly PathCandidate[], candidateSet: ReadonlySet<string>): boolean {
+  return candidateSet.has(`${path}.*`) || candidates.some((c) => c.path === path && c.kind === 'list');
 }
 
 /** `this.totl` / `this["a.b"]` of a longer chain (`this.totl.length`): the length of what reads the state. */

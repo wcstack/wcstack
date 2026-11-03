@@ -5,6 +5,8 @@
 ## Unreleased
 
 - **`$update(path, indexes, fn)`（`@wcstack/state` 4.16）を知る** — インラインスクリプトの型に加え、`wcs/index-arity` は `$resolve` と同じく `*` 1 本につき 1 つの添字を求める（不足も超過も error）。`**` を渡すと `wcs/recursion-unsupported`（全深さへは `$setAll(path, [], value)`）、再帰 getter の展開形へ書くと `wcs/recursion-readonly`。`$update` の書き込みは `wcs/getter-untracked-read` と `wcs/input-nested-write` の入れ子書き込みの証拠にも数える。
+- **スクリプトが書く入れ子のパスを確かめる**（`wcs/write-path-missing`、warning）— `this["items.*.nmae"] = …`・複合代入・`` this[`items.${i}.nmae`] = … ``・`$setAll` / `$update` のパスが state に無く、近い名前があるとき。トップレベルの `this.<key> = …` だけを見ていた。入れ子の書き込みは行のオブジェクトに新しいキーを作るだけで、宣言したパスの束縛には届かない。パスは読みと同じく引く（候補・`stateSchema`・ボリュームのマウントパス）。近い名前の無いキーは報告しない。
+- **テンプレートで組み立てた読みのパスも確かめる**（`wcs/read-path-missing`）— 式がリストの下のセグメントを丸ごと埋める `` this[`items.${i}.nmae`] `` を `items.*.nmae` として引く。リストでないオブジェクトの下では式はキー（`` `drafts.${key}` ``）なので黙る。
 
 ## 2.12.0 — 2026-11-03
 

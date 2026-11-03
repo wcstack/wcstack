@@ -11,7 +11,8 @@
  *   receives it. The emit reaches nothing, without a word.
  * - `wcs/write-path-missing` (warning): `this.<key> = …` where the state declares no `<key>` but a near one
  *   (`this.selectedID` beside `selectedId`). The write creates a new key, and the declared key's bindings stay as
- *   they were. Only with a near name: a key the state adds on purpose is not a mistake.
+ *   they were. Only with a near name: a key the state adds on purpose is not a mistake. A nested path a script writes
+ *   (`this["items.*.nmae"] = …`, `$setAll` / `$update`) is scriptReadValidator's, which looks paths up as bindings do.
  *
  * Each needs the state to be readable (an `export default { … }` literal); the command checks need its
  * `$commandTokens` to be a literal list. A volume's `$commandTokens` are ignored by the runtime

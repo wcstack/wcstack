@@ -93,6 +93,8 @@ export interface WcsMessageCatalog {
   commandTokenUnbound(tokenPath: string): string;
   /** state が宣言していないトップレベルのキーへの書き込み（近い名前があるときだけ）。 */
   writePathMissing(key: string): string;
+  /** A nested path a script writes (`this["items.*.lable"] = …`, `$setAll` / `$update`) that the state does not have. */
+  nestedWritePathMissing(path: string): string;
   /**
    * getter・メソッドの中で読む state のパスが宣言に無い（近い名前があるときだけ）。`topLevel`: 宣言に無いトップレベルの
    * キー（ランタイムは読んだ時点で throw する）。そうでなければ読みは undefined になる。
@@ -378,6 +380,8 @@ const ja: WcsMessageCatalog = {
     `コマンドトークン "${t}" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: ${t} の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.focus: ${t}）`,
   writePathMissing: (k) =>
     `"${k}" は state が宣言していないキーです。書き込みは新しいキーを作るだけで、宣言したキーの束縛には届きません`,
+  nestedWritePathMissing: (p) =>
+    `パス "${p}" は状態定義に存在しません。書き込みはオブジェクトに新しいキーを作るだけで、宣言したパスの束縛には届きません`,
   readPathMissing: (p, top) => top
     ? `"${p}" は state が宣言していないキーです。読んだ時点で例外になります（#301）`
     : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
@@ -676,6 +680,8 @@ const en: WcsMessageCatalog = {
     `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
   writePathMissing: (k) =>
     `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  nestedWritePathMissing: (p) =>
+    `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top
     ? `"${p}" is not a key the state declares. Reading it throws (#301)`
     : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
