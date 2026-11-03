@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/gyroscope","version":"4.15.0"};
+var pkg = {"name":"@wcstack/gyroscope","version":"4.16.0"};
 
 /**
  * gyroscopeCapabilities.ts

@@ -1345,7 +1345,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 |---|---|
 | `this.$getAll(path, indexes?)` | Get all values matching a wildcard path |
 | `this.$setAll(path, indexes, value, options?)` | Write to every address matching a wildcard path |
-| `this.$update(path, indexes, fn)` | Since 4.16 (not released yet): change one address from its current value — `fn` runs at that row (see [`$update`](#update--change-one-address)) |
+| `this.$update(path, indexes, fn)` | Since 4.16: change one address from its current value — `fn` runs at that row (see [`$update`](#update--change-one-address)) |
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path. A `*` in it is the current row's index, as in a getter: called from an event handler of a row, `$postUpdate("rows.*.cells.*.text")` announces that row's cell only. To announce several rows, name each one (`` this.$postUpdate(`rows.${r}.cells.${c}.text`) ``) |
 | `this.$dependOn(path)` | Manually register a dependency for cache invalidation |
@@ -1423,7 +1423,7 @@ Arrays broadcast by default because the target property may itself be array-valu
 
 `indexes` works exactly as in `$getAll` — a **prefix**, where missing levels mean "expand all of them" — but it is **required**. Writes get no implicit loop context, so inside a `for` template `this.$setAll("users.*.selected", [], true)` still means *every* user, never the current row.
 
-Since 4.16 (not released yet), a mapper runs at the row it writes: inside it, `this.$1` and `this["users.*.name"]` are that row's — in an arrow function too — not those of the row whose event handler called `$setAll`. Until 4.15 a mapper called from a row's handler read the clicked row. A `function` mapper's `this` is the state.
+Since 4.16, a mapper runs at the row it writes: inside it, `this.$1` and `this["users.*.name"]` are that row's — in an arrow function too — not those of the row whose event handler called `$setAll`. Until 4.15 a mapper called from a row's handler read the clicked row. A `function` mapper's `this` is the state.
 
 ```javascript
 this.$setAll("matrix.*.*", [0], 0);        // row 0 only, every column
@@ -1436,7 +1436,7 @@ One thing `$setAll` is not: a shortcut for the dependency walk. Rendering still 
 
 #### `$update` — Change One Address
 
-Since 4.16 (not released yet). `$update(path, indexes, fn)` reads the address `$resolve(path, indexes)` names, calls `fn(current, ...indexes)` and writes what it returns. It is the one-row change that `$setAll(path, [i], fn)` could also make, under a name that does not read as "every row":
+Since 4.16. `$update(path, indexes, fn)` reads the address `$resolve(path, indexes)` names, calls `fn(current, ...indexes)` and writes what it returns. It is the one-row change that `$setAll(path, [i], fn)` could also make, under a name that does not read as "every row":
 
 ```javascript
 export default {

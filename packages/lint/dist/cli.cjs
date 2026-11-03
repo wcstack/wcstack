@@ -125,7 +125,7 @@ var WcsDiagnosticCode = {
   ReadPathMissing: "wcs/read-path-missing",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
-  // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // `$getAll` / `$setAll` / `$resolve` / `$update` の添字の本数がパスの `*` の本数と噛み合わない。
   // ランタイムは #901 / #902 で throw する（diagnostics の後付けがあれば同じ code の文面。超過は 3.x では
   // 黙って無視されていた）。error。
   IndexArity: "wcs/index-arity",
@@ -1132,7 +1132,7 @@ var GUIDES = [
   [/\[wcs\/wildcard-rank\] .* ranges over the rows of/, ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'],
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
-  [/\[wcs\/index-arity\] \$resolve/, ' $resolve takes one index per "*"; $getAll / $setAll take at most that many (fewer expands the rest).'],
+  [/\[wcs\/index-arity\] \$(?:resolve|update)/, ' $resolve and $update take one index per "*"; $getAll / $setAll take at most that many (fewer expands the rest).'],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" \u2014 write "$1" here.']
 ];
 var RENAMED_FILTERS = {
@@ -2403,7 +2403,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.15.0";
+var version = "4.16.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -10838,7 +10838,9 @@ var SUFFIX = "\n})";
 var PATH_ARG_APIS = /* @__PURE__ */ new Set(["$getAll", "$resolve", "$dependOn", "$trackDependency"]);
 var TRACK_APIS = /* @__PURE__ */ new Set(["$dependOn", "$trackDependency"]);
 var UNTRACK_APIS = /* @__PURE__ */ new Set(["$untracked", "$untrackDependency"]);
-function collectGetterReads(body) {
+var WRITE_APIS = /* @__PURE__ */ new Set(["$setAll", "$update"]);
+var collecting = {};
+function collectGetterReads(body, options = {}) {
   let program;
   try {
     program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
@@ -10849,7 +10851,12 @@ function collectGetterReads(body) {
   if (fn === null) return null;
   const out = [];
   const root = { thisIsState: true, aliases: /* @__PURE__ */ new Set() };
-  visit(fn.body, enterFunction(fn, root, true), out);
+  collecting = options;
+  try {
+    visit(fn.body, enterFunction(fn, root, true), out);
+  } finally {
+    collecting = {};
+  }
   return out;
 }
 function unwrapWrapper(program) {
@@ -10954,6 +10961,21 @@ function enterFunction(fn, outer, thisIsState) {
 function isThisRoot(node, scope) {
   return node.type === "ThisExpression" && scope.thisIsState || node.type === "Identifier" && scope.aliases.has(node.name);
 }
+function templateKey(node) {
+  let path = "";
+  const lists = [];
+  for (let k = 0; k < node.quasis.length; k++) {
+    const quasi = node.quasis[k].value.cooked;
+    if (quasi === null || quasi === void 0) return null;
+    if (k > 0 && quasi !== "" && !quasi.startsWith(".")) return null;
+    path += quasi;
+    if (k === node.expressions.length) break;
+    if (!path.endsWith(".")) return null;
+    lists.push(path.slice(0, -1));
+    path += "*";
+  }
+  return lists.length === 0 ? null : { path, lists };
+}
 function literalString(node) {
   if (node.type === "Literal" && typeof node.value === "string") return node.value;
   if (node.type === "TemplateLiteral" && node.expressions.length === 0 && node.quasis.length === 1) {
@@ -10971,6 +10993,10 @@ function segmentOf(member) {
   }
   const text3 = literalString(property);
   if (text3 !== null) return { text: text3, dynamic: null };
+  if (collecting.templates && property.type === "TemplateLiteral") {
+    const key = templateKey(property);
+    if (key !== null) return { text: key.path, dynamic: property, lists: key.lists };
+  }
   return property.type === "PrivateIdentifier" ? { text: null, dynamic: null } : { text: null, dynamic: property };
 }
 function unwrapChain(node) {
@@ -10998,12 +11024,14 @@ function emit(out, segments, options, start, end) {
     }
     chain.push(text3);
   }
+  const lists = segments[0].lists;
   out.push({
     path: root,
     chain,
     form: options.form,
     callee: options.callee,
     written: options.written,
+    ...lists !== void 0 ? { indexed: lists } : {},
     start: start - PREFIX.length,
     end: end - PREFIX.length
   });
@@ -11080,6 +11108,23 @@ function visitCall(node, scope, out) {
         for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
+      if (collecting.writes && WRITE_APIS.has(api)) {
+        const first = node.arguments[0];
+        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString(first) : null;
+        if (path !== null && path.length > 0 && !path.startsWith("$")) {
+          out.push({
+            path,
+            chain: null,
+            form: "api-write",
+            callee: false,
+            written: false,
+            start: first.start - PREFIX.length,
+            end: first.end - PREFIX.length
+          });
+        }
+        for (const argument of node.arguments) visit(argument, scope, out);
+        return;
+      }
     }
     visitMember(callee, scope, out, { form: "member", callee: true, written: false });
   } else {
@@ -11095,6 +11140,7 @@ function visitWriteTarget(target, scope, out) {
   }
   const { segments, base } = resolveChain(unwrapped);
   if (!isThisRoot(base, scope)) visit(base, scope, out);
+  else if (collecting.writes) emit(out, segments, { form: "write", callee: false, written: false }, unwrapped.start, unwrapped.end);
   for (const segment of segments) {
     if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }
@@ -11527,6 +11573,7 @@ var ja = {
   updatedCallbackUnknownPath: (p) => `"${p}" \u306F state \u306E\u30D1\u30B9\u3067\u306F\u306A\u3044\u306E\u3067 $renderedCallback \u306E paths \u306B\u73FE\u308C\u305A\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093`,
   commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.focus: ${t}\uFF09`,
   writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
+  nestedWritePathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u66F8\u304D\u8FBC\u307F\u306F\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30D1\u30B9\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
   readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
   pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
@@ -11628,6 +11675,8 @@ var ja = {
         return `$watch \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u76E3\u8996\u306F\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
       case "resolve":
         return `$resolve("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$resolve \u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\u3060\u3051\u3092\u53D7\u3051\u4ED8\u3051\u307E\u3059`;
+      case "update":
+        return `$update("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$update \u306F 1 \u3064\u306E\u30A2\u30C9\u30EC\u30B9\uFF08\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\uFF09\u3060\u3051\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059 \u2014 \u5168\u6DF1\u3055\u3078\u306F $setAll("${p}", [], value) \u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
       case "assignment":
         return `this["${p}"] \u3078\u306E\u4EE3\u5165\u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u518D\u5E30 setter \u306F\u521D\u7248\u3067\u306F\u6301\u3066\u305A\u3001\u4EE3\u5165\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u306B\u3057\u304B\u6210\u7ACB\u3057\u307E\u305B\u3093\uFF09\u3002$setAll("${p}", [], value) \u3067\u5168\u6DF1\u3055\u3078\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u3059\u308B\u304B\u3001\u5177\u4F53\u30D1\u30B9\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
       case "postUpdate":
@@ -11744,6 +11793,7 @@ var en = {
   updatedCallbackUnknownPath: (p) => `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
   commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
   writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  nestedWritePathMissing: (p) => `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
   pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
@@ -11845,6 +11895,8 @@ var en = {
         return `$watch key "${p}" cannot contain "**" \u2014 watching is defined against a concrete path (a fixed number of "*")`;
       case "resolve":
         return `$resolve("${p}") cannot take "**" \u2014 it accepts only an expanded concrete path with an exactly matching index tuple`;
+      case "update":
+        return `$update("${p}") cannot take "**" \u2014 it changes one address (an expanded concrete path with an exactly matching index tuple). Write every depth with $setAll("${p}", [], value)`;
       case "assignment":
         return `this["${p}"] = \u2026 cannot use "**" (there are no recursive setters in this version; an assignment only resolves against an expanded concrete path). Broadcast with $setAll("${p}", [], value), or write a concrete path`;
       case "postUpdate":
@@ -16428,9 +16480,10 @@ function validateScanDeclarations(html, stateTagName = "wcs-state", locale2) {
 }
 
 // src/service/recursionValidator.ts
-var RECURSION_APIS = ["getAll", "setAll", "resolve", "postUpdate", "dependOn", "trackDependency"];
+var RECURSION_APIS = ["getAll", "setAll", "resolve", "update", "postUpdate", "dependOn", "trackDependency"];
 var UNSUPPORTED_API_SITE = {
   $resolve: "resolve",
+  $update: "update",
   $postUpdate: "postUpdate",
   $dependOn: "dependOn",
   $trackDependency: "trackDependency"
@@ -16680,7 +16733,7 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
     const start = offset2 + parsed.starts[0] + leading;
     const end = offset2 + parsed.starts[0] + pathArg.trimEnd().length;
     if (!hasRecursionWildcard(path)) {
-      const writes = api === "$setAll" || api === "$resolve" && parsed.args.length >= 3;
+      const writes = api === "$setAll" || api === "$update" || api === "$resolve" && parsed.args.length >= 3;
       if (writes && spec !== null) {
         const owning = owningGetterSuffix(spec, getterSuffixes, path);
         if (owning !== null) {
@@ -17431,7 +17484,7 @@ function validateNameAliases(script, scriptStart, locale2, mountPath = null) {
   for (const span of spans) pushDeclaration(span.name, span.start, span.end, "error");
   return out;
 }
-var API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
+var API_CALL = /\.\s*\$(getAll|setAll|resolve|update)\s*\(/g;
 function validateIndexArity(script, scriptStart, locale2) {
   const msgs = getMessages(locale2);
   const out = [];
@@ -17450,7 +17503,7 @@ function validateIndexArity(script, scriptStart, locale2) {
     const actual = literalArrayLength(parsed.args[1]);
     if (actual === null) continue;
     const wildcardCount = countWildcardSegments(path);
-    const requirement = api === "$resolve" ? "exact" : "atMost";
+    const requirement = api === "$resolve" || api === "$update" ? "exact" : "atMost";
     const mismatched = requirement === "exact" ? actual !== wildcardCount : actual > wildcardCount;
     if (!mismatched) continue;
     const argText = parsed.args[1];
@@ -17808,7 +17861,7 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
       API_CALL.lastIndex = parsed.end;
       const path = parsed.args.length > 0 ? literalString2(parsed.args[0]) : null;
       if (path === null) continue;
-      if (api === "setAll" || parsed.args.length >= 3) addPrefixes(path, false);
+      if (api === "setAll" || api === "update" || parsed.args.length >= 3) addPrefixes(path, false);
     }
   }
   return roots;
@@ -18145,9 +18198,12 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
       }
     }
     for (const callable of analyzeCallableBodies(block.content)) {
-      for (const read of collectGetterReads(callable.body) ?? []) {
-        if (read.written || read.path.split(".").some((s) => s === "" || s.startsWith("$")) || hasRecursionWildcard(read.path)) continue;
+      for (const read of collectGetterReads(callable.body, { templates: true, writes: true }) ?? []) {
+        const write = read.written || read.form === "write" || read.form === "api-write";
+        if (write && read.form !== "api-write" && !read.path.includes(".")) continue;
+        if (read.path.split(".").some((s) => s === "" || s.startsWith("$")) || hasRecursionWildcard(read.path)) continue;
         const path = prefix + read.path;
+        if (read.indexed !== void 0 && !read.indexed.every((list) => isList(prefix + list, candidates, candidateSet))) continue;
         if (pathExistsInCandidates(path, candidates, candidateSet)) continue;
         if (applicationSchema !== void 0 ? resolveIndexedSchemaPath(applicationSchema, path).kind !== "nonexistent" : isUnresolvedPath(path, index.scopes)) continue;
         const near = nearName(path, tree ??= treeOf(candidates));
@@ -18155,18 +18211,23 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
         const said = suggestion(near.segment, near.names, msgs);
         if (said === "") continue;
         const at2 = block.contentStart + callable.bodyStart;
+        const member = read.form === "member" || read.form === "write";
         out.push({
-          code: WcsDiagnosticCode.ReadPathMissing,
+          code: write ? WcsDiagnosticCode.WritePathMissing : WcsDiagnosticCode.ReadPathMissing,
           start: at2 + read.start,
-          end: read.form === "member" ? at2 + read.start + statePart(callable.body.slice(read.start, read.end)) : at2 + read.end,
-          message: msgs.readPathMissing(read.path, !read.path.includes(".")) + said,
-          // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent`
-          severity: applicationSchema !== void 0 ? "error" : "warning"
+          end: member ? at2 + read.start + statePart(callable.body.slice(read.start, read.end)) : at2 + read.end,
+          message: (write ? msgs.nestedWritePathMissing(read.path) : msgs.readPathMissing(read.path, !read.path.includes("."))) + said,
+          // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent` (a write stays a
+          // warning, as the top-level one: a key the state adds on purpose is not a mistake)
+          severity: !write && applicationSchema !== void 0 ? "error" : "warning"
         });
       }
     }
   }
   return out;
+}
+function isList(path, candidates, candidateSet) {
+  return candidateSet.has(`${path}.*`) || candidates.some((c) => c.path === path && c.kind === "list");
 }
 var THIS_PART = /^this\s*(?:\?\.\s*|\.\s*)(?:[A-Za-z_$][\w$]*)|^this\s*(?:\?\.)?\s*\[\s*(["'`])[^"'`]*\1\s*\]/;
 function statePart(text3) {

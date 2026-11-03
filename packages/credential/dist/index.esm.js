@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/credential","version":"4.15.0"};
+var pkg = {"name":"@wcstack/credential","version":"4.16.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

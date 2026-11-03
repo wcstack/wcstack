@@ -1336,7 +1336,7 @@ export default {
 |---|---|
 | `this.$getAll(path, indexes?)` | ワイルドカードパスにマッチする全ての値を取得 |
 | `this.$setAll(path, indexes, value, options?)` | ワイルドカードパスにマッチする全アドレスへ一括書き込み |
-| `this.$update(path, indexes, fn)` | 4.16（未リリース）から: 1 つのアドレスを今の値から書き換える。`fn` はその行の文脈で走る（[`$update`](#update--1-つのアドレスを書き換える) 参照） |
+| `this.$update(path, indexes, fn)` | 4.16 から: 1 つのアドレスを今の値から書き換える。`fn` はその行の文脈で走る（[`$update`](#update--1-つのアドレスを書き換える) 参照） |
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行。中の `*` は getter と同じく今の行の添字で、行のイベントのハンドラから呼ぶと `$postUpdate("rows.*.cells.*.text")` はその行のセルだけを通知する。複数の行を通知するには、それぞれを名指す（`` this.$postUpdate(`rows.${r}.cells.${c}.text`) ``） |
 | `this.$dependOn(path)` | キャッシュ無効化のための依存関係を手動で登録 |
@@ -1414,7 +1414,7 @@ export default {
 
 `indexes` の意味は `$getAll` と同じ**前方一致の接頭辞**（不足はその階層を全展開）ですが、**省略はできません**。書き込みには暗黙のループ文脈を与えないため、`for` テンプレートの中でも `this.$setAll("users.*.selected", [], true)` は現在行ではなく**全行**を意味します。
 
-4.16（未リリース）から、mapper は書き込む行の文脈で走ります: その中の `this.$1` や `this["users.*.name"]` は、`$setAll` を呼んだハンドラの行ではなく、書き込む行を指します（アロー関数でも）。4.15 までは、行のハンドラから呼んだ mapper はクリックされた行を読んでいました。`function` で書いた mapper の `this` は state です。
+4.16 から、mapper は書き込む行の文脈で走ります: その中の `this.$1` や `this["users.*.name"]` は、`$setAll` を呼んだハンドラの行ではなく、書き込む行を指します（アロー関数でも）。4.15 までは、行のハンドラから呼んだ mapper はクリックされた行を読んでいました。`function` で書いた mapper の `this` は state です。
 
 ```javascript
 this.$setAll("matrix.*.*", [0], 0);                    // 0 行目だけ全列
@@ -1427,7 +1427,7 @@ this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったま�
 
 #### `$update` — 1 つのアドレスを書き換える
 
-4.16（未リリース）から。`$update(path, indexes, fn)` は `$resolve(path, indexes)` と同じアドレスを読み、`fn(current, ...indexes)` を呼んで、その戻り値を書きます。`$setAll(path, [i], fn)` でもできる 1 行の書き換えを、「全行」に読めない名前で書けます:
+4.16 から。`$update(path, indexes, fn)` は `$resolve(path, indexes)` と同じアドレスを読み、`fn(current, ...indexes)` を呼んで、その戻り値を書きます。`$setAll(path, [i], fn)` でもできる 1 行の書き換えを、「全行」に読めない名前で書けます:
 
 ```javascript
 export default {

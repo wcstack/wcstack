@@ -6639,6 +6639,7 @@ interface WcsStateApi {
   $getAll<V = any>(path: string, indexes?: number[]): V[];
   $setAll<V = any>(path: string, indexes: number[], value: V | ((current: V, ...indexes: number[]) => V | undefined)): number;
   $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: { spread: true }): number;
+  $update<V = any>(path: string, indexes: number[], fn: V | ((current: V, ...indexes: number[]) => V | undefined)): void;
   $postUpdate(path: string): void;
   $resolve(path: string, indexes: number[], value?: any): any;
   $dependOn(path: string): void;

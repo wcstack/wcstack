@@ -246,6 +246,8 @@ interface WcsStateApi {
      *
      * - `indexes` は `$getAll` と同じ**前方一致の接頭辞**（`[]` で全階層を展開）。省略は不可。
      * - 関数を渡すと **mapper**（`(current, ...indexes) => next`）として要素ごとに評価される。
+     *   mapper は書き込む行の文脈で走る（4.16）: その中の `this.$1` や `this["users.*.name"]` は呼び手の行
+     *   ではなく、その行を指す（アロー関数でも）。
      * - 配列は既定でブロードキャストされる。1 件ずつ配るには `{ spread: true }` を明示する。
      * - `undefined` を書こうとした要素はスキップされる（クリアは `null`）。
      *
@@ -265,6 +267,25 @@ interface WcsStateApi {
     $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: {
         spread: true;
     }): number;
+    /**
+     * 1 つのアドレスを、今の値から書き換える（4.16）。`$resolve(path, indexes)` と同じアドレスを読み、
+     * `fn(current, ...indexes)` の戻り値を書く。
+     *
+     * - `indexes` は `$resolve` と同じく `*` 1 本につき 1 つ（本数が違えば throw）。リストの末尾より先の
+     *   添字は `fn` を呼ぶ前に `no row` で throw する。
+     * - `fn` はその行の文脈で走る: その中の `this.$1` や `this["items.*.id"]` は呼び手の行ではなく、
+     *   書き換える行を指す（アロー関数でも）。
+     * - `fn` が `undefined` を返すと何も書かない。関数でない値を渡すと、その値を書く。
+     * - パスの文字列を組み立てる `` this[`items.${i}.label`] += "!" `` と違い、パスを解析しない。
+     *
+     * @example
+     * ```ts
+     * onUpdate() {
+     *   for (let i = 0; i < this.items.length; i += 10) this.$update("items.*.label", [i], (v) => v + " !!!");
+     * }
+     * ```
+     */
+    $update<V = any>(path: string, indexes: number[], fn: V | ((current: V, ...indexes: number[]) => V | undefined)): void;
     /**
      * 指定パスの更新を手動でトリガーする。
      * Proxy の set トラップを経由せずに内部状態を変更した場合に使用。
