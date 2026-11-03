@@ -127,11 +127,21 @@ function takenSet(): WeakSet<Node> {
  * `options` goes to the binder with the subtree. A subtree held for a later binder
  * is handed over without it: that binder's first walk of the page binds what is
  * still in place there.
+ *
+ * The queue holds what is in the document, each subtree once. The router offers a
+ * route's content on every placement, so on a page that never loads a binder the
+ * queue grew by every navigation, and kept the content of routes hidden since
+ * (docs/formal-methods-study.md §8). A subtree that has left is dropped here: one
+ * that comes back is offered again by whoever put it back.
  */
 export function bindSubtree(subtree: Node, options?: IWcsBindOptions): boolean {
   const binder = getBinder();
   if (binder === null) {
-    pendingQueue().push(subtree);
+    const queue = pendingQueue();
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (!queue[i].isConnected) queue.splice(i, 1);
+    }
+    if (!queue.includes(subtree)) queue.push(subtree);
     return false;
   }
   takenSet().add(subtree);
@@ -145,8 +155,8 @@ export function wasBoundBy(subtree: Node): boolean {
 }
 
 /**
- * Bind everything offered before this binder existed. Called by the binder right
- * after it installs itself.
+ * Bind everything offered before this binder existed that is still in the document.
+ * Called by the binder right after it installs itself.
  */
 export function flushPendingBinds(): void {
   const binder = getBinder();
@@ -156,6 +166,8 @@ export function flushPendingBinds(): void {
   const pending = queue.splice(0, queue.length);
   const taken = takenSet();
   for (const subtree of pending) {
+    // (one that left since it was queued — a route hidden again — is not for a binder)
+    if (!subtree.isConnected) continue;
     taken.add(subtree);
     binder.bind(subtree);
   }
