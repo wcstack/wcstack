@@ -102,6 +102,8 @@ The author took each recommendation.
 | ③ | §4.1: the map of finished operations grows without bound | Nothing is kept for a finished operation (falls out of ①) | step 2 |
 | ④ | §4.2-3: repeated query keys read two ways | Documented in the router README (en/ja) | #611 |
 | ⑤ | §4.2-4: a key of `to` that `query-keys` does not name is not compared | A lint rule, `wcs/link-query-key-ignored` (warning) — reported where **none** of `to`'s keys is named: leaving some out is meant (a category tab to page 1, `to="?cat=a&page=1" query-keys="cat"`, is current on every page of its category) | #611 |
+
+In the mistake catalogue, ⑤'s disposition is *runtime report*: the router reads both attributes and could warn for a bound `to` too. The author kept it so on 2026-11-03, with no runtime warning scheduled.
 | ⑥ | §8-6: the binder protocol's pending queue keeps every route placed on a page without a binder | The queue holds what is in the document, each subtree once, and a late binder is handed only that (decided 2026-11-03, after steps 2 and 3) | #610 |
 
 ## 7. Plan
