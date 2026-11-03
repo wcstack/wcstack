@@ -2,18 +2,18 @@
   "$comment": "gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry's optional \"slack\" in bytes (kept across --update). \"with its chunks\" sums the entry and every chunk it imports; \"beyond the core\" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,480 B = 20 KiB, define.js 1,024 B) live in the script. Update with --update after a release build.",
   "index.esm.js": {
     "files": 1,
-    "bytes": 157611,
-    "gzip": 55269
+    "bytes": 157628,
+    "gzip": 55274
   },
   "auto.min.js": {
     "files": 1,
-    "bytes": 146168,
-    "gzip": 52063
+    "bytes": 146185,
+    "gzip": 52066
   },
   "split/core.js (with its chunks)": {
     "files": 12,
-    "bytes": 59044,
-    "gzip": 25141
+    "bytes": 59056,
+    "gzip": 25148
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
@@ -48,7 +48,7 @@
   "split/features/scopes.js (beyond the core)": {
     "files": 1,
     "bytes": 23603,
-    "gzip": 8916
+    "gzip": 8917
   },
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
@@ -63,6 +63,6 @@
   "split/auto.js (beyond the core)": {
     "files": 1,
     "bytes": 1081,
-    "gzip": 637
+    "gzip": 639
   }
 }

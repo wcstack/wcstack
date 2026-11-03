@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.12.0 — 2026-11-03
+
+`@wcstack/state` 4.15.0 のパーサと manifest、4.15.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.15.0・`@wcstack/typescript` 4.15.0 と同じ判定）。新しい規則 1 つで minor。
 
 - **`query-keys` が `to` のキーをどれも比べない `<wcs-link>` を告げる**（`wcs/link-query-key-ignored`、warning、新規）— `to="/notices?cat=event" query-keys="page"` のように、`to` が付けるキーがどれも `query-keys` に無い。`query-keys` のあるリンクは名指したキーだけを比べるので、リンク自身のクエリは判定に効かず、名指したキーが合えばどの区分でも現在（`active` と `aria-current`）になり、こう書いたタブは同時にすべて現在になる。`to` のキーの一部を外すのは意図した形（1 ページ目へ飛ぶカテゴリのタブ `to="?cat=a&page=1" query-keys="cat"`）なので報告しない。`to` のクエリはルーターと同じく `#` の前・最初の `?` の後で読む。リンクの現在判定の述語を構成と URL の組み合わせで列挙して見つかった（docs/formal-methods-study.ja.md §4.2）。
 
