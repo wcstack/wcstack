@@ -5,7 +5,7 @@
  * 「構文が正しいか」「そのパスが宣言されているか」までしか見ておらず、
  * **パス文字列から機械的に決まるはずの整合**は誰も検査していなかった。
  *
- *   wcs/index-arity              — `$getAll` / `$setAll` / `$resolve` の添字の本数 vs パス中の `*` の本数
+ *   wcs/index-arity              — `$getAll` / `$setAll` / `$resolve` / `$update` の添字の本数 vs パス中の `*` の本数
  *   wcs/getter-cycle             — パス getter どうしの循環参照
  *   wcs/getter-untracked-read    — getter の中の `this.form.name`（追跡されるのは `form` だけ）
  *   wcs/updated-callback-unbound — `$renderedCallback` が未バインドのパスを判定に使っている
@@ -238,13 +238,13 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
   return out;
 }
 
-/** `this.$getAll(` / `this.$setAll(` / `this.$resolve(` の呼び出し開始。`?.` 経由も拾う。 */
-const API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
+/** `this.$getAll(` / `this.$setAll(` / `this.$resolve(` / `this.$update(` の呼び出し開始。`?.` 経由も拾う。 */
+const API_CALL = /\.\s*\$(getAll|setAll|resolve|update)\s*\(/g;
 
 /**
- * `$getAll` / `$setAll` / `$resolve` の添字の本数を検査する。
+ * `$getAll` / `$setAll` / `$resolve` / `$update` の添字の本数を検査する。
  *
- * `$resolve` は**厳密一致**（不足はランタイムが元から throw、超過は黙って無視されていた）、
+ * `$resolve` と `$update`（4.16、1 つのアドレスを書き換える）は**厳密一致**（`$resolve` の不足はランタイムが元から throw、超過は黙って無視されていた）、
  * `$getAll` / `$setAll` は**上限**（不足は「残りの階層を全展開」という正当な意味を持つ接頭辞）。
  * severity は error: 4.0 のランタイムは呼んだ所で #901 / #902 として throw する。リテラルのパスと
  * リテラルの配列だけを見るので、検出は確実。
@@ -273,7 +273,7 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
     const actual = literalArrayLength(parsed.args[1]);
     if (actual === null) continue;
     const wildcardCount = countWildcardSegments(path);
-    const requirement = api === '$resolve' ? 'exact' as const : 'atMost' as const;
+    const requirement = api === '$resolve' || api === '$update' ? 'exact' as const : 'atMost' as const;
     const mismatched = requirement === 'exact' ? actual !== wildcardCount : actual > wildcardCount;
     if (!mismatched) continue;
     const argText = parsed.args[1];
@@ -748,7 +748,7 @@ function templateKeyPath(raw: string): string | null {
  *   - HTML: 組み込み wcs-* タグの出力プロパティへのバインド（`latitude: geo.lat`）
  *   - HTML: 上のどれかの、`for:` の行の中の相対パス（`value: .quantity` は `cart.*.quantity`）
  *   - script: `this["a.b"] = …`（複合代入・増減含む）、`` this[`a.${i}.b`] = … ``（置換は `*`）、
- *     `$setAll("a.…")`、値付き `$resolve("a.…", [...], v)`
+ *     `$setAll("a.…")`、`$update("a.…", [...], fn)`、値付き `$resolve("a.…", [...], v)`
  *   - `<wcs-state mount="a.b">` ボリューム（そのサブツリーは `a.b.*` への書き込み）
  * 数えない形: `textContent:` / mustache（読み）、ルート自身へのバインド（`typedParams: params` は
  * 丸ごと置換）、`this.a.b = …`（素のプロパティ書き込み — 反応しないので wcs/nested-assign が error にする）。
@@ -855,7 +855,7 @@ function collectNestedWriteRoots(
       API_CALL.lastIndex = parsed.end;
       const path = parsed.args.length > 0 ? literalString(parsed.args[0]) : null;
       if (path === null) continue;
-      if (api === 'setAll' || parsed.args.length >= 3) addPrefixes(path, false);
+      if (api === 'setAll' || api === 'update' || parsed.args.length >= 3) addPrefixes(path, false);
     }
   }
   return roots;

@@ -50,7 +50,7 @@ const NOT_RUN = ["$commandTokens", "$eventTokens", "$on", "$errorCallback"];
 const PREFIX = (path: string) => `[@wcstack/state] <${config.tagNames.state} mount="${path}">`;
 
 /** `$` APIs that take a state path: inside a volume the path is relative to the mount. */
-const PATH_APIS = new Set(["$getAll", "$setAll", "$resolve", "$postUpdate", "$dependOn", "$eq", "$eqIndex"]);
+const PATH_APIS = new Set(["$getAll", "$setAll", "$update", "$resolve", "$postUpdate", "$dependOn", "$eq", "$eqIndex"]);
 
 function chrootOf(engine: Engine, prefix: string): object {
   const at = (key: string) => `${prefix}.${key}`;

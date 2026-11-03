@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Upgrading
+
+- `@wcstack/state`: a `$setAll` mapper called from a row's event handler reads, through `this.$1` and a relative path, the row it writes and no longer the clicked row. A mapper that meant the clicked row: read its values into a variable before the call.
+- No workaround becomes unnecessary.
+
+### Added
+
+- `@wcstack/state`: **`$update(path, indexes, fn)`**, one address changed from its current value. It reads the address `$resolve(path, indexes)` names, calls `fn(current, ...indexes)` at that row — `this.$1` and `this["items.*.id"]` inside it are that row's — and writes what it returns; `undefined` writes nothing, and a value that is not a function is written as it is. `indexes` takes one index per `*` (`#901` otherwise), an index past the end of the list throws `no row` before `fn` runs, a readonly proxy or a getter throws before `fn` runs, and `**` is refused. `$setAll(path, [i], fn)` made the same change under a name that reads as every row; and against a path built as a string (`` this[`items.${i}.label`] += "!" ``) the path is a literal, and the engine does not parse a path string on each call. In a volume the path is relative to the mount. The core grows by 54 B.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `$update` in `wcs/index-arity` (one index per `*`, as `$resolve`), in `wcs/recursion-unsupported` and `wcs/recursion-readonly`, in the nested-write evidence of `wcs/getter-untracked-read` and `wcs/input-nested-write`, and in the inline-script types.
+
+### Changed
+
+- `@wcstack/state`: **a `$setAll` mapper runs at the row it writes.** Inside it, `this.$1` and a relative path (`this["items.*.price"]`) are that row's — in an arrow function too — not those of the row whose event handler called `$setAll`, which a mapper read until now without a word; a mapper over a path without `*` has no loop context. A `function` mapper's `this` is the state (it was `undefined`). The core grows by 6 B of the 54.
+
 ## [4.15.0] — 2026-11-03
 
 A minor from a study of extracting the specification from the code and refuting it ([docs/formal-methods-study.md](./docs/formal-methods-study.md)): every sequence of calls on the I/O nodes' request lane and every interleaving of the router's navigations, guards and view-transition frames, run against the real code, and `<wcs-link>`'s current state over configurations and URLs. They found what a page left open kept for every request and every navigation, and a link that compared none of its own query keys. `@wcstack/fetch`, `upload`, `credential`, `eyedropper`, `contacts` and `share` (their request lane), `@wcstack/router` and `@wcstack/state` (their copy of the binder protocol) and the lint changed; every other package is 4.14.0 with a new version.

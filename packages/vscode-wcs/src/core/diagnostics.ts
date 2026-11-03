@@ -76,7 +76,7 @@ export const WcsDiagnosticCode = {
   ReadPathMissing: "wcs/read-path-missing",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
-  // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // `$getAll` / `$setAll` / `$resolve` / `$update` の添字の本数がパスの `*` の本数と噛み合わない。
   // ランタイムは #901 / #902 で throw する（diagnostics の後付けがあれば同じ code の文面。超過は 3.x では
   // 黙って無視されていた）。error。
   IndexArity: "wcs/index-arity",

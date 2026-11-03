@@ -134,7 +134,7 @@ Every row is a section of this README. Unless it appears under [Where the neighb
 | **Forms** | Two-way binding for `input` / `select` / `textarea`, a radio group to one value, a checkbox group to an array, `#ro` / `#onchange` / `#prevent` / `#stop` | [Two-way binding](#two-way-binding) · [Modifiers](#modifiers) |
 | **Filters** | 48 built-ins, chainable, locale-aware formatting that reads `<html lang>` | [Filters](#filters) · [Locale](#locale) |
 | **Derived state** | Path getters declare virtual properties at any depth from one flat place; they chain, and they take setters | [Path getters](#path-getters-computed-properties) |
-| **Aggregation and bulk write** | `$getAll` / `$setAll` / `$resolve` read and write across `items.*.price` without rebuilding the array | [Proxy APIs](#proxy-apis) |
+| **Aggregation and bulk write** | `$getAll` / `$setAll` / `$update` / `$resolve` read and write across `items.*.price` without rebuilding the array | [Proxy APIs](#proxy-apis) |
 | **Recursive paths** | `$recursion` declares where a tree's shape repeats; one `**` getter covers every depth | [Recursive paths](#recursive-paths-recursion) |
 | **Reactivity** | An ES Proxy tracks reads per address, caches per address, invalidates in dependency order and batches DOM writes on a microtask | [Updating state](#updating-state) · [Dependency tracking boundaries](#dependency-tracking-boundaries) |
 | **What makes a getter run** | Getters are lazy. Demand comes from a live binding, a `$watch` or a `$stream` `args` — and from nowhere else | [Demand roots](#demand-roots--what-makes-a-getter-run) |
@@ -428,7 +428,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume holds data, getters, setters and methods, and may declare `$connectedCallback` / `$disconnectedCallback`. Inside all of them `this` is rooted at the mount path: `this.items` is the tree's `cart.items`, and the `$` APIs that take a path (`$getAll`, `$setAll`, `$resolve`, `$postUpdate`, `$dependOn`, `$eq`, `$eqPath`, `$eqIndex`) take it relative to the mount. Its getters and setters become accessors of the tree at `cart.<key>`, and its methods are reachable by path — `onclick: cart.checkout`, `this["cart.checkout"]()` from the root. Load order does not matter: a volume connected before the root is grafted when the root's engine is created, before the page is bound, and one connected while the root `<wcs-state>` is out of the page is grafted when it is put back.
+A volume holds data, getters, setters and methods, and may declare `$connectedCallback` / `$disconnectedCallback`. Inside all of them `this` is rooted at the mount path: `this.items` is the tree's `cart.items`, and the `$` APIs that take a path (`$getAll`, `$setAll`, `$update`, `$resolve`, `$postUpdate`, `$dependOn`, `$eq`, `$eqPath`, `$eqIndex`) take it relative to the mount. Its getters and setters become accessors of the tree at `cart.<key>`, and its methods are reachable by path — `onclick: cart.checkout`, `this["cart.checkout"]()` from the root. Load order does not matter: a volume connected before the root is grafted when the root's engine is created, before the page is bound, and one connected while the root `<wcs-state>` is out of the page is grafted when it is put back.
 
 A volume does not run the declarations that react to the whole tree. `$watch`, `$stream`, `$listKeys`, `$renderedCallback`, `$recursion`, `$behavior` and `$features` — and the removed `$scan`, `$streams` and `$updatedCallback` — refuse the volume: it is not grafted, and `console.error` names the element and says `$watch is not run in a volume — declare it on the root state.` Declare them on the root state with full paths — inside the root's handlers `this` is the root (`$watch: { "cart.total"(cur) { … } }`), and the root's `$renderedCallback(paths)` receives paths written from the root (`cart.items.*.name`), so filter them by the prefix. `$commandTokens`, `$eventTokens`, `$on` and `$errorCallback` are not run, with a `console.warn`. A volume takes no injections either: a `data-wcs` on the volume element (`state.taxRate: settings.taxRate`) refuses it — read the root path in a root getter (`get cartTotalWithTax() { return this["cart.subtotal"] * (1 + this["settings.taxRate"]); }`).
 
@@ -1345,6 +1345,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 |---|---|
 | `this.$getAll(path, indexes?)` | Get all values matching a wildcard path |
 | `this.$setAll(path, indexes, value, options?)` | Write to every address matching a wildcard path |
+| `this.$update(path, indexes, fn)` | Since 4.16 (not released yet): change one address from its current value — `fn` runs at that row (see [`$update`](#update--change-one-address)) |
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path. A `*` in it is the current row's index, as in a getter: called from an event handler of a row, `$postUpdate("rows.*.cells.*.text")` announces that row's cell only. To announce several rows, name each one (`` this.$postUpdate(`rows.${r}.cells.${c}.text`) ``) |
 | `this.$dependOn(path)` | Manually register a dependency for cache invalidation |
@@ -1422,6 +1423,8 @@ Arrays broadcast by default because the target property may itself be array-valu
 
 `indexes` works exactly as in `$getAll` — a **prefix**, where missing levels mean "expand all of them" — but it is **required**. Writes get no implicit loop context, so inside a `for` template `this.$setAll("users.*.selected", [], true)` still means *every* user, never the current row.
 
+Since 4.16 (not released yet), a mapper runs at the row it writes: inside it, `this.$1` and `this["users.*.name"]` are that row's — in an arrow function too — not those of the row whose event handler called `$setAll`. Until 4.15 a mapper called from a row's handler read the clicked row. A `function` mapper's `this` is the state.
+
 ```javascript
 this.$setAll("matrix.*.*", [0], 0);        // row 0 only, every column
 this.$setAll("users.*", [], rows, { spread: true });   // replace each row, keep the array
@@ -1430,6 +1433,32 @@ this.$setAll("users.*", [], rows, { spread: true });   // replace each row, keep
 `undefined` is never written — it means "skip this address" in all three forms, which keeps a mapper that forgets to `return` from wiping every row. Use `null` to clear. The return value is the number of addresses actually written.
 
 One thing `$setAll` is not: a shortcut for the dependency walk. Rendering still coalesces into a single batch, but each write is enqueued individually, so the cost matches the hand-written loop it replaces. What it buys you is the preserved list, not fewer cycles.
+
+#### `$update` — Change One Address
+
+Since 4.16 (not released yet). `$update(path, indexes, fn)` reads the address `$resolve(path, indexes)` names, calls `fn(current, ...indexes)` and writes what it returns. It is the one-row change that `$setAll(path, [i], fn)` could also make, under a name that does not read as "every row":
+
+```javascript
+export default {
+  data: [],
+  onUpdate() {
+    for (let i = 0; i < this.data.length; i += 10) {
+      this.$update("data.*.label", [i], label => label + " !!!");
+    }
+  },
+  onRename(e, $1) {
+    // fn runs at row 0, not at the clicked row: this["data.*.id"] is row 0's id
+    this.$update("data.*.label", [0], () => `renamed by ${$1}, row ${this["data.*.id"]}`);
+  },
+};
+```
+
+- `indexes` takes one index per `*`, as in `$resolve` (`wcs/index-arity` otherwise); `[]` for a path without one. An index past the end of the list throws `no row for "data.*.label"` before `fn` runs.
+- `fn` runs at that row: inside it `this.$1` is the index you passed and `this["data.*.id"]` is that row's, in an arrow function too, whichever row's handler called `$update`.
+- `undefined` writes nothing, as in `$setAll`. A value that is not a function is written as it is.
+- It throws `This state is readonly.` on a readonly proxy and inside a getter, before `fn` runs. `**` is refused, as in `$resolve` — write every depth with `$setAll(path, [], value)`.
+
+Against a path built as a string (`` this[`data.${i}.label`] += " !!!" ``), the path is a literal the lint checks, and the engine does not parse a path string on each call.
 
 #### `$resolve` — Access by Explicit Index
 
@@ -1529,7 +1558,7 @@ k=2   nodes.*.children.*.children.*
 | `$getAll(path, [])`, **explicit** | **Union of every depth** — depth-first, pre-order, ascending index |
 | `$getAll(path, [i, …])` | Rejected: a prefix cannot say which depth it applies to (`wcs/recursion-getall-form`) |
 | `$setAll(path, [], value)` | Broadcast to every depth, in that same order |
-| `$resolve`, `$postUpdate`, `$dependOn`, `$watch` keys, `$listKeys` keys, `data-wcs` in markup, direct assignment | Rejected (`wcs/recursion-unsupported`) |
+| `$resolve`, `$update`, `$postUpdate`, `$dependOn`, `$watch` keys, `$listKeys` keys, `data-wcs` in markup, direct assignment | Rejected (`wcs/recursion-unsupported`) |
 
 The bound forms need a depth to bind to, so they only resolve **inside** a recursive getter — or inside an ordinary row getter under the anchor, or an event handler bound to such a row — each of those runs for a real row to read the depth from. Read `this["nodes.**.value"]` from the top level and you get `wcs/recursion-context`, not a silent guess at which node you meant. The depth is read from the innermost evaluation frame only, the same frame the row index comes from: a plain getter that a recursive getter calls (`get "nodes.**.x"() { return this.helper }` with `get helper() { return this["nodes.**.value"] }`) has no row of its own and gets `wcs/recursion-context` too — read `**` in the recursive getter and pass the value on. The union form needs no depth, so it can be read from anywhere: a top-level getter, a plain row getter, a method.
 
@@ -1603,7 +1632,7 @@ Every other form is refused *before* the walk writes anything, so a rejected cal
 
 Everything else is a leaf, a leaf under a child node included: `$setAll("nodes.**.children.*.value", [], v)` writes the `value` of every node's children — every node but the roots.
 
-The read-only rule does not depend on spelling `**`. A recursive getter's concrete expansions — `nodes.*.total`, `nodes.*.children.*.total`, … — are refused at the write entry as well, whether the write is a fixed-arity `$setAll`, a `$resolve(path, indexes, value)` or a direct assignment, and whether or not that depth has been materialized yet. Before this check, an unmaterialized expansion looked like a plain missing key and the write landed on the node object, pinning the assigned value as the getter's cached result.
+The read-only rule does not depend on spelling `**`. A recursive getter's concrete expansions — `nodes.*.total`, `nodes.*.children.*.total`, … — are refused at the write entry as well, whether the write is a fixed-arity `$setAll`, an `$update`, a `$resolve(path, indexes, value)` or a direct assignment, and whether or not that depth has been materialized yet. Before this check, an unmaterialized expansion looked like a plain missing key and the write landed on the node object, pinning the assigned value as the getter's cached result.
 
 ### The input has to be a tree
 
@@ -1659,7 +1688,7 @@ Each of these is a diagnostic, never a silent reinterpretation:
 - Recursive setters, a `**` getter whose suffix names the structure (`get "nodes.**.children"()`), a concrete getter with the same name as a `**` getter's expansion, and writing through `**` by assignment (`this["nodes.**.x"] = v`, `++` included)
 - In a recursive `$setAll`: a mapper, `{ spread: true }`, omitted indexes, a non-empty prefix, or a non-array `indexes`. The write API has no evaluation context to bind a depth to, so `[]` is mandatory
 - In a recursive `$getAll`: a non-empty prefix, or a non-array `indexes`. **Omitting the indexes is valid** — inside a recursive getter it is the bound form, and it reads the depth being evaluated
-- `**` in `data-wcs`, in `$watch` or `$listKeys` keys, or in `$resolve` / `$postUpdate` / `$dependOn`
+- `**` in `data-wcs`, in `$watch` or `$listKeys` keys, or in `$resolve` / `$update` / `$postUpdate` / `$dependOn`
 - `$recursion` and `**` getters in a volume (`mount=`) or a mounted component (`bind-component`) — declare them on the root state
 - A recursive `<template>`, a `$depth` variable, and a public `maxDepth` option — none of the three exist
 
@@ -1975,10 +2004,10 @@ customElements.define("user-card", UserCard);
 >
 > **`#ro` on a mount is honoured:** `state#ro: user` or `state.title#ro: doc.title`
 > lets the component read the entry but not write it — `element.state.title = …`, `this.title = …`
-> in a method and `$setAll` / `$resolve` writes throw `[wcs/mount-readonly]`, and a two-way
+> in a method and `$setAll` / `$update` / `$resolve` writes throw `[wcs/mount-readonly]`, and a two-way
 > binding inside the component (`value: title`) does not write back. The host can still write the
 > path. The mounted `<wcs-state>` needs no `name`
-> in Light DOM, and `$getAll` / `$setAll` / `$resolve` / `$postUpdate` on `element.state`
+> in Light DOM, and `$getAll` / `$setAll` / `$update` / `$resolve` / `$postUpdate` on `element.state`
 > (and on `this` inside getters/methods) speak the component's own vocabulary — paths are
 > translated onto the mount and the host row's indexes are prepended automatically.
 
@@ -3119,12 +3148,12 @@ Anything that follows mechanically from the path string is reported at runtime a
 
 | Diagnostic | What it checks | Fix |
 |---|---|---|
-| `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
+| `wcs/index-arity` | `$resolve(path, indexes)` and `$update(path, indexes, fn)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
 | `wcs/wildcard-rank` | In markup, the path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting (`#1401`), a `.` path needs an enclosing `for` (`#1402`), and each `*` is the row of the `for` around it at that level — not a row of another list (`{{ b.*.y }}` inside `for: a`, `#1403`) | Add a `for`, or read the other list's row in a getter with `$resolve(path, indexes)` |
 | `wcs/getter-cycle` | Path getters must not form a dependency cycle: the evaluation reached a getter occurrence it is already evaluating | Break the cycle |
 | `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no occurrence visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
 | `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
-| `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$postUpdate` / `$dependOn`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
+| `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$update` / `$postUpdate` / `$dependOn`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
 | `wcs/recursion-declaration-invalid` | The `$recursion` declaration or a `**` getter key has a shape this version refuses: an anchor or repeat that is not a list element or carries an index segment (`"nodes.0.items.*"`), more than one anchor, a `**` key that is not a getter or has a setter — and, with the `diagnostics` add-on, a getter that names the structure, two getters expanding to one concrete path, a concrete getter with the same name as an expansion. The linter reports it first; at runtime it throws when the declaration is read | Fix the declaration as the message says |
 | `wcs/recursion-anchor` | A `**` path that does not match the one declared anchor (this version takes exactly one self-recursive anchor per state), or whose suffix after `**` is not well-formed — none at all (`get "nodes.**"`), an empty segment (`nodes.**.`, `nodes.**..x`) or a bare `*` right after `**` (`nodes.**.*`) | Spell the anchor as declared, and a real path after it |
 | `wcs/recursion-context` | A **bound** `**` was read where there is no depth to bind to — the top level, or a getter outside the anchor | Read it from a recursive or row getter, or pass `[]` to union every depth |

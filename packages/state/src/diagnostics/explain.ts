@@ -30,7 +30,7 @@ const GUIDES: [RegExp, string][] = [
   [/\[wcs\/wildcard-rank\] .* ranges over the rows of/, ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'],
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
-  [/\[wcs\/index-arity\] \$resolve/, " $resolve takes one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
+  [/\[wcs\/index-arity\] \$(?:resolve|update)/, " $resolve and $update take one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" — write "$1" here.'],
 ];
 

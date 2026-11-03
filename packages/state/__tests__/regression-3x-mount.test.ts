@@ -501,13 +501,14 @@ describe("#322 / #323 ホストの for: の行にマウントしたコンポー�
     expect(error).not.toHaveBeenCalled();
   });
 
-  it.each(WIRINGS)("%s: メソッドの $getAll / $resolve（読み・書き）/ $setAll がその行に解決される", async (_label, wiring) => {
+  it.each(WIRINGS)("%s: メソッドの $getAll / $resolve（読み・書き）/ $setAll / $update がその行に解決される", async (_label, wiring) => {
     let got: unknown = null;
     const tag = component(LIST + '<button class="g" data-wcs="onclick: readAll"></button><button class="r" data-wcs="onclick: viaResolve"></button>'
-      + '<button class="s" data-wcs="onclick: viaSetAll"></button>', () => ({
+      + '<button class="s" data-wcs="onclick: viaSetAll"></button><button class="u" data-wcs="onclick: viaUpdate"></button>', () => ({
       readAll(this: any) { got = this.$getAll("items.*.v", []); },
       viaResolve(this: any) { this.$resolve("items.*.v", [0], this.$resolve("items.*.v", [0]) + 10); },
       viaSetAll(this: any) { this.$setAll("items.*.v", [], (v: number) => v + 100); },
+      viaUpdate(this: any) { this.$update("items.*.v", [1], (v: number) => v + 1000); },
     }));
     const error = spyErrors();
     const { comps, read, ready } = await page(rowBody(tag, wiring), GROUPS(), tag);
@@ -521,6 +522,9 @@ describe("#322 / #323 ホストの for: の行にマウントしたコンポー�
     click(target, ".s");
     await ready();
     expect(all(target, "li")).toEqual(["113", "104"]);
+    click(target, ".u");
+    await ready();
+    expect(all(target, "li")).toEqual(["113", "1104"]);
     expect(all(comps()[0], "li")).toEqual(["1", "2"]);
     expect(error).not.toHaveBeenCalled();
   });

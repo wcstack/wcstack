@@ -416,6 +416,16 @@ describe('`**` を解釈しない消費者', () => {
     expect(diags[0].message).toContain('$resolve');
   });
 
+  it('$update の `**` は error（1 つのアドレスを書き換える API — 4.16）', () => {
+    const html = makeState(`${TREE_STATE},
+  bump() { this.$update("nodes.**.value", [], (v) => v + 1); }`);
+    const diags = validateRecursion(html, 'wcs-state', 'en');
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(diags[0].message).toContain('$update("nodes.**.value") cannot take "**"');
+    expect(diags[0].message).toContain('$setAll("nodes.**.value", [], value)');
+    expect(validateRecursion(html, 'wcs-state', 'ja')[0].message).toContain('$update("nodes.**.value") に "**" は渡せません');
+  });
+
   it('宣言が無いのに `**` を使うと診断される', () => {
     const html = makeState(`
   nodes: [],
@@ -1113,6 +1123,13 @@ describe('具体パス綴りでの再帰 getter への書き込み（`**` を経
     expect(diags[1].message).toContain('$resolve("nodes.*.total") writes into');
     expect(diags[2].message).toContain('$setAll("nodes.*.total.x") writes into');
     expect(diags[3].message).toContain('this["nodes.*.total"] = … writes into');
+  });
+
+  it('$update で展開形へ書くと recursion-readonly（4.16）', () => {
+    const diags = only('this.$update("nodes.*.total", [0], (v) => v + 1);');
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionReadonly]);
+    expect(diags[0].message).toContain('$update("nodes.*.total") writes into the recursive getter "nodes.**.total"');
+    expect(only('this.$update("nodes.*.value", [0], (v) => v + 1);')).toEqual([]);
   });
 
   it('読みだけの $resolve・葉への書き込み・getter の無い state は黙る', () => {

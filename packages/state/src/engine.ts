@@ -286,6 +286,18 @@ export class Engine implements ReconcileHooks {
       if (args.length < 3) return this.read(p, row);
       this.write(p, row, args[2]);
     },
+    // $update(path, indexes, fn) (4.16): $resolve's one address, written with fn(current, ...indexes) run at
+    // its row — `this.$1`, `this["items.*.x"]` are that row's. A value is written as it is; undefined writes nothing
+    $update: (path: string, indexes: number[], fn: unknown) => {
+      if (this.readonlyDepth > 0) raise(M.Readonly);
+      const p = this.pattern(unbound(path), true);
+      this.checkArity("$update", path, p, indexes, true);
+      const row = this.rowOf(p, indexes, null);
+      // (before fn runs: a row past the end throws as $resolve's write does)
+      if (p.depth > 0 && row === null) raise(M.NoRow, [p.path]);
+      const v = typeof fn === "function" ? this.callAt(fn as (cur: unknown, ...i: number[]) => unknown, row, [this.readUntracked(p, row), ...indexes]) : fn;
+      if (v !== undefined) this.write(p, row, v);
+    },
     $postUpdate: (path: string) => {
       this.resolve(unbound(path), this.ctx);
       const p = this.rp!;
@@ -1535,8 +1547,9 @@ export class Engine implements ReconcileHooks {
     let written = 0;
     for (let i = 0; i < targets.length; i++) {
       const [row, idx] = targets[i];
+      // a mapper runs at the row it writes (4.16): `this.$1`, `this["items.*.x"]` are that row's, not the caller's
       const v = typeof value === "function"
-        ? (value as (cur: unknown, ...i: number[]) => unknown)(this.readUntracked(p, row), ...idx)
+        ? this.callAt(value as (cur: unknown, ...i: number[]) => unknown, row, [this.readUntracked(p, row), ...idx])
         : spread ? (value as unknown[])[i] : value;
       if (v === undefined) continue;
       this.write(p, row, v);
