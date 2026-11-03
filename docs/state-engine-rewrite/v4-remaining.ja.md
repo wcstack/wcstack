@@ -1602,3 +1602,26 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.15.0 の公開（2026-11-03）
+
+- 中身: minor。mizchi の「実装コードから仕様を吸い出して Z3 / TLA+ でバグを払い出す」手順書の取り込みの検討（docs/formal-methods-study.md、日英）。著者は同日、推奨どおり決めた — 道具（Z3・TLA+）は入れず、実物のコードを有界に全列挙し、文書から取った名前付きの法則を一手ごとに確かめる（壊した版は試験の側に、`src` に切り替えは置かない）。決定 ①〜⑥。
+  - #607 docs: 検討（既にあるもの — トレース適合の草案・パターン試験の計画・signals の property test・継ぎ目アプリの決定 — との対応、2 つの試行、効く場所、決定、計画、段階 2・3 の結果）。
+  - #608 io-core: 要求の lane（fetch・upload・credential・eyedropper が `latest`、contacts・share が `exhaust`）を 4 方針 × 7 手まで（方針ごとに 667,424 列）回して、法則の破れ 2 つ — commit 中の dispose の後の `finalize` が次の要求の `inFlightCount` を数え下げて 2 回報告する、`retry` がもう commit できない要求に新しい signal を渡す — と、終わった操作をすべて覚える Map（10 万回の fetch で 10 万件）。lane は生きている操作だけを持つ形にし（`inFlightCount` はその大きさ）、`retry` は断る。この経路を固定していた単体試験の主張（finalize が success として確定する）はコードと違っていた — 著者の承認で stale・報告 1 回に。`operationLane.exhaustive.test.ts`（深さ 5、`LANE_DEPTH`）と壊した lane 5 つ。
+  - #609 router: `navigation.exhaustive.test.ts` — 実物のルーター、偽の裁定者とガード、リンク・戻る / 進む・クエリだけ・フレーム・ガードの許可 / 拒否の全順序。深さ 4（2,516 列、約 1.5 秒）で 4.11.0 のルーターは 4.11.2 の 2 件に最短で落ちる（`link(/b), link(/a)` と `link(/g), link(/g), refuse(oldest)`）。今のルーターは深さ 6（160,363 列）まで清い。
+  - #610 protocol: 深さ 6 の最初の実行がメモリ切れ — binder の無いページで、binder プロトコルの保留キューが置いたルート（と `<wcs-head>` の複製）を積み続けた（100 回の移動で 100 件、異なるノードは 2）。キューは文書の中にあるものを 1 回ずつ持ち、flush も文書の中のものだけを渡す。state 4.x の `bind` は切り離された部分木を素通りするので、実害は伸びだけ。core +4 B（20,338 B、残り 142 B）。
+  - #611 lint: `<wcs-link>` の現在判定を 80 構成 × 30 URL で列挙して、`wcs/link-query-key-ignored`（warning）— `query-keys` が `to` の付けるキーをどれも名指さないとき（一部を外すのは意図した形なので黙る — 決定の文言より狭めた）。mistake-catalogue の項目（扱いは runtime report、予定なし — 著者が確定）。router の README（英日）に、重複するクエリのキーを `searchParams` は最後の値で、リンクはすべての値で読むこと。
+- 準備: PR #612（merge commit 0484b289）。CHANGELOG を `[4.15.0] — 2026-11-03` として締め（要約、Upgrading＝開いたままのページのメモリ・新しい lint の warning は `--strict` で落ちる・外せる回避策は無い）、docs/upgrading-4x.md（日英）に 4.15.0 の節と「4.15.0 でもまだ要るもの」に重複キーの 2 つの読み方、固定版 18 か所を 4.15.0 にした。組み合わせの確認: 変わった 8 パッケージを src から作り、e2e（2 ワーカー）455 件通過、homeroom の 2 件は手元の環境の問題（サーバーが起動しない。4.13.0 / 4.14.0 の dist でも同じ）。
+- main で `minor`（run 41580572217）。成功した: 版を上げたコミット 6b74a8b2、タグ `v4.15.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8/8。1 回目で問題なし。
+- 公開後の作業（同日）:
+  - PR #613（merge commit 970f29f1）: サイズの基準値を 4.15.0 の dist で取り直した（`core.min.js` 20,334 → 20,338 B、分割の core 25,141 → 25,148 B、`index.esm.js` 55,269 → 55,274 B、`auto.min.js` 52,063 → 52,066 B、add-on は 0〜2 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字、Testing に有界全列挙のスイート。拡張を 2.12.0 に（新しい規則 1 つ）。
+  - 拡張 2.12.0: 970f29f1 から worktree で作成、試験 1,428、890 ファイル、SHA-256 `e79b8d14bffe53ffc5932e4b03b4f81f4d8cf32698ca71979109a24fdf8a3b4b`。公開は著者。
+  - wcstack-skill: PR #57（merge commit 10fcd90）で router の参照に `query-keys` で `to` のキーを名指す規則と重複キーの 2 つの読み方、SKILL.md の lint の一覧に新しい code、刻印と固定 URL（7 本とも 200）。注釈付きタグ `v4.15.0`。
+  - LP（wcstack.github.io e12d6e2）: リリースの表示、v4.15.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-LHDAv5…`）、大きさは約 77 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
+- 残り:
+  - 拡張 2.12.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.12.0`。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
