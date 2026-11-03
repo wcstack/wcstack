@@ -236,6 +236,8 @@ export interface WcsMessageCatalog {
   baseHrefMissing(): string;
   /** `<wcs-router>` の直後に無い `<wcs-outlet>`（どの router にも使われない）。 */
   routerOutletMisplaced(): string;
+  /** `<wcs-link>` の `to` が付けるキー（`toKeys`）が、どれも `query-keys`（`named`）に無い。 */
+  linkQueryKeyIgnored(toKeys: string, named: string): string;
   signalsDualEntry(): string;
   /** import map が @wcstack/signals と /dom の両方を割り当てている（別ファイルの module が 2 つ目のコアを持つ）。 */
   signalsImportMapBoth(): string;
@@ -501,6 +503,8 @@ const ja: WcsMessageCatalog = {
     `@wcstack/router を使う SPA には <head> 内の <base href="/">（またはそれを作る <head> の同期スクリプト — basename にロケールを置く形）が必要です（無いとディープリンクで basename が誤導出されます）`,
   routerOutletMisplaced: () =>
     `この <wcs-outlet> は <wcs-router> の直後に無いので、どの router も使いません。router は自分の直後の要素だけを outlet として使い、そこに <wcs-outlet> が無ければ自前の outlet を作ります。ルートは router の直後に描かれ、この outlet は空のままです — <wcs-router> の直後へ移してください`,
+  linkQueryKeyIgnored: (toKeys, named) =>
+    `この <wcs-link> の to が付けるキー（${toKeys}）は、どれも query-keys（${named}）にありません。query-keys のあるリンクは名指したキーだけを比べるので、リンク自身のクエリは判定に効かず、${named} が合えば ${toKeys} が何でも現在のリンクになります — こう書いたタブは同時にすべて現在になります。リンクが表すキーを名指してください（query-keys="${toKeys}"）`,
   signalsDualEntry: () =>
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
   signalsImportMapBoth: () =>
@@ -795,6 +799,8 @@ const en: WcsMessageCatalog = {
     `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one — the form for a locale in the basename (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () =>
     `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty — move it right after the <wcs-router>`,
+  linkQueryKeyIgnored: (toKeys, named) =>
+    `None of the keys this <wcs-link>'s to sets (${toKeys}) is named in query-keys (${named}). A link with query-keys compares only the keys it names, so its own query plays no part: it is current wherever ${named} match, whatever ${toKeys} is — tabs written this way are all current at once. Name the keys the link is for (query-keys="${toKeys}")`,
   signalsDualEntry: () =>
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
   signalsImportMapBoth: () =>

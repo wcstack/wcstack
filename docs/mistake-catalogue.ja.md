@@ -72,7 +72,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
 | 実行時 | 67 |
-| lint だけ — 条件付きの沈黙 | 24 |
+| lint だけ — 条件付きの沈黙 | 25 |
 | 文書だけ — 沈黙 | 42 |
 | 数えない lint の code | 19 |
 
@@ -149,6 +149,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
 | `semantics: "handle"` と宣言された出力を state のパスに束ねる: `<wcs-camera data-wcs="streamReady: cam.stream">`、またはイベントの `MediaStream` を state に書く。 | `wcs/handle-bound-as-value` (warning) | 動く。生きた `MediaStream` が素のまま state に入る。ただしスナップショットも DevTools も SSR も運べず、プロトコルはハンドルを値の置き場ではなく ref か callback で受けると定める。 | 劣化 | 設計で消す — 5.0 の議題（破壊的）。継ぎ目アプリ state-field-report が見つけた（どちらの形も動き、何も言わなかった）。lint は束縛の形を読む。5.0 でランタイムがパスに束ねたハンドルの出力を拒むことはできる。イベントのハンドラからの書き込みはどちらにも見えない。 |
+| `<wcs-link>` に、`to` が付けるキーをどれも名指さない `query-keys` を付ける（`to="/notices?cat=event" query-keys="page"`）。 | `wcs/link-query-key-ignored` (warning) | `query-keys` のあるリンクは名指したキーだけを比べるので、リンク自身のクエリは判定に効かない: 名指したキーが合えばどの区分でも現在（`active` クラスと `aria-current`）になり、こう書いたタブは同時にすべて現在になる。README は `query-keys` が何を比べるかを書くが、リンク自身のキーが外れることは何も言わない。 | 劣化 | 実行時に知らせる — 4.x。lint は、静的な `to` が付けるキーがどれも名指されていないときに報告する。一部を外すのは意図した形（1 ページ目へ飛ぶカテゴリのタブ `to="?cat=a&page=1" query-keys="cat"`）。リンクの述語の列挙で見つかった（[formal-methods-study.ja.md](./formal-methods-study.ja.md) §4.2）。router は両方の属性を読むので、束ねた `to` でも言える。予定はまだ無い。 |
 | ライブリージョン（`aria-live`、`role="status"` / `"log"`）を `if:` の枝・`for:` の行・`<wcs-route>` に置き、文を書いて持たせるか、枝の条件が読むものを見せる（`<template data-wcs="if: notice"><p role="status" data-wcs="textContent: notice">`）。 | `wcs/live-region-inserted` (warning) | リージョンは文ごとページに入り、スクリーンリーダーが読み上げるのはページにあるリージョンの文が変わったとき: 知らせは読まれない。挿入したときに読み上げられるのは `role="alert"` だけ（user agent が alert のイベントを出す）で、聞かせたい状態の知らせは常にページにあるリージョンに置く。継ぎ目アプリ city-library は Chromium で読み上げを 1 度も測らなかった。コンソールも lint も axe も何も言わなかった。 | 劣化 | lint のまま（実行時には見えない）。4.10 から lint が、文がリージョンと一緒に入るとマークアップから分かる所（リージョン自身の文・条件の読むものに束ねた `if:` の文）で報告する。束ねた文が遷移の前に入るルートのリージョンや、`<wcs-view-transition>` が差し替えを待たせる間に文が届くものは見えない — 同じマークアップが、ルートを表示している間に変わるフォームのエラーには正しいため。リージョンはページの階層に置く。 |
 | `<wcs-state name="…">` を書く（v1）。 | `wcs/named-state-deprecated` (error) | 4.0 は `name` を読まない。単独では害が無く、名前付き State が 2 つある v1 のページは代わりに `#47` で失敗する。 | 劣化 | 実行時に知らせる — 4.x。diagnostics の後付けが要素のマウントで警告できる。価値は低い。 |
 

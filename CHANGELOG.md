@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Added
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/link-query-key-ignored`** (warning). A `<wcs-link>` whose `query-keys` names none of the keys its `to` sets (`to="/notices?cat=event" query-keys="page"`): a link with `query-keys` compares only the keys it names, so its own query plays no part — it is current wherever those keys match, on every category, and tabs written this way are all current at once. Leaving some of `to`'s keys out is not reported: a category tab to page 1, `to="?cat=a&page=1" query-keys="cat"`, is current on every page of its category. Enumerating the link's predicate over configurations and URLs found it ([docs/formal-methods-study.md](./docs/formal-methods-study.md) §4.2).
+
+### Fixed
+
+- `@wcstack/router`: **the README says that `<wcs-link>` and `searchParams` read a repeated query key differently.** A link compares every value of a repeated key, and `searchParams` keeps the last, so on `?tag=a&tag=b` a link to `?tag=b` is not current while `searchParams.tag` is `"b"`. Each was documented on its own.
+
 ## [4.14.0] — 2026-11-02
 
 A minor that brings back what 3.x did for a reorder and the 4.0 engine had dropped, found while landing 4.13's swap: a row the list moves keeps its focus, its iframe's page and its running CSS animations, where the browser has `moveBefore()`. Only `@wcstack/state` changed; every other package is 4.13.0 with a new version.

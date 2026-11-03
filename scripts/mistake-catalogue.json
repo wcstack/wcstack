@@ -304,6 +304,15 @@
       "note": { "en": "Since 4.10 the lint reports it where the markup shows the text arrives with the region (the region's own text; an `if:` text bound to what its condition reads). A route-body region whose bound text is set before the navigation, or arrives while `<wcs-view-transition>` holds the swap, is not seen: the same markup is right for a form's error that changes while the route is shown. Keep regions at the page level.", "ja": "4.10 から lint が、文がリージョンと一緒に入るとマークアップから分かる所（リージョン自身の文・条件の読むものに束ねた `if:` の文）で報告する。束ねた文が遷移の前に入るルートのリージョンや、`<wcs-view-transition>` が差し替えを待たせる間に文が届くものは見えない — 同じマークアップが、ルートを表示している間に変わるフォームのエラーには正しいため。リージョンはページの階層に置く。" }
     },
     {
+      "id": "link-query-key-ignored",
+      "lint": [{ "code": "wcs/link-query-key-ignored", "severity": "warning" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Gives a `<wcs-link>` a `query-keys` that names none of the keys its `to` sets (`to=\"/notices?cat=event\" query-keys=\"page\"`).", "ja": "`<wcs-link>` に、`to` が付けるキーをどれも名指さない `query-keys` を付ける（`to=\"/notices?cat=event\" query-keys=\"page\"`）。" },
+      "effect": { "en": "A link with `query-keys` compares only the keys it names, so its own query plays no part: it is current — the `active` class and `aria-current` — wherever those keys match, on every category, and tabs written this way are all current at once. The README says what `query-keys` compares; nothing says the link's own keys are left out.", "ja": "`query-keys` のあるリンクは名指したキーだけを比べるので、リンク自身のクエリは判定に効かない: 名指したキーが合えばどの区分でも現在（`active` クラスと `aria-current`）になり、こう書いたタブは同時にすべて現在になる。README は `query-keys` が何を比べるかを書くが、リンク自身のキーが外れることは何も言わない。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The lint reports it where none of the keys a static `to` sets is named; leaving some out is meant (a category tab to page 1, `to=\"?cat=a&page=1\" query-keys=\"cat\"`). Found by enumerating the link's predicate ([formal-methods-study.md](./formal-methods-study.md) §4.2). The router reads both attributes and could say so for a bound `to` too; not scheduled.", "ja": "lint は、静的な `to` が付けるキーがどれも名指されていないときに報告する。一部を外すのは意図した形（1 ページ目へ飛ぶカテゴリのタブ `to=\"?cat=a&page=1\" query-keys=\"cat\"`）。リンクの述語の列挙で見つかった（[formal-methods-study.ja.md](./formal-methods-study.ja.md) §4.2）。router は両方の属性を読むので、束ねた `to` でも言える。予定はまだ無い。" }
+    },
+    {
       "id": "binding-syntax",
       "lint": [{ "code": "wcs/binding-syntax", "severity": "error" }],
       "runtime": "same", "harm": "broken",
