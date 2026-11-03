@@ -331,7 +331,17 @@ No workaround became unnecessary.
 
 No workaround became unnecessary.
 
-## Still needed on 4.15.0
+### 4.16.0
+
+2026-11-04 — [CHANGELOG](../CHANGELOG.md#4160--2026-11-04)
+
+- `@wcstack/state`: `$update(path, indexes, fn)` changes one address from its current value: one index per `*`, `fn(current, ...indexes)` run at that row, an index past the end throws before `fn` runs (state README, "`$update`").
+- `@wcstack/state`: a `$setAll` mapper runs at the row it writes. Called from a row's event handler, `this.$1` and a relative path inside it read the written row, not the clicked one; a mapper that meant the clicked row reads its values into a variable before the call.
+- `@wcstack/lint`: `wcs/write-path-missing` warns about a nested path a script writes (`this["items.*.nmae"] = …`, `$setAll` / `$update`), and `wcs/read-path-missing` reads `` this[`items.${i}.nmae`] `` — both warnings, which fail `--strict`.
+
+A workaround became unnecessary: a `$setAll` mapper read another field of its own row with `$resolve(path, [i])`; `this["items.*.price"]` inside it is that row's now.
+
+## Still needed on 4.16.0
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").

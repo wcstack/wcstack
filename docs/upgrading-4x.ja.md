@@ -331,7 +331,17 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策はありません。
 
-## 4.15.0 でもまだ要るもの
+### 4.16.0
+
+2026-11-04 — [CHANGELOG](../CHANGELOG.md#4160--2026-11-04)
+
+- `@wcstack/state`: `$update(path, indexes, fn)` は 1 つのアドレスを今の値から書き換える。添字は `*` 1 本につき 1 つ、`fn(current, ...indexes)` はその行の文脈で走り、末尾より先の添字は `fn` を呼ぶ前に throw する（state の README、「`$update`」）。
+- `@wcstack/state`: `$setAll` の mapper は書き込む行の文脈で走る。行のイベントハンドラから呼ぶと、その中の `this.$1` と相対のパスはクリックされた行ではなく書き込む行を読む。クリックされた行を読むつもりだった mapper は、呼ぶ前にその値を変数に読んでおく。
+- `@wcstack/lint`: `wcs/write-path-missing` がスクリプトの書く入れ子のパス（`this["items.*.nmae"] = …`・`$setAll` / `$update`）を、`wcs/read-path-missing` が `` this[`items.${i}.nmae`] `` を確かめる。どちらも warning で、`--strict` では落ちる。
+
+要らなくなった回避策: `$setAll` の mapper が自分の行のほかのフィールドを `$resolve(path, [i])` で読んでいた。今はその中の `this["items.*.price"]` がその行のものになる。
+
+## 4.16.0 でもまだ要るもの
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。

@@ -6,13 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.16.0] — 2026-11-04
+
+A minor from a study of js-framework-benchmark's partial update, whose page writes `` this[`data.${i}.label`] += " !!!" ``: a path built as a string, which the lint could not read and the engine parsed on each call. `$update(path, indexes, fn)` changes one address from its current value — in Chromium at 4× CPU slowdown the benchmark's "Update every 10th row" takes 3.9 ms instead of 5.2 ms from the click to the changed DOM — and a `$setAll` mapper runs at the row it writes. The lint checks a nested path a script writes, and a path built with a template under a list. `@wcstack/state`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.15.0 with a new version.
 
 ### Upgrading
 
 - `@wcstack/state`: a `$setAll` mapper called from a row's event handler reads, through `this.$1` and a relative path, the row it writes and no longer the clicked row. A mapper that meant the clicked row: read its values into a variable before the call.
 - `@wcstack/lint`: `wcs/write-path-missing` warns about a nested path a script writes and the state lacks beside a near one, and `wcs/read-path-missing` reads a path built with a template under a list. Both are warnings, which fail `--strict`. Fix the spelling they name.
-- No workaround becomes unnecessary.
+- `@wcstack/state`: a `$setAll` mapper no longer needs `$resolve(path, [i])` to read another field of the row it writes: `this["items.*.price"]` inside it is that row's.
 
 ### Added
 
