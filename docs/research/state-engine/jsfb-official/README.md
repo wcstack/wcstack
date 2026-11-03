@@ -220,3 +220,17 @@ rc.2 と同じハーネス（`f2df01a`、`jsfb40` の clone）で、4.0.0-rc.7�
 
 - 4.0 の値は全部入りの `auto.min.js`。rc.2 の 133.7 / 42.6KB から、rc.3〜rc.7 の修正と追加（既知の制限の解消、ネイティブ要素のコマンド、規模の修正、examples の e2e で見つけたものの修正）の分だけ増えた。
 - first paint は 1 回ずつの値で、同じ signals が 174.6（rc.2）と 404.6ms（rc.7）に散らばる。差は読めない。
+
+## 4.16.0: partial update を `$update` で（2026-11-04）
+
+9 月から script の差として残っていた partial update の書き込み（`` this[`data.${i}.label`] += " !!!" ``）は、パスの文字列を組み立て、エンジンが呼ぶたびにそれを解析していた。4.16.0 の `$update("data.*.label", [i], fn)` はリテラルのパスと添字の配列で同じ行を書き換える。`pages/wcstack-state-4/` と `packages/state/__e2e__/benchmark/index.html` の `onUpdate` をこれに書き換えた。
+
+- 公式のハーネスでは測り直していない。ページの中で、同じ bundle（4.16.0 の `auto.min.js`）のまま 2 つのページを交互に読み（ABBA）、クリックから DOM の変化を MutationObserver が見るまでを測った（`bench/inpage-ab.mjs` の写しで、bundle ではなくページの HTML を差し替えたもの）。Chromium（headless）、各ページの前に 5 回の空回し。paint は含まない。
+
+| 項目 | `` this[`data.${i}.label`] += " !!!" `` | `$update` | 比 |
+|---|---:|---:|---:|
+| 1k 行・10 行ごと、CPU 4 倍（8 ページ × 40 回の中央値） | 5.20 ms | 3.90 ms | 0.75 |
+| 10k 行・10 行ごと、スロットル無し（8 ページ × 30 回） | 8.80 ms | 7.50 ms | 0.85 |
+
+- 8 ページのどれでも `$update` の方が速かった。4 倍の 1.3ms の差は、rc.7 の計測で vanillajs から離れていた partial update の script（3.0 対 1.0ms）のおよそ 3 分の 2 に当たる。合計（29.0ms、paint を含む）に対しては 4〜5 %。
+- happy-dom（Node）で書き込みのループだけを測ると、1,000 行の 100 回で 0.55 → 0.22ms。差の元はパスの解析だけではない。`set` で同じキーの解析を 1 件覚えても 1 割しか縮まず、テンプレート文字列の組み立て・`split` / `join`・新しい文字列のハッシュ・細かい確保がまとめて効いている。
