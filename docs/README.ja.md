@@ -66,6 +66,7 @@
 | [state-next-major-tech-survey.md](./state-next-major-tech-survey.md) | [state-next-major-tech-survey.ja.md](./state-next-major-tech-survey.ja.md) |
 | [state-next-major-wiring-design.md](./state-next-major-wiring-design.md) | [state-next-major-wiring-design.ja.md](./state-next-major-wiring-design.ja.md) |
 | [state-next-major-runtime-design.md](./state-next-major-runtime-design.md) | [state-next-major-runtime-design.ja.md](./state-next-major-runtime-design.ja.md) |
+| [formal-methods-study.md](./formal-methods-study.md) | [formal-methods-study.ja.md](./formal-methods-study.ja.md) |
 
 ここまでで優先分（コード・examples・README が参照している文書）は全て完了。残る未翻訳は内部の設計メモと実装計画（`*-tag-design.md` / `*-impl-plan.md` / `state-*.md` / `io-node-*.md` / `architecture-hardening/01`〜`08`・`11`）で、触るときに合わせて翻訳する。
 

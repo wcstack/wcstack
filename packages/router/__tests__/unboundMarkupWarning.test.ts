@@ -132,6 +132,7 @@ describe('protocol/binder — router に載るコピー', () => {
     delete globals[BINDER_KEY];
     delete globals[Symbol.for('wcstack.binder.pending')];
     delete globals[Symbol.for('wcstack.binder.taken')];
+    document.body.innerHTML = '';
   });
 
   it('binder が居なければ引き取りは何もしないこと', () => {
@@ -148,6 +149,8 @@ describe('protocol/binder — router に載るコピー', () => {
     const taken: Node[] = [];
     const first = document.createElement('div');
     const second = document.createElement('span');
+    // キューは文書の中にあるものを持つ（router は置いたものを差し出す）
+    document.body.append(first, second);
     bindSubtree(first);
     bindSubtree(second);
 
@@ -165,7 +168,7 @@ describe('protocol/binder — router に載るコピー', () => {
 
   it('引き取りは一度きりであること', () => {
     const taken: Node[] = [];
-    bindSubtree(document.createElement('div'));
+    bindSubtree(document.body.appendChild(document.createElement('div')));
     globals[BINDER_KEY] = {
       protocol: 'wcs-binder',
       version: 1,
