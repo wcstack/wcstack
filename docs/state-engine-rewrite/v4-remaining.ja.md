@@ -1636,11 +1636,10 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8/8。1 回目で問題なし。README の未リリースの印はリリースが外した（0 件）。
 - 公開後の作業（同日）:
   - PR #619（merge commit 209a8b68）: サイズの基準値を 4.16.0 の dist で取り直した（`core.min.js` 20,338 → 20,392 B、分割の core 25,148 → 25,209 B、`index.esm.js` 55,274 → 55,364 B、`auto.min.js` 52,066 → 52,155 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字。拡張を 2.13.0 に。jsfb のページ（`pages/wcstack-state-4/` と `packages/state/__e2e__/benchmark/`）の `onUpdate` を `$update` に書き換え、ページの中の A/B（4.16.0 の同じ bundle、Chromium、クリックから DOM の変化まで）を jsfb-official の README に記録 — 1k 行 ×4 で 5.20 → 3.90 ms、10k 行 ×1 で 8.80 → 7.50 ms。公式のハーネスは回していない。
-  - 拡張 2.13.0: 209a8b68 から worktree で作成、試験 1,440、890 ファイル、SHA-256 `73f9788da7e5b356d67099db1b088c2bead330582a106ddf0a66eccb2b732a4c`。公開は著者。
+  - 拡張 2.13.0: 209a8b68 から worktree で作成、試験 1,440、890 ファイル、SHA-256 `73f9788da7e5b356d67099db1b088c2bead330582a106ddf0a66eccb2b732a4c`。2026-11-04 に著者が公開し、Marketplace の配布物（vspackage）と SHA が一致した。注釈付きタグ `vscode-wcs-v2.13.0`（209a8b68）。
   - wcstack-skill: PR #58（merge commit 2402e1f）で state の参照に `$update` の節と表の行、`$setAll` の mapper の文脈、SKILL.md の lint の一覧、刻印と固定 URL（7 本とも 200）。注釈付きタグ `v4.16.0`。
   - LP（wcstack.github.io fe61cb7）: リリースの表示、v4.16.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-PBI4ek…`）、大きさは約 77 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
 - 残り:
-  - 拡張 2.13.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.13.0`。
   - 上流の js-framework-benchmark へページの変更を出すか（著者の判断）。
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
