@@ -218,6 +218,51 @@ describe("collectGetterReads — 集めない形（偽陽性ゼロの根拠）",
   });
 });
 
+describe("collectGetterReads — 任意の収集（templates / writes）", () => {
+  const withOptions = (body: string) => collectGetterReads(body, { templates: true, writes: true })!;
+
+  it("既定ではテンプレートリテラルの添字も書き込みも集めないこと（依存解析の規則は従来の集合のまま）", () => {
+    expect(paths("const i = 0; this[`items.${i}.label`] = this[`items.${i}.name`]; this.$setAll(\"a.*.b\", [], 1);")).toEqual([]);
+  });
+
+  it("式がセグメントを丸ごと埋めるテンプレートリテラルを * のパスにし、* の手前のパスを indexed に載せること", () => {
+    const found = withOptions("const i = 0, j = 1; return this[`items.${i}.label`] + this[`a.${i}.b.${j}.c`] + this[`list.${i}`];");
+    expect(found.map((r) => [r.path, r.indexed])).toEqual([
+      ["items.*.label", ["items"]],
+      ["a.*.b.*.c", ["a", "a.*.b"]],
+      ["list.*", ["list"]],
+    ]);
+  });
+
+  it("先頭のセグメント・セグメントの一部・続けた 2 つの式は読まないこと（式の中の this は読む）", () => {
+    const found = withOptions("const k = 'x', i = 0; return this[`${k}.x`] + this[`a.b${i}`] + this[`a.${i}${i}`] + this[`a.${i}x`] + this[`items.${this.sel}.v`];");
+    expect(found.map((r) => [r.path, r.indexed ?? null])).toEqual([
+      ["items.*.v", ["items"]],
+      ["sel", null],
+    ]);
+  });
+
+  it("単純代入の左辺を write、複合代入を読み兼書き、$setAll / $update のパスを api-write（範囲はパスのリテラル）として集めること", () => {
+    const body = "const self = this; this[\"a.b\"] = 1; self[`items.${0}.v`] = 2; this[\"c.d\"] += 1; this.$setAll(\"x.*.y\", [], 0); this.$update(\"z.*.w\", [0], (v) => v + this.n);";
+    const found = withOptions(body);
+    expect(found.map((r) => [r.path, r.form, r.written])).toEqual([
+      ["a.b", "write", false],
+      ["items.*.v", "write", false],
+      ["c.d", "member", true],
+      ["x.*.y", "api-write", false],
+      ["z.*.w", "api-write", false],
+      ["n", "member", false],
+    ]);
+    const api = found.filter((r) => r.form === "api-write");
+    expect(api.map((r) => body.slice(r.start, r.end))).toEqual(['"x.*.y"', '"z.*.w"']);
+  });
+
+  it("$ のパス・リテラルでないパス・this でない呼び手の $setAll は書き込みとして集めないこと", () => {
+    const found = withOptions("const p = 'a'; this.$setAll(p, [], 1); this.$update(\"$x\", [], 1); other.$setAll(\"a.b\", [], 1); this.$setAll(...args);");
+    expect(found.filter((r) => r.form === "api-write")).toEqual([]);
+  });
+});
+
 describe("collectGetterReads — パース失敗", () => {
   it("構文が壊れていれば null を返すこと（例外を外に出さない）", () => {
     expect(collectGetterReads(`return this.a +;`)).toBeNull();
