@@ -253,6 +253,11 @@ export const WcsDiagnosticCode = {
   // router。router は自前の outlet を直後に作り、ページはそこに描かれ、置いた outlet は空のまま。
   // ランタイムも同じ code で警告する（docs/router-outlet-placement.md）。
   RouterOutletMisplaced: "wcs/router-outlet-misplaced",
+  // `query-keys` を持つ `<wcs-link>` の `to` が付けるキーが、どれも `query-keys` に無い。リンクは名指したキーだけを
+  // 比べるので、自分のクエリは判定に効かず、名指したキーが合えばどこでも現在になる（そう書いたタブは同時にすべて
+  // 現在）。`to` のキーの一部だけを比べない形（`to="?cat=a&page=1" query-keys="cat"`）は意図どおりなので黙る
+  // （docs/formal-methods-study.md §4.2）。warning。
+  LinkQueryKeyIgnored: "wcs/link-query-key-ignored",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
   // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その

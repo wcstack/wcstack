@@ -13,6 +13,8 @@
  * - RouterOutletMisplaced: `<wcs-router>` の直後に無い `<wcs-outlet>` があり、直後に outlet を
  *   持たない router がある（router は直後の兄弟だけを outlet にし、無ければ自前で作る。置いた
  *   outlet は空のまま — docs/router-outlet-placement.md。ランタイムも同じ code で警告する）
+ * - LinkQueryKeyIgnored: `query-keys` を持つ `<wcs-link>` の `to` が付けるキーが、どれも `query-keys` に無い
+ *   （リンク自身のクエリが判定に効かず、名指したキーが合えばどこでも現在 — docs/formal-methods-study.md §4.2）
  * - SignalsDualEntry: `@wcstack/signals` と `@wcstack/signals/dom` の実参照が同一ページに
  *   混在（CDN では各エントリがコア同梱の自己完結バンドルのため、リアクティブコアが
  *   二重化して境界で反応が壊れる）。コメント内の言及に誤反応しないよう、
@@ -29,6 +31,7 @@
 
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { getMessages } from '../core/messages.js';
+import { extractAttribute, extractAttributeSpan, findStartTagRegions } from '../language/htmlParse.js';
 
 interface ScriptSrcOccurrence {
   /** 読み込まれるパッケージ名（`@wcstack/<pkg>` の `<pkg>`。一括バンドル `wcstack/auto` は中身の全部）。 */
@@ -100,6 +103,15 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
       code: WcsDiagnosticCode.RouterOutletMisplaced,
       start: outlet.start, end: outlet.end, severity: 'warning',
       message: msgs.routerOutletMisplaced(),
+    });
+  }
+
+  // --- LinkQueryKeyIgnored: to のキーをどれも比べない query-keys ---
+  for (const link of findLinksIgnoringOwnQuery(scanText)) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.LinkQueryKeyIgnored,
+      start: link.start, end: link.end, severity: 'warning',
+      message: msgs.linkQueryKeyIgnored(link.toKeys.join(' '), link.named.join(' ')),
     });
   }
 
@@ -503,4 +515,51 @@ function findMisplacedOutlets(html: string): { start: number; end: number }[] {
     }
   });
   return routerWithoutOutlet ? misplaced : [];
+}
+
+// ============================================================
+// <wcs-link> の query-keys（docs/formal-methods-study.md §4.2）
+// ============================================================
+
+const LINK_TAG = 'wcs-link';
+
+interface IgnoredLinkQuery {
+  /** `query-keys` 属性の範囲（診断の位置）。 */
+  start: number;
+  end: number;
+  /** `to` のクエリのキー。 */
+  toKeys: string[];
+  /** `query-keys` が名指すキー。 */
+  named: string[];
+}
+
+/**
+ * `query-keys` が `to` の付けるキーをどれも名指さない `<wcs-link>` の、`query-keys` 属性を返す。
+ *
+ * `query-keys` のあるリンクは名指したキーだけを比べる（router の Link.ts の `_updateActiveState`）。`to` のキーの
+ * 一部を比べないのは意図した形 — 1 ページ目へ飛ぶカテゴリのタブ `to="?cat=a&page=1" query-keys="cat"` はどの
+ * ページでも現在 — なので、報告するのはどれも比べないときだけ: リンク自身のクエリが判定に効かず、名指したキーが
+ * 合えばどこでも現在になる（`to="/n?cat=a" query-keys="page"` は `?cat=b` でも現在。並べたタブは同時にすべて現在）。
+ * `to` のクエリはルーターと同じく `#` の前・最初の `?` の後で、キーは `URLSearchParams` で読む（属性の `&amp;` は `&`）。
+ * 開始タグはコメント・`<script>`・`<style>` の外のものだけ数える（findStartTagRegions）。
+ */
+function findLinksIgnoringOwnQuery(html: string): IgnoredLinkQuery[] {
+  const found: IgnoredLinkQuery[] = [];
+  for (const region of findStartTagRegions(html)) {
+    if (region.tagName !== LINK_TAG) continue;
+    const content = html.slice(region.start, region.end);
+    const to = extractAttribute(content, 'to');
+    const span = extractAttributeSpan(content, 'query-keys', region.start);
+    if (to === null || span === null) continue;
+    const named = html.slice(span.valueStart, span.valueEnd).split(/[\s,]+/).filter((key) => key !== '');
+    const target = to.replace(/&amp;/gi, '&');
+    const hash = target.indexOf('#');
+    const beforeHash = hash === -1 ? target : target.slice(0, hash);
+    const question = beforeHash.indexOf('?');
+    if (question === -1 || named.length === 0) continue;
+    const toKeys = [...new Set(new URLSearchParams(beforeHash.slice(question + 1)).keys())];
+    if (toKeys.length === 0 || toKeys.some((key) => named.includes(key))) continue;
+    found.push({ start: span.start, end: span.end, toKeys, named });
+  }
+  return found;
 }

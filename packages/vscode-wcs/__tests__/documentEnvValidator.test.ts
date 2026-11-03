@@ -257,6 +257,53 @@ describe('validateDocumentEnv: router-outlet-misplaced（docs/router-outlet-plac
   });
 });
 
+describe('validateDocumentEnv: link-query-key-ignored（docs/formal-methods-study.md §4.2）', () => {
+  const codes = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.LinkQueryKeyIgnored);
+
+  it('to のキーをどれも名指さない query-keys を、その属性の位置で報告する', () => {
+    const html = `<nav><wcs-link to="/n?cat=a" query-keys="page">A</wcs-link></nav>`;
+    const diags = codes(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('warning');
+    expect(html.slice(diags[0].start, diags[0].end)).toBe('query-keys="page"');
+    expect(diags[0].message).toContain('to が付けるキー（cat）は、どれも query-keys（page）にありません');
+    expect(diags[0].message).toContain('query-keys="cat"');
+    expect(validateDocumentEnv(html, 'en').find(d => d.code === WcsDiagnosticCode.LinkQueryKeyIgnored)!.message)
+      .toContain('None of the keys this <wcs-link>\'s to sets (cat) is named in query-keys (page)');
+  });
+
+  it('to のキーをすべて挙げ、区切りのカンマ・空白・属性の &amp; を読む', () => {
+    const diags = codes(`<wcs-link to="?cat=a&amp;sort=x&cat=b#top" query-keys=" page, view ">A</wcs-link>`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('（cat sort）');
+    expect(diags[0].message).toContain('query-keys（page view）');
+  });
+
+  it('to のキーの一部を比べるなら報告しない（1 ページ目へ飛ぶカテゴリのタブ）', () => {
+    expect(codes(`<wcs-link to="/notices?cat=event&page=1" query-keys="cat">Events</wcs-link>`)).toHaveLength(0);
+  });
+
+  it('to にキーが無ければ報告しない（「すべて」のタブ to="/notices?"・クエリの無い to・ハッシュの後の ?）', () => {
+    const html = `<wcs-link to="/notices?" query-keys="cat">All</wcs-link>
+<wcs-link to="/notices" query-keys="cat">All</wcs-link>
+<wcs-link to="/notices#a?cat=x" query-keys="page">All</wcs-link>`;
+    expect(codes(html)).toHaveLength(0);
+  });
+
+  it('query-keys が無いか空、to が無いなら報告しない', () => {
+    const html = `<wcs-link to="/n?cat=a">A</wcs-link>
+<wcs-link to="/n?cat=a" query-keys=" , ">A</wcs-link>
+<wcs-link query-keys="page">A</wcs-link>`;
+    expect(codes(html)).toHaveLength(0);
+  });
+
+  it('<script> / <style> の中の文字列やコメントの中のタグは数えない', () => {
+    const html = `<script type="module">el.innerHTML = '<wcs-link to="/n?cat=a" query-keys="page"></wcs-link>';</script>
+<!-- <wcs-link to="/n?cat=a" query-keys="page"></wcs-link> -->`;
+    expect(codes(html)).toHaveLength(0);
+  });
+});
+
 describe('validateDocumentEnv: signals-dual-entry（両方を割り当てた import map — docs/seam-apps.md、signals-shop）', () => {
   const of = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.SignalsDualEntry);
   const map = (imports: Record<string, string>) => `<script type="importmap">${JSON.stringify({ imports })}</script>`;

@@ -8,10 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/link-query-key-ignored`** (warning). A `<wcs-link>` whose `query-keys` names none of the keys its `to` sets (`to="/notices?cat=event" query-keys="page"`): a link with `query-keys` compares only the keys it names, so its own query plays no part — it is current wherever those keys match, on every category, and tabs written this way are all current at once. Leaving some of `to`'s keys out is not reported: a category tab to page 1, `to="?cat=a&page=1" query-keys="cat"`, is current on every page of its category. Enumerating the link's predicate over configurations and URLs found it ([docs/formal-methods-study.md](./docs/formal-methods-study.md) §4.2).
+
 ### Fixed
 
 - `@wcstack/fetch`, `@wcstack/upload`, `@wcstack/credential`, `@wcstack/eyedropper`, `@wcstack/contacts`, `@wcstack/share`: **a page left open no longer keeps a record of every request it has finished.** The request lane these packages share (`io-core/operation-lane.ts`) remembered each finished operation in a map it never emptied — 100,000 entries after 100,000 fetches, so a `<wcs-fetch>` polled through a shift grew it without bound. It now keeps the requests still live and nothing else. Two more defects of the lane, which no page saw, went with it: a request disconnected while it committed and settled after the next one had begun counted that one down (`inFlightCount`, which only tests read) and was reported as dropped twice on the lane's trace channel; and `retry()`, which no Core calls, handed a fresh signal to a request that could no longer commit. Enumerating every sequence of calls on the lane found them; that enumeration is now a test ([docs/formal-methods-study.md](./docs/formal-methods-study.md)).
 - `@wcstack/router`: **a page without `@wcstack/state` no longer keeps every route it has shown.** The router offers each route it places to a binder, and `<wcs-head>` the clones it puts in `<head>`; with no binder on the page, the binder protocol (`protocol/binder.ts`) held them on a global queue until one came — 100 entries after 100 navigations between two routes, for as long as the page was open, the content of routes hidden since among them. The queue now holds what is in the document, each subtree once, and a binder that arrives later is handed only that. `@wcstack/state` 4.x already passed over a subtree no longer in the document; its core gains 4 B gzip. Enumerating the router's navigations found it ([docs/formal-methods-study.md](./docs/formal-methods-study.md) §8).
+- `@wcstack/router`: **the README says that `<wcs-link>` and `searchParams` read a repeated query key differently.** A link compares every value of a repeated key, and `searchParams` keeps the last, so on `?tag=a&tag=b` a link to `?tag=b` is not current while `searchParams.tag` is `"b"`. Each was documented on its own.
 
 ## [4.14.0] — 2026-11-02
 
