@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.13.0 — 2026-11-04
+
+`@wcstack/state` 4.16.0 のパーサと manifest、4.16.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.16.0・`@wcstack/typescript` 4.16.0 と同じ判定）。`$update` を知り、`wcs/write-path-missing` と `wcs/read-path-missing` の読む範囲が広がったので minor。
 
 - **`$update(path, indexes, fn)`（`@wcstack/state` 4.16）を知る** — インラインスクリプトの型に加え、`wcs/index-arity` は `$resolve` と同じく `*` 1 本につき 1 つの添字を求める（不足も超過も error）。`**` を渡すと `wcs/recursion-unsupported`（全深さへは `$setAll(path, [], value)`）、再帰 getter の展開形へ書くと `wcs/recursion-readonly`。`$update` の書き込みは `wcs/getter-untracked-read` と `wcs/input-nested-write` の入れ子書き込みの証拠にも数える。
 - **スクリプトが書く入れ子のパスを確かめる**（`wcs/write-path-missing`、warning）— `this["items.*.nmae"] = …`・複合代入・`` this[`items.${i}.nmae`] = … ``・`$setAll` / `$update` のパスが state に無く、近い名前があるとき。トップレベルの `this.<key> = …` だけを見ていた。入れ子の書き込みは行のオブジェクトに新しいキーを作るだけで、宣言したパスの束縛には届かない。パスは読みと同じく引く（候補・`stateSchema`・ボリュームのマウントパス）。近い名前の無いキーは報告しない。
