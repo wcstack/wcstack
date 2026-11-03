@@ -1624,3 +1624,25 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.16.0 の公開（2026-11-04）
+
+- 中身: minor。js-framework-benchmark の partial update の検討から。ページの `` this[`data.${i}.label`] += " !!!" `` は、パスを文字列で組み立てるので lint に読めず、エンジンは呼ぶたびにそれを解析していた。著者の決定 — `$setAll` の別名ではなく独自の `$update`（1 アドレス・添字は厳密・範囲外は fn の前に throw）、core の残りを使ってよい。
+  - #616 state: `$update(path, indexes, fn)` — `$resolve` と同じアドレスを読み、`fn(current, ...indexes)` をその行の文脈（`callAt`）で呼んで戻り値を書く。undefined は書かない、関数でない値はそのまま書く、`*` 1 本につき 1 つの添字（#901）、末尾より先は fn の前に `no row`（#3）、readonly と getter の中は fn の前に throw、`**` は拒否。volume の `PATH_APIS`、`createStateAsync` の readonly のビュー。`$setAll` の mapper も書き込む行の文脈で走る（行のハンドラから呼ぶとクリックされた行を読んでいた）。tooling は index-arity・recursion・入れ子書き込みの証拠・型。core +54 B（20,392 B）。
+  - #617 lint: `wcs/write-path-missing` がスクリプトの書く入れ子のパス（代入・複合代入・テンプレートリテラル・`$setAll` / `$update`）を、`wcs/read-path-missing` がリストの下のテンプレートリテラル（`` items.${i}.nmae `` → `items.*.nmae`）を確かめる。`collectGetterReads` は任意の収集（templates・writes）を取り、既定では従来の集合のまま。リポジトリのページに報告は無い。
+  - 見積もりの誤り: core の増分を最初は scratchpad の写し（tsconfig 無し）で測り、+130〜175 B と水増しして「独自の `$update` は上限を超える」と伝えた。無変更の写しで対照を取って気づき、著者に判断をやり直してもらった（正しくは +19〜54 B）。
+- 準備: PR #618（merge commit 0c6a6799）。CHANGELOG を `[4.16.0] — 2026-11-04` として締め（要約、Upgrading＝mapper の文脈・lint の warning は `--strict` で落ちる・外せる回避策＝mapper が自分の行を `$resolve(path, [i])` で読む）、docs/upgrading-4x.md（日英）に 4.16.0 の節、固定版 18 か所。組み合わせ＝state を src からビルドして e2e 2 ワーカー 455 通過、homeroom の 2 件は手元の環境（server exited with 1、4.15.0 と同じ）。
+- main で `minor`（run 41697355705）。成功した: 版を上げたコミット e169139d、タグ `v4.16.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8/8。1 回目で問題なし。README の未リリースの印はリリースが外した（0 件）。
+- 公開後の作業（同日）:
+  - PR #619（merge commit 209a8b68）: サイズの基準値を 4.16.0 の dist で取り直した（`core.min.js` 20,338 → 20,392 B、分割の core 25,148 → 25,209 B、`index.esm.js` 55,274 → 55,364 B、`auto.min.js` 52,066 → 52,155 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字。拡張を 2.13.0 に。jsfb のページ（`pages/wcstack-state-4/` と `packages/state/__e2e__/benchmark/`）の `onUpdate` を `$update` に書き換え、ページの中の A/B（4.16.0 の同じ bundle、Chromium、クリックから DOM の変化まで）を jsfb-official の README に記録 — 1k 行 ×4 で 5.20 → 3.90 ms、10k 行 ×1 で 8.80 → 7.50 ms。公式のハーネスは回していない。
+  - 拡張 2.13.0: 209a8b68 から worktree で作成、試験 1,440、890 ファイル、SHA-256 `73f9788da7e5b356d67099db1b088c2bead330582a106ddf0a66eccb2b732a4c`。公開は著者。
+  - wcstack-skill: PR #58（merge commit 2402e1f）で state の参照に `$update` の節と表の行、`$setAll` の mapper の文脈、SKILL.md の lint の一覧、刻印と固定 URL（7 本とも 200）。注釈付きタグ `v4.16.0`。
+  - LP（wcstack.github.io fe61cb7）: リリースの表示、v4.16.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-PBI4ek…`）、大きさは約 77 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
+- 残り:
+  - 拡張 2.13.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.13.0`。
+  - 上流の js-framework-benchmark へページの変更を出すか（著者の判断）。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
