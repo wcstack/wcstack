@@ -256,6 +256,28 @@ describe("OperationLane — retry", () => {
     const fresh = new OperationLane("fetch", "latest");
     expect(fresh.retry(op.ticket)).toBeNull();
   });
+
+  it("claim 済み / もう commit できない operation には retry できない（docs/formal-methods-study.md §4.1）", () => {
+    const lane = new OperationLane("fetch", "latest", { withSignal: true });
+    const claimed = begin(lane);
+    lane.claimTerminal(claimed.ticket, "success");
+    expect(lane.retry(claimed.ticket)).toBeNull();
+    lane.finalize(claimed.ticket);
+
+    // supersede された latest の要求に新しい signal を渡さない
+    const first = begin(lane);
+    const second = begin(lane);
+    expect(lane.retry(first.ticket)).toBeNull();
+    expect(lane.signalOf(first.ticket)!.aborted).toBe(true);
+    expect(lane.retry(second.ticket)!.attempt).toBe(2);
+
+    // queue の先頭の後ろで待つ要求も同じ
+    const queue = new OperationLane("speak", "queue");
+    const head = begin(queue);
+    const waiting = begin(queue);
+    expect(queue.retry(waiting.ticket)).toBeNull();
+    expect(queue.retry(head.ticket)!.attempt).toBe(2);
+  });
 });
 
 describe("OperationLane — disposeOwner", () => {
@@ -284,14 +306,38 @@ describe("OperationLane — disposeOwner", () => {
     expect(stale).toEqual(expect.arrayContaining([1, 2]));
   });
 
-  it("既に committing の operation は dispose で stale 上書きしない", () => {
-    const lane = new OperationLane("fetch", "latest");
+  it("committing 中に dispose された operation は stale として 1 回だけ確定し、後の finalize は何もしない", () => {
+    const events: OperationTraceEvent[] = [];
+    const lane = new OperationLane("fetch", "latest", { trace: (e) => events.push(e) });
     const op = begin(lane);
     lane.claimTerminal(op.ticket, "success");
     lane.disposeOwner();
-    // committing のまま finalize すれば success として確定する
+    // 残りの setter は owner 世代で弾かれる
+    expect(lane.canCommit(op.ticket)).toBe(false);
+    expect(lane.claimedOutcome(op.ticket)).toBeUndefined();
+    // dispose の後に始まった要求を、古い finalize が数え下げない（docs/formal-methods-study.md §4.1）
+    const next = begin(lane);
     lane.finalize(op.ticket);
-    expect(lane.claimedOutcome(op.ticket)).toBeUndefined(); // finalize でクリア済み
+    expect(lane.inFlightCount).toBe(1);
+    expect(lane.canCommit(next.ticket)).toBe(true);
+    // 終端の報告は operation ごとに 1 回（io-node-trace-conformance §6.3）
+    const settled = events.filter((e) => e.type !== "io:operation-started" && e.operationId === op.ticket.operationId);
+    expect(settled).toEqual([{ type: "io:stale-dropped", operationId: 1, laneKey: "fetch" }]);
+  });
+
+  it("終わった operation について何も残さない（長く開いたページで増えない）", () => {
+    const lane = new OperationLane("fetch", "latest", { withSignal: true });
+    for (let i = 0; i < 1000; i++) {
+      const op = begin(lane);
+      lane.claimTerminal(op.ticket, "success");
+      lane.finalize(op.ticket);
+    }
+    // lane が持つ集まり（Map / Set / 配列）をすべて数える — 名前に頼らない
+    const retained = Object.values(lane).reduce<number>((count, value) => {
+      if (value instanceof Map || value instanceof Set) return count + value.size;
+      return Array.isArray(value) ? count + value.length : count;
+    }, 0);
+    expect(retained).toBe(0);
   });
 
   it("policy ごとの canCommit 分岐を網羅する", () => {
