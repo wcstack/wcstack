@@ -45,7 +45,7 @@ The nearer relatives are the **attribute-directive, no-build libraries** — Alp
 
 **Choose it** for HTML-first pages: server-rendered or static markup with reactive parts, a page composed from custom elements, anywhere "read the HTML and know every data dependency" matters and a build step is a cost rather than a given.
 
-**Do not choose it** when the team already lives inside a component framework — use the I/O nodes through the [framework adapters](../../docs/framework-adapter-integration.md) instead; when the hot path is a very large keyed list and create / append time decides — measure it ([Performance](#performance)), and consider [`@wcstack/signals`](../signals/), which interoperates with this package; when templates need inline expressions — deliberately absent; or when the template must be type-checked by the compiler rather than by tooling — paths are strings, and `@wcstack/typescript` narrows that gap without closing it.
+**Do not choose it** when the team already lives inside a component framework — use the I/O nodes through the [framework adapters](../../docs/framework-adapter-integration.md) instead; when templates need inline expressions — deliberately absent; or when the template must be type-checked by the compiler rather than by tooling — paths are strings, and `@wcstack/typescript` narrows that gap without closing it.
 
 On those axes the comparison is concrete: the [Performance](#performance) section below is one, and the drivers under `e2e/bench/` regenerate it on your own hardware.
 
@@ -68,9 +68,9 @@ What survives the comparison as genuinely new is narrow: the **wildcard path get
 
 ## First Principle: Path as the Universal Contract
 
-In every existing framework, the **component** is the coupling point between UI and state. Components import state hooks, selectors, or reactive primitives, and the binding happens inside JavaScript. No matter how cleanly you separate your state store, there is always glue code in the component that pulls state in.
+In a component framework, the **component** is the coupling point between UI and state: it imports state hooks, selectors or reactive primitives, and the binding is written in JavaScript, beside the markup it renders. That design has its own strength — the binding and the code it depends on live together and are type-checked together.
 
-`@wcstack/state` eliminates that coupling entirely. The **only** thing connecting UI and state is a **path string** — a dot-separated address like `user.name` or `cart.items.*.subtotal`. This is the sole contract between the two layers:
+`@wcstack/state` puts the coupling point somewhere else. The **only** thing connecting UI and state is a **path string** — a dot-separated address like `user.name` or `cart.items.*.subtotal`. This is the sole contract between the two layers:
 
 | Layer | What it knows | What it doesn't know |
 |-------|---------------|----------------------|
@@ -1088,7 +1088,7 @@ Multiple wildcards are supported for nested array structures:
 
 ### Flat Virtual Properties Across Any Depth
 
-A key advantage of path getters is that **no matter how deeply data is nested, all virtual properties are defined flat in one place**. This eliminates the need to split components just to hold computed properties at each nesting level.
+A key advantage of path getters is that **no matter how deeply data is nested, all virtual properties are defined flat in one place**. A getter's key is the address of the value it defines, so a value computed for every row of the third level is written at the top of the state beside the others, and the template that shows it, at whatever depth, only names the path.
 
 ```javascript
 export default {
@@ -1137,7 +1137,7 @@ export default {
 };
 ```
 
-Three levels of nesting, five virtual properties — all defined side by side in a single flat object. Each level can reference values from any depth, and aggregation flows naturally from bottom to top via `$getAll`. In component-based frameworks, the typical approach is to create a separate component for each nesting level and pass computed values through the tree. Path getters offer a different trade-off by keeping all definitions in one place.
+Three levels of nesting, five virtual properties — all defined side by side in a single flat object. Each level can reference values from any depth, and aggregation flows naturally from bottom to top via `$getAll`. Because a definition is keyed by the shape of the data — the path pattern — where a computed value is written follows the structure of the data rather than the structure of the view, and each value is cached per row.
 
 ### Accessing Sub-Properties of Getter Results
 
