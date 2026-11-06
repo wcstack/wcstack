@@ -677,6 +677,266 @@ describe("MidiCore", () => {
 
       expect(core.permission).toBe("granted");
     });
+
+    // 切断は変える出力をすべて知らせる（timing-and-firing-contract §22）。アクセスを手放せば
+    // ポートはもう追えないので、devices は [] に戻して知らせる
+    it("dispose で devices が [] になり、その変化を publish する（permission は変えない）", async () => {
+      installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      const devices = record(core, "wcs-midi:devices");
+      const connected = record(core, "wcs-midi:statechange");
+      const permission = record(core, "wcs-midi:permission");
+
+      core.dispose();
+
+      expect(core.devices).toEqual([]);
+      expect(devices).toEqual([[]]);
+      expect(connected).toEqual([false]);
+      expect(permission).toEqual([]);
+      expect(core.permission).toBe("granted");
+    });
+
+    it("close でも devices が [] になり、空のままの 2 回目は発火しない", async () => {
+      installMidi();
+      const core = new MidiCore();
+      await core.request();
+      const devices = record(core, "wcs-midi:devices");
+
+      core.close();
+      core.close();
+
+      expect(core.devices).toEqual([]);
+      expect(devices).toEqual([[]]);
+    });
+
+    it("API が無ければ auto 無しの observe でも unsupported を報告する", async () => {
+      removeMidi();
+      const core = new MidiCore();
+      const permission = record(core, "wcs-midi:permission");
+      await core.observe({ input: "in-1" });
+      expect(permission).toEqual(["unsupported"]);
+      expect(core.unsupported).toBe(true);
+      expect(core.error).toBe("unsupported");
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false, message: "unsupported",
+      });
+    });
+
+    it("要求中の observe は要求を重ねない（auto でも）", async () => {
+      const mock = installMidi();
+      const core = new MidiCore();
+      const pending = core.request();
+      const observed = core.observe({ auto: true });
+      expect(observed).toBe(pending);
+      await observed;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(true);
+    });
+  });
+
+  // 文書から外して戻した要素（ルートを出て入り直す）: dispose() の後の observe() は、最後の
+  // request() が取ったアクセスを、プロンプトの出ないときだけ取り直す（決定 Q2）
+  describe("dispose() の後の observe() による取り直し", () => {
+    it("Permissions API が無ければ request の結果（granted）に従って取り直す", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      core.dispose();
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(core.connected).toBe(true);
+      expect(core.devices).toHaveLength(2);
+    });
+
+    it("query が granted と答えれば取り直す", async () => {
+      const mock = installMidi();
+      const permissions = installPermissions({ state: "granted" });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+
+      await core.observe({});
+
+      expect(permissions.descriptors.at(-1)).toEqual({ name: "midi", sysex: false });
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(core.connected).toBe(true);
+    });
+
+    it.each(["prompt", "denied"])("外れている間に権限が %s になっていれば取り直さない", async (state) => {
+      const mock = installMidi();
+      installPermissions({ state: "granted" });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+      installPermissions({ state });
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(false);
+    });
+
+    it("query を理解しないブラウザでは request の結果に従う", async () => {
+      const mock = installMidi();
+      installPermissions({ reject: true });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(core.connected).toBe(true);
+    });
+
+    it("query に答えない環境では、取れた sysex と違う sysex では取り直さない（別の権限）", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      core.dispose();
+
+      await core.observe({ sysex: true });
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(false);
+    });
+
+    it("query に答える環境では、いまの sysex の権限を尋ね、granted ならその sysex で取り直す", async () => {
+      const mock = installMidi();
+      const permissions = installPermissions({ state: "granted" });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+
+      await core.observe({ sysex: true });
+
+      expect(permissions.descriptors.at(-1)).toEqual({ name: "midi", sysex: true });
+      expect(mock.calls).toEqual([{ sysex: false }, { sysex: true }]);
+    });
+
+    it("close() で手放したアクセスは取り直さない", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      core.close();
+      core.dispose();
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(false);
+    });
+
+    it("拒否された request の後は取り直さない", async () => {
+      const mock = installMidi({ reject: Object.assign(new Error("no"), { name: "NotAllowedError" }) });
+      installPermissions({ state: "granted" });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+    });
+
+    it("auto の要求が拒否されても、request() が取ったアクセスを忘れる", async () => {
+      const mock = installMidi();
+      installPermissions({ state: "granted" });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+      mock.requestMIDIAccess.mockImplementation(() => Promise.reject(new Error("aborted")));
+      await core.observe({ auto: true });
+      core.dispose();
+
+      await core.observe({ auto: false });
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+    });
+
+    it("一度も request していなければ取り直さない", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      core.dispose();
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).not.toHaveBeenCalled();
+    });
+
+    it("auto が取ったアクセスは、auto の無い observe では取り直さない", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.observe({ auto: true });
+      core.dispose();
+
+      await core.observe({ auto: false });
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(false);
+    });
+
+    it("権限の答えを待つ間に dispose すると要求せず、次の observe がまた取り直す", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      core.dispose();
+
+      const pending = core.observe({});
+      core.dispose();
+      await pending;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+
+      await core.observe({});
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(core.connected).toBe(true);
+    });
+
+    it("権限の答えを待つ間の request() は判断を引き取り、要求は 1 回だけ", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      core.dispose();
+
+      const pending = core.observe({});
+      const explicit = core.request();
+      await Promise.all([pending, explicit]);
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(core.connected).toBe(true);
+    });
+
+    it("取り直しも request と同じく覚えるので、もう一度外して戻しても取り直す", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const core = new MidiCore();
+      await core.request();
+      core.dispose();
+      await core.observe({});
+      core.dispose();
+
+      await core.observe({});
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(3);
+      expect(core.connected).toBe(true);
+    });
   });
 
   describe("同値ガード", () => {
