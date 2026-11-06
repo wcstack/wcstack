@@ -387,7 +387,7 @@ const ja: WcsMessageCatalog = {
   updatedCallbackUnknownPath: (p) =>
     `"${p}" は state のパスではないので $renderedCallback の paths に現れず、この分岐は一度も実行されません`,
   commandTokenUnbound: (t) =>
-    `コマンドトークン "${t}" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: ${t} の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.focus: ${t}）`,
+    `コマンドトークン "${t}" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: ${t} の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.<メソッド>: ${t} — <メソッド> はその要素のメソッドの名前）`,
   writePathMissing: (k) =>
     `"${k}" は state が宣言していないキーです。書き込みは新しいキーを作るだけで、宣言したキーの束縛には届きません`,
   pathReadonlyWrite: (p) =>
@@ -697,7 +697,7 @@ const en: WcsMessageCatalog = {
   updatedCallbackUnknownPath: (p) =>
     `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
   commandTokenUnbound: (t) =>
-    `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
+    `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.<method>: ${t}, with <method> the name of that element's method)`,
   writePathMissing: (k) =>
     `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
   pathReadonlyWrite: (p) =>

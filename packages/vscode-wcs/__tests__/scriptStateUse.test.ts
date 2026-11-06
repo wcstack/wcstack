@@ -40,6 +40,15 @@ describe('wcs/command-token-unbound — どの command. 束縛にも結ばれな
     expect(found[0].message).toContain('"$command.placeCaret" is emitted, but no command.<method>: $command.placeCaret binding');
   });
 
+  it('直し方の例はメソッドを決め打ちしない — 要素に無いメソッド（command.focus:）を写させない（en / ja、music-room）', () => {
+    const html = page(`$commandTokens: ["midiRequest"],\n  connect() { this.$command.midiRequest.emit(); },`, `<wcs-midi></wcs-midi>`);
+    const [en] = find(html, WcsDiagnosticCode.CommandTokenUnbound);
+    expect(en.message).toBe('The command token "$command.midiRequest" is emitted, but no command.<method>: $command.midiRequest binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.<method>: $command.midiRequest, with <method> the name of that element\'s method)');
+    const [ja] = validateDocument(html, { locale: 'ja' }).filter((d) => d.code === WcsDiagnosticCode.CommandTokenUnbound);
+    expect(ja.message).toBe('コマンドトークン "$command.midiRequest" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: $command.midiRequest の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.<メソッド>: $command.midiRequest — <メソッド> はその要素のメソッドの名前）');
+    expect(`${en.message}${ja.message}`).not.toContain('command.focus');
+  });
+
   it('マークアップの on*: で emit するのに受け手が無ければ、その束縛に warning', () => {
     const html = page(`$commandTokens: ["play"],`, `<button data-wcs="onclick: $command.play">▶</button>`);
     expect(texts(html, WcsDiagnosticCode.CommandTokenUnbound)).toEqual(['$command.play']);
