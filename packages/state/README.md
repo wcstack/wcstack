@@ -3005,13 +3005,13 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | # | Code | Message (with `diagnostics`) |
 |---|---|---|
 | 1 | | `$scan was removed (use $watch or $on)` |
-| 2 | | `"<path>" is a getter without a setter` |
+| 2 | `path-readonly` (4.17 (not released yet)) | `"<path>" is a getter without a setter` |
 | 3 | | `no row for "<path>"` |
 | 4 | | `cannot write "<path>": its parent is <value>` |
 | 5 | | `"<name>" is not a method` |
 | 6 | | `$getAll("<path>"): no loop level in common with the context` |
 | 7 | | `$eqIndex("<path>") needs a list row scope.` |
-| 8 | | `This state is readonly.` |
+| 8 | `getter-write` while a getter is evaluated (4.17 (not released yet)) | `"<path>" is written while the getter "<getter>" is evaluated: a getter only reads. …`; in a readonly callback `cannot write "<path>": this state is readonly.` (up to 4.16: `This state is readonly.`) |
 | 9 | | `$setAll("<path>") needs indexes ([] for every match)` |
 | 10 | | `$setAll("<path>", …, { spread: true }) needs an array of <n> values` |
 | 11 | | `updates did not settle after 32 passes` |
@@ -3151,6 +3151,10 @@ Anything that follows mechanically from the path string is reported at runtime a
 | `wcs/index-arity` | `$resolve(path, indexes)` and `$update(path, indexes, fn)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
 | `wcs/wildcard-rank` | In markup, the path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting (`#1401`), a `.` path needs an enclosing `for` (`#1402`), and each `*` is the row of the `for` around it at that level — not a row of another list (`{{ b.*.y }}` inside `for: a`, `#1403`) | Add a `for`, or read the other list's row in a getter with `$resolve(path, indexes)` |
 | `wcs/getter-cycle` | Path getters must not form a dependency cycle: the evaluation reached a getter occurrence it is already evaluating | Break the cycle |
+| `wcs/getter-write` | Since 4.17 (not released yet): a getter only reads. A write while one is evaluated — an assignment, `$setAll`, `$update`, a `$resolve` with a value, in the getter or a method it calls — throws `#8` naming the path and the getter (up to 4.16 it named neither) | Write it from a method, a setter or a `$watch` handler, or compute the value in a getter of its own |
+| `wcs/path-readonly` | A write of a getter without a setter, from a two-way binding or a script (`this.total = 0`), throws `#2`. Since 4.17 (not released yet) its message carries the code and the fix | Add a setter that writes what the getter reads, or write those values; bind a two-way binding one way with `#ro` |
+| `wcs/setter-cycle` | Since 4.17 (not released yet): a setter that writes its own path, or setters that write each other, call each other until the stack overflows (a `RangeError` that names nothing). The `diagnostics` add-on throws naming them at 64 setter calls deep | Store the value under a data path the getter reads (`_count`), not under the setter's own path |
+| `wcs/setter-unobserved` | Since 4.17 (not released yet), a warning: a setter wrote something, none of which its getter reads. The getter keeps its value, and a two-way input bound to it goes back to it on the next render. Once per setter; a setter that writes nothing (one that ignores `null`) is not reported | Write what the getter reads, or read in the getter what the setter writes |
 | `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no occurrence visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
 | `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
 | `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$update` / `$postUpdate` / `$dependOn`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |

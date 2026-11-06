@@ -2992,13 +2992,13 @@ li {
 | # | Code | メッセージ（`diagnostics` あり） |
 |---|---|---|
 | 1 | | `$scan was removed (use $watch or $on)` |
-| 2 | | `"<path>" is a getter without a setter` |
+| 2 | `path-readonly`（4.17（未リリース）から） | `"<path>" is a getter without a setter` |
 | 3 | | `no row for "<path>"` |
 | 4 | | `cannot write "<path>": its parent is <value>` |
 | 5 | | `"<name>" is not a method` |
 | 6 | | `$getAll("<path>"): no loop level in common with the context` |
 | 7 | | `$eqIndex("<path>") needs a list row scope.` |
-| 8 | | `This state is readonly.` |
+| 8 | getter の評価中は `getter-write`（4.17（未リリース）から） | `"<path>" is written while the getter "<getter>" is evaluated: a getter only reads. …`。readonly のコールバックでは `cannot write "<path>": this state is readonly.`（4.16 までは `This state is readonly.`） |
 | 9 | | `$setAll("<path>") needs indexes ([] for every match)` |
 | 10 | | `$setAll("<path>", …, { spread: true }) needs an array of <n> values` |
 | 11 | | `updates did not settle after 32 passes` |
@@ -3137,6 +3137,10 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/index-arity` | `$resolve(path, indexes)` と `$update(path, indexes, fn)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
 | `wcs/wildcard-rank` | マークアップで、パスの `*` の本数（と `$N` の N）が囲む `for` の段数を超えていないか（`#1401`）、`.` パスを囲む `for` があるか（`#1402`）、各 `*` がその段で囲んでいる `for` の行であって、別のリストの行ではないか（`for: a` の中の `{{ b.*.y }}`、`#1403`） | `for` を足すか、別のリストの行は getter の中で `$resolve(path, indexes)` で読む |
 | `wcs/getter-cycle` | パス getter どうしが循環参照していないか: 評価が、すでに評価中の getter の出現に戻ってきた | 循環を断つ |
+| `wcs/getter-write` | 4.17（未リリース）から: getter は読むだけ。評価中の書き込み（代入・`$setAll`・`$update`・値を渡す `$resolve`。getter が呼ぶメソッドの中も）は、パスと getter を名指して `#8` を投げる（4.16 まではどちらも名指さなかった） | メソッド・setter・`$watch` のハンドラから書くか、値を別の getter で計算する |
+| `wcs/path-readonly` | setter の無い getter への書き込み（双方向の束縛からも、スクリプトの `this.total = 0` からも）は `#2` を投げる。4.17（未リリース）から、その文面に code と直し方が付く | getter が読む値を書く setter を足すか、その値を書く。双方向の束縛は `#ro` で一方向にする |
+| `wcs/setter-cycle` | 4.17（未リリース）から: 自分のパスに書く setter、互いに書く setter は、スタックが溢れるまで互いを呼ぶ（何も名指さない `RangeError`）。`diagnostics` の後付けが、setter の呼び出しが 64 段に達したところで名指して投げる | 値は setter 自身のパスではなく、getter が読むデータのパス（`_count`）に置く |
+| `wcs/setter-unobserved` | 4.17（未リリース）から、警告: setter が書いたもののどれも、その getter が読まない。getter は元の値のままで、束ねた双方向の入力は次の描画でそこへ戻る。setter ごとに 1 回。何も書かない setter（`null` を捨てるもの）は言わない | getter が読む値を書くか、setter が書く値を getter で読む |
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じ出現を 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
 | `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$update` / `$postUpdate` / `$dependOn`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |

@@ -2,6 +2,14 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **getter・setter・メソッドが書くものを、本体ごとの書き込み集合として読む**（docs/script-write-checks.ja.md）— 代入・複合代入・増減・`$setAll`・`$update`・値を渡す `$resolve` と、呼ぶメソッドの書き込み。リポジトリのページはどれも報告されない。
+  - **getter の評価中の書き込みを告げる**（`wcs/getter-write`、error、新規）— 本体の中、または getter が呼ぶメソッドの中（呼び出しに、メソッドを名指して）。ランタイムは評価のたびに投げる。入れ子の関数の中（getter が返すハンドラ・後で走るコールバック）は数えない。
+  - **スクリプトが setter の無い getter に書くのを告げる**（`wcs/path-readonly`、error）— メソッド・setter の `this.total = 0`・`$setAll("items.*.subtotal", …)`。双方向の束縛だけを見ていた。トップレベルに spread のある state（setter を持ち込みうる）では言わない。
+  - **書き合う setter を告げる**（`wcs/setter-cycle`、新規）— 自分のパスに書く setter は error（setter のパスはアクセサそのものなので、書けば setter がまた呼ばれ、スタックが溢れるまで続く）、互いに書く setter は循環の全員に warning（条件で止まりうる）。同期の書き込みだけ。
+  - **getter が読まないものを書く setter を告げる**（`wcs/setter-unobserved`、warning、新規）— `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。書いた後も getter は元の値を返し、双方向の入力はそこへ戻る。呼ぶ getter・メソッド・`$untracked` の中まで読む。同じパス・その上（`user.name` に対する `user`）・その下の読みは届く。何も書かない setter（値を捨てる）・state を何も読まない getter・追えない読み書き（`this[key]`・関数に渡した `this`・リテラルでないパス・state が宣言しないメソッド）では黙る。
+
 ## 2.13.0 — 2026-11-04
 
 `@wcstack/state` 4.16.0 のパーサと manifest、4.16.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.16.0・`@wcstack/typescript` 4.16.0 と同じ判定）。`$update` を知り、`wcs/write-path-missing` と `wcs/read-path-missing` の読む範囲が広がったので minor。
