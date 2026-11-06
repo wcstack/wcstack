@@ -48,13 +48,17 @@ const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 
 export const SENTENCES: Record<M, Sentence> = {
   [M.ScanRemoved]: () => "$scan was removed (use $watch or $on)",
-  [M.GetterWithoutSetter]: (p) => `"${p}" is a getter without a setter`,
+  // (no code of its own hundred: the code lint reports for the same write — a two-way binding or a script — is written here)
+  [M.GetterWithoutSetter]: (p) => `[wcs/path-readonly] "${p}" is a getter without a setter`,
   [M.NoRow]: (p) => `no row for "${p}"`,
   [M.ParentNotObject]: (p, parent) => `cannot write "${p}": its parent is ${parent}`,
   [M.NotAMethod]: (name) => `"${name}" is not a method`,
   [M.GetAllNoCommonLevel]: (p) => `$getAll("${p}"): no loop level in common with the context`,
   [M.EqIndexNoRow]: (p) => `$eqIndex("${p}") needs a list row scope.`,
-  [M.Readonly]: () => "This state is readonly.",
+  // a write while a getter is evaluated names the getter (the core passes it, docs/script-write-checks.md); in a readonly callback, the path
+  [M.Readonly]: (p, g) =>
+    g ? `[wcs/getter-write] "${p}" is written while the getter "${g}" is evaluated: a getter only reads. Write it from a method, a setter or a $watch handler.`
+      : p ? `cannot write "${p}": this state is readonly.` : "This state is readonly.",
   [M.SetAllNeedsIndexes]: (p) => `$setAll("${p}") needs indexes ([] for every match)`,
   [M.SetAllSpreadLength]: (p, n) => `$setAll("${p}", …, { spread: true }) needs an array of ${n} values`,
   [M.DrainNotSettled]: () => `updates did not settle after ${MAX_DRAIN_PASSES} passes`,

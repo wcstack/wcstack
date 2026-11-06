@@ -37,7 +37,7 @@ const NAMES = `
   children filters forget resetList deliverFn delegate stale staleLists
   invalidateUnder checkArity resolveInitialize claimed occurrence loadState onCreate unregister changed mark dropped
   dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor cutLoop chainCut cutTask reported fed carried unsettled held settled inApply
-  listsByArray mirror shared landed loadTarget forListsUnder forAllLists api callAt rowOf
+  listsByArray mirror shared landed loadTarget forListsUnder forAllLists api callAt rowOf refuseWrite
   explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding
   componentScope ssrMark adopt adoptScope nativeCommand declared tags mustache guard directional load noticed unfile epoch failAt trySync
   index component exports bindings arr sources drain register setAll fragment controller connected disconnected prop registered fold

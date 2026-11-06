@@ -23,7 +23,7 @@ beforeAll(() => {
 /** Every numbered message with representative values, and what the add-on renders. */
 const RENDERED: [M, unknown[], string][] = [
   [M.ScanRemoved, [], "$scan was removed (use $watch or $on)"],
-  [M.GetterWithoutSetter, ["total"], '"total" is a getter without a setter'],
+  [M.GetterWithoutSetter, ["total"], '[wcs/path-readonly] "total" is a getter without a setter'],
   [M.NoRow, ["items.*.name"], 'no row for "items.*.name"'],
   [M.ParentNotObject, ["user.name", null], 'cannot write "user.name": its parent is null'],
   [M.NotAMethod, ["save"], '"save" is not a method'],
