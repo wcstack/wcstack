@@ -9,6 +9,11 @@
   - **スクリプトが setter の無い getter に書くのを告げる**（`wcs/path-readonly`、error）— メソッド・setter の `this.total = 0`・`$setAll("items.*.subtotal", …)`。双方向の束縛だけを見ていた。トップレベルに spread のある state（setter を持ち込みうる）では言わない。
   - **書き合う setter を告げる**（`wcs/setter-cycle`、新規）— 自分のパスに書く setter は error（setter のパスはアクセサそのものなので、書けば setter がまた呼ばれ、スタックが溢れるまで続く）、互いに書く setter は循環の全員に warning（条件で止まりうる）。同期の書き込みだけ。
   - **getter が読まないものを書く setter を告げる**（`wcs/setter-unobserved`、warning、新規）— `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。書いた後も getter は元の値を返し、双方向の入力はそこへ戻る。呼ぶ getter・メソッド・`$untracked` の中まで読む。同じパス・その上（`user.name` に対する `user`）・その下の読みは届く。何も書かない setter（値を捨てる）・state を何も読まない getter・追えない読み書き（`this[key]`・関数に渡した `this`・リテラルでないパス・state が宣言しないメソッド）では黙る。
+- **継ぎ目アプリ music-room が lint を黙らせるためだけに書いた 3 つの回避策を要らなくする** — どれも `wcs/binding-path-missing` か `wcs/path-dynamic-unknown` の誤報で、リポジトリのページの件数は変わらない。
+  - **getter の JSDoc `@type` を、`@returns` と同じく結果の型として読む** — `/** @type {{ label: string }[]} */ get rows() { return helper(); }` の `for: rows` の `.label` が誤報だった（`@returns` なら効いた）。データのキーに書く `@type` を getter にも書くのは自然で、TypeScript も getter の型として読むのに、黙って効かなかった。両方あれば `@returns` が勝つ。
+  - **`Array.from` と `[...Array(n).keys()]` で作る行を読む** — `Array.from({ length: n }, (_, i) => ({ … }))`・`Array.from(source, (x) => ({ … }))` の mapper は `map` と同じに読み（`...x` があれば元の行も写す）、`[...x]` は形の分からない元（`Array(n).keys()`・モジュールの定数）でも続く `map` のリテラルを行にする。getter の戻り値でも代入の右辺でも。
+  - **名前空間の import のメンバーを辿る** — `import * as M from "./lib/music.js"` の `sound: { ...M.DEFAULT_SOUND }`・`sound: M.DEFAULT_SOUND` を、名前付きの import の `const` と同じに読む（読めないファイルなら、どこから import したかを info で言う）。
+- **`wcs/command-token-unbound` の直し方の例でメソッドを決め打ちしない** — 例が `command.focus: $command.midiRequest` に固定されていて、`focus` を持たない `<wcs-midi>` にもそう書かせていた。`command.<method>: $command.midiRequest`（ja は `command.<メソッド>: …`）と書き、`<method>` はその要素のメソッドの名前と言う。
 
 ## 2.13.0 — 2026-11-04
 
