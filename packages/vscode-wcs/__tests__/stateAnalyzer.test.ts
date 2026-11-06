@@ -923,6 +923,89 @@ export default {
     expect(paths.find(p => p.path === 'ticket')?.kind).toBe('computed');
   });
 
+  it('getter の @type も、@returns と同じく戻りの形を宣言する（@returns があればそちらが勝つ。setter の @type は読まない — music-room）', () => {
+    const paths = analyzeStatePaths(`
+/** @typedef {{ name: string, freq: number }} Key */
+export default {
+  /** @type {{ label: string, note: number }[]} */
+  get rows() { return helper(); },
+  /**
+   * The keyboard, low to high.
+   * @type {Key[]}
+   */
+  get keys() { return build(); },
+  /**
+   * @returns {{ fromReturns: boolean }}
+   * @type {{ fromType: boolean }}
+   */
+  get both() { return make(); },
+  /** @type {{ fromSetter: boolean }} */
+  set onlySet(v) {},
+  get onlySet() { return read(); },
+};`);
+    const names = paths.map(p => p.path);
+    expect(names).toEqual(expect.arrayContaining([
+      'rows.*', 'rows.length', 'rows.*.label', 'rows.*.note', 'keys.*.name', 'keys.*.freq', 'both.fromReturns',
+    ]));
+    expect(find(paths, 'rows')?.kind).toBe('computed');
+    expect(names).not.toContain('both.fromType');
+    expect(names.filter(p => p.startsWith('onlySet.'))).toEqual([]);
+  });
+
+  it('Array.from（{ length: n } / 元のリスト・mapper）と [...Array(n).keys()].map の行は、mapper のリテラルが形になる（music-room）', () => {
+    const paths = analyzeStatePaths(`
+const STEPS = 16;
+const NOTES = ["C", "D", "E"];
+export default {
+  keys: [{ name: "C4", freq: 261.6 }],
+  get steps() { return Array.from({ length: STEPS }, (_, i) => ({ label: String(i + 1), on: false })); },
+  get noteRows() { return Array.from(NOTES, (n) => ({ note: n })); },
+  get decorated() { return Array.from(this.keys, (k) => ({ ...k, active: false })); },
+  get copied() { return Array.from(this.keys); },
+  get blockBody() { return Array.from({ length: 4 }, function (_, i) { return { beat: i }; }); },
+  get octaves() { return [...Array(3).keys()].map((i) => ({ octave: i + 3 })); },
+  get spreadConst() { return [...NOTES].map((n) => ({ spread: n })); },
+  get chained() { return Array.from({ length: 8 }, (_, i) => ({ step: i })).filter((s) => s.step % 2); },
+  get aliased() { const idx = [...Array(STEPS).keys()]; return idx.map((i) => ({ fromAlias: i })); },
+  get arrayFromMap() { return Array.from({ length: 2 }).map((_, i) => ({ mapped: i })); },
+};`);
+    const all = paths.map(p => p.path);
+    expect(find(paths, 'steps.*')).toEqual({ path: 'steps.*', kind: 'list' });
+    expect(find(paths, 'steps.*.label')?.kind).toBe('data');
+    expect(find(paths, 'steps.*.on')?.typeHint).toBe('boolean');
+    expect(all).toEqual(expect.arrayContaining([
+      'noteRows.*.note', 'decorated.*.name', 'decorated.*.freq', 'decorated.*.active', 'copied.*.name', 'copied.*.freq',
+      'blockBody.*.beat', 'octaves.*.octave', 'spreadConst.*.spread', 'chained.*.step', 'aliased.*.fromAlias',
+      'arrayFromMap.*.mapped',
+    ]));
+    // the mapper's literal is the row: without `...k` the source's fields are not copied
+    expect(all).not.toContain('noteRows.*.name');
+  });
+
+  it('Array.from・[...x] で行の形が決まらないもの（mapper が名前・リテラルを返さない・元が分からず mapper が無い）からは何も導かない', () => {
+    const all = analyzeStatePaths(`
+export default {
+  get named() { return Array.from({ length: 3 }, makeRow); },
+  get noLiteral() { return Array.from({ length: 3 }, (_, i) => i * 2); },
+  get noMapper() { return Array.from({ length: 3 }); },
+  get fromString() { return Array.from("abc"); },
+  get spreadOnly() { return [...Array(3).keys()]; },
+  get tooMany() { return Array.from(a, (x) => ({ x }), self, extra); },
+};`).map(p => p.path);
+    for (const getter of ['named', 'noLiteral', 'noMapper', 'fromString', 'spreadOnly', 'tooMany']) {
+      expect(all.filter(p => p.startsWith(`${getter}.`)), getter).toEqual([]);
+    }
+  });
+
+  it('代入の右辺の Array.from も、行の形を言う', () => {
+    const all = analyzeStatePaths(`
+export default {
+  pattern: [],
+  reset() { this.pattern = Array.from({ length: 16 }, (_, i) => ({ step: i, on: false })); },
+};`).map(p => p.path);
+    expect(all).toEqual(expect.arrayContaining(['pattern.*.step', 'pattern.*.on']));
+  });
+
   it('絞り込んだリストを返す getter（README の ToDo の形）は元のリストの行の形を持つ', () => {
     const paths = analyzeStatePaths(`
 export default {

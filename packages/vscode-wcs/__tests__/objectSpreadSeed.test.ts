@@ -82,6 +82,39 @@ export default { draft: { ...EMPTY_DRAFT } };`, { fileReader: reader({ 'defaults
     expect(paths.find((p) => p.path === 'draft')?.opaque).toBeUndefined();
   });
 
+  it('名前空間の import のメンバー（`...M.DEFAULT_SOUND`）も、読めるファイルなら同じように読むこと（music-room）', () => {
+    const files = reader({ 'lib/music.js': 'export const DEFAULT_SOUND = Object.freeze({ wave: "sawtooth", env: { attack: 0.01 } });\nexport const PRESET = DEFAULT_SOUND;' });
+    const paths = analyzeStatePaths(`import * as M from "./lib/music.js";
+export default {
+  sound: { ...M.DEFAULT_SOUND, volume: 0.8 },
+  preset: M.PRESET,
+  frozen: Object.freeze({ ...M . PRESET }),
+};`, { fileReader: files, path: '' });
+    expect(paths.map((p) => p.path)).toEqual([
+      'sound', 'sound.wave', 'sound.env', 'sound.env.attack', 'sound.volume',
+      'preset', 'preset.wave', 'preset.env', 'preset.env.attack',
+      'frozen', 'frozen.wave', 'frozen.env', 'frozen.env.attack',
+    ]);
+    expect(paths.filter((p) => p.opaque !== undefined)).toEqual([]);
+  });
+
+  it('読めない名前空間のメンバー（ファイルが無い・export に無い名前・素の指定子）は、どこから import したかを持つ opaque にすること', () => {
+    const paths = analyzeStatePaths(`import * as M from "./lib/music.js";
+import * as R from "remote-lib";
+export default {
+  gone: { ...M.MISSING },
+  remote: { ...R.DEFAULTS },
+  value: M.MISSING,
+  plain: { ...Config.DEFAULTS },
+};`, { fileReader: reader({ 'lib/music.js': 'export const DEFAULT_SOUND = { wave: "sine" };' }), path: '' });
+    const opaque = (path: string) => paths.find((p) => p.path === path)?.opaque;
+    expect(opaque('gone')).toEqual({ spread: '...M.MISSING', from: './lib/music.js' });
+    expect(opaque('remote')).toEqual({ spread: '...R.DEFAULTS', from: 'remote-lib' });
+    expect(opaque('value')).toEqual({ name: 'M.MISSING', from: './lib/music.js' });
+    // a member of a name that is not a namespace import is a spread it cannot read, as before
+    expect(opaque('plain')).toEqual({ spread: '...Config.DEFAULTS' });
+  });
+
   it('読めない spread（呼び出し・let・読めない import）は、そのキーの下を開いた形（opaque）にし、書いたキーは読むこと', () => {
     const paths = analyzeStatePaths(`import { REMOTE } from "./remote.js";
 let LATER = { a: 1 };
@@ -151,5 +184,18 @@ export default { draft: { ...EMPTY } };`, '<p data-wcs="textContent: draft.title
 export default { draft: { ...EMPTY } };`, '<p data-wcs="textContent: draft.title"></p>\n<p data-wcs="textContent: draft.titel"></p>');
     const found = findings(html, reader({ 'defaults.js': 'export const EMPTY = { title: "" };' }));
     expect(found.map((d) => html.slice(d.start, d.end))).toEqual(['draft.titel']);
+  });
+
+  it('名前空間の import のメンバーの spread のキーへの束縛は info にならず、打ち間違いだけを報告すること（music-room）', () => {
+    const html = page(`import * as M from "./lib/music.js";
+export default { sound: { ...M.DEFAULT_SOUND } };`, `<select data-wcs="value: sound.wave"></select>
+<input type="range" data-wcs="value: sound.attack">
+<input type="range" data-wcs="value: sound.atack">`);
+    const found = findings(html, reader({ 'lib/music.js': 'export const DEFAULT_SOUND = { wave: "sawtooth", attack: 0.01, release: 0.3 };' }));
+    expect(found.map((d) => [d.code, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.BindingPathMissing, 'sound.atack']]);
+    // without the file, the keys stay open: one info at the key, naming the import
+    const [info, ...rest] = findings(html, reader({}));
+    expect(rest).toEqual([]);
+    expect(info.message).toBe('The keys ...M.DEFAULT_SOUND (imported from "./lib/music.js") brings into "sound" cannot be read statically, so the 3 paths bound under it are not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked');
   });
 });

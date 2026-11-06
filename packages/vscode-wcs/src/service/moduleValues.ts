@@ -12,9 +12,11 @@
  *     module is read through the page's file reader, relative to the module that imports it (a `.js` that is not there
  *     reads the same-named `.ts`), and the export looked up — `export const`, `export default`, `export { a as b }`,
  *     `export { a } from "…"`, `export * from "…"`;
+ *   - a member of a namespace import (`import * as M from "./lib/music.js"` and `M.DEFAULT_SOUND`): that module's
+ *     export, read as a named import is (the music-room seam app spread `{ ...M.DEFAULT_SOUND }`);
  *   - a JSDoc `@type {typeof import("./en.js").default}` before the declaration names the value it stands for: the way
  *     to give a computed dictionary (`mergeAndFreeze(fallback, current)`) the full catalog's shape.
- * What it cannot follow — a call or another computed expression, a `let` / `var`, a namespace import, a bare specifier
+ * What it cannot follow — a call or another computed expression, a `let` / `var`, a namespace import itself, a bare specifier
  * or a URL, a module it cannot read or parse (TypeScript) — is null, and the caller treats the key's contents as
  * unknown (statePathResolver's opaque paths): nothing under it is reported missing.
  *
@@ -85,23 +87,49 @@ export class ModuleScope {
     return program !== null && program.type === 'Program' ? program.body as AnyNode[] : [];
   }
 
-  /** The specifier a top-level name is imported from, if it is imported. */
+  /** The specifier a top-level name is imported from, if it is imported (for `M.NAME`, the one `M` is). */
   importOf(name: string): string | undefined {
+    const local = namespaceMember(name)?.namespace ?? name;
     for (const statement of this.body) {
       if (statement.type !== 'ImportDeclaration') continue;
-      if (statement.specifiers.some((s) => s.local.name === name)) return String(statement.source.value);
+      if (statement.specifiers.some((s) => s.local.name === local)) return String(statement.source.value);
     }
     return undefined;
   }
 
-  /** The value a top-level name of the module is bound to, or null when it cannot be followed. */
+  /** Whether `text` is `M.NAME` with `M` a namespace import of the module (`import * as M from "…"`). */
+  isNamespaceMember(text: string): boolean {
+    const member = namespaceMember(text);
+    return member !== null && this.namespaceImport(member.namespace) !== undefined;
+  }
+
+  /** The specifier of a namespace import (`import * as M from "…"`) whose local name is `name`. */
+  private namespaceImport(name: string): string | undefined {
+    for (const statement of this.body) {
+      if (statement.type !== 'ImportDeclaration') continue;
+      if (statement.specifiers.some((s) => s.type === 'ImportNamespaceSpecifier' && s.local.name === name)) {
+        return String(statement.source.value);
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The value a top-level name of the module is bound to, or null when it cannot be followed. `M.NAME` with `M` a
+   * namespace import (`import * as M from "./lib/music.js"`) is the module's export `NAME`, read as a named import is.
+   */
   resolveName(name: string, hops = 0): ResolvedValue | null {
     if (hops > MAX_HOPS) return null;
+    const member = namespaceMember(name);
+    if (member !== null) {
+      const specifier = this.namespaceImport(member.namespace);
+      return specifier === undefined ? null : this.module(specifier)?.resolveExport(member.name, hops + 1) ?? null;
+    }
     for (const statement of this.body) {
       if (statement.type === 'ImportDeclaration') {
         const specifier = statement.specifiers.find((s) => s.local.name === name);
         if (specifier === undefined) continue;
-        // `import * as en from "./en.js"`: the module itself, not a value this reads
+        // `import * as en from "./en.js"`: the module itself, not a value this reads (its members `en.NAME` are, above)
         if (specifier.type === 'ImportNamespaceSpecifier') return null;
         const exported = specifier.type === 'ImportDefaultSpecifier' ? 'default' : exportName(specifier.imported);
         return this.module(String(statement.source.value))?.resolveExport(exported, hops + 1) ?? null;
@@ -188,6 +216,12 @@ export class ModuleScope {
     files.set(path, scope);
     return scope;
   }
+}
+
+/** `M.NAME` (a member of a name, as written — one level): its two names, or null. */
+function namespaceMember(text: string): { readonly namespace: string; readonly name: string } | null {
+  const m = /^([$A-Za-z_][$\w]*)\s*\.\s*([$A-Za-z_][$\w]*)$/.exec(text.trim());
+  return m === null ? null : { namespace: m[1], name: m[2] };
 }
 
 function exportName(node: AnyNode): string {
