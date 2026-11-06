@@ -96,6 +96,19 @@ export const WcsDiagnosticCode = {
   // パス getter どうしの循環参照。4.0 のランタイムは評価の時点で #701 として throw し、その getter を読む
   // 束縛はすべて失敗する（3.x はアドレススタック上限まで再帰してから落ちた）。error。
   GetterCycle: "wcs/getter-cycle",
+  // --- what a getter, a setter or a method writes (docs/script-write-checks.md) ---
+  // getter の評価中の書き込み（代入・複合代入・増減・`$setAll` / `$update` / 引数 3 つの `$resolve`、getter が同期に呼ぶ
+  // メソッドの書き込みも）。4.0 のランタイムは書き込みのたびに throw する（4.17 から書いたパスと getter を名指す）。
+  // 入れ子の関数の中は、評価中に走るとは限らないので見ない。error。
+  GetterWrite: "wcs/getter-write",
+  // setter が自分のパスに書く、または setter どうしが互いに書く（同期の書き込みだけ）。setter のパスはアクセサそのもの
+  // なので、書けば setter がまた呼ばれ、スタックが溢れるまで続く（4.17 から diagnostics の後付けが名指して throw する）。
+  // 自分のパスは error、2 つ以上の循環は条件で止まりうるので warning。
+  SetterCycle: "wcs/setter-cycle",
+  // setter が書くものを、同じ名前の getter が（呼ぶ getter・メソッドを通しても）一つも読まない。setter の後に getter は
+  // 元の値を返し、双方向の入力はそこへ戻る — 何も知らせない（4.17 から diagnostics の後付けが警告する）。setter・getter
+  // の読み書きを追えない（`this[key]`・`fn(this)`・知らないメソッド）なら黙る。warning。
+  SetterUnobserved: "wcs/setter-unobserved",
   // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
   // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
