@@ -18,6 +18,7 @@ export function render(id: number, args: readonly unknown[]): string {
 const LINT_CODES = new Set([
   "binding-syntax", "template-syntax", "filter-unknown", "filter-arity", "index-arity",
   "wildcard-rank", "token-undeclared", "binding-path-missing", "index-param-range", "path-readonly", "getter-write", "setter-cycle",
+  "tag-member-unknown",
 ]);
 
 /** How to fix it, by what the message says. */
@@ -31,6 +32,7 @@ const GUIDES: [RegExp, string][] = [
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
   [/\[wcs\/path-readonly\] "([^"]+)"/, ' Add a setter (set "$1"(v) { … }) or write what the getter reads; bind a two-way binding one way with #ro.'],
+  [/\[wcs\/tag-member-unknown\] "([^"]+)"/, ' Bind a property or an input its static wcBindable declares; an attribute of the tag is written in the markup ($1="…") or bound as attr.$1:.'],
   [/\[wcs\/index-arity\] \$(?:resolve|update)/, " $resolve and $update take one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" — write "$1" here.'],
 ];

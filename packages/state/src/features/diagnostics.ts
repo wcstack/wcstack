@@ -13,7 +13,7 @@ import { raiseError } from "../parser/raiseError";
 import { parseBindTextsForElement } from "../parser/parseBindTextsForElement";
 import { config } from "../config";
 import type { WcsState } from "../element";
-import type { Binding, RowPlan } from "../dom/view";
+import { Binding, K_CUSTOM, type RowPlan } from "../dom/view";
 import type { StateList } from "../list";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
@@ -602,6 +602,40 @@ function drained(engine: Engine): void {
   for (const l of engine.rootLists.values()) if (l.view !== null && l.arr !== null) listValue(engine, l);
 }
 
+// ---------------------------------------------------------------- undefined after a value on an element's input
+
+/** The bindings already told about (once per binding). */
+const toldInputs = new WeakSet<Binding>();
+
+/**
+ * A binding to a custom element's input whose value goes from a value to undefined: state never writes undefined
+ * to an element's input (B8, dom/view.ts Binding.apply), so the element keeps the value it had while the page
+ * says otherwise — a parent replaced by an object without the key (a stored sound saved before the key existed,
+ * a link without the value), a getter that starts returning undefined, a filter that gives it
+ * (docs/seam-apps.md, music-room). Said once per binding, with what the element keeps (its property; nothing when
+ * that reads undefined, as after the element wrote undefined itself). null is written, so a value then null is
+ * not told about, nor null then undefined, nor a binding that never had a value. Seen where the value and the
+ * one before it meet — the binding's apply, wrapped here (0 B in the core): every change of the value goes through it.
+ */
+function watchInputs(): void {
+  const proto = Binding.prototype;
+  const apply = proto.apply;
+  proto.apply = function (this: Binding): void {
+    const before = this.value;
+    apply.call(this);
+    if (before != null && this.value === undefined && this.kind === K_CUSTOM) inputUndefined(this);
+  };
+}
+
+function inputUndefined(b: Binding): void {
+  const el = b.node as Element;
+  const kept = (el as any)[b.name];
+  if (kept === undefined || toldInputs.has(b)) return;
+  toldInputs.add(b);
+  const p = b.pattern.path;
+  console.warn(`[@wcstack/state] [wcs/input-undefined] "${b.name}: ${p}" on <${el.localName}> is undefined after a value, and state never writes undefined to an element's input: <${el.localName}> keeps ${was(kept)}. Write null to clear it (a wcstack I/O node goes back to its default), or give "${p}" a value.`);
+}
+
 /** A re-set: every path is checked again against the new state. */
 function recheck(engine: Engine): void {
   checked.delete(engine);
@@ -746,6 +780,7 @@ export const diagnostics: Feature = {
     hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeSetter);
     hooks.listSynced = chain(hooks.listSynced, listValue);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
+    watchInputs();
   },
 };
 export default diagnostics;

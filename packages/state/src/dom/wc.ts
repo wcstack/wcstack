@@ -110,7 +110,7 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   // enableDirectionalInitialSync off (3.x opt-out): no member checks (and no init= / sync=, see
   // plan.ts); state wins every initial sync, output-only included
   const directional = engine.directional;
-  if (directional && out === null && !input) raise(M.MemberUndeclared, [name]);
+  if (directional && out === null && !input) raise(M.MemberUndeclared, [name, el.localName]);
   // what the member's shape allows: output-only takes element / none, input-only state / none, two-way any
   const init = spec.init;
   const refused = out === null ? init === "element" || init === "auto" : !input && (init === "state" || init === "auto");
