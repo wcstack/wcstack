@@ -265,7 +265,7 @@ describe("<wcs-midi>", () => {
       expect(el.connected).toBe(true);
     });
 
-    it.each(["prompt", "denied"])("外れている間に権限が %s になれば、戻しても要求しない（プロンプトを出さない）", async (state) => {
+    it.each(["prompt", "denied"])("外れている間に権限が %s になれば、戻しても要求せず（プロンプトを出さない）、その答えを permission に知らせる", async (state) => {
       const mock = installMidi();
       installPermissions({ state: "granted" });
       const el = mount(make());
@@ -273,6 +273,7 @@ describe("<wcs-midi>", () => {
       await flush();
       el.remove();
       installPermissions({ state });
+      const permission = record(el, "wcs-midi:permission");
 
       document.body.appendChild(el);
       await el.connectedCallbackPromise;
@@ -280,6 +281,32 @@ describe("<wcs-midi>", () => {
       expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
       expect(el.connected).toBe(false);
       expect(el.devices).toEqual([]);
+      expect(permission).toEqual([state]);
+      expect(el.permission).toBe(state);
+      expect(el.granted).toBe(false);
+    });
+
+    it("サイトの設定で取り消されて戻ると、denied の状態（:state(denied)）が立ち、ボタンからの request() で尋ね直せる", async () => {
+      const mock = installMidi();
+      installPermissions({ state: "granted" });
+      const el = mount(make());
+      await el.request();
+      await flush();
+      el.remove();
+      installPermissions({ state: "denied" });
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(el.denied).toBe(true);
+      expect(el.debugStates).toContain("denied");
+      expect(el.debugStates).not.toContain("granted");
+
+      // 利用者が許可し直してからボタンを押した
+      installPermissions({ state: "granted" });
+      await el.request();
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.granted).toBe(true);
+      expect(el.connected).toBe(true);
     });
 
     it("sysex で取った要素は、sysex の権限がまだ granted なら sysex で取り直す", async () => {

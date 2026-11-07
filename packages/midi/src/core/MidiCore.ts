@@ -292,26 +292,36 @@ export class MidiCore extends EventTarget {
   // observe() after dispose(): request again only when the permission for the
   // sysex asked now is granted, so no prompt can appear. A request(), close()
   // or dispose() while the answer is pending takes the decision (_gen).
+  //
+  // Where the browser answers, its answer decides, and one that is not
+  // `granted` is published: the element learned that the grant went away (a
+  // page reading `granted` with `connected: false` could not tell it must ask
+  // again). Where it does not, the outcome last inferred from request() stands,
+  // and only for the sysex it was inferred at (a sysex grant is a separate
+  // permission); nothing new is known, so nothing is published.
   private _reacquire(): Promise<void> {
     const gen = this._gen;
     const sysex = this._options.sysex === true;
-    return this._grantedNow(sysex).then((granted) => {
-      if (gen !== this._gen || !granted) return;
-      return this.request();
+    return this._queryPermission(sysex).then((answer) => {
+      if (gen !== this._gen) return;
+      if (answer === null) {
+        if (this._permission === "granted" && this._grantedSysex === sysex) return this.request();
+        return;
+      }
+      if (answer === "granted") return this.request();
+      this._setPermission(answer);
     });
   }
 
-  // The Permissions API's answer where the browser gives one; where it does not,
-  // the outcome last inferred from request(), which holds only for the sysex it
-  // was inferred at (a sysex grant is a separate permission).
-  private _grantedNow(sysex: boolean): Promise<boolean> {
-    const inferred = (): boolean => this._permission === "granted" && this._grantedSysex === sysex;
+  // The Permissions API's answer for midi at this sysex; null where the browser
+  // gives none (no Permissions API, or the descriptor is not understood).
+  private _queryPermission(sysex: boolean): Promise<MidiPermissionState | null> {
     // Only reached after _resolveApi() found navigator.requestMIDIAccess.
     const permissions = (globalThis as { navigator?: any }).navigator.permissions;
-    if (!permissions || typeof permissions.query !== "function") return Promise.resolve(inferred());
+    if (!permissions || typeof permissions.query !== "function") return Promise.resolve(null);
     return permissions.query({ name: "midi", sysex }).then(
-      (status: PermissionStatus) => status.state === "granted",
-      inferred,
+      (status: PermissionStatus) => status.state as MidiPermissionState,
+      () => null,
     );
   }
 

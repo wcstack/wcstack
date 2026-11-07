@@ -768,7 +768,7 @@ describe("MidiCore", () => {
       expect(core.connected).toBe(true);
     });
 
-    it.each(["prompt", "denied"])("外れている間に権限が %s になっていれば取り直さない", async (state) => {
+    it.each(["prompt", "denied"])("外れている間に権限が %s になっていれば取り直さず、その答えを permission に知らせる", async (state) => {
       const mock = installMidi();
       installPermissions({ state: "granted" });
       const core = new MidiCore();
@@ -776,11 +776,32 @@ describe("MidiCore", () => {
       await flush();
       core.dispose();
       installPermissions({ state });
+      const permission = record(core, "wcs-midi:permission");
 
       await core.observe({});
 
       expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
       expect(core.connected).toBe(false);
+      expect(permission).toEqual([state]);
+      expect(core.permission).toBe(state);
+    });
+
+    it("権限の答え（denied）を待つ間に dispose すると、permission も変えない", async () => {
+      installMidi();
+      installPermissions({ state: "granted" });
+      const core = new MidiCore();
+      await core.request();
+      await flush();
+      core.dispose();
+      installPermissions({ state: "denied" });
+      const permission = record(core, "wcs-midi:permission");
+
+      const pending = core.observe({});
+      core.dispose();
+      await pending;
+
+      expect(permission).toEqual([]);
+      expect(core.permission).toBe("granted");
     });
 
     it("query を理解しないブラウザでは request の結果に従う", async () => {
@@ -797,17 +818,20 @@ describe("MidiCore", () => {
       expect(core.connected).toBe(true);
     });
 
-    it("query に答えない環境では、取れた sysex と違う sysex では取り直さない（別の権限）", async () => {
+    it("query に答えない環境では、取れた sysex と違う sysex では取り直さず、permission も変えない（新しく分かったことは無い）", async () => {
       const mock = installMidi();
       removePermissions();
       const core = new MidiCore();
       await core.request();
       core.dispose();
+      const permission = record(core, "wcs-midi:permission");
 
       await core.observe({ sysex: true });
 
       expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
       expect(core.connected).toBe(false);
+      expect(permission).toEqual([]);
+      expect(core.permission).toBe("granted");
     });
 
     it("query に答える環境では、いまの sysex の権限を尋ね、granted ならその sysex で取り直す", async () => {
