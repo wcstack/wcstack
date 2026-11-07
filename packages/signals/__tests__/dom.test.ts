@@ -321,7 +321,7 @@ describe("ownership: 動的 child のリーク解消", () => {
       button = h("button", { onClick }, "go") as HTMLButtonElement;
       return button;
     };
-    const host = h("div", null, () => (show.get() ? Btn() : "x"));
+    const host = h("div", null, () => (show.get() ? Btn() : "x")) as HTMLElement;
     document.body.appendChild(host); // 片付けの時点で文書にある要素のリスナーは外す
     try {
       const captured = button!;

@@ -106,7 +106,7 @@ describe("リーク非発生: For の mount/unmount 反復と listener バラン
       const src = signal(0);
       const baselineObs = observersOf(src).size;
 
-      let list!: HTMLElement;
+      let list!: Node;
       const dispose = createRoot((d) => {
         list = h(
           "ul",
@@ -154,7 +154,7 @@ describe("リーク非発生: For の mount/unmount 反復と listener バラン
       dispose();
       expect(removeSpy.mock.calls.length).toBe(100);
       expect(observersOf(src).size).toBe(baselineObs);
-      list.remove();
+      (list as ChildNode).remove();
     } finally {
       addSpy.mockRestore();
       removeSpy.mockRestore();
