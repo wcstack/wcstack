@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `examples/music-room`: the seam app, with its e2e spec — a junior high school music room's practice keyboard in Japanese (an 8-voice synth from a MIDI keyboard, the screen and the computer keyboard; sounds as links; a metronome, a 16-step sequencer, takes), on this tree's dists under `WCS_LOCAL=1`, without the workarounds 4.17.0 made unnecessary: `request()` at connect where Web MIDI is absent, rows over module constants, field errors copied by a `$watch`, an identity `.map` and a `@type`, each written only for the lint. The spec injects the author's Web MIDI stand-in and a probe that measures the sound at the speakers, and pins what 4.17.0 decided: no `AudioContext` before the first gesture, the -6 dBFS ceiling, a stored sound older than the app.
+
 ### Fixed
 
 - `@wcstack/audio`: **the page's first click reaches what was clicked again.** 4.17.0 built a graph that waited for the first gesture inside that gesture's `pointerdown` — creating the `AudioContext` and every node, a few hundred milliseconds in Chromium — and the outputs it published re-rendered the page before the button went up: a hint bound to `running` above the controls hid, the content moved, and the click landed on another element (a button not pressed, a checkbox flipped back; found landing the music-room seam app, [docs/seam-apps.md](./docs/seam-apps.md)). The graph is now built once the gesture ends, after the click; `noteOn()` and `resume()` still build it at once. The gesture listeners also leave the document on disconnect: they stayed, because `getRootNode()` in `disconnectedCallback` is the element itself.
