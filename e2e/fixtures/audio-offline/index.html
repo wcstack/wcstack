@@ -40,6 +40,12 @@
       return n;
     };
 
+    const peak = (data) => {
+      let max = 0;
+      for (let i = 0; i < data.length; i++) max = Math.max(max, Math.abs(data[i]));
+      return max;
+    };
+
     // OfflineAudioContext.suspend() only accepts render-quantum boundaries.
     const quantum = (seconds) => (Math.round((seconds * SR) / 128) * 128) / SR;
 
@@ -73,7 +79,7 @@
       return { data: buffer.getChannelData(0), trace, root };
     };
 
-    window.audioProbe = { rms, zeroCrossings, quantum, SR };
+    window.audioProbe = { rms, zeroCrossings, peak, quantum, SR };
     window.__audioReady = true;
   </script>
 </body>

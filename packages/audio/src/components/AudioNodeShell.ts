@@ -5,6 +5,26 @@ import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 let nextKey = 0;
 
+/**
+ * What asked for a rebuild: the element, and the structural attribute that
+ * changed — absent when the element itself was added (or, with `removed`,
+ * removed). The root names it when the rebuild cuts sounding voices.
+ */
+export interface RebuildCause {
+  readonly element: Element;
+  readonly attribute?: string;
+  readonly removed?: boolean;
+}
+
+/**
+ * The cause a structural attribute change reports. Before the element's first
+ * `connectedCallback` the change is part of its arrival — an upgrade replays
+ * every attribute the markup carries before connecting it — so it reports the
+ * element as added.
+ */
+export const attributeCause = (element: Element, attribute: string, connectedOnce: boolean): RebuildCause =>
+  connectedOnce ? { element, attribute } : { element };
+
 /** The part of the root Shell a node needs, without importing it (cycle-free). */
 export interface AudioRootLike extends HTMLElement {
   readonly isAudioRoot: true;
@@ -13,7 +33,7 @@ export interface AudioRootLike extends HTMLElement {
     setProp(key: string, name: string, value: string | null): void;
     sample(key: string, mode?: "wave" | "fft"): Uint8Array | null;
   } | null;
-  requestRebuild(): void;
+  requestRebuild(cause?: RebuildCause): void;
 }
 
 /**
@@ -63,6 +83,9 @@ export class AudioNodeShell extends HTMLElement {
   /** Stable identity for this element across rebuilds. */
   readonly patchKey = `n${++nextKey}`;
 
+  /** Set by the first `connectedCallback` (`attributeCause`). */
+  private _connectedOnce = false;
+
   patchParams(): Record<string, number> {
     const ctor = this.constructor as typeof AudioNodeShell;
     const params: Record<string, number> = {};
@@ -95,7 +118,8 @@ export class AudioNodeShell extends HTMLElement {
   connectedCallback(): void {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
-    this.root?.requestRebuild();
+    this._connectedOnce = true;
+    this.root?.requestRebuild({ element: this });
   }
 
   // No disconnectedCallback: by the time it runs `closest()` no longer reaches
@@ -117,7 +141,7 @@ export class AudioNodeShell extends HTMLElement {
       return;
     }
     // Structural: the topology changed, so the graph has to be rebuilt.
-    this.root?.requestRebuild();
+    this.root?.requestRebuild(attributeCause(this, name, this._connectedOnce));
   }
 }
 

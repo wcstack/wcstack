@@ -196,7 +196,12 @@ export class FakeAudioContext {
 
   createDynamicsCompressor(): any {
     const n = this._track(new FakeNode(this, "comp")) as any;
+    // The real node's defaults.
     n.threshold = new FakeAudioParam(-24, `${n.label}.threshold`);
+    n.knee = new FakeAudioParam(30, `${n.label}.knee`);
+    n.ratio = new FakeAudioParam(12, `${n.label}.ratio`);
+    n.attack = new FakeAudioParam(0.003, `${n.label}.attack`);
+    n.release = new FakeAudioParam(0.25, `${n.label}.release`);
     return n;
   }
 

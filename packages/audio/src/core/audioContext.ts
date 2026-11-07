@@ -11,6 +11,7 @@ interface ContextRegistry {
   [SHARED]?: BaseAudioContext;
   AudioContext?: ContextCtor;
   webkitAudioContext?: ContextCtor;
+  navigator?: { userActivation?: { hasBeenActive?: boolean } };
 }
 
 /**
@@ -30,6 +31,23 @@ export function defaultCreateContext(): BaseAudioContext | null {
   const ctx = new Ctor();
   registry[SHARED] = ctx;
   return ctx;
+}
+
+/**
+ * Whether `defaultCreateContext()` would now create an `AudioContext` the
+ * browser refuses to start: none exists yet, Web Audio is there, and the page
+ * has had no user gesture (`navigator.userActivation.hasBeenActive`; where the
+ * API is missing, assume none). Chromium and Firefox print a warning for such a
+ * context, so `<wcs-audio>` waits for the gesture instead (4.17).
+ *
+ * False where Web Audio is absent: the caller should go on and report
+ * `"unsupported"` at once rather than wait for a gesture that changes nothing.
+ */
+export function contextAwaitsGesture(): boolean {
+  const registry = globalThis as unknown as ContextRegistry;
+  if (registry[SHARED]) return false;
+  if (!(registry.AudioContext ?? registry.webkitAudioContext)) return false;
+  return registry.navigator?.userActivation?.hasBeenActive !== true;
 }
 
 /** Drop the shared context (tests, and pages that tear everything down). */
