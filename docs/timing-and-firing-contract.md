@@ -537,8 +537,10 @@ An output that `dispose()` leaves alone keeps its value: a position, the transcr
 | websocket | `connected`, `loading`, `readyState` (`CLOSED`) — the socket's own `close` is dropped as stale |
 | contacts, credential, eyedropper, share | `loading` |
 | upload | `loading` |
+| audio (4.17) | `voices` (0); `state` / `running` / `suspended` (`"suspended"`, unless `"unsupported"`) — a disposed root holds no context, so it reads like one before its first gesture; the reconnect's `setPatch()` publishes the context's state again |
+| midi (4.17) | `devices` (`[]`; `close()` too) — `connected` already was |
 
-The other nodes already dispatched every change their disconnect makes, or change nothing on it.
+The other nodes already dispatched every change their disconnect makes, or change nothing on it. Audio and midi were believed to: the `music-room` seam app found them leaving `voices`, `running` and `devices` behind (4.17, [seam-apps.md](./seam-apps.md)).
 
 ### 22.5 Testing
 Each node has a test that disconnects with the operation in flight, asserts the event, and (where it applies) checks that the next operation after a reconnect still fires its `true` edge.
@@ -571,7 +573,7 @@ Where the promise stood for the connect-time work (`<wcs-permission>`'s query, `
 | camera | `<wcs-camera>`'s auto-start (`autostart`) and the constraints it acquires with (`device-id`, `facing-mode`, `audio`, `width`, `height`) |
 | speech | `<wcs-listen>`'s auto-start (`manual`) and its recognition options (`lang`, `continuous`, `interim`, `max-restarts`) |
 | geolocation | the request or watch (`manual`, `watch`, `high-accuracy`, `timeout`, `maximum-age`) |
-| midi | the access request (`auto`, `sysex`) |
+| midi | the access request (`auto`, `sysex`); since 4.17 also the re-acquisition of an access the last `request()` got, while still granted — an answer from the Permissions API that is not `granted` is published as `permission` |
 | permission | the query (`name`, `user-visible-only`, `sysex`) |
 | timer | the auto-start (`manual`, `interval`, `repeat`, `once`, `immediate`) |
 | clipboard | monitoring (`monitor`) |
