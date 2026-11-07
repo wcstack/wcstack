@@ -61,6 +61,8 @@ npm install @wcstack/audio
 
 Audio starts on your first click or key press — browsers do not let a page make noise before then. `<wcs-audio>` resumes the context on the first gesture; set `resume-on-gesture="off"` to drive it yourself with `command.resume`.
 
+Since 4.17 (not released yet) the page's `AudioContext` is not even created before that gesture: a context created earlier cannot start, and Chromium and Firefox print a warning for it as the page loads ("The AudioContext was not allowed to start…", "An AudioContext was prevented from starting automatically…"). Until then `state` reads `suspended` (`running` false, `suspended` true), as it did before a gesture. The first `resume()` or `noteOn()` creates it too, so a `resume-on-gesture="off"` page still starts on its own `command.resume`, and a note sent before any gesture (from a MIDI keyboard, say) is not dropped. A page that has already had a gesture when `<wcs-audio>` connects (a route entered by a click) creates it at once. A `createContext` you supply (an `OfflineAudioContext`) is called at connect, as before.
+
 ### 2. An 8-voice synth driven by state
 
 ```html
@@ -121,13 +123,13 @@ core.setParam("o1", "frequency", 880);   // live, no rebuild
 core.dispose();
 ```
 
-Pass your own `createContext` to render into an `OfflineAudioContext` — no user gesture, faster than realtime, deterministic output. That is how this package's own browser tests assert that a patch is audible.
+Pass your own `createContext` to render into an `OfflineAudioContext` — no user gesture, faster than realtime, deterministic output. That is how this package's own browser tests assert that a patch is audible. The headless Core does not wait for a gesture: it creates its context at the first `setPatch()`, so with the default (realtime) context, call `setPatch()` and `resume()` from a user gesture.
 
 ## Tags
 
 | Tag | Web Audio | Attributes |
 |-----|-----------|------------|
-| `<wcs-audio>` | `AudioContext` (shared) + master gain + limiter | `volume` `limiter` `resume-on-gesture` |
+| `<wcs-audio>` | `AudioContext` (shared) + master gain + limiter | `volume` (0–1) `limiter` `resume-on-gesture` |
 | `<wcs-voice>` | per-note graph instancing | `poly` |
 | `<wcs-osc>` | `OscillatorNode` | `type` `frequency` `detune` `note` `transpose` (semitones) `glide` (s) |
 | `<wcs-noise>` | looped white-noise buffer | — |
@@ -147,14 +149,17 @@ Every tag also takes the routing attributes `id`, `out`, `param`, and `note` whe
 
 | Change | Effect |
 |---|---|
-| a numeric attribute or property (`frequency`, `gain`, `attack`, …) | **live** — applied to every instance, sounding voices included |
-| a structural attribute (`out`, `param`, `note`, `id`, `poly`) | **rebuild** |
+| an `AudioParam` attribute or property (`frequency`, `detune`, `gain`, `q`, `time`, `feedback`, `rate`, `depth` on `<wcs-lfo>`) | **live** — ramped over ~20 ms, applied to every instance, sounding voices included |
+| a setting that is not an `AudioParam` (`type`, `mix`, `amount`, the envelope's `attack` `decay` `sustain` `release` `depth`, `glide`, `transpose`, `fft`, `smoothing`) | **live** — applied to every instance, sounding voices included: `type`, `mix` and `amount` at once, the envelope times, `glide` and `transpose` from the next note or envelope stage |
+| a structural attribute (`out`, `param`, `note`, `master`, `id`, `poly`) | **rebuild** |
 | adding, removing or moving an audio tag | **rebuild** |
 | any other DOM change | **nothing** |
 
 That last row matters: a `<div>` added among your sliders must not silence the instrument. Rebuilds are coalesced onto a microtask, and re-submitting an unchanged patch is free.
 
-**A rebuild cuts sounding voices.** The discontinuity is audible. Structure is meant to be declared, not animated.
+**A rebuild cuts sounding voices.** The discontinuity is audible. Structure is meant to be declared, not animated: bind the live values, and write the structure in the markup.
+
+Since 4.17 (not released yet), a rebuild that cuts sounding voices is reported once per `<wcs-audio>`: `console.warn` with `[wcs/audio-voices-cut]`, naming what changed (the tag and the attribute, or the tag added or removed) and how many voices were cut. The usual cause is a structural attribute bound to state — `<wcs-voice data-wcs="poly: polyphony">` driven by a select, `data-wcs="attr.out: route"` — or an audio tag under `if:` / `for:`. To change the structure on purpose, call `allNotesOff` first. Nothing is reported when nothing sounds.
 
 ## When a value becomes audible
 
@@ -185,7 +190,10 @@ Each `sample()` returns a **freshly allocated** array, so retaining a frame is s
 ## Notes
 
 - **The context is shared.** Browsers cap concurrent `AudioContext`s, so every `<wcs-audio>` on a page uses one, reached through a `Symbol.for` registry so even two copies of the bundle converge on it. Each root keeps its own master gain and limiter.
-- **The limiter starts working early.** Its threshold is -18 dBFS (≈ 0.126 amplitude), which is well below full scale — that is the point, it is ear protection. If you are measuring amplitudes, stay under it or turn it off with `limiter="off"`.
+- **`noteOn` reaches everything in its root.** Every `<wcs-voice>` in a `<wcs-audio>` plays each note — two voices in one root are layered, not two instruments — and so do the live graph's `note` oscillators and envelopes. Two instruments (a melody and a bass, a piano and a pad) are two `<wcs-audio>` roots, each with its own `noteOn` / `noteOff`, `volume` and `voices`. That is cheap: they share the page's one context, so a second root adds a master gain and a limiter, not a second `AudioContext`.
+- **The limiter is ear protection, on by default.** Since 4.17 (not released yet) it compresses from -18 dBFS (≈ 0.126 amplitude) at 4:1, and a hard ceiling after the compressor keeps every sample at or under -6 dBFS (amplitude 0.501), whatever the patch or `volume`: the 8-voice patch above, a full chord at velocity 1 at the default volume, stays under it — through 4.16's limiter, a compressor with only its threshold set, it reached about +5 dBFS. Under -18 dBFS a signal passes at its own level (the compressor's automatic makeup gain is taken back out). `limiter="off"` removes both stages: use it when you measure amplitudes.
+- **`volume` is 0 to 1.** Since 4.17 (not released yet) a value outside is clamped, not refused: `volume="80"` plays — and reads — as 1, `-1` as 0. The attribute keeps what was written. Make a quiet patch louder with the gains inside it; the limiter keeps the result under its ceiling.
+- **Leaving the document stops the sound, and says so.** When `<wcs-audio>` is taken out (an `if:` branch removed, a route left), its voices stop and, since 4.17 (not released yet), it publishes what that changed: `voices` goes to 0 and `state` to `suspended` (`running` false), so a page bound to them shows the instrument stopped. When it comes back, `state` reads the context's again.
 - **`<wcs-env>` changes role with context**: in the chain it is a VCA, with `param` it shapes that parameter.
 - **A voice patch with no `<wcs-env>`** gets an implicit 5 ms attack so it cannot click, and is released on note-off so it cannot sustain forever.
 - **Voices are reclaimed on the audio clock**, never on a timer — background tabs throttle timers to about once a minute while audio keeps rendering, which would otherwise leak a voice per note.
