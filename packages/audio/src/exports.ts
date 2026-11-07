@@ -9,6 +9,7 @@ export { structureKey } from "./patch/structureKey.js";
 export { WcsAudio } from "./components/Audio.js";
 export { WcsVoice } from "./components/Voice.js";
 export { AudioNodeShell, findAudioRoot } from "./components/AudioNodeShell.js";
+export type { RebuildCause } from "./components/AudioNodeShell.js";
 export {
   WcsAnalyser, WcsBiquad, WcsDelay, WcsEnv, WcsGain, WcsLfo, WcsNoise, WcsOsc,
   WcsShaper,

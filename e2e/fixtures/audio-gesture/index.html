@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>@wcstack/audio — the context waits for the first gesture</title>
+</head>
+<body>
+  <!--
+    A page as an author writes it: the /auto bundle, the default (shared,
+    realtime) AudioContext, resume-on-gesture on. Before 4.17 the context was
+    created at connect, before any gesture, and the browser printed a warning
+    on load: Firefox for the context itself ("An AudioContext was prevented from
+    starting automatically"), Chromium when the live chain below started its
+    oscillator ("The AudioContext was not allowed to start"). Since 4.17 it is
+    created at the first gesture, so loading the page prints nothing, and the
+    first press of the key still sounds.
+
+    Two roots share the context: the first gesture reaches both (each listens
+    for it), and the scope reads the keyboard's master only, so what it sees is
+    the note.
+  -->
+  <!-- README Quick Start 1: a live chain, whose oscillator starts when the graph is built. -->
+  <wcs-audio id="drone" volume="0.5">
+    <wcs-osc type="sine" frequency="220">
+      <wcs-gain gain="0.05"></wcs-gain>
+    </wcs-osc>
+  </wcs-audio>
+
+  <!-- A keyboard: one voice per key, and a scope on its master output. -->
+  <wcs-audio id="synth">
+    <wcs-voice poly="4">
+      <wcs-osc type="sine" note>
+        <wcs-env attack="0.005" decay="0.05" sustain="0.9" release="0.2">
+          <wcs-gain gain="0.2"></wcs-gain>
+        </wcs-env>
+      </wcs-osc>
+    </wcs-voice>
+    <wcs-analyser id="scope" master></wcs-analyser>
+  </wcs-audio>
+
+  <button id="key" type="button">C4</button>
+
+  <script type="module" src="/packages/audio/dist/auto.min.js"></script>
+  <script type="module">
+    const synth = document.getElementById("synth");
+    const key = document.getElementById("key");
+    key.addEventListener("pointerdown", () => synth.noteOn(60, 1));
+    key.addEventListener("pointerup", () => synth.noteOff(60));
+    await customElements.whenDefined("wcs-audio");
+    window.__audioGestureReady = true;
+  </script>
+</body>
+</html>

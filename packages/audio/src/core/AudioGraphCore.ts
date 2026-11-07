@@ -4,6 +4,7 @@ import {
 import type { WcsIoErrorInfo } from "./platformCapability.js";
 import { deriveAudioErrorInfo } from "./audioCapabilities.js";
 import { defaultCreateContext } from "./audioContext.js";
+import { buildLimiter } from "./limiter.js";
 import { structureKey } from "../patch/structureKey.js";
 import { VoiceAllocation, VoiceAllocator } from "./VoiceAllocator.js";
 import {
@@ -14,6 +15,9 @@ import {
 const UNSUPPORTED = "unsupported";
 
 const detailOf = (event: Event): any => (event as CustomEvent).detail;
+
+/** The master level: a number in [0, 1]; outside it is clamped, and anything else is the default 0.8. */
+export const clampVolume = (value: unknown): number => Math.min(1, Math.max(0, num(value, 0.8)));
 
 /** Everything one build pass produced, for the whole patch or for one voice. */
 interface Scope {
@@ -84,7 +88,8 @@ export class AudioGraphCore extends EventTarget {
 
   private _ctx: BaseAudioContext | null = null;
   private _master: GainNode | null = null;
-  private _limiter: DynamicsCompressorNode | null = null;
+  /** The limiter's stages in signal order (`limiter.ts`); empty without a context. */
+  private _limiter: AudioNode[] = [];
   private _masterTaps: AudioNode[] = [];
 
   private _patch: Patch | null = null;
@@ -137,6 +142,18 @@ export class AudioGraphCore extends EventTarget {
     return this._allocators.reduce((n, a) => n + a.allocated, 0);
   }
 
+  /**
+   * Whether a held note is sounding on the live (monophonic) graph, outside any
+   * voice: a key is down and the live graph has an envelope or a `note`
+   * oscillator it plays. Every note is held there too, so a patch whose notes
+   * all go to `<wcs-voice>` has nothing on the live graph to sound.
+   */
+  get liveNoteHeld(): boolean {
+    // A note is held only while a live graph exists: noteOn() pushes it with one
+    // in hand, and _teardown() clears both.
+    return this._held.length > 0 && (this._live!.gates.length > 0 || this._live!.noteOscs.length > 0);
+  }
+
   // --- Lifecycle ---
 
   /**
@@ -155,6 +172,15 @@ export class AudioGraphCore extends EventTarget {
    * Not terminal. A later `observe()` / `setPatch()` rebuilds from scratch, so
    * an element that is detached and re-attached — or simply moved in the DOM —
    * comes back playing. `PermissionCore` treats its subscription the same way.
+   *
+   * What it changes is published (timing-and-firing-contract.md §22): `voices`
+   * goes to 0, and `state` to `"suspended"` — a Core holding no context reads as
+   * one that has not started yet. A route that removes `<wcs-audio>` keeps its
+   * bindings for the way back, and they learn a value only from its event; and
+   * since the Core stops listening to the shared context here, a `running` left
+   * behind could not even follow it. The reconnect's `setPatch()` publishes the
+   * context's real state again, an edge the same-value guard would otherwise eat.
+   * `"unsupported"` stays: there was no context to let go of.
    */
   dispose(): void {
     this._gen++;
@@ -163,18 +189,17 @@ export class AudioGraphCore extends EventTarget {
     // Detach the shared context's listener: the context outlives this Core, so
     // leaving it attached would keep every disposed instance reachable.
     ctx?.removeEventListener?.("statechange", this._onContextState);
-    if (this._master) {
-      try { this._master.disconnect(); } catch { /* already detached */ }
-    }
-    if (this._limiter) {
-      try { this._limiter.disconnect(); } catch { /* already detached */ }
+    for (const node of this._master ? [this._master, ...this._limiter] : []) {
+      try { node.disconnect(); } catch { /* already detached */ }
     }
     this._master = null;
-    this._limiter = null;
+    this._limiter = [];
     this._ctx = null;
     // Force the next setPatch() to rebuild rather than compare against a key
     // whose graph no longer exists.
     this._structureKey = null;
+    this._publishVoices();
+    if (this._state !== UNSUPPORTED) this._setState("suspended");
   }
 
   // --- Patch ---
@@ -228,9 +253,13 @@ export class AudioGraphCore extends EventTarget {
     }
   }
 
-  /** Master output level. Desired only — the effective gain is never read back. */
+  /**
+   * Master output level, in [0, 1]: a value outside is clamped, not refused, and
+   * one that is not a number is the default 0.8. Desired only — the effective
+   * gain is never read back.
+   */
   setVolume(value: number): void {
-    this._volume = num(value, 0.8);
+    this._volume = clampVolume(value);
     if (this._master && this._ctx) {
       this._master.gain.setTargetAtTime(this._volume, this._ctx.currentTime, 0.02);
     }
@@ -386,10 +415,10 @@ export class AudioGraphCore extends EventTarget {
     this._ctx = ctx;
     this._master = ctx.createGain();
     this._master.gain.value = this._volume;
-    this._limiter = ctx.createDynamicsCompressor();
-    // -18 dBFS: quiet enough that stacking a chord cannot reach a painful level
-    // through headphones, which is the whole point of having it on by default.
-    this._limiter.threshold.value = -18;
+    // Ear protection, on by default: compression from -18 dBFS and a ceiling at
+    // -6 dBFS, so stacking a chord cannot reach a painful level through
+    // headphones (limiter.ts).
+    this._limiter = buildLimiter(ctx);
     this._wireMaster();
     this._syncState();
     (ctx as AudioContext).addEventListener?.("statechange", this._onContextState);
@@ -399,12 +428,14 @@ export class AudioGraphCore extends EventTarget {
   private _wireMaster(): void {
     const ctx = this._ctx;
     const master = this._master;
-    const limiter = this._limiter;
-    if (!ctx || !master || !limiter) return;
-    try { master.disconnect(); } catch { /* not connected */ }
-    try { limiter.disconnect(); } catch { /* not connected */ }
-    if (this._limiterEnabled) master.connect(limiter).connect(ctx.destination);
-    else master.connect(ctx.destination);
+    if (!ctx || !master) return;
+    for (const node of [master, ...this._limiter]) {
+      try { node.disconnect(); } catch { /* not connected */ }
+    }
+    // limiter="off" takes out every stage, the ceiling included: a measurement
+    // reads the patch's own level.
+    const stages = this._limiterEnabled ? this._limiter : [];
+    stages.reduce<AudioNode>((from, to) => from.connect(to), master).connect(ctx.destination);
     // Master taps hang off the master gain, so they survive the rewire above
     // only if re-attached.
     for (const tap of this._masterTaps) master.connect(tap);

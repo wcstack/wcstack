@@ -1,5 +1,5 @@
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
-import { findAudioRoot } from "./AudioNodeShell.js";
+import { attributeCause, findAudioRoot } from "./AudioNodeShell.js";
 import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
@@ -13,7 +13,8 @@ import { reflectAttribute } from "../protocol/inputAttribute.js";
  * It deliberately declares no `static wcBindable`. `poly` is **structural** — a
  * change rebuilds the graph and cuts every sounding voice — so advertising it as
  * a bindable input would invite exactly the reactive write that should not
- * happen. Set it in markup, not from state.
+ * happen. Set it in markup, not from state. (A change that cuts sounding voices
+ * is reported once per root, `[wcs/audio-voices-cut]`.)
  */
 export class WcsVoice extends HTMLElement {
   static observedAttributes = ["poly"];
@@ -24,6 +25,9 @@ export class WcsVoice extends HTMLElement {
   readonly patchKey: string;
 
   private static _next = 0;
+
+  /** Set by the first `connectedCallback` (`attributeCause`). */
+  private _connectedOnce = false;
 
   constructor() {
     super();
@@ -46,11 +50,12 @@ export class WcsVoice extends HTMLElement {
   connectedCallback(): void {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
-    findAudioRoot(this)?.requestRebuild();
+    this._connectedOnce = true;
+    findAudioRoot(this)?.requestRebuild({ element: this });
   }
 
-  attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     if (oldValue === newValue) return;
-    findAudioRoot(this)?.requestRebuild();
+    findAudioRoot(this)?.requestRebuild(attributeCause(this, name, this._connectedOnce));
   }
 }

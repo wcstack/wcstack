@@ -1,12 +1,14 @@
 import {
   AudioContextState, IAudioWarning, IWcBindable, Patch, WcsIoErrorInfo,
 } from "../types.js";
-import { AudioGraphCore } from "../core/AudioGraphCore.js";
+import { AudioGraphCore, clampVolume } from "../core/AudioGraphCore.js";
+import { contextAwaitsGesture, defaultCreateContext } from "../core/audioContext.js";
 import { getConfig } from "../config.js";
 import { compilePatch } from "../patch/compilePatch.js";
 import { applyNodeStyles } from "../patch/nodeStyles.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { reflectAttribute } from "../protocol/inputAttribute.js";
+import type { RebuildCause } from "./AudioNodeShell.js";
 
 /** Tag names of every element whose presence changes the graph's topology. */
 const AUDIO_TAG_RE = /^(WCS-OSC|WCS-NOISE|WCS-BIQUAD|WCS-GAIN|WCS-DELAY|WCS-SHAPER|WCS-ENV|WCS-LFO|WCS-ANALYSER|WCS-VOICE)$/;
@@ -20,6 +22,28 @@ const isAudioElement = (node: Node): boolean => {
 };
 
 /**
+ * `[wcs/audio-voices-cut]`: what changed, how many voices it cut, and the fix.
+ * The fix differs with the cause: a structural attribute is written in the
+ * markup, not bound; an audio tag stays in place rather than under `if:` / `for:`.
+ */
+const voicesCutWarning = (root: string, cause: RebuildCause | null, voices: number): string => {
+  const tag = cause ? `<${cause.element.localName}>` : "";
+  const what = cause === null ? "A change to the patch's structure"
+    : cause.attribute !== undefined ? `Changing "${cause.attribute}" on ${tag}`
+    : `${cause.removed ? "Removing" : "Adding"} ${tag}`;
+  const fix = cause === null
+    ? "Structure is declared, not bound: the audio tags and their id, out, param, note, master and poly attributes describe the graph. " +
+      "Bind the live values instead (frequency, gain, type, mix, attack, …), which change without a rebuild, and keep audio tags out of if: / for:."
+    : cause.attribute !== undefined
+      ? `"${cause.attribute}" is structural, like id, out, param, note, master and poly: write it in the markup, do not bind it. ` +
+        "Bind the live values instead (frequency, gain, type, mix, attack, …): they change without a rebuild, sounding voices included."
+      : "The audio tags are the patch's structure: keep them in place (not under if: or for:) and switch or silence a chain " +
+        "with live values instead (a gain's gain, an oscillator's type).";
+  return `[@wcstack/audio] [wcs/audio-voices-cut] ${what} rebuilt the graph of <${root}> and cut ${voices} sounding ` +
+    `voice${voices === 1 ? "" : "s"}. ${fix} To change the structure on purpose, call allNotesOff first. (Said once per <${root}>.)`;
+};
+
+/**
  * `<wcs-audio>` — the root of a patch.
  *
  * Owns the graph's lifecycle: it walks its own markup into a patch descriptor,
@@ -29,7 +53,13 @@ const isAudioElement = (node: Node): boolean => {
  * Rebuild policy (ADR-14 G5): a change to a numeric attribute is applied live,
  * a change to the shape of the patch rebuilds it, and **a rebuild cuts sounding
  * voices**. So the mutation observer is filtered to audio elements — adding a
- * `<div>` among the controls must not silence the instrument.
+ * `<div>` among the controls must not silence the instrument — and a rebuild
+ * that does cut voices is reported once (`_applyPatch`).
+ *
+ * With the default context provider the graph is not built before the page's
+ * first user gesture (or `resume()` / `noteOn()`): building it creates the
+ * shared `AudioContext`, which a browser refuses to start earlier and warns
+ * about (`_mustWait`).
  */
 export class WcsAudio extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -53,6 +83,14 @@ export class WcsAudio extends HTMLElement {
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
   private _gestureBound = false;
+  /** The graph waits for the first gesture, `resume()` or `noteOn()` (`_mustWait`). */
+  private _waiting = false;
+  /** A gesture, `resume()` or `noteOn()` has come: the context may be created at any time now. */
+  private _armed = false;
+  /** What asked for the queued rebuild first, for `[wcs/audio-voices-cut]`. */
+  private _rebuildCause: RebuildCause | null = null;
+  /** `[wcs/audio-voices-cut]` is said once per root. */
+  private _cutWarned = false;
 
   constructor() {
     super();
@@ -118,11 +156,12 @@ export class WcsAudio extends HTMLElement {
   // written as "null" / "undefined", and neither turns the ear-protection
   // limiter off.
 
-  get volume(): number {
-    const raw = this.getAttribute("volume");
-    const n = raw === null ? NaN : parseFloat(raw);
-    return Number.isFinite(n) ? n : 0.8;
-  }
+  /**
+   * The master level, in [0, 1] (4.17): a value outside reads — and sounds — as
+   * the nearer end; the attribute keeps what was written, as `<input type=range>`
+   * keeps its `value` attribute.
+   */
+  get volume(): number { return clampVolume(this.getAttribute("volume")); }
 
   set volume(value: number | null | undefined) { reflectAttribute(this, "volume", value); }
 
@@ -159,9 +198,13 @@ export class WcsAudio extends HTMLElement {
 
   // --- Commands ---
 
-  resume(): Promise<void> { return this._core.resume(); }
+  // resume() and noteOn() are requests for sound: a graph that waited for a
+  // gesture is built here, so the context is created inside the gesture (or
+  // command) that called them. noteOn() too: a note dropped because no gesture
+  // had come yet would go unheard *and* unreported (no voices, no noteon event).
+  resume(): Promise<void> { this._arm(); return this._core.resume(); }
   suspend(): Promise<void> { return this._core.suspend(); }
-  noteOn(note: number, velocity?: number): void { this._core.noteOn(note, velocity); }
+  noteOn(note: number, velocity?: number): void { this._arm(); this._core.noteOn(note, velocity); }
   noteOff(note: number): void { this._core.noteOff(note); }
   allNotesOff(): void { this._core.allNotesOff(); }
 
@@ -172,13 +215,19 @@ export class WcsAudio extends HTMLElement {
    * A microtask, not a task: the cross-cutting contract puts microtasks ahead of
    * tasks precisely so a graph is in place before the first frame that could
    * observe it (timing-and-firing-contract.md §3).
+   *
+   * `cause` names the element (and the structural attribute) that asked, so the
+   * warning for a rebuild that cuts sounding voices can say what changed.
    */
-  requestRebuild(): void {
+  requestRebuild(cause?: RebuildCause): void {
+    this._rebuildCause ??= cause ?? null;
     if (this._rebuildQueued) return;
     this._rebuildQueued = true;
     queueMicrotask(() => {
       this._rebuildQueued = false;
-      if (this.isConnected) this._core.setPatch(compilePatch(this));
+      const first = this._rebuildCause;
+      this._rebuildCause = null;
+      if (this.isConnected && !this._waiting) this._applyPatch(first);
     });
   }
 
@@ -197,7 +246,8 @@ export class WcsAudio extends HTMLElement {
       this._observer.observe(this, { childList: true, subtree: true });
     }
     this._bindGesture();
-    this._connectedCallbackPromise = this._core.observe(compilePatch(this));
+    this._waiting = this._mustWait();
+    this._connectedCallbackPromise = this._waiting ? Promise.resolve() : this._core.observe(compilePatch(this));
   }
 
   disconnectedCallback(): void {
@@ -218,13 +268,52 @@ export class WcsAudio extends HTMLElement {
 
   private _onMutations = (records: MutationRecord[]): void => {
     for (const record of records) {
-      const touched = [...record.addedNodes, ...record.removedNodes];
-      if (touched.some(isAudioElement)) {
-        this.requestRebuild();
+      const added = [...record.addedNodes].find(isAudioElement);
+      const element = added ?? [...record.removedNodes].find(isAudioElement);
+      if (element) {
+        this.requestRebuild({ element: element as Element, removed: added === undefined });
         return;
       }
     }
   };
+
+  /**
+   * Hand the markup's patch to the Core. A rebuild cuts every sounding voice
+   * (timing-and-firing-contract.md §19.3), and when that happens it is said once
+   * per root: a structural attribute bound to state, or an audio tag under
+   * `if:`, cuts the notes on every change, and nothing else tells the author why.
+   * Nothing is said when nothing sounds — declaring the structure is not a mistake.
+   */
+  private _applyPatch(cause: RebuildCause | null): void {
+    const core = this._core;
+    // The live (monophonic) graph's held note is one voice, however many keys are down.
+    const sounding = core.soundingVoices + (core.liveNoteHeld ? 1 : 0);
+    if (!core.setPatch(compilePatch(this)) || sounding === 0 || this._cutWarned) return;
+    this._cutWarned = true;
+    console.warn(voicesCutWarning(this.localName, cause, sounding), this);
+  }
+
+  /**
+   * Whether building now would create the page's `AudioContext` before a user
+   * gesture, which the browser does not let start, and warns about (Chromium:
+   * "The AudioContext was not allowed to start", Firefox: "An AudioContext was
+   * prevented from starting automatically"). Then the graph waits for the first
+   * gesture (`resume-on-gesture`), `resume()` or `noteOn()`, and `state` reads
+   * `"suspended"` meanwhile, as it did before a gesture. Only the default
+   * provider waits: a `createContext` you supply (an `OfflineAudioContext`, which
+   * needs no gesture) is called at connect, as before.
+   */
+  private _mustWait(): boolean {
+    return !this._armed && getConfig().createContext === defaultCreateContext && contextAwaitsGesture();
+  }
+
+  /** The first gesture, `resume()` or `noteOn()`: build the graph that waited, creating the context now. */
+  private _arm(): void {
+    this._armed = true;
+    if (!this._waiting) return;
+    this._waiting = false;
+    if (this.isConnected) this._core.setPatch(compilePatch(this));
+  }
 
   // An AudioContext only leaves "suspended" inside a user gesture. Listeners are
   // attached to this element's root (not document) and removed on disconnect, so
@@ -249,5 +338,5 @@ export class WcsAudio extends HTMLElement {
     this._gestureBound = false;
   }
 
-  private _onGesture = (): void => { void this._core.resume(); };
+  private _onGesture = (): void => { this._arm(); void this._core.resume(); };
 }

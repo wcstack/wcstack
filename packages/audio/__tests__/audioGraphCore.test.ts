@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { AudioGraphCore } from "../src/core/AudioGraphCore";
+import { AudioGraphCore, clampVolume } from "../src/core/AudioGraphCore";
+import {
+  LIMITER_CEILING, LIMITER_RATIO, LIMITER_THRESHOLD, MAKEUP_COMPENSATION, hardClipCurve, softClipCurve,
+} from "../src/core/limiter";
 import { structureKey } from "../src/patch/structureKey";
 import { Patch } from "../src/types";
 import { FakeAudioContext, FakeAudioParam, resetNodeIds } from "./FakeAudioContext";
@@ -10,6 +13,14 @@ const record = (target: EventTarget, name: string): any[] => {
   target.addEventListener(name, (e) => seen.push((e as CustomEvent).detail));
   return seen;
 };
+
+/**
+ * master(gain#2) → compressor(comp#3) → makeup compensation(gain#4) → soft clip(shaper#5)
+ * → hard clip(shaper#6) → destination#1. Built first, so a patch's nodes start at #7.
+ */
+const MASTER_CHAIN = [
+  "gain#2 -> comp#3", "comp#3 -> gain#4", "gain#4 -> shaper#5", "shaper#5 -> shaper#6", "shaper#6 -> destination#1",
+];
 
 let ctx: FakeAudioContext;
 const make = (options: { createContext?: () => any } = {}): AudioGraphCore =>
@@ -31,7 +42,7 @@ describe("AudioGraphCore", () => {
     it("master → limiter → destination を組む（既定でリミッター有効）", () => {
       const core = make();
       core.setPatch({ nodes: [], voices: [] });
-      expect(ctx.snapshot()).toEqual(["gain#2 -> comp#3", "comp#3 -> destination#1"].sort());
+      expect(ctx.snapshot()).toEqual([...MASTER_CHAIN].sort());
     });
 
     it("options 省略時は既定のコンテキスト供給を使う", () => {
@@ -51,10 +62,10 @@ describe("AudioGraphCore", () => {
     it("limiter の切り替えで master タップが張り直される", () => {
       const core = make();
       core.setPatch({ nodes: [{ kind: "analyser", key: "scope", master: true }], voices: [] });
-      expect(ctx.snapshot()).toContain("gain#2 -> analyser#4");
+      expect(ctx.snapshot()).toContain("gain#2 -> analyser#7");
       core.setLimiter(false);
       // master を繋ぎ替えてもタップは生き残る
-      expect(ctx.snapshot()).toContain("gain#2 -> analyser#4");
+      expect(ctx.snapshot()).toContain("gain#2 -> analyser#7");
       expect(ctx.snapshot()).toContain("gain#2 -> destination#1");
     });
 
@@ -66,7 +77,7 @@ describe("AudioGraphCore", () => {
       core.setLimiter(false); // 同値は no-op
       expect(ctx.snapshot()).toEqual(["gain#2 -> destination#1"]);
       core.setLimiter(true);
-      expect(ctx.snapshot()).toEqual(["gain#2 -> comp#3", "comp#3 -> destination#1"].sort());
+      expect(ctx.snapshot()).toEqual([...MASTER_CHAIN].sort());
     });
 
     it("context を作れない環境では unsupported になり setPatch が false を返す", () => {
@@ -112,6 +123,88 @@ describe("AudioGraphCore", () => {
       core.setPatch(SIMPLE);
       core.setVolume(NaN);
       expect((ctx.nodesOf("gain")[0] as any).gain.value).toBe(0.8);
+    });
+
+    it("volume は 0〜1 にクランプされる（範囲外は拒まず端の値になる）", () => {
+      const core = make();
+      core.setPatch(SIMPLE);
+      const master = ctx.nodesOf("gain")[0] as any;
+      core.setVolume(80);
+      expect(master.gain.value).toBe(1);
+      core.setVolume(-3);
+      expect(master.gain.value).toBe(0);
+      core.setVolume("0.5" as unknown as number);
+      expect(master.gain.value).toBe(0.5);
+      expect([clampVolume(1.0001), clampVolume(0), clampVolume("x"), clampVolume(null)]).toEqual([1, 0, 0.8, 0.8]);
+    });
+
+    it("クランプした volume は context を作る前に書いても master の初期値になる", () => {
+      const core = make();
+      core.setVolume(80);
+      core.setPatch(SIMPLE);
+      expect((ctx.nodesOf("gain")[0] as any).gain.value).toBe(1);
+    });
+  });
+
+  describe("リミッター（耳の保護: -18 dBFS から圧縮、-6 dBFS の天井）", () => {
+    it("compressor は -18 dBFS・4:1・ハードニーで、自動メイクアップを打ち消す gain が続く", () => {
+      const core = make();
+      core.setPatch({ nodes: [], voices: [] });
+      const comp = ctx.nodesOf("comp")[0] as any;
+      expect([comp.threshold.value, comp.knee.value, comp.ratio.value, comp.attack.value, comp.release.value])
+        .toEqual([LIMITER_THRESHOLD, 0, LIMITER_RATIO, 0.003, 0.25]);
+      expect([LIMITER_THRESHOLD, LIMITER_RATIO, LIMITER_CEILING]).toEqual([-18, 4, 0.501]);
+      // makeup = -0.6 × threshold × (1 − 1/ratio) = +8.1 dB を戻す
+      const makeup = ctx.nodesOf("gain")[1] as any;
+      expect(makeup.gain.value).toBeCloseTo(10 ** (-8.1 / 20), 6);
+      expect(MAKEUP_COMPENSATION).toBeCloseTo(0.3936, 4);
+    });
+
+    it("ソフトクリップ（4x オーバーサンプル）の後に、オーバーサンプルしないハードクリップで天井を保証する", () => {
+      const core = make();
+      core.setPatch({ nodes: [], voices: [] });
+      const [soft, hard] = ctx.nodesOf("shaper") as any[];
+      expect(soft.oversample).toBe("4x");
+      expect(soft.curve).toBe(softClipCurve());
+      expect(hard.oversample).toBe("none");
+      expect(hard.curve).toBe(hardClipCurve());
+    });
+
+    it("ハードクリップのカーブは天井までは恒等、超えると ±0.501 に張り付く（範囲外の入力は端の値）", () => {
+      const curve = hardClipCurve();
+      const at = (x: number): number => curve[Math.round(((x + 1) / 2) * (curve.length - 1))];
+      expect(curve.length % 2).toBe(1);
+      expect(at(0)).toBe(0);
+      expect(at(0.25)).toBeCloseTo(0.25, 6);
+      expect(at(-0.5)).toBeCloseTo(-0.5, 6);
+      expect(curve[curve.length - 1]).toBeCloseTo(LIMITER_CEILING, 6);
+      expect(curve[0]).toBeCloseTo(-LIMITER_CEILING, 6);
+      expect(Math.max(...curve)).toBeLessThanOrEqual(LIMITER_CEILING);
+      expect(Math.min(...curve)).toBeGreaterThanOrEqual(-LIMITER_CEILING);
+    });
+
+    it("ソフトクリップのカーブは -9 dBFS までは恒等、その先は単調に天井へ近づき、超えない", () => {
+      const curve = softClipCurve();
+      const at = (x: number): number => curve[Math.round(((x + 1) / 2) * (curve.length - 1))];
+      // 0.3125 / 0.4375 are grid points of the 2049-point curve
+      expect(at(0)).toBe(0);
+      expect(at(0.3125)).toBeCloseTo(0.3125, 6);
+      expect(at(-0.3125)).toBeCloseTo(-0.3125, 6);
+      expect(at(0.4375)).toBeLessThan(0.4375);
+      for (let i = 1; i < curve.length; i++) expect(curve[i]).toBeGreaterThanOrEqual(curve[i - 1]);
+      expect(Math.max(...curve)).toBeLessThanOrEqual(LIMITER_CEILING);
+      expect(curve[curve.length - 1]).toBeGreaterThan(0.5);
+    });
+
+    it("limiter の付け外しで 4 段がまとめて出入りする", () => {
+      const core = make();
+      core.setPatch({ nodes: [], voices: [] });
+      core.setLimiter(false);
+      expect(ctx.snapshot()).toEqual(["gain#2 -> destination#1"]);
+      core.setLimiter(true);
+      expect(ctx.snapshot()).toEqual([...MASTER_CHAIN].sort());
+      core.dispose();
+      expect(ctx.snapshot()).toEqual([]);
     });
   });
 
@@ -212,11 +305,10 @@ describe("AudioGraphCore", () => {
       const core = make();
       core.setPatch(SIMPLE);
       expect(ctx.snapshot()).toEqual([
-        "comp#3 -> destination#1",
-        "gain#2 -> comp#3",
-        "gain#5 -> gain#2",
-        "osc#4 -> gain#5",
-      ]);
+        ...MASTER_CHAIN,
+        "gain#8 -> gain#2",
+        "osc#7 -> gain#8",
+      ].sort());
       expect(core.warnings).toEqual([]);
     });
 
@@ -230,40 +322,39 @@ describe("AudioGraphCore", () => {
     // 「入れ子＝チェーン」「out の多対一」「param 変調」「master タップ」
     // 「voice の per-voice gain」を同時に固定する。
     //
-    //   gain#2  master        comp#3   limiter
-    //   gain#4  bus           gain#5   delay in    delay#6
-    //   gain#7  feedback      gain#8   wet         gain#9  dry   gain#10 out
-    //   analyser#11 master タップ      gain#12  その keep-alive
-    //   gain#13 per-voice gain
-    //   osc#14 / bufsrc#15 → biquad#16 (vcf)
-    //   osc#17 + gain#18 = LFO → vcf.frequency
-    //   gain#19 env
+    //   gain#2  master        comp#3 → gain#4 → shaper#5 → shaper#6  limiter
+    //   gain#7  bus           gain#8   delay in    delay#9
+    //   gain#10 feedback      gain#11  wet         gain#12 dry   gain#13 out
+    //   analyser#14 master タップ      gain#15  その keep-alive
+    //   gain#16 per-voice gain
+    //   osc#17 / bufsrc#18 → biquad#19 (vcf)
+    //   osc#20 + gain#21 = LFO → vcf.frequency
+    //   gain#22 env
     it("フルパッチのエッジ集合が期待どおり（out / param / master タップ / voice）", () => {
       const core = make();
       core.setPatch(FULL);
       core.noteOn(60);
       expect(ctx.snapshot()).toEqual([
-        "analyser#11 -> gain#12",      // master タップの keep-alive（gain 0）
-        "biquad#16 -> gain#19",        // vcf → env
-        "bufsrc#15 -> biquad#16",      // noise → vcf（out= による多対一）
-        "comp#3 -> destination#1",     // limiter → 出力
-        "delay#6 -> gain#7",           // delay → feedback
-        "delay#6 -> gain#8",           // delay → wet
-        "gain#10 -> gain#2",           // delay out → master（葉なので既定接続）
-        "gain#12 -> destination#1",    // keep-alive は destination へ（master へ戻すとループ）
-        "gain#13 -> gain#4",           // per-voice gain → bus
-        "gain#18 -> biquad#16.frequency", // LFO → AudioParam 変調
-        "gain#19 -> gain#13",          // env → per-voice gain（out="bus" のボイス外送出）
-        "gain#2 -> analyser#11",       // master → タップ（リミッター前）
-        "gain#2 -> comp#3",            // master → limiter
-        "gain#4 -> gain#5",            // bus → delay in（入れ子＝チェーン）
-        "gain#5 -> delay#6",
-        "gain#5 -> gain#9",            // delay in → dry
-        "gain#7 -> delay#6",           // feedback ループ
-        "gain#8 -> gain#10",           // wet → out
-        "gain#9 -> gain#10",           // dry → out
-        "osc#14 -> biquad#16",         // osc → vcf
-        "osc#17 -> gain#18",           // LFO osc → depth gain
+        ...MASTER_CHAIN,               // master → limiter（4 段）→ 出力
+        "analyser#14 -> gain#15",      // master タップの keep-alive（gain 0）
+        "biquad#19 -> gain#22",        // vcf → env
+        "bufsrc#18 -> biquad#19",      // noise → vcf（out= による多対一）
+        "delay#9 -> gain#10",          // delay → feedback
+        "delay#9 -> gain#11",          // delay → wet
+        "gain#13 -> gain#2",           // delay out → master（葉なので既定接続）
+        "gain#15 -> destination#1",    // keep-alive は destination へ（master へ戻すとループ）
+        "gain#16 -> gain#7",           // per-voice gain → bus
+        "gain#21 -> biquad#19.frequency", // LFO → AudioParam 変調
+        "gain#22 -> gain#16",          // env → per-voice gain（out="bus" のボイス外送出）
+        "gain#2 -> analyser#14",       // master → タップ（リミッター前）
+        "gain#7 -> gain#8",            // bus → delay in（入れ子＝チェーン）
+        "gain#8 -> delay#9",
+        "gain#8 -> gain#12",           // delay in → dry
+        "gain#10 -> delay#9",          // feedback ループ
+        "gain#11 -> gain#13",          // wet → out
+        "gain#12 -> gain#13",          // dry → out
+        "osc#17 -> biquad#19",         // osc → vcf
+        "osc#20 -> gain#21",           // LFO osc → depth gain
       ].sort());
       expect(core.warnings).toEqual([]);
     });
@@ -344,7 +435,7 @@ describe("AudioGraphCore", () => {
         ],
         voices: [],
       });
-      expect(ctx.snapshot().some((e) => e.endsWith("biquad#4.frequency"))).toBe(true);
+      expect(ctx.snapshot().some((e) => e.endsWith("biquad#7.frequency"))).toBe(true);
     });
   });
 
@@ -497,9 +588,9 @@ describe("AudioGraphCore", () => {
         voices: [],
       });
       const gains = ctx.nodesOf("gain") as any[];
-      // master, input, feedback, wet, dry, output
-      expect(gains).toHaveLength(6);
-      const wet = gains[3], dry = gains[4];
+      // master, limiter makeup, input, feedback, wet, dry, output
+      expect(gains).toHaveLength(7);
+      const wet = gains[4], dry = gains[5];
       expect(wet.gain.value).toBe(0.25);
       expect(dry.gain.value).toBe(0.75);
     });
@@ -508,14 +599,14 @@ describe("AudioGraphCore", () => {
       const core = make();
       core.setPatch({ nodes: [{ kind: "delay", key: "d", props: { mix: "5" } }], voices: [] });
       const gains = ctx.nodesOf("gain") as any[];
-      expect(gains[3].gain.value).toBe(1);
-      expect(gains[4].gain.value).toBe(0);
+      expect(gains[4].gain.value).toBe(1);
+      expect(gains[5].gain.value).toBe(0);
     });
 
     it("shaper は amount からカーブを作る", () => {
       const core = make();
       core.setPatch({ nodes: [{ kind: "shaper", key: "s", props: { amount: "40" } }], voices: [] });
-      const shaper = ctx.nodesOf("shaper")[0] as any;
+      const shaper = ctx.nodesOf("shaper")[2] as any;
       expect(shaper.curve).toBeInstanceOf(Float32Array);
       expect(shaper.curve.length).toBe(1024);
       expect(shaper.oversample).toBe("2x");
@@ -562,7 +653,7 @@ describe("AudioGraphCore", () => {
         voices: [],
       });
       core.noteOn(60, 1);
-      const env = ctx.nodesOf("gain")[1] as any;
+      const env = ctx.nodesOf("gain")[2] as any;
       const ramp = env.gain.calls.find((c: any[]) => c[0] === "linearRampToValueAtTime");
       expect(ramp[1]).toBeCloseTo(0.6);        // depth * velocity
       expect(ramp[2]).toBeCloseTo(0.05);       // attack
@@ -575,7 +666,7 @@ describe("AudioGraphCore", () => {
         voices: [],
       });
       core.noteOn(60, 1);
-      const env = ctx.nodesOf("gain")[1] as any;
+      const env = ctx.nodesOf("gain")[2] as any;
       const ramp = env.gain.calls.find((c: any[]) => c[0] === "linearRampToValueAtTime");
       expect(ramp[2]).toBeCloseTo(0.001);
       const target = env.gain.calls.find((c: any[]) => c[0] === "setTargetAtTime");
@@ -649,7 +740,7 @@ describe("AudioGraphCore", () => {
     it("最後の音を離すとゲートが閉じる", () => {
       const core = make();
       core.setPatch({ nodes: [{ kind: "osc", key: "o", note: true, children: [{ kind: "env", key: "e" }] }], voices: [] });
-      const env = ctx.nodesOf("gain")[1] as any;
+      const env = ctx.nodesOf("gain")[2] as any;
       core.noteOn(60);
       core.noteOff(60);
       const targets = env.gain.calls.filter((c: any[]) => c[0] === "setTargetAtTime");
@@ -747,7 +838,7 @@ describe("AudioGraphCore", () => {
       const core = make();
       core.setPatch(GATELESS);
       core.noteOn(60, 0.7);
-      const voiceGain = ctx.nodesOf("gain")[1] as any;
+      const voiceGain = ctx.nodesOf("gain")[2] as any;
       expect(voiceGain.gain.names).toContain("linearRampToValueAtTime");
       const ramp = voiceGain.gain.calls.find((c: any[]) => c[0] === "linearRampToValueAtTime");
       expect(ramp[1]).toBe(0.7);
@@ -778,7 +869,7 @@ describe("AudioGraphCore", () => {
         voices: [],
       });
       core.noteOn(60);
-      const env = ctx.nodesOf("gain")[1] as any;
+      const env = ctx.nodesOf("gain")[2] as any;
       core.allNotesOff();
       const targets = env.gain.calls.filter((c: any[]) => c[0] === "setTargetAtTime");
       expect(targets[targets.length - 1][1]).toBe(0);
@@ -821,15 +912,47 @@ describe("AudioGraphCore", () => {
       expect(core.voices).toBe(0);
     });
 
+    it("liveNoteHeld は live グラフ（ボイスの外）で押さえた音が鳴っているか", () => {
+      const core = make();
+      core.setPatch({ nodes: [{ kind: "osc", key: "o", note: true }], voices: [] });
+      expect(core.liveNoteHeld).toBe(false);
+      core.noteOn(60);
+      core.noteOn(64);
+      expect([core.liveNoteHeld, core.voices]).toEqual([true, 0]);
+      core.noteOff(60);
+      expect(core.liveNoteHeld).toBe(true);
+      core.noteOff(64);
+      expect(core.liveNoteHeld).toBe(false);
+      core.noteOn(60);
+      core.setPatch({ nodes: [{ kind: "osc", key: "o", note: true }, { kind: "gain", key: "g" }], voices: [] });
+      expect(core.liveNoteHeld).toBe(false);
+    });
+
+    it("live グラフに env も note の osc も無ければ、押鍵は live グラフで鳴っていない（音はボイスにある）", () => {
+      const core = make();
+      core.setPatch(VOICE);
+      core.noteOn(60);
+      expect([core.liveNoteHeld, core.voices]).toEqual([false, 1]);
+      const gated = make();
+      gated.setPatch({ nodes: [{ kind: "osc", key: "o", children: [{ kind: "env", key: "e" }] }], voices: [] });
+      gated.noteOn(60);
+      expect(gated.liveNoteHeld).toBe(true);
+    });
+
+    it("context が無ければ liveNoteHeld は false", () => {
+      const core = make({ createContext: () => null });
+      expect(core.liveNoteHeld).toBe(false);
+    });
+
     it("ボイスの out 送出は per-voice gain を経由する（スティール時に一括で消える）", () => {
       const core = make();
       core.setPatch(FULL);
       core.noteOn(60);
       const edges = ctx.snapshot();
       // env は bus へ「直接」ではなく per-voice gain 経由で届く
-      expect(edges).toContain("gain#19 -> gain#13");
-      expect(edges).toContain("gain#13 -> gain#4");
-      expect(edges).not.toContain("gain#19 -> gain#4");
+      expect(edges).toContain("gain#22 -> gain#16");
+      expect(edges).toContain("gain#16 -> gain#7");
+      expect(edges).not.toContain("gain#22 -> gain#7");
     });
   });
 
@@ -877,7 +1000,56 @@ describe("AudioGraphCore", () => {
       const core = make();
       core.setPatch(FULL);
       await core.resume();
-      expect(ctx.snapshot()).toContain("gain#2 -> analyser#11");
+      expect(ctx.snapshot()).toContain("gain#2 -> analyser#14");
+    });
+  });
+
+  describe("dispose は変えたものを publish する（timing-and-firing-contract §22）", () => {
+    it("発音中の dispose で voices が 0 に、state が suspended に戻り、それぞれのイベントが出る", async () => {
+      const core = make();
+      core.setPatch(VOICE);
+      await core.resume();
+      core.noteOn(60);
+      expect([core.voices, core.running]).toEqual([1, true]);
+      const voices = record(core, "wcs-audio:voices");
+      const states = record(core, "wcs-audio:statechange");
+      core.dispose();
+      expect(voices).toEqual([0]);
+      expect(states).toEqual(["suspended"]);
+      expect([core.voices, core.state, core.running, core.suspended]).toEqual([0, "suspended", false, true]);
+    });
+
+    it("再接続（次の setPatch）で context の本当の state と、次の音の voices の立ち上がりが届く", async () => {
+      const core = make();
+      core.setPatch(VOICE);
+      await core.resume();
+      core.noteOn(60);
+      core.dispose();
+      const voices = record(core, "wcs-audio:voices");
+      const states = record(core, "wcs-audio:statechange");
+      core.setPatch(VOICE);
+      expect(states).toEqual(["running"]);
+      core.noteOn(64);
+      expect(voices).toEqual([1]);
+    });
+
+    it("何も変えない dispose は何も発火しない", () => {
+      const core = make();
+      core.setPatch(SIMPLE);
+      const voices = record(core, "wcs-audio:voices");
+      const states = record(core, "wcs-audio:statechange");
+      core.dispose();
+      expect(voices).toEqual([]);
+      expect(states).toEqual([]);
+    });
+
+    it("unsupported は dispose しても unsupported のまま（手放す context が無い）", () => {
+      const core = make({ createContext: () => null });
+      core.setPatch(SIMPLE);
+      const states = record(core, "wcs-audio:statechange");
+      core.dispose();
+      expect(states).toEqual([]);
+      expect(core.unsupported).toBe(true);
     });
   });
 

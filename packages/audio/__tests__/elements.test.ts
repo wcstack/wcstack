@@ -156,11 +156,15 @@ describe("audio custom elements", () => {
   describe("グラフの生成", () => {
     it("接続時にグラフが組まれる", async () => {
       await mount(`<wcs-audio><wcs-osc frequency="440"><wcs-gain gain="0.5"></wcs-gain></wcs-osc></wcs-audio>`);
+      // master(gain#2) → compressor → makeup → soft clip → hard clip → destination, then the patch
       expect(ctx.snapshot()).toEqual([
-        "comp#3 -> destination#1",
+        "comp#3 -> gain#4",
         "gain#2 -> comp#3",
-        "gain#5 -> gain#2",
-        "osc#4 -> gain#5",
+        "gain#4 -> shaper#5",
+        "gain#8 -> gain#2",
+        "osc#7 -> gain#8",
+        "shaper#5 -> shaper#6",
+        "shaper#6 -> destination#1",
       ]);
     });
 
@@ -382,6 +386,14 @@ describe("audio custom elements", () => {
       expect(root.volume).toBe(0.8);
       root.volume = 0.5;
       expect(root.getAttribute("volume")).toBe("0.5");
+    });
+
+    it("volume は 0〜1 にクランプされる: 範囲外は端の値として読め、鳴り、属性は書いたまま残る", async () => {
+      const root = await mount(`<wcs-audio volume="80"><wcs-osc></wcs-osc></wcs-audio>`);
+      const master = ctx.nodesOf("gain")[0] as any;
+      expect([root.volume, root.getAttribute("volume"), master.gain.value]).toEqual([1, "80", 1]);
+      root.volume = -2;
+      expect([root.volume, root.getAttribute("volume"), master.gain.value]).toEqual([0, "-2", 0]);
     });
 
     it("limiter=off でリミッターを外せる", async () => {

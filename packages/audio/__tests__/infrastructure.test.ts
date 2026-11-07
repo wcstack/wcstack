@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
-import { defaultCreateContext, releaseSharedContext } from "../src/core/audioContext";
+import { contextAwaitsGesture, defaultCreateContext, releaseSharedContext } from "../src/core/audioContext";
 import { PROPS } from "../src/core/builders";
 import { applyNodeStyles, resetNodeStyles } from "../src/patch/nodeStyles";
 import { structureKey } from "../src/patch/structureKey";
@@ -52,6 +52,43 @@ describe("audioContext（既定のコンテキスト供給）", () => {
     delete registry.AudioContext;
     registry.webkitAudioContext = class {} as never;
     expect(defaultCreateContext()).not.toBeNull();
+  });
+
+  describe("contextAwaitsGesture（作るとブラウザが開始を拒む context か）", () => {
+    afterEach(() => {
+      delete (navigator as unknown as Record<string, unknown>).userActivation;
+    });
+
+    it("共有 context が無く、Web Audio があり、ユーザー操作がまだなら true", () => {
+      registry.AudioContext = class {} as never;
+      expect(contextAwaitsGesture()).toBe(true);
+    });
+
+    it("webkitAudioContext しか無くても同じ", () => {
+      delete registry.AudioContext;
+      registry.webkitAudioContext = class {} as never;
+      expect(contextAwaitsGesture()).toBe(true);
+    });
+
+    it("共有 context が既にあれば false（作り直さない）", () => {
+      registry.AudioContext = class {} as never;
+      defaultCreateContext();
+      expect(contextAwaitsGesture()).toBe(false);
+    });
+
+    it("Web Audio が無ければ false（待っても unsupported のまま）", () => {
+      delete registry.AudioContext;
+      delete registry.webkitAudioContext;
+      expect(contextAwaitsGesture()).toBe(false);
+    });
+
+    it("userActivation.hasBeenActive なら false、API が無い・false なら操作はまだとみなす", () => {
+      registry.AudioContext = class {} as never;
+      Object.defineProperty(navigator, "userActivation", { value: { hasBeenActive: false }, configurable: true });
+      expect(contextAwaitsGesture()).toBe(true);
+      Object.defineProperty(navigator, "userActivation", { value: { hasBeenActive: true }, configurable: true });
+      expect(contextAwaitsGesture()).toBe(false);
+    });
   });
 
   // 版が混在した CDN ページでも context が分裂しないための仕掛け。

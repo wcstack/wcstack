@@ -17,10 +17,11 @@ declare global {
       seconds?: number;
       steps?: { at: number; run: (root: any, trace: any) => void }[];
       onReady?: (root: any) => void;
-    }): Promise<{ data: Float32Array; trace: any }>;
+    }): Promise<{ data: Float32Array; trace: any; root: any }>;
     audioProbe: {
       rms(data: Float32Array, from?: number, to?: number): number;
       zeroCrossings(data: Float32Array, from?: number, to?: number): number;
+      peak(data: Float32Array): number;
     };
     __audioReady: boolean;
   }
@@ -210,6 +211,84 @@ test.describe("e2e/fixtures/audio-offline", () => {
 
     expect(result.length).toBe(2048);
     expect(result.spread).toBeGreaterThan(10);
+  });
+
+  // 耳の保護（4.17）: リミッターが有効なら出力は -6 dBFS（振幅 0.501）を超えない。
+  // 4.16 までのリミッターは threshold だけを設定した DynamicsCompressor で、天井ではなかった。
+  // README の 8 声パッチ（Quick Start 2）の和音は既定の volume 0.8 で +4.9 dBFS
+  // （1 音で +0.7 dBFS、limiter="off" で +12.3 dBFS）に達していた（Chromium, mono で実測）。
+  const README_SYNTH = (attrs: string) => `<wcs-audio ${attrs}>
+      <wcs-voice poly="8">
+        <wcs-osc type="sawtooth" note detune="-7" out="vcf"></wcs-osc>
+        <wcs-osc type="sawtooth" note detune="7" out="vcf"></wcs-osc>
+        <wcs-osc type="square" note transpose="-12" out="vcf"></wcs-osc>
+        <wcs-biquad id="vcf" type="lowpass" frequency="1400" q="4">
+          <wcs-lfo type="sine" rate="4" param="frequency" depth="0"></wcs-lfo>
+          <wcs-env attack="0.01" decay="0.25" sustain="0.55" release="0.35" out="bus"></wcs-env>
+        </wcs-biquad>
+      </wcs-voice>
+      <wcs-gain id="bus" gain="0.8">
+        <wcs-delay time="0.28" feedback="0.35" mix="0.2"></wcs-delay>
+      </wcs-gain>
+    </wcs-audio>`;
+  const CHORD = [60, 62, 64, 65, 67, 69, 71, 72];
+
+  test("README の 8 声パッチで 8 音の和音（velocity 1）を弾いても -6 dBFS を超えない", async ({ page }) => {
+    const result = await page.evaluate(async ({ on, off, chord }) => {
+      const render = async (html: string) => {
+        const { data } = await window.renderPatch({
+          html, seconds: 2,
+          onReady: (root) => { for (const n of chord) root.noteOn(n, 1); },
+        });
+        return window.audioProbe.peak(data);
+      };
+      return { limited: await render(on), raw: await render(off) };
+    }, { on: README_SYNTH(""), off: README_SYNTH('limiter="off"'), chord: CHORD });
+
+    // 測っているのは熱い信号であること: リミッターを外すと 0 dBFS を大きく超える
+    expect(result.raw).toBeGreaterThan(2);
+    // 天井は厳密（最後の段はオーバーサンプルしないハードクリップ）
+    expect(result.limited).toBeLessThanOrEqual(0.501);
+    // 潰しすぎてもいない
+    expect(result.limited).toBeGreaterThan(0.25);
+  });
+
+  test("volume は 1 にクランプされる: volume=\"80\" でも天井を超えず、volume=\"1\" と同じ音になる", async ({ page }) => {
+    const result = await page.evaluate(async ({ hot, unity, chord }) => {
+      const render = async (html: string) => {
+        const { data, root } = await window.renderPatch({
+          html, seconds: 2,
+          onReady: (r) => { for (const n of chord) r.noteOn(n, 1); },
+        });
+        return { data: new Float32Array(data), volume: root.volume };
+      };
+      const a = await render(hot);
+      const b = await render(unity);
+      let diff = 0;
+      for (let i = 0; i < a.data.length; i++) diff = Math.max(diff, Math.abs(a.data[i] - b.data[i]));
+      return { peak: window.audioProbe.peak(a.data), volume: a.volume, diff };
+    }, { hot: README_SYNTH('volume="80"'), unity: README_SYNTH('volume="1"'), chord: CHORD });
+
+    expect(result.volume).toBe(1);
+    expect(result.peak).toBeLessThanOrEqual(0.501);
+    // 同じ描画（2 回のレンダリングの浮動小数の揺れだけ: 実測 1.4e-6）。クランプが無ければ 80 倍の入力で別物になる
+    expect(result.diff).toBeLessThan(1e-4);
+  });
+
+  test("-18 dBFS より小さい音はリミッターを通っても大きさが変わらない（自動メイクアップを打ち消す）", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      // volume 0.5 × gain 0.1 = 振幅 0.05（-26 dBFS）
+      const { data } = await window.renderPatch({
+        html: `<wcs-audio volume="0.5">
+                 <wcs-osc type="sine" frequency="440"><wcs-gain gain="0.1"></wcs-gain></wcs-osc>
+               </wcs-audio>`,
+        seconds: 0.5,
+      });
+      return window.audioProbe.peak(data.subarray(48000 * 0.2));
+    });
+
+    expect(result).toBeGreaterThan(0.049);
+    expect(result).toBeLessThan(0.051);
   });
 
   test("無関係な DOM 変更では音が切れない（rebuild しない）", async ({ page }) => {

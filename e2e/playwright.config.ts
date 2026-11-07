@@ -30,9 +30,10 @@ export default defineConfig({
     // integrity and Trusted Types. prod-booking's checks tagged @browsers run in Firefox too (examples/prod-booking).
     // So do the router's fragment links, which read Firefox's NavigateEvent (router-fragment-links), and the
     // city-library seam app's skip link, pagination, login under view transitions, time zones and languages.
+    // And @wcstack/audio's context waiting for the first gesture, whose warning Firefox printed on load (audio-gesture).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },
