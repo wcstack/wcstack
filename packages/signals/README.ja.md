@@ -12,7 +12,7 @@
 
 | モジュール | エントリ | 提供するもの |
 |---|---|---|
-| **リアクティブコア** | `@wcstack/signals` | `signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` |
+| **リアクティブコア** | `@wcstack/signals` | `signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `selector` |
 | **非同期リソース** | `@wcstack/signals` | `resource` — 非同期プロデューサを `{ value, loading, error }` の三つ組リアクティブ値に(switchMap 的な cancel/restart) |
 | **ストリームリソース** | `@wcstack/signals` | `streamResource` — 連続フロー(async iterable / `ReadableStream`)を 1 つのリアクティブ値に fold |
 | **wc-bindable アダプタ** | `@wcstack/signals` | `bindNode`(properties→signal・`on` で event-token ストリーム・`bindInput` で入力書き戻し・`bindCommand` で command-token)＋ `nodeSource`(`resource` 向けのノード cancel ブリッジ) |
@@ -22,7 +22,7 @@
 
 - **pull 検証型の三色マーキング**(Reactively / Solid 由来)。書き込みは直接の観測者を DIRTY、推移的な観測者を CHECK にし、effect は coalesce されたマイクロタスクで走ります。computed が**等しい**値に再計算された場合は伝播せず、下流の処理がスキップされます(equality short-circuit)。
 - **きめ細かい `h`、VDOM なし。** `h(tag, props, ...children)` は**実 DOM を一度だけ**構築します。関数/signal として渡した prop や child は対象を絞った `effect` に配線され、そのバインディングだけが更新されます。**VDOM reconciler** は同梱しません。keyed list は `For` / `Index`(行を再利用・移動する配列 diff であって VDOM ではない)が担います。
-- **所有権 = ライフサイクル。** `createRoot` や effect は、その実行中に生成されたすべての破棄処理(disposer)を集約します。サブツリーを破棄すれば、その effect・リスナ・リソースも破棄されます — リークしません。
+- **所有権 = ライフサイクル。** `createRoot` や effect は、その実行中に生成されたすべての破棄処理(disposer)を集約します。サブツリーを破棄すれば、その effect・リスナ・リソースも破棄されます — リークしません。リスナは文書に残る要素から外し、文書から外れた要素(消えた行)はリスナごと捨てます(4.18（未リリース）から)。
 - **IO はノード、リアクティビティはコア。** `bindNode` は wc-bindable な要素(例: `<wcs-fetch>`)を signal に変換します。要素側はバインディングの背後に signal がいることを一切知りません。
 
 ## インストール
@@ -161,6 +161,26 @@ h("ul", null,
 - **key 付きの行は、key がある限り保たれる** — その key の下のオブジェクトが何であっても。並び替え・再取得・置き換えの更新のどれでも行(と DOM・focus・入力状態)は使い回される。だから第 1 引数は**行を作ったときの** item。変わりうる値は `current()` から読む(`() => current().text`)。`t.text` のままだと作ったときの値で止まる。
 - `each` は**単一**の Node を返すこと(1 行 = 1 ノード)。
 
+**選んだ行 — `selector`**(4.18（未リリース）から)。行ごとに `selected.get() === row.id` と比べると、選び直すたびに全部の行が再実行されます。`selector(selected)` が返す `isSelected(key)` で読めば、再実行されるのは離れた行と移った行だけです:
+
+```typescript
+import { signal, selector, createRoot, h, For } from "@wcstack/signals/dom";
+
+const rows = signal([{ id: 1, label: "a" }, { id: 2, label: "b" }]);
+const selected = signal<number | null>(null);
+
+createRoot(() => {
+  const isSelected = selector(selected); // オーナーの下で: `selected` を購読する
+  document.body.append(h("ul", null,
+    For(rows, (row) =>
+      h("li", { class: () => (isSelected(row.id) ? "active" : ""), onClick: () => selected.set(row.id) }, row.label),
+    { key: (r) => r.id }),
+  ));
+});
+```
+
+key は `Map` のキーと同じに比べます(`===`。`NaN` は `NaN` と等しい)。オブジェクトを選ぶときは id を選びます — `selector(computed(() => selectedItem.get()?.id))`。
+
 ### 7. `@wcstack/router` の裏のページと、`<wcs-storage>` に残す値
 
 router は、ルートに入ると中身を `<wcs-outlet>` に置き、出ると取り出し、次に入ると**同じノード**を戻す。`@wcstack/state` はその中身を binder プロトコルでバインドするが、signals に binder は無い。だから外からルートの中身へ `render()` しない — ノードは前回描いたものを持ったまま戻り、2 回目の描画はそれに足される。代わりに、ページごとに `SignalsElement` を作る: 接続したときに描き、外れたときに effect を破棄するので、ページはそのルートが表示されている間だけ生きる。ルートのパラメータは router 要素を bind して読む:
@@ -241,12 +261,13 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `createRoot<T>` | `(fn: (dispose) => T) => T` | 新しい所有権スコープ。内部で生成された全てが `dispose` で破棄される。ルートは独立(囲みオーナーに自動破棄されない)。`fn` が throw した場合、途中まで構築したスコープを破棄してからエラーを伝播。 |
 | `onCleanup` | `(fn: () => void) => void` | 現在のオーナーに破棄処理を登録。オーナーが無ければ no-op。 |
 | `flushSync` | `() => void` | キュー済みの effect を今すぐ同期実行。 |
+| `selector<T>` | `(source: ReadSignal<T>) => (key: T) => boolean` | 4.18（未リリース）から。`isSelected(key)` は `source` が `key` と等しい間 true(`Map` のキーと同じ比べ方)。`source` が変わると、離れた key と移った key の読み手だけを再実行する(Solid の `createSelector`)。読み手に伝わるのは effect が走るとき、呼び出し自体は今の `source` を読む。読み手のいなくなった key は忘れる。オーナーの下で作ること。 |
 
 ### DOM レイヤ(`@wcstack/signals/dom`)
 
 | エクスポート | シグネチャ | 備考 |
 |---|---|---|
-| `h` | `(tag, props?, ...children) => Node` | `tag` はタグ文字列・`Component`・`Fragment`。関数/signal の prop と child はリアクティブ。`on…` キーの関数はイベントリスナ: `onClick` → `click`(小文字化)、`onclick` / `"onadd-to-cart"` → 書いたままの名前(`click`・`add-to-cart`)。 |
+| `h` | `(tag, props?, ...children) => Node` | `tag` はタグ文字列・`Component`・`Fragment`。関数/signal の prop と child はリアクティブ。`on…` キーの関数はイベントリスナ: `onClick` → `click`(小文字化)、`onclick` / `"onadd-to-cart"` → 書いたままの名前(`click`・`add-to-cart`)。オーナーの片付けでは、文書にある要素からリスナを外し、文書から外れた要素はリスナごと回収に任せる(4.18（未リリース）から)。 |
 | `render` | `(child, container) => Node` | child(fragment/配列/リアクティブを解決)を container に追加。 |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` でラッパ要素なしにグループ化。 |
 | `For<T>` | `(list, each, options?) => ListView` | keyed リスト。`list` は signal または `() => T[]`、`each(item, index: () => number, current: () => T)` は単一 Node を返す(`item` は行を作ったときの値、`current()` はその key の今の item)、`options.key(item, i)` 既定は値の同一性。キーで行を再利用/移動し、削除行を dispose。 |
@@ -417,6 +438,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 | API グループ | エクスポート | 安定度 |
 |---|---|---|
 | **リアクティブコア** | `signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` | **Stable** — semver 保護。TC39 Signals proposal の形に倣う。 |
+| **選択** | `selector` | **Evolving / experimental**(4.18（未リリース）から) — 安定なコアに入るまでに形を調整しうる。 |
 | **エラー契約** | `DisposedError` / `isDisposedError` | **Stable** — ブランドベース・realm セーフ。 |
 | **リソース** | `resource` / `streamResource` | **Stable**(概ね)。形は確定済み。ただし `streamResource` の協調キャンセル契約に注意(`source` は `AbortSignal` を必ず honor すること — [注意・制限](#注意制限)参照)。 |
 | **wc-bindable アダプタ** | `bindNode` / `nodeSource` | **Evolving / experimental** — 実行時挙動は安定だが、**型サーフェス**(`bindNode<NodeShape>`・`NodeShape`)はまだ調整余地あり。 |
@@ -432,6 +454,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 - **backpressure なし(stream)。** fold の結果が*そのまま*バッファです — 需要はプロデューサに伝わりません。無限ストリームには fold を有界に(latest / count / window)してください。無制限の蓄積は罠です。
 - **協調的キャンセル — `source` は `AbortSignal` を必ず honor すること(強い契約)。** これが switchMap の restart/dispose を駆動します。`ReadableStream` は abort 時に `reader.cancel()` で**完全に**巻き戻されます(park した `read()` も強制解決)。プレーンな `AsyncIterable` / async generator は**部分的に**救済されます: abort 時にアダプタが iterator の `return()` を呼び `finally`/クリーンアップを起動しますが、park した `await`(`signal` を*無視*して次の `yield` 前で停止)は外から強制巻き戻しできず、`return()` は generator が次に再開したときに初めて効きます。永久に park して `signal` を一切観測しない generator は `consume()` タスクをリークさせます。**必ず `source` 内で `signal` を観測**してください(例: `signal.aborted` で reject/break)。
 - **`setProp` は主要な属性↔プロパティのケースをカバー(全てではない)。** 小さなリマップ表で `for`→`htmlFor`・`tabindex`→`tabIndex`・`colspan`/`rowspan` 等を処理し、read-only な DOM メンバーは `setAttribute` に退避、SVG タグは SVG 名前空間で生成し `class` は常に属性として設定(SVG でも動く)します。`style` オブジェクトは camelCase・kebab-case・CSS カスタムプロパティ(`--x`)を受け付けます。DOM プロパティへの `null`/`undefined` は `""` に正規化(`id`/`src` 等が `"null"` でなくクリア)されますが、`false` はそのまま据え置きます — boolean プロパティ(`disabled = false`)では正しいので、*文字列*プロパティにリアクティブな `false` が流れると `"false"` になります。この `""` 正規化は**オブジェクト/配列を取るカスタム要素プロパティ**にも及びます — リアクティブな `null` は `null` でなく `""` になるので、クリアするには空配列/空オブジェクトを渡してください。`""` を渡すか thunk でガードを。`class` は特別扱い済み(`false` → `""`)。**まだ定義されていない**カスタム要素(`h()` が作った後でモジュールが動く)へのオブジェクト・配列は属性(`"[object Object]"`)にせず、手元に持って、要素が定義されたらその setter で渡します(その間に変われば最後の値)。プリミティブは今までどおり属性です。
+- **文書の外で片付けた要素のリスナは残る**(4.18（未リリース）から)。オーナーを破棄すると、`h()` が付けたリスナは文書にある要素(生き続ける要素。例: リアクティブな child の下で残す要素)から外し、文書から外れた要素(消えた `For` の行・作り直したサブツリー・切り離された `SignalsElement` の中身)には残します。そういう要素はリスナごと回収され、10,000 行を消すときに 10,000 本のリスナを 1 本ずつ外すことはなくなりました。外れた要素を持ち続けてスクリプトからイベントを送れば、ハンドラは呼ばれます。
 - **依存する値を(毎回変えながら)書き込む effect はループする。** 暴走フラッシュは反復回数の上限で打ち切られ、ハングせずに throw します。
 - **v1 スコープ外。** SSR/hydration(マークアップでなく JS から初期化)・深い/proxy リアクティビティ(パスベースの深い追跡は `@wcstack/state` を使用)・ストリーム backpressure は意図的に非対応です — 設計ドキュメント参照。
 

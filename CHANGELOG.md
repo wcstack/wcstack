@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+`@wcstack/signals` from a study of why it stayed slow on js-framework-benchmark while `@wcstack/state` became fast ([docs/signals-performance-study.md](./docs/signals-performance-study.md)): lists build, replace and clear with less work, and `selector()` re-runs only the two rows a selection changes.
+
+### Upgrading
+
+- `@wcstack/signals`: **a listener stays on an element its owner tears down outside the document.** `h()` used to remove every listener it added when the owner was disposed; it now removes them only from an element still in the document (one that lives on), and leaves them on an element that has left it — a removed `For` row, a replaced subtree, a disconnected `SignalsElement`'s content — which is collected with them. A test that counted `removeEventListener` after removing rows sees none; a script that keeps a removed element and dispatches an event to it still calls the handler.
+- `@wcstack/signals`: a reactive child whose value is text places no anchor comment beside its Text node (one is placed the first time the value becomes nodes). A test that counted `childNodes` sees one node fewer per such child.
+
+### Added
+
+- `@wcstack/signals`: **`selector(source)`** (Solid's `createSelector`), from `@wcstack/signals` and `/dom`. `isSelected(key)` is true while `source` equals `key`; a change of `source` re-runs only the readers of the key it left and the key it took, where a row comparing `selected.get() === id` re-ran every row. Keys are compared as a `Map` compares them; a key no reader reads any more is forgotten. Create it under an owner. Evolving / experimental.
+
+### Changed
+
+- `@wcstack/signals`: **lists do less work per row.** `For` makes a row's index and current-item signals only when `each` reads them, an effect has no observers `Set` of its own, an owned node is registered without a closure, `on…` props are told apart without a regular expression, and a reactive text child has no anchor comment. Measured in the page against 4.17.0 (JS time, 4× CPU throttling): selecting a row −80 % (the benchmark page reads it through `selector()`), clearing 10,000 rows −21 to −23 %, replacing 1,000 rows −11 to −19 %, appending 1,000 rows to 10,000 −13 to −30 %; creating 1,000 rows moved between +12 % and −16 % over three runs. The heap for 1,000 rows went from 2.99 to 2.63 MB.
+
 ## [4.17.0] — 2026-11-07
 
 A minor from two pieces of work. A study of what a state's script writes ([docs/script-write-checks.md](./docs/script-write-checks.md)): the lint reads each getter's, setter's and method's writes as one set and joins it with the getters' reads — a getter that writes, a script write of a getter without a setter, setters that write each other, a setter whose writes its getter does not read — and the runtime names them, where it threw `This state is readonly.` or overflowed the stack. And the `music-room` seam app ([docs/seam-apps.md](./docs/seam-apps.md)), a school music room's practice synth, the last app of the second round: `<wcs-audio>`'s "ear protection" limiter let the README's own patch peak at +5 dBFS — it is now a ceiling at -6 dBFS — a `<wcs-midi>` put back by a route stayed dead until a reload, and removed elements left their outputs behind. `@wcstack/state`, `@wcstack/audio`, `@wcstack/midi`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.16.0 with a new version.
