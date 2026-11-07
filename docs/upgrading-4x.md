@@ -352,7 +352,16 @@ A workaround became unnecessary: a `$setAll` mapper read another field of its ow
 
 Workarounds became unnecessary: a getter's row type written as `@returns` instead of `@type`, rows rewritten from `Array.from(…)` / `[...Array(n).keys()].map(…)` into a `.map` over a constant, and a namespace import's constant imported again by name — each only to quiet a false `wcs/binding-path-missing` or `wcs/path-dynamic-unknown`; and a page that requested MIDI again on every entry into a route.
 
-## Still needed on 4.17.0
+### 4.18.0
+
+2026-11-08 — [CHANGELOG](../CHANGELOG.md#4180--2026-11-08)
+
+- `@wcstack/signals`: when an owner is disposed, `h()` removes its listeners only from elements still in the document; an element that has left it (a removed `For` row, a replaced subtree, a disconnected `SignalsElement`'s content) keeps them and is collected with them. A test that counted `removeEventListener` after removing rows sees none; a script that keeps such an element and dispatches an event to it still calls the handler. A reactive child whose value is text has no anchor comment beside it, so a test that counted `childNodes` sees one node fewer.
+- `@wcstack/audio`: a graph that waited for the first gesture is built once that gesture ends — after the click — not inside its `pointerdown`; `noteOn()` and `resume()` still build it at once. A test that read a root's context right after a click that played nothing waits for it.
+
+Workarounds became unnecessary: on 4.17.0, a "press to start the sound" hint bound to `running` kept out of the layout, or hidden only after the click, so that the page's first click reached what was clicked.
+
+## Still needed on 4.18.0
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").
