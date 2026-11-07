@@ -5,6 +5,7 @@ export {
   createRoot,
   onCleanup,
   flushSync,
+  selector,
 } from "./reactive.js";
 export type {
   ReadSignal,

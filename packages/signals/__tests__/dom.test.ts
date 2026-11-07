@@ -109,6 +109,16 @@ describe("h: 要素と静的 props", () => {
     el.dispatchEvent(new CustomEvent("addtocart"));
     expect(camel).toHaveBeenCalledTimes(1);
   });
+
+  it("on の後が英字か - の関数だけをハンドラにし、ほかの on… / o… は属性にする", () => {
+    const dash = vi.fn();
+    const el = h("div", { "on-ping": dash, on1: "a", on_: "b", "on{": "c", on: "d", open: "e", ox: "f" }) as HTMLElement;
+    el.dispatchEvent(new CustomEvent("-ping"));
+    expect(dash).toHaveBeenCalledTimes(1);
+    for (const [k, v] of [["on1", "a"], ["on_", "b"], ["on{", "c"], ["on", "d"], ["open", "e"], ["ox", "f"]]) {
+      expect(el.getAttribute(k)).toBe(v);
+    }
+  });
 });
 
 describe("h: reactive props", () => {
@@ -183,14 +193,51 @@ describe("h: reactive children", () => {
     expect(el.firstChild?.nextSibling?.nodeType).toBe(8); // 次は anchor コメント
   });
 
-  it("anchor が DOM から外れた後の更新は安全に no-op（host null 経路）", () => {
+  it("目印が DOM から外れた後の更新は安全に no-op（host null 経路）", () => {
     const n = signal(0);
-    const el = h("div", null, () => `v${n.get()}`) as HTMLElement;
+    const el = h("div", null, () => (n.get() < 2 ? `v${n.get()}` : h("b", null, "B"))) as HTMLElement;
     expect(el.textContent).toBe("v0");
-    el.textContent = ""; // anchor コメントごと全 child を除去
-    n.set(1); // effect 再実行時 anchor.parentNode は null
+    el.textContent = ""; // 目印（最初の Text）ごと全 child を除去
+    n.set(1); // 外れた Text を書き換えるだけ
     flushSync();
     expect(el.textContent).toBe(""); // 例外なく no-op
+    n.set(2); // Node に変わる: anchor を置く Text に親がなく、anchor.parentNode も null
+    flushSync();
+    expect(el.textContent).toBe("");
+  });
+
+  it("文字の reactive な子は目印のコメントを置かない（Text 1 つ）。Node に変わると Text の位置に anchor が入る", () => {
+    const mode = signal<"text" | "node" | "empty">("text");
+    const el = h("p", null, "[", () => (mode.get() === "text" ? "t" : mode.get() === "node" ? h("i", null, "n") : null), "]") as HTMLElement;
+    expect(el.childNodes.length).toBe(3);
+    expect(Array.from(el.childNodes, (c) => c.nodeType)).toEqual([3, 3, 3]);
+    expect(el.textContent).toBe("[t]");
+    mode.set("node");
+    flushSync();
+    expect(el.textContent).toBe("[n]");
+    expect(Array.from(el.childNodes, (c) => c.nodeName)).toEqual(["#text", "I", "#comment", "#text"]);
+    mode.set("text");
+    flushSync();
+    expect(el.textContent).toBe("[t]");
+    mode.set("empty");
+    flushSync();
+    expect(el.textContent).toBe("[]");
+    mode.set("text");
+    flushSync();
+    expect(el.textContent).toBe("[t]");
+  });
+
+  it("最初が Node の reactive な子は anchor を末尾に置き、文字に変わっても位置を保つ", () => {
+    const n = signal(0);
+    const el = h("p", null, () => (n.get() === 0 ? h("i", null, "n") : `t${n.get()}`), "]") as HTMLElement;
+    expect(Array.from(el.childNodes, (c) => c.nodeName)).toEqual(["I", "#comment", "#text"]);
+    n.set(1);
+    flushSync();
+    expect(el.textContent).toBe("t1]");
+    n.set(2); // 文字から文字: Text をその場で書き換える
+    flushSync();
+    expect(el.textContent).toBe("t2]");
+    expect(Array.from(el.childNodes, (c) => c.nodeName)).toEqual(["#text", "#comment", "#text"]);
   });
 
   it("reactive child が配列を返してもフラット化する", () => {
@@ -274,15 +321,39 @@ describe("ownership: 動的 child のリーク解消", () => {
       button = h("button", { onClick }, "go") as HTMLButtonElement;
       return button;
     };
-    h("div", null, () => (show.get() ? Btn() : "x"));
-    const captured = button!;
-    captured.click();
-    expect(onClick).toHaveBeenCalledTimes(1);
+    const host = h("div", null, () => (show.get() ? Btn() : "x"));
+    document.body.appendChild(host); // 片付けの時点で文書にある要素のリスナーは外す
+    try {
+      const captured = button!;
+      captured.click();
+      expect(onClick).toHaveBeenCalledTimes(1);
 
-    show.set(false); // subtree 破棄 → リスナ除去
-    flushSync();
-    captured.click(); // 既に除去済み
-    expect(onClick).toHaveBeenCalledTimes(1);
+      show.set(false); // subtree 破棄 → リスナ除去
+      flushSync();
+      captured.click(); // 既に除去済み
+      expect(onClick).toHaveBeenCalledTimes(1);
+    } finally {
+      host.remove();
+    }
+  });
+
+  it("片付けの時点で文書から外れている要素のリスナーは外さない（要素ごと捨てられる）", () => {
+    const show = signal(true);
+    const onClick = vi.fn();
+    let button: HTMLButtonElement | null = null;
+    const removeSpy = vi.spyOn(HTMLElement.prototype, "removeEventListener");
+    try {
+      // 文書に入れない host: 作り直しの時点で button は文書の外にある
+      h("div", null, () => (show.get() ? (button = h("button", { onClick }, "go") as HTMLButtonElement) : "x"));
+      show.set(false);
+      flushSync();
+      expect(removeSpy).not.toHaveBeenCalled();
+      // スクリプトから外れた要素に dispatch すれば呼ばれる（4.18 からの意味。利用者は押せない）
+      button!.click();
+      expect(onClick).toHaveBeenCalledTimes(1);
+    } finally {
+      removeSpy.mockRestore();
+    }
   });
 
   it("createRoot で mount し、dispose でツリー全体の反応を止める", () => {

@@ -37,6 +37,7 @@ export {
   createRoot,
   onCleanup,
   flushSync,
+  selector,
 } from "./reactive.js";
 export type { ReadSignal, WriteSignal, EffectHandle, Cleanup, Equals } from "./reactive.js";
 export { resource } from "./resource.js";
@@ -200,13 +201,21 @@ function bindProp(el: Element, key: string, value: unknown): void {
   // `onadd-to-cart` → the name as written ("click", "add-to-cart" — data-wcs's `on<event>:`
   // form). A lowercase `onclick` used to fall through to the reactive path, so the handler
   // ran at render and never on click (docs/seam-apps.md, signals-shop).
-  if (/^on[A-Za-z-]/.test(key) && typeof value === "function") {
-    const type = /^on[A-Z]/.test(key) ? key.slice(2).toLowerCase() : key.slice(2);
+  const c2 = key.charCodeAt(2);
+  // `on` and a letter or `-` (no regex per prop: it ran twice for every prop of every element)
+  if (key.charCodeAt(0) === 111 && key.charCodeAt(1) === 110 &&
+    ((c2 >= 65 && c2 <= 90) || (c2 >= 97 && c2 <= 122) || c2 === 45) && typeof value === "function") {
+    const type = c2 >= 65 && c2 <= 90 ? key.slice(2).toLowerCase() : key.slice(2);
     const listener = value as EventListener;
     el.addEventListener(type, listener);
-    // Remove the listener when the owning scope is torn down (e.g. a dynamic
-    // child that rebuilds this subtree), so handlers don't accumulate.
-    onCleanup(() => el.removeEventListener(type, listener));
+    // Remove the listener when the owning scope is torn down while the element is still in the
+    // document (e.g. a reactive child of a kept element, or a SignalsElement re-render), so handlers
+    // don't accumulate on an element that lives on. A detached element (a removed row, a replaced
+    // subtree) is not touched: its listeners go with it, and removing them one by one was a fifth
+    // of clearing a list.
+    onCleanup(() => {
+      if (el.isConnected) el.removeEventListener(type, listener);
+    });
     return;
   }
 
@@ -406,12 +415,21 @@ function insertReactive(parent: Node, accessor: () => unknown): void {
         "disposed and may leak. Mount under createRoot / SignalsElement.",
     );
   }
-  const anchor = document.createComment("");
-  parent.appendChild(anchor);
+  // The position: the first render's Text node while the value stays text (no anchor comment per text
+  // child — most reactive children are text); an anchor comment from the first render of nodes on.
+  let anchor: Comment | null = null;
   let current: Node[] = [];
+  let first = true;
 
   effect(() => {
     const value = accessor();
+    if (first && (typeof value === "string" || typeof value === "number")) {
+      first = false;
+      const text = document.createTextNode(String(value));
+      parent.appendChild(text);
+      current = [text];
+      return;
+    }
     // FAST PATH: a plain text result that replaces a plain text result. The common
     // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
     // wholesale path would remove the old Text node, allocate a new one, and re-insert
@@ -425,6 +443,17 @@ function insertReactive(parent: Node, accessor: () => unknown): void {
         return;
       }
     }
+    if (anchor === null) {
+      anchor = document.createComment("");
+      if (first) {
+        parent.appendChild(anchor);
+      } else {
+        // text until now: the anchor goes where the text is
+        const at = current[0];
+        at.parentNode?.insertBefore(anchor, at.nextSibling);
+      }
+    }
+    first = false;
     const next = toNodes(value);
     for (const node of current) {
       node.parentNode?.removeChild(node);
@@ -651,9 +680,12 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
       interface Row {
         node: Node;
         dispose: () => void;
-        idx: WriteSignal<number>;
-        /** The item under the row's key now (`each`'s `current`). */
-        cur: WriteSignal<T>;
+        /** The row's position, and its signal once `each`'s index accessor was read (made on first read). */
+        i: number;
+        idx: WriteSignal<number> | null;
+        /** The item under the row's key now (`each`'s `current`), and its signal once read. */
+        item: T;
+        cur: WriteSignal<T> | null;
       }
       let rows = new Map<unknown, Row>();
       // The node order placed by the previous reconcile run. Empty on first run.
@@ -661,15 +693,16 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
       // only the rest are moved (LIS reorder, see reconcileOrder).
       let prevOrder: Node[] = [];
 
+      // A row's index and current-item signals are made the first time `each`'s accessor is read: a row
+      // that never reads them (most rows) owns two signals fewer. Until then the reconcile keeps the plain
+      // values on the row, and the signal starts from them.
       const make = (item: T, i: number): Row => {
-        const idx = signal(i);
-        const cur = signal(item);
-        let node!: Node;
-        const dispose = createRoot((d) => {
-          node = each(item, () => idx.get(), () => cur.get());
+        const row: Row = { node: null as unknown as Node, dispose: null as unknown as () => void, i, idx: null, item, cur: null };
+        row.dispose = createRoot((d) => {
+          row.node = each(item, () => (row.idx ??= signal(row.i)).get(), () => (row.cur ??= signal(row.item)).get());
           return d;
         });
-        return { node, dispose, idx, cur };
+        return row;
       };
 
       effect(() => {
@@ -720,10 +753,12 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
             const k = keys[i];
             let row = rows.get(k);
             if (row) {
-              if (row.idx.peek() !== i) {
-                row.idx.set(i); // position changed — refresh the index accessor
+              if (row.i !== i) {
+                row.i = i;
+                row.idx?.set(i); // position changed — refresh the index accessor
               }
-              row.cur.set(items[i]); // the item under the key now (a no-op when it is the same)
+              row.item = items[i];
+              row.cur?.set(items[i]); // the item under the key now (a no-op when it is the same)
             } else {
               row = make(items[i], i);
               fresh.push(row);

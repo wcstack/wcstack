@@ -49,6 +49,8 @@ const DIRTY: number = 2;
 
 interface Observable {
   _observers: Set<Computation>;
+  /** Called when the last observer leaves (selector's per-key nodes forget their key). */
+  _unobserved?: () => void;
 }
 
 interface Computation extends Observable {
@@ -71,7 +73,11 @@ function track(source: Observable): void {
 
 function untrack(node: Computation): void {
   for (const source of node._sources) {
-    source._observers.delete(node);
+    const observers = source._observers;
+    observers.delete(node);
+    if (observers.size === 0 && source._unobserved !== undefined) {
+      source._unobserved();
+    }
   }
   node._sources.clear();
 }
@@ -87,13 +93,16 @@ function untrack(node: Computation): void {
 
 type Disposer = () => void;
 
+/** An owned child: a disposer function, or a node disposed through its own method (no closure per node). */
+type Owned = Disposer | { _disposeOwned(): void };
+
 interface Owner {
-  _owned: Disposer[];
+  _owned: Owned[];
 }
 
 let currentOwner: Owner | null = null;
 
-function registerDisposer(disposer: Disposer): void {
+function registerDisposer(disposer: Owned): void {
   if (currentOwner !== null) {
     currentOwner._owned.push(disposer);
   }
@@ -103,7 +112,9 @@ function disposeOwned(owner: Owner): void {
   // Dispose in reverse creation order (children before parents, last-in-first-out).
   const owned = owner._owned;
   for (let i = owned.length - 1; i >= 0; i--) {
-    owned[i]();
+    const o = owned[i];
+    if (typeof o === "function") o();
+    else o._disposeOwned();
   }
   owned.length = 0;
 }
@@ -337,7 +348,11 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
     // observer sets — otherwise a computed created inside an effect that re-runs
     // would leak a stale ComputedNode into each source on every run (docs §8 (d)).
     // Lazy + no children: teardown is just untrack, no cleanup/owned to dispose.
-    registerDisposer(() => untrack(this));
+    registerDisposer(this);
+  }
+
+  _disposeOwned(): void {
+    untrack(this);
   }
 
   get(): T {
@@ -411,10 +426,13 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
 
 // --- effect -----------------------------------------------------------------
 
+/** The observers of every effect: effects are not read, so this stays empty. */
+const NO_OBSERVERS: Set<Computation> = new Set();
+
 class EffectNode implements Computation, Owner {
-  _observers = new Set<Computation>(); // effects are not observed; kept for the interface
+  _observers: Set<Computation> = NO_OBSERVERS; // effects are never read, so nothing is ever added
   _sources = new Set<Observable>();
-  _owned: Disposer[] = [];
+  _owned: Owned[] = [];
   _state = DIRTY;
   _isEffect = true;
   _disposed = false;
@@ -432,7 +450,7 @@ class EffectNode implements Computation, Owner {
     }
     // Be owned by the enclosing owner (a parent effect or a createRoot), so a
     // parent teardown disposes this effect.
-    registerDisposer(() => this.dispose());
+    registerDisposer(this);
     updateIfNecessary(this); // initial run (state starts DIRTY)
     // An author's effect whose first run read no signal never runs again (docs/seam-apps.md,
     // signals-shop). One that returned a cleanup, registered onCleanup or built children is a
@@ -470,6 +488,10 @@ class EffectNode implements Computation, Owner {
       this._cleanup();
       this._cleanup = undefined;
     }
+  }
+
+  _disposeOwned(): void {
+    this.dispose();
   }
 
   dispose(): void {
@@ -511,6 +533,60 @@ export function effect(fn: () => Cleanup | void): EffectHandle {
     );
   }
   return new EffectNode(fn, checkTracked);
+}
+
+/**
+ * One boolean per key over one source: `isSelected(key)` is true while the source equals `key`.
+ * A change of the source re-runs only the readers of the key it left and the key it took, not
+ * every reader — a row per item that compares `selected.get() === id` itself re-runs every row on
+ * each change. Solid's createSelector.
+ *
+ * A key is compared with the source as a Map compares keys (`===`, and NaN equals NaN): to select an
+ * object, select its id — `selector(computed(() => selected.get()?.id))`. The readers are told when
+ * effects run (a microtask, or `flushSync`); a call itself reads the source as it is now. A key no
+ * reader reads any more is forgotten. Create it under an owner (`createRoot` / a `SignalsElement`
+ * render): its subscription to the source is an effect.
+ */
+export function selector<T>(source: ReadSignal<T>): (key: T) => boolean {
+  const byKey = new Map<T, Observable>();
+  let value = source.peek();
+  const dirty = (key: T): void => {
+    const node = byKey.get(key);
+    if (node !== undefined) {
+      for (const observer of node._observers) {
+        markStale(observer, DIRTY);
+      }
+    }
+  };
+  innerEffect(() => {
+    const next = source.get();
+    if (!sameKey(next, value)) {
+      const prev = value;
+      value = next;
+      dirty(prev);
+      dirty(next);
+    }
+  });
+  return (key: T): boolean => {
+    if (currentObserver !== null) {
+      let node = byKey.get(key);
+      if (node === undefined) {
+        node = {
+          _observers: new Set(),
+          // tracked only right after it is read from the map, it is the map's node until this runs
+          _unobserved: () => byKey.delete(key),
+        };
+        byKey.set(key, node);
+      }
+      track(node);
+    }
+    return sameKey(key, source.peek());
+  };
+}
+
+/** SameValueZero, the comparison of a Map's keys. */
+function sameKey(a: unknown, b: unknown): boolean {
+  return a === b || (a !== a && b !== b);
 }
 
 /** The next effect() is one the package builds for an author's value (not checked for tracking). */
