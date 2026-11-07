@@ -1,5 +1,5 @@
-import { g as innerEffect, o as onCleanup, b as bindNode, h as isDev, j as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-kS9CKPFP.esm.js';
-export { D as DisposedError, c as computed, e as effect, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-kS9CKPFP.esm.js';
+import { h as innerEffect, o as onCleanup, b as bindNode, j as isDev, k as hasOwner, w as warnDev, d as signal, a as createRoot } from './core-D0iUHBKc.esm.js';
+export { D as DisposedError, c as computed, e as effect, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, s as selector, g as streamResource } from './core-D0iUHBKc.esm.js';
 
 // Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //
@@ -131,13 +131,22 @@ function bindProp(el, key, value) {
     // `onadd-to-cart` → the name as written ("click", "add-to-cart" — data-wcs's `on<event>:`
     // form). A lowercase `onclick` used to fall through to the reactive path, so the handler
     // ran at render and never on click (docs/seam-apps.md, signals-shop).
-    if (/^on[A-Za-z-]/.test(key) && typeof value === "function") {
-        const type = /^on[A-Z]/.test(key) ? key.slice(2).toLowerCase() : key.slice(2);
+    // `on` and a letter or `-` (no regex per prop: it ran twice for every prop of every element).
+    // `| 32` folds A-Z onto a-z and leaves "-" (45) as it is.
+    const c2 = key.charCodeAt(2) | 32;
+    if (key[0] === "o" && key[1] === "n" && ((c2 >= 97 && c2 <= 122) || c2 === 45) && typeof value === "function") {
+        const type = key.charCodeAt(2) < 91 ? key.slice(2).toLowerCase() : key.slice(2);
         const listener = value;
         el.addEventListener(type, listener);
-        // Remove the listener when the owning scope is torn down (e.g. a dynamic
-        // child that rebuilds this subtree), so handlers don't accumulate.
-        onCleanup(() => el.removeEventListener(type, listener));
+        // Remove the listener when the owning scope is torn down while the element is still in the
+        // document (e.g. a reactive child of a kept element, or a SignalsElement re-render), so handlers
+        // don't accumulate on an element that lives on. A detached element (a removed row, a replaced
+        // subtree) is not touched: its listeners go with it, and removing them one by one was a fifth
+        // of clearing a list.
+        onCleanup(() => {
+            if (el.isConnected)
+                el.removeEventListener(type, listener);
+        });
         return;
     }
     if (typeof value === "function") {
@@ -323,22 +332,37 @@ function insertReactive(parent, accessor) {
         warnDev("UNOWNED_INSERT", "", "reactive child inserted with no owner — its update effect will never be " +
             "disposed and may leak. Mount under createRoot / SignalsElement.");
     }
-    const anchor = document.createComment("");
-    parent.appendChild(anchor);
+    // The position: the first render's Text node while the value stays text (no anchor comment per text
+    // child — most reactive children are text); an anchor comment from the first render of nodes on.
+    // Until the anchor exists, `current` is empty (before the first run) or that one Text node.
+    let anchor = null;
     let current = [];
     innerEffect(() => {
         const value = accessor();
-        // FAST PATH: a plain text result that replaces a plain text result. The common
-        // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
-        // wholesale path would remove the old Text node, allocate a new one, and re-insert
-        // it on every change. When BOTH the previous and next renders are a single Text
-        // node, mutate the existing node's `data` in place instead — no allocation, no
-        // remove/insert, and the same DOM node identity is preserved across updates.
-        if ((typeof value === "string" || typeof value === "number") && current.length === 1) {
-            const node = current[0];
-            if (node.nodeType === 3 /* TEXT_NODE */) {
-                node.data = String(value);
+        if (typeof value === "string" || typeof value === "number") {
+            if (anchor === null && current.length === 0) {
+                current = [parent.appendChild(document.createTextNode(String(value)))];
                 return;
+            }
+            // FAST PATH: a plain text result that replaces a plain text result. The common
+            // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
+            // wholesale path would remove the old Text node, allocate a new one, and re-insert
+            // it on every change. When BOTH the previous and next renders are a single Text
+            // node, mutate the existing node's `data` in place instead — no allocation, no
+            // remove/insert, and the same DOM node identity is preserved across updates.
+            if (current.length === 1 && current[0].nodeType === 3 /* TEXT_NODE */) {
+                current[0].data = String(value);
+                return;
+            }
+        }
+        if (anchor === null) {
+            // the first render of nodes: at the end, or right after the text rendered until now
+            anchor = document.createComment("");
+            if (current.length === 0) {
+                parent.appendChild(anchor);
+            }
+            else {
+                current[0].after(anchor);
             }
         }
         const next = toNodes(value);
@@ -502,15 +526,16 @@ function For(list, each, options) {
             // Used to find which reused rows already sit in increasing relative order so
             // only the rest are moved (LIS reorder, see reconcileOrder).
             let prevOrder = [];
+            // A row's index and current-item signals are made the first time `each`'s accessor is read: a row
+            // that never reads them (most rows) owns two signals fewer. Until then the reconcile keeps the plain
+            // values on the row, and the signal starts from them.
             const make = (item, i) => {
-                const idx = signal(i);
-                const cur = signal(item);
-                let node;
-                const dispose = createRoot((d) => {
-                    node = each(item, () => idx.get(), () => cur.get());
+                const row = { node: null, dispose: null, i, idx: null, item, cur: null };
+                row.dispose = createRoot((d) => {
+                    row.node = each(item, () => (row.idx ??= signal(row.i)).get(), () => (row.cur ??= signal(row.item)).get());
                     return d;
                 });
-                return { node, dispose, idx, cur };
+                return row;
             };
             innerEffect(() => {
                 const items = read() ?? [];
@@ -552,10 +577,12 @@ function For(list, each, options) {
                         const k = keys[i];
                         let row = rows.get(k);
                         if (row) {
-                            if (row.idx.peek() !== i) {
-                                row.idx.set(i); // position changed — refresh the index accessor
+                            if (row.i !== i) {
+                                row.i = i;
+                                row.idx?.set(i); // position changed — refresh the index accessor
                             }
-                            row.cur.set(items[i]); // the item under the key now (a no-op when it is the same)
+                            row.item = items[i];
+                            row.cur?.set(items[i]); // the item under the key now (a no-op when it is the same)
                         }
                         else {
                             row = make(items[i], i);

@@ -22,6 +22,19 @@ declare function signal<T>(initial: T, equals?: Equals<T>): WriteSignal<T>;
 declare function computed<T>(fn: () => T, equals?: Equals<T>): ReadSignal<T>;
 declare function effect(fn: () => Cleanup | void): EffectHandle;
 /**
+ * One boolean per key over one source: `isSelected(key)` is true while the source equals `key`.
+ * A change of the source re-runs only the readers of the key it left and the key it took, not
+ * every reader — a row per item that compares `selected.get() === id` itself re-runs every row on
+ * each change. Solid's createSelector.
+ *
+ * A key is compared with the source as a Map compares keys (`===`, and NaN equals NaN): to select an
+ * object, select its id — `selector(computed(() => selected.get()?.id))`. The readers are told when
+ * effects run (a microtask, or `flushSync`); a call itself reads the source as it is now. A key no
+ * reader reads any more is forgotten. Create it under an owner (`createRoot` / a `SignalsElement`
+ * render): its subscription to the source is an effect.
+ */
+declare function selector<T>(source: ReadSignal<T>): (key: T) => boolean;
+/**
  * Run `fn` inside a fresh ownership scope and return its result. Every effect (or
  * nested cleanup) created during `fn` — directly or transitively — is owned by
  * this root; calling the `dispose` passed to `fn` tears them all down.
@@ -347,5 +360,5 @@ interface MountedNode<S extends NodeShape = DefaultNodeShape> extends BoundNode<
 }
 declare function mountNode<S extends NodeShape = DefaultNodeShape>(tagName: string, options?: MountNodeOptions): MountedNode<S>;
 
-export { DisposedError, For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, createSignalsElement, effect, flushSync, h, isDisposedError, mountNode, nodeSource, onCleanup, render, resource, signal, streamResource };
+export { DisposedError, For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, createSignalsElement, effect, flushSync, h, isDisposedError, mountNode, nodeSource, onCleanup, render, resource, selector, signal, streamResource };
 export type { BoundNode, Child, Cleanup, Component, DefaultNodeShape, EffectHandle, Equals, EventStreamOptions, ForEach, ForOptions, IndexEach, ListAccessor, ListView, MountNodeOptions, MountedNode, NodeShape, Props, ReadSignal, ResourceOptions, ResourceSource, ResourceState, SignalsElementClass, StreamProducer, StreamResourceOptions, StreamResourceState, StreamSource, StreamStatus, WcBindableDescriptor, WcBindableProperty, WriteSignal };

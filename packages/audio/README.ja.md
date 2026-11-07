@@ -63,7 +63,7 @@ npm install @wcstack/audio
 
 4.17 から、ページの `AudioContext` はそのジェスチャまで作りません。それより前に作った context は開始できず、Chromium と Firefox はページの読み込み時に警告を出していました（「The AudioContext was not allowed to start…」「An AudioContext was prevented from starting automatically…」）。それまでの `state` は、ジェスチャ前のこれまでと同じく `suspended`（`running` は false、`suspended` は true）と読めます。最初の `resume()` や `noteOn()` でも作るので、`resume-on-gesture="off"` のページは自分の `command.resume` で始まり、ジェスチャ前に届いた音（MIDI キーボードからなど）も落ちません。`<wcs-audio>` が接続した時点でページが既にジェスチャを受けていれば（クリックで入ったルートなど）、すぐに作ります。自分で渡した `createContext`（`OfflineAudioContext` など）は、これまでどおり接続時に呼びます。
 
-4.18（未リリース）から、ジェスチャで作るのはそのジェスチャが終わってから（クリックの後。`pointerdown` の中ではなく）です。作るには時間がかかり（Chromium で数百 ms）、それが出す出力はボタンが上がる前にページを描き直していました。`running` に結んだヒントがそこで消えるとポインターの下のページがずれ、ページで最初のクリックが別の要素に落ちていました。`noteOn()` と `resume()` は今までどおりその場で作ります。
+4.18 から、ジェスチャで作るのはそのジェスチャが終わってから（クリックの後。`pointerdown` の中ではなく）です。作るには時間がかかり（Chromium で数百 ms）、それが出す出力はボタンが上がる前にページを描き直していました。`running` に結んだヒントがそこで消えるとポインターの下のページがずれ、ページで最初のクリックが別の要素に落ちていました。`noteOn()` と `resume()` は今までどおりその場で作ります。
 
 ### 2. state で駆動する8声シンセ
 

@@ -591,11 +591,14 @@ declare class WcsAudio extends HTMLElement {
     private _rebuildQueued;
     private _connectedCallbackPromise;
     private _internals;
-    private _gestureBound;
+    /** The root the gesture listeners are on (`getRootNode()` is the element itself once it has left the document). */
+    private _gestureRoot;
     /** The graph waits for the first gesture, `resume()` or `noteOn()` (`_mustWait`). */
     private _waiting;
     /** A gesture, `resume()` or `noteOn()` has come: the context may be created at any time now. */
     private _armed;
+    /** The first gesture came while the graph waited: it is built once that gesture ends (`_onGestureEnd`). */
+    private _gestureEnding;
     /** What asked for the queued rebuild first, for `[wcs/audio-voices-cut]`. */
     private _rebuildCause;
     /** `[wcs/audio-voices-cut]` is said once per root. */
@@ -674,7 +677,9 @@ declare class WcsAudio extends HTMLElement {
     private _arm;
     private _bindGesture;
     private _unbindGesture;
+    private _unbindGestureEnd;
     private _onGesture;
+    private _onGestureEnd;
 }
 
 /**

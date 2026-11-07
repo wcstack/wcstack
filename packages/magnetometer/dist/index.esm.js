@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/magnetometer","version":"4.17.0"};
+var pkg = {"name":"@wcstack/magnetometer","version":"4.18.0"};
 
 /**
  * magnetometerCapabilities.ts

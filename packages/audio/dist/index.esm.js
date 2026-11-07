@@ -129,7 +129,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/audio","version":"4.17.0"};
+var pkg = {"name":"@wcstack/audio","version":"4.18.0"};
 
 /**
  * audioCapabilities.ts
@@ -1607,11 +1607,14 @@ class WcsAudio extends HTMLElement {
     _rebuildQueued = false;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
-    _gestureBound = false;
+    /** The root the gesture listeners are on (`getRootNode()` is the element itself once it has left the document). */
+    _gestureRoot = null;
     /** The graph waits for the first gesture, `resume()` or `noteOn()` (`_mustWait`). */
     _waiting = false;
     /** A gesture, `resume()` or `noteOn()` has come: the context may be created at any time now. */
     _armed = false;
+    /** The first gesture came while the graph waited: it is built once that gesture ends (`_onGestureEnd`). */
+    _gestureEnding = false;
     /** What asked for the queued rebuild first, for `[wcs/audio-voices-cut]`. */
     _rebuildCause = null;
     /** `[wcs/audio-voices-cut]` is said once per root. */
@@ -1840,25 +1843,62 @@ class WcsAudio extends HTMLElement {
     // the package leaves no global residue behind.
     _bindGesture() {
         if (this.resumeOnGesture) {
-            if (this._gestureBound)
+            if (this._gestureRoot)
                 return;
             const root = this.getRootNode();
             root.addEventListener("pointerdown", this._onGesture, { capture: true });
             root.addEventListener("keydown", this._onGesture, { capture: true });
-            this._gestureBound = true;
+            this._gestureRoot = root;
             return;
         }
         this._unbindGesture();
     }
     _unbindGesture() {
-        if (!this._gestureBound)
+        const root = this._gestureRoot;
+        if (!root)
             return;
-        const root = this.getRootNode();
         root.removeEventListener("pointerdown", this._onGesture, { capture: true });
         root.removeEventListener("keydown", this._onGesture, { capture: true });
-        this._gestureBound = false;
+        this._unbindGestureEnd();
+        this._gestureRoot = null;
     }
-    _onGesture = () => { this._arm(); void this._core.resume(); };
+    _unbindGestureEnd() {
+        const root = this._gestureRoot;
+        if (!root || !this._gestureEnding)
+            return;
+        root.removeEventListener("pointerup", this._onGestureEnd, { capture: true });
+        root.removeEventListener("pointercancel", this._onGestureEnd, { capture: true });
+        this._gestureEnding = false;
+    }
+    // A gesture resumes the context. The first one, while the graph still waits, builds it — after the gesture,
+    // not inside its pointerdown (4.18): building creates the AudioContext and every node (a few hundred ms in
+    // Chromium), and the outputs it publishes re-render the page before the button goes up. A "press to start the
+    // sound" banner bound to `running` hid there, the content moved, and the click landed on another element —
+    // the page's first click was lost (docs/seam-apps.md, music-room). Once the gesture has happened the page has
+    // its sticky activation, so a context created after it may start. noteOn() and resume() still build at once.
+    _onGesture = (event) => {
+        if (!this._waiting) {
+            void this._core.resume();
+            return;
+        }
+        if (this._gestureEnding)
+            return;
+        this._gestureEnding = true;
+        if (event.type !== "pointerdown") {
+            this._onGestureEnd();
+            return;
+        }
+        this._gestureRoot.addEventListener("pointerup", this._onGestureEnd, { capture: true });
+        this._gestureRoot.addEventListener("pointercancel", this._onGestureEnd, { capture: true });
+    };
+    // pointerup, mouseup and click are dispatched in one task: the next task comes after the click.
+    _onGestureEnd = () => {
+        this._unbindGestureEnd();
+        setTimeout(() => { if (this.isConnected) {
+            this._arm();
+            void this._core.resume();
+        } }, 0);
+    };
 }
 
 let nextKey = 0;
