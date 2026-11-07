@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
-| 実行時 | 67 |
+| 実行時 | 71 |
 | lint だけ — 条件付きの沈黙 | 25 |
 | 文書だけ — 沈黙 | 42 |
 | 数えない lint の code | 19 |
@@ -173,6 +173,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | getter が読むパスを打ち間違える: `this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`。 | 同じ code: 読みは `undefined` になり、getter がそこから計算する値は違う。diagnostics の後付けが、getter がそのパスを読んだあと、近い名前があるとき、読んだ getter の名前を添えてパスごとに 1 回警告する（トップレベルのキーは読んだ時点で throw する、#301）。 外部の評価で見つかった（確定申告の下書き: getter 96 本が、読んだパスから金額を計算する）。どちらも近い名前があるときだけ報告する: `this["opts.flag"] ?? false` は任意のキーをわざと読む。lint は getter・setter・メソッドを実行せずに検査し、リテラルのパスだけを見る（`this[key]` は見ない）。`stateSchema` が「無い」と言うときは error。 | `wcs/read-path-missing` (warning) |
 | 別の版のパッケージの `<script>` を新しいものと並べて残す — 1 行を上げ忘れた更新、版の違うバンドルとメンバー。 | code なし: ページが先に評価した写しがタグを定義し、もう一方は何もしない: 先に置いた古い行は古い版を動かし、更新で直したものは何も効かない（継ぎ目アプリ homeroom は 4.10.1 のページで 4.2.0 のエンジンを動かした）。4.11 から 2 つ目の写しが両方の版を名指して 1 回警告する（`[wcs/package-twice]`、タイミング契約 §24）。同じ版の 2 つは黙ったまま。4.11 より前の写しには言うコードが無い。 | — |
 | 解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。 | code なし: その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。 7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。 | — |
+| アクセサペアの setter で、その getter が読まないものを書く: `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。 | 同じ code: 書いた後も getter は元の値を返し、束ねた双方向の入力は次の描画でそこへ戻る — 何も知らせない。4.17 から diagnostics の後付けが、何かを書いたのに、何かを読んだ getter がそのどれも読まない setter ごとに 1 回 `[wcs/setter-unobserved]` を警告する。 どちらも、何も書かない setter（`null` を捨てるもの）には黙る。lint は、どちらかが追えないもの（`this[key]`・`fn(this)`）を読み書きするときも黙る。 | `wcs/setter-unobserved` (warning) |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
 | `<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。 | code なし: 読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。 | `wcs/bind-component-source` (error) |
@@ -192,6 +193,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | フィルタに型の違う値を流す（`date` に文字列、`join` に数値）。 | code なし: 値を当てる時点で `#28`〜`#30`、束縛が失敗する。文字列のフィルタは変換して通す（`null\|upper` は `NULL`）。 | `wcs/filter-input-type` (warning) |
 | 無いフィルタか、3.x の名前（`uc`・`substr`）を使う。 | 同じ code: 束縛の計画で `#501`、state は初期化に失敗する。formats の後付けの無い書式フィルタは、`/core` でも文で言う。 | `wcs/filter-unknown` (error) |
 | 互いを読み合って循環する getter を書く。 | 同じ code: 評価の時点で `#701`、それを読む束縛はすべて失敗する。 | `wcs/getter-cycle` (error) |
+| getter の中、または getter が呼ぶメソッドの中で state に書く: 遅延のキャッシュ（`this._cache ??= …`）、カウンタ。 | 同じ code: 評価のたびに `#8` を投げ、その getter を読む束縛はすべて失敗する。4.17 から文面がパスと getter を名指す（`[wcs/getter-write]`）。4.16 までは `This state is readonly.` で、どちらも名指さなかった。 | `wcs/getter-write` (error) |
 | `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。 | `wcs/index-arity` (error) |
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
 | `<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。 | code なし: 次のページは読み込まれない。見えたときに、要素が `target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告する。 lint の規則はまだ無い。id はマークアップにある。 | — |
@@ -210,7 +212,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `**` を通した `$setAll` で、ノード・子の一覧・その length に書く。 | 同じ code: `[wcs/recursion-structural-write]` を throw する。 | `wcs/recursion-structural-write` (error) |
 | `**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。 | 同じ code: `#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗する。 | `wcs/recursion-unsupported` (error) |
 | `$scan` を宣言する（4.0 で外れた）。 | code なし: diagnostics の後付けが読み込みで `#1`（`$scan was removed`）を throw する。それの無い `/core` ではキーは無視される。 | `wcs/scan-declaration-invalid` (varies) |
+| setter の無い getter にスクリプトから書く: `this.total = 0`、`$setAll("items.*.subtotal", [], 0)`。 | 同じ code: 書き込みが走るたびに `[wcs/path-readonly] "total" is a getter without a setter` を投げ（code は 4.17 から）、メソッドのその後は行われない。 lint は 4.17 からメソッドと setter の書き込みを読む（docs/script-write-checks.ja.md）。双方向の束縛だけを見ていた。getter が読む値を書く setter を足すか、その値を書く。 | `wcs/path-readonly` (error) |
 | 文書に 2 つ目の root の `<wcs-state>` を置く。 | code なし: 後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ — 文書の順に関わらないので、ページの `src=` やインラインの state の後に置いた `json=` の state がルートを取り、ページはそれでバインドされる。4.9 から、diagnostics の後付けが両方を名指しする。 | `wcs/second-root` (error) |
+| setter の中でその setter 自身のパスに書く（`set count(v) { this.count = v }`）、または互いに書き合う 2 つの setter を書く。 | 同じ code: setter のパスはアクセサそのものなので、書けば setter がまた呼ばれ、スタックが溢れるまで続く: 4.16 までは何も名指さない `RangeError`。4.17 から diagnostics の後付けが、setter の呼び出しが 64 段に達したところで循環を添えて `[wcs/setter-cycle]` を投げる。 lint は自分のパスに書く setter を error、2 つ以上の循環を各 setter に warning（条件で止まりうる）で報告する。値は getter が読むデータのパス（`_count`）に置く。 | `wcs/setter-cycle` (varies) |
 | `<wcs-listen>` → state → `<wcs-speak>` を、聞き取り中に読み上げを止めずに繋ぐ。 | code なし: マイクが読み上げを聞き、聞いたものがまた話され、回るたびに長くなる。ページの `<wcs-listen>` が聞いている間に話し始めると、`<wcs-speak>` が `[wcs/speech-echo]` で 1 回警告する。 | — |
 | `wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。 | 同じ code: 取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。 | `wcs/spread-no-bindable` (error) |
 | `wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。 ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。 | `wcs/tag-member-unknown` (error) |
@@ -219,7 +223,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。 | `wcs/token-misconfigured` (error) |
 | state が宣言しないコマンドかイベントのトークンを使う。 | 同じ code: `command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。 | `wcs/token-undeclared` (varies) |
 | `<wcs-fetch>` / `<wcs-upload>` の 1 つの `data-wcs` で、`trigger:` を `url:`（と `files:`）より前に書く。`trigger: true` で作った行は、入力が揃う前に発火する。 | code なし: 束縛は書いた順に当たる。trigger は url（やファイル）を見つけられず、何も送らず、`error` も立てない。要素が `[wcs/command-not-ready]` で 1 回警告する。 継ぎ目アプリ state-field-report が見つけた（クリップごとのアップロードの行）。要素が残りの束縛をマイクロタスク 1 つ待ってから読むこともできる — 直接の代入では `loading` が遅れて立つので、5.0 の議題。 | — |
-| 書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、`checked:`、`radio:` / `checkbox:`）に、setter の無い getter を束ねる。 | code なし: 入力のたびに `"celsius" is a getter without a setter` を投げる。欄は打った値を見せ、state は元の値のまま。 7GUIs の評価（Temperature）で見つかった。setter を足すか、`#ro` で一方向にする。 | `wcs/path-readonly` (error) |
+| 書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、`checked:`、`radio:` / `checkbox:`）に、setter の無い getter を束ねる。 | 同じ code: 入力のたびに `"celsius" is a getter without a setter` を投げる（4.17 から code `[wcs/path-readonly]` と直し方付き）。欄は打った値を見せ、state は元の値のまま。 7GUIs の評価（Temperature）で見つかった。setter を足すか、`#ro` で一方向にする。 | `wcs/path-readonly` (error) |
 | root だけが走らせる宣言をボリュームに書く: `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（拒む）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（走らせない）。 | code なし: scopes の後付けが `console.error` でボリュームを拒むか、`console.warn` で宣言を無視する。 | `wcs/volume-declaration` (varies) |
 | `$watch` がオブジェクトでない、キーが `$` で始まる・`@` を含む、ハンドラが関数でない。 | code なし: temporal の後付けが読み込みで throw し、state は初期化に失敗する。 | `wcs/watch-declaration-invalid` (error) |
 | `$watch` のキーが、state の宣言に無いパスを名指す。 | 同じ code: diagnostics の後付けが読み込みの後に `[wcs/watch-path-missing]` で警告する（`/core`、getter の下、まだ空の一覧の下では無言）。 | `wcs/watch-path-missing` (warning) |

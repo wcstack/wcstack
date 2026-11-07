@@ -223,7 +223,7 @@ function wrap(engine: Engine): void {
     if (!Array.isArray(indexes)) raise(M.SetAllNeedsIndexes, [path]);
     if (indexes.length > 0) raiseError(`${code("setall-form")} $setAll("${path}", indexes, …) with "**" takes no partial prefix: pass [] to write every node.`);
     if (typeof value === "function" || options?.spread === true) raiseError(`${code("setall-form")} $setAll("${path}", [], value) with "**" takes a plain value (no mapper, no spread).`);
-    if (e.readonlyDepth > 0) raise(M.Readonly);
+    e.refuseWrite(path);
     const suffix = suffixOf(spec, path);
     // the checks (3.x's): an index spelling is a `*` (`.children.0` is a child node), and a child
     // node's path is a node's (`.children.*.total` is the family `.total` one level down)

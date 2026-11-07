@@ -17,7 +17,7 @@ export function render(id: number, args: readonly unknown[]): string {
 /** Codes lint detects statically: only these point the author to a lint run. */
 const LINT_CODES = new Set([
   "binding-syntax", "template-syntax", "filter-unknown", "filter-arity", "index-arity",
-  "wildcard-rank", "token-undeclared", "binding-path-missing", "index-param-range",
+  "wildcard-rank", "token-undeclared", "binding-path-missing", "index-param-range", "path-readonly", "getter-write", "setter-cycle",
 ]);
 
 /** How to fix it, by what the message says. */
@@ -30,6 +30,7 @@ const GUIDES: [RegExp, string][] = [
   [/\[wcs\/wildcard-rank\] .* ranges over the rows of/, ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'],
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
+  [/\[wcs\/path-readonly\] "([^"]+)"/, ' Add a setter (set "$1"(v) { … }) or write what the getter reads; bind a two-way binding one way with #ro.'],
   [/\[wcs\/index-arity\] \$(?:resolve|update)/, " $resolve and $update take one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" — write "$1" here.'],
 ];

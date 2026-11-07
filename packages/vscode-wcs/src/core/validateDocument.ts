@@ -31,6 +31,7 @@ import { validateScopeDeclarations } from "../service/scopeDeclarationValidator.
 import { validateSemantics } from "../service/semanticValidator.js";
 import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import { validateScriptReads } from "../service/scriptReadValidator.js";
+import { validateScriptWrites } from "../service/scriptWriteValidator.js";
 import { validateStateSources } from "../service/stateSourceValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
@@ -146,6 +147,9 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateScriptStateUses(text, stateTagName, locale, bindAttribute));
   // the paths its getters and methods read, checked as the bindings' are; a spread or a key's value the lint cannot read (info)
   out.push(...validateScriptReads(text, stateTagName, locale, fileReader, applicationSchema, bindAttribute));
+  // what its getters, setters and methods write: a getter that writes, a getter without a setter written, setters that
+  // write each other, a setter whose writes its getter does not read (docs/script-write-checks.md)
+  out.push(...validateScriptWrites(text, stateTagName, locale));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
   out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));

@@ -289,7 +289,7 @@ export class Engine implements ReconcileHooks {
     // $update(path, indexes, fn) (4.16): $resolve's one address, written with fn(current, ...indexes) run at
     // its row — `this.$1`, `this["items.*.x"]` are that row's. A value is written as it is; undefined writes nothing
     $update: (path: string, indexes: number[], fn: unknown) => {
-      if (this.readonlyDepth > 0) raise(M.Readonly);
+      this.refuseWrite(path);
       const p = this.pattern(unbound(path), true);
       this.checkArity("$update", path, p, indexes, true);
       const row = this.rowOf(p, indexes, null);
@@ -801,11 +801,19 @@ export class Engine implements ReconcileHooks {
   // ---------------------------------------------------------------- write
 
   /**
+   * Refuses a write in a readonly callback or while a getter is evaluated: the message names the path and the
+   * getter (`[wcs/getter-write]` with the diagnostics add-on).
+   */
+  refuseWrite(path: string): void {
+    if (this.readonlyDepth > 0) raise(M.Readonly, [path, this.top?.getter.path]);
+  }
+
+  /**
    * `occurrence`: an event-semantics write, applied even when equal to the current value.
    * `element`: an element wrote it back (a two-way input, a wc-bindable event), not code.
    */
   write(p: Pattern, row: StateRow | null, value: unknown, occurrence = false, element = false): void {
-    if (this.readonlyDepth > 0) raise(M.Readonly);
+    this.refuseWrite(p.path);
     if (element || this.feeding > 0) this.fedBack = true;
     else this.codeWrote = true;
     if (hooks.beforeWrite?.(this, p, row, value, element)) return;
@@ -1535,7 +1543,7 @@ export class Engine implements ReconcileHooks {
 
   private setAll(path: string, indexes: number[], value: unknown, options?: { spread?: boolean }): number {
     if (!Array.isArray(indexes)) raise(M.SetAllNeedsIndexes, [path]);
-    if (this.readonlyDepth > 0) raise(M.Readonly);
+    this.refuseWrite(path);
     const p = this.pattern(path, true);
     this.checkArity("$setAll", path, p, indexes, false);
     const targets: [StateRow | null, number[]][] = [];

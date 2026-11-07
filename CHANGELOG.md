@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Upgrading
+
+- `@wcstack/lint`: three errors are new or wider — `wcs/getter-write` (a getter that writes, itself or through a method it calls), `wcs/path-readonly` on a script's write of a getter without a setter (it was reported on two-way bindings only), and `wcs/setter-cycle` on a setter that writes its own path. The runtime throws on each of them when it runs, so a page they report was already broken there; they fail `--errors-only`. Two warnings, which fail `--strict`: `wcs/setter-cycle` on setters that write each other, and `wcs/setter-unobserved`.
+- `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/setter-unobserved]` warns once per setter whose writes its getter does not read, and `[wcs/setter-cycle]` throws where setters wrote each other until the stack overflowed (a `RangeError`). A write while a getter is evaluated throws `[wcs/getter-write]` naming the path and the getter, where it said `This state is readonly.`; a write of a getter without a setter says `[wcs/path-readonly]` and how to fix it. A test that matched `This state is readonly.` for a getter's write matches the new sentence.
+- No workaround becomes unnecessary.
+
+### Added
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **what a getter, a setter or a method writes, read as one set per body** ([docs/script-write-checks.md](./docs/script-write-checks.md)) — an assignment, a compound assignment, `++` / `--`, `$setAll`, `$update`, a `$resolve` with a value, and through the methods it calls. No page in the repository is reported.
+  - **`wcs/getter-write`** (error): a getter that writes while it is evaluated, in its body or in a method it calls (reported at the call, naming the method). The runtime throws on every evaluation. A write in a nested function — a handler the getter returns, a callback that runs later — is not counted.
+  - **`wcs/path-readonly` reads a script's writes** (error): `this.total = 0`, `$setAll("items.*.subtotal", …)` in a method or a setter, where the path is a getter without a setter. It read two-way bindings only. Not reported in a state with a top-level spread, which may bring the setter.
+  - **`wcs/setter-cycle`**: a setter that writes its own path (error) — the setter's path is the accessor itself, so the write calls the setter again until the stack overflows — or setters that write each other (warning on each, as a condition may stop them). Synchronous writes only.
+  - **`wcs/setter-unobserved`** (warning): a setter none of whose writes its getter reads, through the getters and methods it calls and inside `$untracked` — `set celsius(v) { this.c = v }` beside `get celsius() { return (this.f - 32) * 5 / 9 }`. After the write the getter returns its old value, and a two-way input goes back to it. A write reaches a read of the same path, of a path above it (`user` for `user.name`) or below it. Silent on a setter that writes nothing (it ignores the value), on a getter that reads nothing of the state, and wherever either side reads or writes what cannot be followed (`this[key]`, `this` handed to a function, a path that is not a literal, a method the state does not declare).
+- `@wcstack/state`: **the diagnostics add-on names setters that write each other** (`[wcs/setter-cycle]`): at 64 setter calls deep it throws with the cycle (`"a" -> "b" -> "a"`), where the stack overflowed with a `RangeError` that named nothing. 0 B in the core.
+- `@wcstack/state`: **the diagnostics add-on warns about a setter whose writes its getter does not read** (`[wcs/setter-unobserved]`), once per setter, when the setter wrote something and the getter has read something: a two-way input bound to it went back to the old value without a word. 0 B in the core.
+
+### Changed
+
+- `@wcstack/state`: **a write while a getter is evaluated names the path and the getter** — `[wcs/getter-write] "count" is written while the getter "total" is evaluated: a getter only reads. …` — where it said `This state is readonly.` (`#8`), as it still does in a readonly callback, now with the path. The core passes them, for 15 B.
+- `@wcstack/state`: **a write of a getter without a setter carries the lint's code and the fix** — `[wcs/path-readonly] "total" is a getter without a setter`, then how to add the setter or bind one way with `#ro`, and the pointer to the lint.
+
 ## [4.16.0] — 2026-11-04
 
 A minor from a study of js-framework-benchmark's partial update, whose page writes `` this[`data.${i}.label`] += " !!!" ``: a path built as a string, which the lint could not read and the engine parsed on each call. `$update(path, indexes, fn)` changes one address from its current value — in Chromium at 4× CPU slowdown the benchmark's "Update every 10th row" takes 3.9 ms instead of 5.2 ms from the click to the changed DOM — and a `$setAll` mapper runs at the row it writes. The lint checks a nested path a script writes, and a path built with a template under a list. `@wcstack/state`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.15.0 with a new version.

@@ -6,7 +6,7 @@
  * nearest name (did-you-mean, the same rule as lint), how to fix it, and a pointer to lint where
  * lint really detects the case. The full `auto` bundle installs it.
  */
-import { chain, first, hooks, known, type Feature } from "../hooks";
+import { chain, first, handled, hooks, known, type Feature } from "../hooks";
 import type { Engine } from "../engine";
 import { parsePath, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
@@ -264,6 +264,93 @@ function written(engine: Engine, p: Pattern): void {
     .some((e) => `${e.getAttribute("mount")}.`.startsWith(`${key}.`))) {
     console.warn(`[@wcstack/state] [wcs/write-path-missing] "${key}" is not declared: writing it creates a new key.${near}${LINT_HINT}`);
   }
+}
+
+// ---------------------------------------------------------------- setters (docs/script-write-checks.md)
+
+/** A setter being called, and the paths written while it runs (its own and the setters it calls). */
+interface SetterCall {
+  readonly p: Pattern;
+  readonly writes: Pattern[];
+}
+
+/** The setters being called, innermost last: a write calls a setter synchronously, which may write. */
+const calls: SetterCall[] = [];
+/** Setters that call setters this deep write each other without end (the core has no guard: the stack overflows). */
+const MAX_SETTER_DEPTH = 64;
+/** The setters `[wcs/setter-unobserved]` was said for, by engine (once per path). */
+const unobserved = new WeakMap<Engine, Set<string>>();
+
+/**
+ * The `beforeWrite` hook (it handles nothing): a write about to call an author's setter. A setter that writes its
+ * own path calls itself, and two setters that write each other call each other, until the stack overflows with a
+ * RangeError that names nothing; this names the setters at a depth no page reaches on purpose.
+ */
+function beforeSetter(_engine: Engine, p: Pattern): boolean {
+  if (p.setter === null || p.markup) return false;
+  if (calls.length >= MAX_SETTER_DEPTH) {
+    const paths = calls.map((c) => c.p.path);
+    const from = paths.lastIndexOf(p.path);
+    calls.length = 0;
+    raiseError(`[wcs/setter-cycle] setters write each other without end: ${[...paths.slice(Math.max(from, 0)), p.path].map((s) => `"${s}"`).join(" -> ")}. Writing a setter's own path calls it again: store the value under a data path the getter reads.`);
+  }
+  calls.push({ p, writes: [] });
+  return false;
+}
+
+/** The paths getter `g` reads, and the paths the getters among them read, on down. */
+function readClosure(g: Pattern): Set<Pattern> {
+  const out = new Set<Pattern>();
+  const add = (q: Pattern): void => {
+    for (const s of q.sources) {
+      if (out.has(s)) continue;
+      out.add(s);
+      if (s.getter !== null) add(s);
+    }
+  };
+  add(g);
+  return out;
+}
+
+/**
+ * The `written` hook: a write while setters run belongs to each of them, and a setter's own landing ends its call:
+ * the core hears of it when the setter returns or throws, the one landing with `direct` false that passes `element`
+ * (Engine.write — `$postUpdate` of the same path, inside the setter, passes none). A setter that wrote something
+ * (one that wrote nothing ignored the value on purpose — the storage README's accessor pair ignores `null`), none
+ * of it what its getter reads, leaves the getter on its old value: a two-way input reverts to it on the next
+ * render, without a word. Warned once per setter, and only once the getter has read something.
+ */
+function setterWrote(engine: Engine, p: Pattern, _row: unknown, _old: unknown, _value: unknown, direct: boolean, element?: boolean): void {
+  if (calls.length === 0) return;
+  if (!direct && element !== undefined) {
+    let i = calls.length - 1;
+    // (a pattern is one engine's: the same pattern is the same setter)
+    while (i >= 0 && calls[i].p !== p) i--;
+    if (i >= 0) {
+      // (calls above it are writes another add-on took before the setter ran: they never return)
+      const call = calls[i];
+      calls.length = i;
+      const g = call.p;
+      if (g.getter !== null && g.sources.length > 0 && call.writes.length > 0) {
+        const reads = [...readClosure(g)];
+        if (!call.writes.some((q) => reads.some((s) => q.isUnder(s) || s.isUnder(q)))) {
+          let said = unobserved.get(engine);
+          if (said === undefined) unobserved.set(engine, (said = new Set()));
+          if (!said.has(g.path)) {
+            said.add(g.path);
+            const wrote = [...new Set(call.writes.map((q) => `"${q.path}"`))].join(", ");
+            console.warn(`[@wcstack/state] [wcs/setter-unobserved] the setter of "${g.path}" wrote ${wrote}, which its getter does not read: "${g.path}" keeps its value, and a two-way input goes back to it. Write what the getter reads.${LINT_HINT}`);
+          }
+        }
+      }
+    }
+  }
+  for (const c of calls) c.writes.push(p);
+}
+
+/** A drain: no setter runs across one (what a write left on the stack is another add-on's). */
+function setterDrained(): void {
+  calls.length = 0;
 }
 
 // ---------------------------------------------------------------- commands that reach nothing
@@ -654,8 +741,9 @@ export const diagnostics: Feature = {
     };
     hooks.handlerThrew = handlerThrew;
     hooks.element = chain(chain(hooks.element, secondRoot), lookLater);
-    hooks.written = chain(chain(hooks.written, written), elementWrote);
-    hooks.drained = chain(hooks.drained, drained);
+    hooks.written = chain(chain(chain(hooks.written, written), elementWrote), setterWrote);
+    hooks.drained = chain(chain(hooks.drained, drained), setterDrained);
+    hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeSetter);
     hooks.listSynced = chain(hooks.listSynced, listValue);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },

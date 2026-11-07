@@ -435,11 +435,46 @@
     {
       "id": "two-way-getter-without-setter",
       "lint": [{ "code": "wcs/path-readonly", "severity": "error" }],
-      "runtime": "loud", "harm": "broken",
+      "runtime": "same", "harm": "broken",
       "mistake": { "en": "Binds a getter without a setter where the binding writes back: `value:` on an `<input>`, `<select>` or `<textarea>`, `checked:`, `radio:` / `checkbox:`.", "ja": "書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、`checked:`、`radio:` / `checkbox:`）に、setter の無い getter を束ねる。" },
-      "effect": { "en": "every edit throws `\"celsius\" is a getter without a setter`; the field shows what was typed, and the state keeps its value.", "ja": "入力のたびに `\"celsius\" is a getter without a setter` を投げる。欄は打った値を見せ、state は元の値のまま。" },
-      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "is a getter without a setter" }],
+      "effect": { "en": "every edit throws `\"celsius\" is a getter without a setter` (since 4.17 with the code, `[wcs/path-readonly]`, and the fix); the field shows what was typed, and the state keeps its value.", "ja": "入力のたびに `\"celsius\" is a getter without a setter` を投げる（4.17 から code `[wcs/path-readonly]` と直し方付き）。欄は打った値を見せ、state は元の値のまま。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "[wcs/path-readonly]" }],
       "note": { "en": "Found by a 7GUIs evaluation (Temperature). Add a setter, or bind it one way with `#ro`.", "ja": "7GUIs の評価（Temperature）で見つかった。setter を足すか、`#ro` で一方向にする。" }
+    },
+    {
+      "id": "script-write-getter-without-setter",
+      "lint": [{ "code": "wcs/path-readonly", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes a getter without a setter from a script: `this.total = 0`, `$setAll(\"items.*.subtotal\", [], 0)`.", "ja": "setter の無い getter にスクリプトから書く: `this.total = 0`、`$setAll(\"items.*.subtotal\", [], 0)`。" },
+      "effect": { "en": "Throws `[wcs/path-readonly] \"total\" is a getter without a setter` each time the write runs (the code since 4.17), and what the method does after it is not done.", "ja": "書き込みが走るたびに `[wcs/path-readonly] \"total\" is a getter without a setter` を投げ（code は 4.17 から）、メソッドのその後は行われない。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "[wcs/path-readonly]" }],
+      "note": { "en": "The lint reads a method's and a setter's writes since 4.17 (docs/script-write-checks.md); it read two-way bindings only. Add a setter that writes what the getter reads, or write those values.", "ja": "lint は 4.17 からメソッドと setter の書き込みを読む（docs/script-write-checks.ja.md）。双方向の束縛だけを見ていた。getter が読む値を書く setter を足すか、その値を書く。" }
+    },
+    {
+      "id": "getter-writes",
+      "lint": [{ "code": "wcs/getter-write", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes the state in a getter, or in a method a getter calls: a lazy cache (`this._cache ??= …`), a counter.", "ja": "getter の中、または getter が呼ぶメソッドの中で state に書く: 遅延のキャッシュ（`this._cache ??= …`）、カウンタ。" },
+      "effect": { "en": "Every evaluation throws `#8`, and every binding that reads the getter fails. Since 4.17 the message names the path and the getter (`[wcs/getter-write]`); up to 4.16 it said `This state is readonly.`, which named neither.", "ja": "評価のたびに `#8` を投げ、その getter を読む束縛はすべて失敗する。4.17 から文面がパスと getter を名指す（`[wcs/getter-write]`）。4.16 までは `This state is readonly.` で、どちらも名指さなかった。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "[wcs/getter-write]" }]
+    },
+    {
+      "id": "setter-writes-itself",
+      "lint": [{ "code": "wcs/setter-cycle", "severity": "varies" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes a setter's own path in the setter (`set count(v) { this.count = v }`), or writes two setters that write each other.", "ja": "setter の中でその setter 自身のパスに書く（`set count(v) { this.count = v }`）、または互いに書き合う 2 つの setter を書く。" },
+      "effect": { "en": "The setter's path is the accessor itself, so the write calls the setter again until the stack overflows: up to 4.16 a `RangeError` that named nothing. Since 4.17 the diagnostics add-on throws `[wcs/setter-cycle]` with the cycle at 64 setter calls deep.", "ja": "setter のパスはアクセサそのものなので、書けば setter がまた呼ばれ、スタックが溢れるまで続く: 4.16 までは何も名指さない `RangeError`。4.17 から diagnostics の後付けが、setter の呼び出しが 64 段に達したところで循環を添えて `[wcs/setter-cycle]` を投げる。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/setter-cycle]" }],
+      "note": { "en": "The lint: an error for a setter that writes its own path, a warning on each setter of a longer cycle (a condition may stop it). Store the value under a data path the getter reads (`_count`).", "ja": "lint は自分のパスに書く setter を error、2 つ以上の循環を各 setter に warning（条件で止まりうる）で報告する。値は getter が読むデータのパス（`_count`）に置く。" }
+    },
+    {
+      "id": "setter-unobserved",
+      "lint": [{ "code": "wcs/setter-unobserved", "severity": "warning" }],
+      "runtime": "same", "harm": "stale",
+      "mistake": { "en": "Writes, in an accessor pair's setter, something its getter does not read: `set celsius(v) { this.c = v }` beside `get celsius() { return (this.f - 32) * 5 / 9 }`.", "ja": "アクセサペアの setter で、その getter が読まないものを書く: `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。" },
+      "effect": { "en": "After the write the getter returns its old value, and a two-way input bound to it goes back to it on the next render, without a word. Since 4.17 the diagnostics add-on warns `[wcs/setter-unobserved]` once per setter that wrote something its getter, which has read something, does not read.", "ja": "書いた後も getter は元の値を返し、束ねた双方向の入力は次の描画でそこへ戻る — 何も知らせない。4.17 から diagnostics の後付けが、何かを書いたのに、何かを読んだ getter がそのどれも読まない setter ごとに 1 回 `[wcs/setter-unobserved]` を警告する。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/setter-unobserved]" }],
+      "note": { "en": "Both sides stay silent on a setter that writes nothing (one that ignores `null`); the lint also where either side reads or writes what it cannot follow (`this[key]`, `fn(this)`).", "ja": "どちらも、何も書かない setter（`null` を捨てるもの）には黙る。lint は、どちらかが追えないもの（`this[key]`・`fn(this)`）を読み書きするときも黙る。" }
     },
     {
       "id": "wildcard-rank",

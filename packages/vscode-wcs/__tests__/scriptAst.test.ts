@@ -285,3 +285,43 @@ describe("collectGetterReads — 依存 API の正式名（@wcstack/state 3.2）
     ]);
   });
 });
+
+describe("collectGetterReads — 書き込み集合のための任意の収集（docs/script-write-checks.md）", () => {
+  const all = (body: string) => collectGetterReads(body, { writes: true, resolveWrites: true, untracked: true, opaque: true })!;
+  const brief = (rs: GetterRead[]) => rs.map((r) => [r.path, r.form, r.nested === true]);
+
+  it("入れ子の関数（アロー関数・function・class）の中の読み書きに nested を付けること", () => {
+    expect(brief(all(`this.a = 1; const f = () => { this.b = 2; }; const self = this; function g() { self.c = 3; } class K { m() { self.d; } }`))).toEqual([
+      ["a", "write", false],
+      ["b", "write", true],
+      ["c", "write", true],
+      ["d", "member", true],
+    ]);
+  });
+
+  it("値を渡す $resolve を書き込みとして、渡さない $resolve を読みとして集めること（resolveWrites）", () => {
+    expect(brief(all(`this.$resolve("a.*.v", [0], 1); return this.$resolve("b.*.v", [0]);`))).toEqual([
+      ["a.*.v", "api-write", false],
+      ["b.*.v", "api", false],
+    ]);
+    expect(brief(collectGetterReads(`this.$resolve("a.*.v", [0], 1);`, { writes: true })!)).toEqual([["a.*.v", "api", false]]);
+  });
+
+  it("$untracked の中を集めること（untracked）。既定では集めない", () => {
+    expect(brief(all(`return this.$untracked(() => this.u);`))).toEqual([["u", "member", true]]);
+    expect(brief(collectGetterReads(`return this.$untracked(() => this.u);`)!)).toEqual([]);
+  });
+
+  it("this[key]・値として使った this・リテラルでない API のパスを opaque として集めること。self = this は値ではない", () => {
+    const got = all(`let self; self = this; this[k] = 1; save(this); this.$setAll(p, [], 0); return this.$getAll(q, []) + this[k2];`);
+    expect(got.map((r) => [r.form, r.written])).toEqual([
+      ["opaque", true],
+      ["opaque", true],
+      ["opaque", true],
+      ["opaque", false],
+      ["opaque", false],
+    ]);
+    expect(all(`this.a = 1;`).some((r) => r.form === "opaque")).toBe(false);
+    expect(collectGetterReads(`save(this); this[k] = 1;`, { writes: true })).toEqual([]);
+  });
+});

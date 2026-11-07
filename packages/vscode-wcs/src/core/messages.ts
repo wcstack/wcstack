@@ -117,6 +117,16 @@ export interface WcsMessageCatalog {
   stateSrcUnread(src: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
   pathReadonlyTwoWay(path: string, property: string): string;
+  /** A script writes a getter without a setter (`this.total = 0`, `$setAll` / `$update` / `$resolve` on its path). */
+  pathReadonlyWrite(path: string): string;
+  /** A getter writes a path while it is evaluated (`via`: through the method it calls). */
+  getterWrite(path: string, getter: string, via?: string): string;
+  /** A setter writes its own path. */
+  setterCycleSelf(path: string): string;
+  /** Setters write each other (`cycle`: `"a" -> "b" -> "a"`). */
+  setterCycle(cycle: string): string;
+  /** A setter writes `writes`, none of which its getter reads. */
+  setterUnobserved(path: string, writes: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -380,6 +390,16 @@ const ja: WcsMessageCatalog = {
     `コマンドトークン "${t}" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: ${t} の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.focus: ${t}）`,
   writePathMissing: (k) =>
     `"${k}" は state が宣言していないキーです。書き込みは新しいキーを作るだけで、宣言したキーの束縛には届きません`,
+  pathReadonlyWrite: (p) =>
+    `"${p}" は setter の無い getter なので、この書き込みは実行のたびに例外になります（"${p}" is a getter without a setter）。getter が読む値を書く setter を足す（set "${p}"(v) { … }）か、その値を直接書いてください`,
+  getterWrite: (p, g, via) =>
+    `getter "${g}" の評価中に "${p}" を書いています${via === undefined ? '' : `（呼んでいるメソッド "${via}" の中）`}。getter は読むだけで、書き込みは評価のたびに例外になります。メソッド・setter・$watch のハンドラから書くか、値を別の getter で計算してください`,
+  setterCycleSelf: (p) =>
+    `"${p}" の setter が自分のパス "${p}" に書いています。setter のパスはアクセサそのものなので、書けば setter がまた呼ばれ、スタックが溢れるまで続きます。値は getter が読むデータのパス（_${p.split('.').pop()} など）に置いてください`,
+  setterCycle: (cycle) =>
+    `setter が互いに書き合っています: ${cycle}。条件で止まらなければ、互いを呼び続けてスタックが溢れます。値は getter が読むデータのパスに置いてください`,
+  setterUnobserved: (p, w) =>
+    `"${p}" の setter は ${w} を書きますが、getter "${p}" はそのどれも読みません。書いた後も getter は元の値を返し、"${p}" に束ねた双方向の入力はそこへ戻ります。getter が読む値を書くか、setter が書く値を getter で読んでください`,
   nestedWritePathMissing: (p) =>
     `パス "${p}" は状態定義に存在しません。書き込みはオブジェクトに新しいキーを作るだけで、宣言したパスの束縛には届きません`,
   readPathMissing: (p, top) => top
@@ -680,6 +700,16 @@ const en: WcsMessageCatalog = {
     `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
   writePathMissing: (k) =>
     `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  pathReadonlyWrite: (p) =>
+    `"${p}" is a getter without a setter, so this write throws each time it runs ("${p}" is a getter without a setter). Add a setter that writes what the getter reads (set "${p}"(v) { … }), or write those values instead`,
+  getterWrite: (p, g, via) =>
+    `The getter "${g}" writes "${p}" while it is evaluated${via === undefined ? '' : ` (in the method "${via}" it calls)`}. A getter only reads: the write throws each time the getter is evaluated. Write it from a method, a setter or a $watch handler, or compute the value in a getter of its own`,
+  setterCycleSelf: (p) =>
+    `The setter of "${p}" writes its own path "${p}". A setter's path is the accessor itself: writing it calls the setter again, until the stack overflows. Store the value under a data path the getter reads (such as _${p.split('.').pop()})`,
+  setterCycle: (cycle) =>
+    `Setters write each other: ${cycle}. Unless a condition stops them, they call each other until the stack overflows. Store the values under data paths the getters read`,
+  setterUnobserved: (p, w) =>
+    `The setter of "${p}" writes ${w}, none of which the getter "${p}" reads. After a write the getter returns its old value, and a two-way input bound to "${p}" goes back to it. Write what the getter reads, or read what the setter writes in the getter`,
   nestedWritePathMissing: (p) =>
     `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top

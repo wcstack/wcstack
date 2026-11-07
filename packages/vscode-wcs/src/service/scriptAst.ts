@@ -39,6 +39,13 @@
  *   - `this.$untracked(fn)`（旧名 `this.$untrackDependency(fn)`）の中 → 集めない（意図的な抑止）
  *   - 単純代入 `this.a = x` の左辺 → 集めない（読みではない。`wcs/nested-assign` の担当）
  *   - `$` 始まりのルート → 集めない（API 名前空間）
+ *   - 入れ子の関数（アロー関数も）の中の読み書き → `nested: true`（本体の評価中に走るとは限らない —
+ *     `wcs/getter-write` と `wcs/setter-cycle` は外す）
+ *   - `CollectOptions.resolveWrites`: 引数 3 つ以上の `$resolve` は読みではなく書き込み（`form: 'api-write'`）
+ *   - `CollectOptions.untracked`: `$untracked(fn)` の中も集める（追跡されないだけで読みは起きる）
+ *   - `CollectOptions.opaque`: 追えないもの — `this[key]` のルート・値として使った `this`（`fn(this)`・
+ *     `Object.assign(this, …)`）・リテラルでない API のパス — を `form: 'opaque'`（path は空）で集める。
+ *     「読まない・書かない」を断定する規則（`wcs/setter-unobserved`）が、それを見て黙る
  */
 
 import { parse, type AnyNode, type MemberExpression, type ObjectPattern, type Pattern, type Expression } from 'acorn';
@@ -57,7 +64,7 @@ export interface GetterRead {
    * 読み取りの形。`write` / `api-write` は `CollectOptions.writes` のときだけ出る書き込み:
    * 単純代入の左辺（`this["a.b"] = v`）と、`$setAll` / `$update` のパス引数（範囲はパスのリテラル）。
    */
-  readonly form: 'member' | 'api' | 'track' | 'destructure' | 'write' | 'api-write';
+  readonly form: 'member' | 'api' | 'track' | 'destructure' | 'write' | 'api-write' | 'opaque';
   /** チェーンが呼び出しの callee だったか（`this.form.validate()` の `validate` が末尾） */
   readonly callee: boolean;
   /** 複合代入・増減の対象として読まれたか（`this.a += 1` / `this.a++`）。読み兼書き。 */
@@ -68,6 +75,8 @@ export interface GetterRead {
    * キー（`` `drafts.${key}` ``）なので、消費者が state の形で確かめる。
    */
   readonly indexed?: readonly string[];
+  /** 本体の中の入れ子の関数（アロー関数も）の中で起きたとき true。本体の評価中に走るとは限らない。 */
+  readonly nested?: true;
   readonly start: number;
   readonly end: number;
 }
@@ -81,6 +90,12 @@ export interface CollectOptions {
   readonly templates?: boolean;
   /** 書き込みも集める（`form: 'write'` / `'api-write'`）。 */
   readonly writes?: boolean;
+  /** 引数 3 つ以上の `$resolve`（書き込み）を、読み（`form: 'api'`）ではなく `form: 'api-write'` として集める（`writes` と併せて）。 */
+  readonly resolveWrites?: boolean;
+  /** `$untracked(fn)` の中の読み書きも集める（既定では依存にならないので集めない）。 */
+  readonly untracked?: boolean;
+  /** 追えないもの（`this[key]`・値として使った `this`・リテラルでない API のパス）を `form: 'opaque'` で集める。 */
+  readonly opaque?: boolean;
 }
 
 const PREFIX = '(async function* () {\n';
@@ -112,10 +127,10 @@ export function collectGetterReads(body: string, options: CollectOptions = {}): 
   const fn = unwrapWrapper(program);
   if (fn === null) return null;
   const out: GetterRead[] = [];
-  const root: Scope = { thisIsState: true, aliases: new Set() };
+  const root: Scope = { thisIsState: true, aliases: new Set(), nested: false };
   collecting = options;
   try {
-    visit(fn.body, enterFunction(fn, root, true), out);
+    visit(fn.body, enterFunction(fn, root, true, false), out);
   } finally {
     collecting = {};
   }
@@ -128,6 +143,8 @@ interface Scope {
   readonly thisIsState: boolean;
   /** state を指すと断定できる識別子（外側から継承し、このスコープの束縛で上書き・影付け） */
   readonly aliases: ReadonlySet<string>;
+  /** 本体の中の入れ子の関数（アロー関数も）・class の中か */
+  readonly nested: boolean;
 }
 
 type FunctionNode = AnyNode & { type: 'FunctionExpression' | 'FunctionDeclaration' | 'ArrowFunctionExpression' };
@@ -188,7 +205,7 @@ function bindingNames(pattern: AnyNode, out: Set<string>): void {
  * それ以外の束縛（引数・非 this 初期化・再代入・関数/class 宣言名・catch 引数・for-in/of の左辺）
  * を持つ名前を影として外す。`= this` は `thisIsState` のスコープでだけエイリアスになる。
  */
-function enterFunction(fn: FunctionNode, outer: Scope, thisIsState: boolean): Scope {
+function enterFunction(fn: FunctionNode, outer: Scope, thisIsState: boolean, nested: boolean): Scope {
   const shadowed = new Set<string>();
   /** `= this` は from: null、`= ident` は from: ident */
   const aliasInits: { name: string; from: string | null }[] = [];
@@ -240,7 +257,7 @@ function enterFunction(fn: FunctionNode, outer: Scope, thisIsState: boolean): Sc
     const ok = from === null ? thisIsState : aliases.has(from);
     if (!ok) aliases.delete(name);
   }
-  return { thisIsState, aliases };
+  return { thisIsState, aliases, nested };
 }
 
 function isThisRoot(node: AnyNode, scope: Scope): boolean {
@@ -327,10 +344,11 @@ interface EmitOptions {
   readonly written: boolean;
 }
 
-function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOptions, start: number, end: number): void {
+function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOptions, start: number, end: number, scope: Scope): void {
   if (segments.length === 0) return;
   const root = segments[0].text;
-  // 動的ルート（`this[key]`）は断定できない。`$` ルートは API 名前空間
+  // 動的ルート（`this[key]`）は断定できない（`CollectOptions.opaque` のときだけ印を残す）。`$` ルートは API 名前空間
+  if (root === null && segments[0].dynamic !== null) opaque(out, options.written || options.form === 'write', start, end, scope);
   if (root === null || root.length === 0 || root.startsWith('$')) return;
   let chain: string[] | null = [];
   for (let i = 0; i < segments.length; i++) {
@@ -343,6 +361,17 @@ function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOpti
   out.push({
     path: root, chain, form: options.form, callee: options.callee, written: options.written,
     ...(lists !== undefined ? { indexed: lists } : {}),
+    ...(scope.nested ? { nested: true as const } : {}),
+    start: start - PREFIX.length, end: end - PREFIX.length,
+  });
+}
+
+/** 追えない読み書き 1 件（`CollectOptions.opaque` のときだけ）。 */
+function opaque(out: GetterRead[], written: boolean, start: number, end: number, scope: Scope): void {
+  if (!collecting.opaque) return;
+  out.push({
+    path: '', chain: null, form: 'opaque', callee: false, written,
+    ...(scope.nested ? { nested: true as const } : {}),
     start: start - PREFIX.length, end: end - PREFIX.length,
   });
 }
@@ -350,7 +379,7 @@ function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOpti
 function visit(node: AnyNode, scope: Scope, out: GetterRead[]): void {
   if (isFunctionNode(node)) {
     // アローは this 透過、通常の function は this が別物。エイリアスはどちらも閉包で生きる
-    const inner = enterFunction(node, scope, node.type === 'ArrowFunctionExpression' ? scope.thisIsState : false);
+    const inner = enterFunction(node, scope, node.type === 'ArrowFunctionExpression' ? scope.thisIsState : false, true);
     for (const param of node.params) if (param.type === 'AssignmentPattern') visit(param.right, inner, out);
     visit(node.body, inner, out);
     return;
@@ -358,7 +387,7 @@ function visit(node: AnyNode, scope: Scope, out: GetterRead[]): void {
   if (isClassNode(node)) {
     // class の中の this はインスタンス。閉包のエイリアスは生きる（extends / 算出キーの
     // 外側 this は取りこぼす — 超集合の黙る側）
-    const inner: Scope = { thisIsState: false, aliases: scope.aliases };
+    const inner: Scope = { thisIsState: false, aliases: scope.aliases, nested: true };
     forEachChild(node, (child) => visit(child, inner, out));
     return;
   }
@@ -373,9 +402,15 @@ function visit(node: AnyNode, scope: Scope, out: GetterRead[]): void {
       visitCall(node, scope, out);
       return;
     case 'AssignmentExpression':
+      // `self = this` は enterFunction が解決済み（値として使った this ではない）
+      if (node.operator === '=' && node.left.type === 'Identifier' && isThisRoot(node.right, scope)) return;
       if (node.operator === '=') visitWriteTarget(node.left, scope, out);
       else visitReadWriteTarget(node.left, scope, out);
       visit(node.right, scope, out);
+      return;
+    case 'ThisExpression':
+      // 値として使った this（`fn(this)`・`{ ...this }`・`Object.assign(this, …)`）: 何を読み書きするか追えない
+      if (scope.thisIsState) opaque(out, true, node.start, node.end, scope);
       return;
     case 'UpdateExpression':
       visitReadWriteTarget(node.argument, scope, out);
@@ -392,7 +427,7 @@ function visit(node: AnyNode, scope: Scope, out: GetterRead[]): void {
 function visitMember(node: AnyNode, scope: Scope, out: GetterRead[], options: EmitOptions): void {
   const { segments, base } = resolveChain(node);
   if (isThisRoot(base, scope)) {
-    emit(out, segments, options, node.start, node.end);
+    emit(out, segments, options, node.start, node.end, scope);
   } else {
     visit(base, scope, out);
   }
@@ -408,28 +443,33 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
     if (isThisRoot(base, scope) && segments.length === 1 && segments[0].text !== null) {
       const api = segments[0].text;
       // `$untracked(fn)` / `$untrackDependency(fn)` の中は依存追跡が抑止される — 引数ごと読まない
-      if (UNTRACK_APIS.has(api)) return;
-      if (PATH_ARG_APIS.has(api)) {
+      // （`CollectOptions.untracked` のときは読む: 追跡されないだけで読みは起きる）
+      if (UNTRACK_APIS.has(api) && !collecting.untracked) return;
+      const writes = collecting.writes === true
+        && (WRITE_APIS.has(api) || (collecting.resolveWrites === true && api === '$resolve' && node.arguments.length >= 3));
+      if (PATH_ARG_APIS.has(api) && !writes) {
         const first = node.arguments[0];
         const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith('$')) {
           out.push({
             path, chain: null, form: TRACK_APIS.has(api) ? 'track' : 'api', callee: false, written: false,
+            ...(scope.nested ? { nested: true as const } : {}),
             start: node.start - PREFIX.length, end: node.end - PREFIX.length,
           });
-        }
+        } else if (path === null) opaque(out, false, node.start, node.end, scope);
         for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
-      if (collecting.writes && WRITE_APIS.has(api)) {
+      if (writes) {
         const first = node.arguments[0];
         const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith('$')) {
           out.push({
             path, chain: null, form: 'api-write', callee: false, written: false,
+            ...(scope.nested ? { nested: true as const } : {}),
             start: first!.start - PREFIX.length, end: first!.end - PREFIX.length,
           });
-        }
+        } else if (path === null) opaque(out, true, node.start, node.end, scope);
         for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
@@ -453,7 +493,7 @@ function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: Gette
   }
   const { segments, base } = resolveChain(unwrapped);
   if (!isThisRoot(base, scope)) visit(base, scope, out);
-  else if (collecting.writes) emit(out, segments, { form: 'write', callee: false, written: false }, unwrapped.start, unwrapped.end);
+  else if (collecting.writes) emit(out, segments, { form: 'write', callee: false, written: false }, unwrapped.start, unwrapped.end, scope);
   for (const segment of segments) {
     if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }
@@ -508,7 +548,7 @@ function visitDestructure(pattern: ObjectPattern, prefix: readonly Segment[], sc
       visitDestructure(value, segments, scope, out);
       continue;
     }
-    emit(out, segments, { form: 'destructure', callee: false, written: false }, property.start, property.end);
+    emit(out, segments, { form: 'destructure', callee: false, written: false }, property.start, property.end, scope);
   }
 }
 
