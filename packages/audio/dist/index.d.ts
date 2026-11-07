@@ -197,6 +197,7 @@ declare class AudioGraphCore extends EventTarget {
     private _createContext;
     private _ctx;
     private _master;
+    /** The limiter's stages in signal order (`limiter.ts`); empty without a context. */
     private _limiter;
     private _masterTaps;
     private _patch;
@@ -232,6 +233,13 @@ declare class AudioGraphCore extends EventTarget {
     /** Voices still holding nodes, including tails not yet reclaimed. */
     get allocatedVoices(): number;
     /**
+     * Whether a held note is sounding on the live (monophonic) graph, outside any
+     * voice: a key is down and the live graph has an envelope or a `note`
+     * oscillator it plays. Every note is held there too, so a patch whose notes
+     * all go to `<wcs-voice>` has nothing on the live graph to sound.
+     */
+    get liveNoteHeld(): boolean;
+    /**
      * Install a patch and start observing. Idempotent — re-submitting the same
      * structure only applies values.
      */
@@ -243,6 +251,15 @@ declare class AudioGraphCore extends EventTarget {
      * Not terminal. A later `observe()` / `setPatch()` rebuilds from scratch, so
      * an element that is detached and re-attached — or simply moved in the DOM —
      * comes back playing. `PermissionCore` treats its subscription the same way.
+     *
+     * What it changes is published (timing-and-firing-contract.md §22): `voices`
+     * goes to 0, and `state` to `"suspended"` — a Core holding no context reads as
+     * one that has not started yet. A route that removes `<wcs-audio>` keeps its
+     * bindings for the way back, and they learn a value only from its event; and
+     * since the Core stops listening to the shared context here, a `running` left
+     * behind could not even follow it. The reconnect's `setPatch()` publishes the
+     * context's real state again, an edge the same-value guard would otherwise eat.
+     * `"unsupported"` stays: there was no context to let go of.
      */
     dispose(): void;
     /**
@@ -261,7 +278,11 @@ declare class AudioGraphCore extends EventTarget {
      * builder's default back.
      */
     setProp(key: string, name: string, value: string | null): void;
-    /** Master output level. Desired only — the effective gain is never read back. */
+    /**
+     * Master output level, in [0, 1]: a value outside is clamped, not refused, and
+     * one that is not a number is the default 0.8. Desired only — the effective
+     * gain is never read back.
+     */
     setVolume(value: number): void;
     /** Toggle the ear-protection limiter. Rewires the master chain in place. */
     setLimiter(enabled: boolean): void;
@@ -480,6 +501,68 @@ declare const STRUCTURAL_ATTRIBUTES: readonly ["id", "out", "param", "note", "ma
 declare function structureKey(patch: Patch): string;
 
 /**
+ * What asked for a rebuild: the element, and the structural attribute that
+ * changed — absent when the element itself was added (or, with `removed`,
+ * removed). The root names it when the rebuild cuts sounding voices.
+ */
+interface RebuildCause {
+    readonly element: Element;
+    readonly attribute?: string;
+    readonly removed?: boolean;
+}
+/** The part of the root Shell a node needs, without importing it (cycle-free). */
+interface AudioRootLike extends HTMLElement {
+    readonly isAudioRoot: true;
+    readonly audioCore: {
+        setParam(key: string, name: string, value: number): void;
+        setProp(key: string, name: string, value: string | null): void;
+        sample(key: string, mode?: "wave" | "fft"): Uint8Array | null;
+    } | null;
+    requestRebuild(cause?: RebuildCause): void;
+}
+/**
+ * Nearest enclosing `<wcs-audio>`, hopping shadow hosts on the way up so a patch
+ * split across component boundaries still finds its root. Identified by a
+ * property rather than a tag name, since the tag name is configurable.
+ */
+declare function findAudioRoot(start: Element): AudioRootLike | null;
+/**
+ * Base for every audio node tag.
+ *
+ * These elements are **descriptors and nothing else**. They hold a key, expose
+ * their attributes as patch values, and forward live attribute changes to the
+ * root's Core. They never hold an `AudioNode` — which is what makes ADR-14 G2
+ * ("handles do not cross the protocol boundary") a structural property of the
+ * package rather than a rule someone has to remember.
+ *
+ * It deliberately declares no `static wcBindable`: each concrete tag declares
+ * its own inputs, and the base has no surface of its own.
+ */
+declare class AudioNodeShell extends HTMLElement {
+    /** Which builder the Core should use. Each concrete tag overrides it. */
+    static kind: AudioNodeKind;
+    /** Instance view of `static kind` — this is what the patch compiler reads. */
+    get patchKind(): AudioNodeKind;
+    /** AudioParam-backed attributes: name → default. */
+    static params: Record<string, number>;
+    /** Non-AudioParam attributes (`type`, `mix`, ADSR times, …). */
+    static props: readonly string[];
+    static get observedAttributes(): string[];
+    /** Stable identity for this element across rebuilds. */
+    readonly patchKey: string;
+    /** Set by the first `connectedCallback` (`attributeCause`). */
+    private _connectedOnce;
+    patchParams(): Record<string, number>;
+    patchProps(): Record<string, string>;
+    /** The attribute as a number, or the default when it is absent or not one.
+     *  The property setters reflect to the attribute, so it is never stale. */
+    protected _num(name: string, dflt: number): number;
+    protected get root(): AudioRootLike | null;
+    connectedCallback(): void;
+    attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
+}
+
+/**
  * `<wcs-audio>` — the root of a patch.
  *
  * Owns the graph's lifecycle: it walks its own markup into a patch descriptor,
@@ -489,7 +572,13 @@ declare function structureKey(patch: Patch): string;
  * Rebuild policy (ADR-14 G5): a change to a numeric attribute is applied live,
  * a change to the shape of the patch rebuilds it, and **a rebuild cuts sounding
  * voices**. So the mutation observer is filtered to audio elements — adding a
- * `<div>` among the controls must not silence the instrument.
+ * `<div>` among the controls must not silence the instrument — and a rebuild
+ * that does cut voices is reported once (`_applyPatch`).
+ *
+ * With the default context provider the graph is not built before the page's
+ * first user gesture (or `resume()` / `noteOn()`): building it creates the
+ * shared `AudioContext`, which a browser refuses to start earlier and warns
+ * about (`_mustWait`).
  */
 declare class WcsAudio extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
@@ -503,10 +592,23 @@ declare class WcsAudio extends HTMLElement {
     private _connectedCallbackPromise;
     private _internals;
     private _gestureBound;
+    /** The graph waits for the first gesture, `resume()` or `noteOn()` (`_mustWait`). */
+    private _waiting;
+    /** A gesture, `resume()` or `noteOn()` has come: the context may be created at any time now. */
+    private _armed;
+    /** What asked for the queued rebuild first, for `[wcs/audio-voices-cut]`. */
+    private _rebuildCause;
+    /** `[wcs/audio-voices-cut]` is said once per root. */
+    private _cutWarned;
     constructor();
     get debugStates(): string[];
     private _initInternals;
     private _wireStates;
+    /**
+     * The master level, in [0, 1] (4.17): a value outside reads — and sounds — as
+     * the nearer end; the attribute keeps what was written, as `<input type=range>`
+     * keeps its `value` attribute.
+     */
     get volume(): number;
     set volume(value: number | null | undefined);
     /** Ear-protection limiter, on unless explicitly turned off. */
@@ -540,12 +642,36 @@ declare class WcsAudio extends HTMLElement {
      * A microtask, not a task: the cross-cutting contract puts microtasks ahead of
      * tasks precisely so a graph is in place before the first frame that could
      * observe it (timing-and-firing-contract.md §3).
+     *
+     * `cause` names the element (and the structural attribute) that asked, so the
+     * warning for a rebuild that cuts sounding voices can say what changed.
      */
-    requestRebuild(): void;
+    requestRebuild(cause?: RebuildCause): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     private _onMutations;
+    /**
+     * Hand the markup's patch to the Core. A rebuild cuts every sounding voice
+     * (timing-and-firing-contract.md §19.3), and when that happens it is said once
+     * per root: a structural attribute bound to state, or an audio tag under
+     * `if:`, cuts the notes on every change, and nothing else tells the author why.
+     * Nothing is said when nothing sounds — declaring the structure is not a mistake.
+     */
+    private _applyPatch;
+    /**
+     * Whether building now would create the page's `AudioContext` before a user
+     * gesture, which the browser does not let start, and warns about (Chromium:
+     * "The AudioContext was not allowed to start", Firefox: "An AudioContext was
+     * prevented from starting automatically"). Then the graph waits for the first
+     * gesture (`resume-on-gesture`), `resume()` or `noteOn()`, and `state` reads
+     * `"suspended"` meanwhile, as it did before a gesture. Only the default
+     * provider waits: a `createContext` you supply (an `OfflineAudioContext`, which
+     * needs no gesture) is called at connect, as before.
+     */
+    private _mustWait;
+    /** The first gesture, `resume()` or `noteOn()`: build the graph that waited, creating the context now. */
+    private _arm;
     private _bindGesture;
     private _unbindGesture;
     private _onGesture;
@@ -562,7 +688,8 @@ declare class WcsAudio extends HTMLElement {
  * It deliberately declares no `static wcBindable`. `poly` is **structural** — a
  * change rebuilds the graph and cuts every sounding voice — so advertising it as
  * a bindable input would invite exactly the reactive write that should not
- * happen. Set it in markup, not from state.
+ * happen. Set it in markup, not from state. (A change that cuts sounding voices
+ * is reported once per root, `[wcs/audio-voices-cut]`.)
  */
 declare class WcsVoice extends HTMLElement {
     static observedAttributes: string[];
@@ -570,59 +697,11 @@ declare class WcsVoice extends HTMLElement {
     readonly isAudioVoice = true;
     readonly patchKey: string;
     private static _next;
+    /** Set by the first `connectedCallback` (`attributeCause`). */
+    private _connectedOnce;
     constructor();
     get poly(): number;
     set poly(value: number | null | undefined);
-    connectedCallback(): void;
-    attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
-}
-
-/** The part of the root Shell a node needs, without importing it (cycle-free). */
-interface AudioRootLike extends HTMLElement {
-    readonly isAudioRoot: true;
-    readonly audioCore: {
-        setParam(key: string, name: string, value: number): void;
-        setProp(key: string, name: string, value: string | null): void;
-        sample(key: string, mode?: "wave" | "fft"): Uint8Array | null;
-    } | null;
-    requestRebuild(): void;
-}
-/**
- * Nearest enclosing `<wcs-audio>`, hopping shadow hosts on the way up so a patch
- * split across component boundaries still finds its root. Identified by a
- * property rather than a tag name, since the tag name is configurable.
- */
-declare function findAudioRoot(start: Element): AudioRootLike | null;
-/**
- * Base for every audio node tag.
- *
- * These elements are **descriptors and nothing else**. They hold a key, expose
- * their attributes as patch values, and forward live attribute changes to the
- * root's Core. They never hold an `AudioNode` — which is what makes ADR-14 G2
- * ("handles do not cross the protocol boundary") a structural property of the
- * package rather than a rule someone has to remember.
- *
- * It deliberately declares no `static wcBindable`: each concrete tag declares
- * its own inputs, and the base has no surface of its own.
- */
-declare class AudioNodeShell extends HTMLElement {
-    /** Which builder the Core should use. Each concrete tag overrides it. */
-    static kind: AudioNodeKind;
-    /** Instance view of `static kind` — this is what the patch compiler reads. */
-    get patchKind(): AudioNodeKind;
-    /** AudioParam-backed attributes: name → default. */
-    static params: Record<string, number>;
-    /** Non-AudioParam attributes (`type`, `mix`, ADSR times, …). */
-    static props: readonly string[];
-    static get observedAttributes(): string[];
-    /** Stable identity for this element across rebuilds. */
-    readonly patchKey: string;
-    patchParams(): Record<string, number>;
-    patchProps(): Record<string, string>;
-    /** The attribute as a number, or the default when it is absent or not one.
-     *  The property setters reflect to the attribute, so it is never stale. */
-    protected _num(name: string, dflt: number): number;
-    protected get root(): AudioRootLike | null;
     connectedCallback(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
 }
@@ -697,4 +776,4 @@ declare global {
 }
 
 export { AudioGraphCore, AudioNodeShell, STRUCTURAL_ATTRIBUTES, VoiceAllocator, WCS_AUDIO_ERROR_CODE, WcsAnalyser, WcsAudio, WcsBiquad, WcsDelay, WcsEnv, WcsGain, WcsLfo, WcsNoise, WcsOsc, WcsShaper, WcsVoice, bootstrapAudio, compilePatch, defaultCreateContext, deriveAudioErrorInfo, findAudioRoot, getConfig, graphChildren, releaseSharedContext, structureKey };
-export type { AudioContextState, AudioNodeKind, IAudioWarning, IWritableConfig, IWritableTagNames, Patch, PatchNode, PatchVoice, WcsAudioCoreValues, WcsAudioInputs, WcsAudioValues, WcsIoErrorInfo };
+export type { AudioContextState, AudioNodeKind, IAudioWarning, IWritableConfig, IWritableTagNames, Patch, PatchNode, PatchVoice, RebuildCause, WcsAudioCoreValues, WcsAudioInputs, WcsAudioValues, WcsIoErrorInfo };

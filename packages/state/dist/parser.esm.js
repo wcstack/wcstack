@@ -332,13 +332,15 @@ var element = (tag, at) => `<${tag}${at.map((a, i) => i % 2 ? `="${a}"` : ` ${a}
 var CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 var SENTENCES = {
   [1 /* ScanRemoved */]: () => "$scan was removed (use $watch or $on)",
-  [2 /* GetterWithoutSetter */]: (p) => `"${p}" is a getter without a setter`,
+  // (no code of its own hundred: the code lint reports for the same write — a two-way binding or a script — is written here)
+  [2 /* GetterWithoutSetter */]: (p) => `[wcs/path-readonly] "${p}" is a getter without a setter`,
   [3 /* NoRow */]: (p) => `no row for "${p}"`,
   [4 /* ParentNotObject */]: (p, parent) => `cannot write "${p}": its parent is ${parent}`,
   [5 /* NotAMethod */]: (name) => `"${name}" is not a method`,
   [6 /* GetAllNoCommonLevel */]: (p) => `$getAll("${p}"): no loop level in common with the context`,
   [7 /* EqIndexNoRow */]: (p) => `$eqIndex("${p}") needs a list row scope.`,
-  [8 /* Readonly */]: () => "This state is readonly.",
+  // a write while a getter is evaluated names the getter (the core passes it, docs/script-write-checks.md); in a readonly callback, the path
+  [8 /* Readonly */]: (p, g) => g ? `[wcs/getter-write] "${p}" is written while the getter "${g}" is evaluated: a getter only reads. Write it from a method, a setter or a $watch handler.` : p ? `cannot write "${p}": this state is readonly.` : "This state is readonly.",
   [9 /* SetAllNeedsIndexes */]: (p) => `$setAll("${p}") needs indexes ([] for every match)`,
   [10 /* SetAllSpreadLength */]: (p, n) => `$setAll("${p}", \u2026, { spread: true }) needs an array of ${n} values`,
   [11 /* DrainNotSettled */]: () => `updates did not settle after ${MAX_DRAIN_PASSES} passes`,
@@ -376,7 +378,8 @@ var SENTENCES = {
   [35 /* ModifierValue */]: (key, value) => `Invalid ${key} modifier value "${value}".`,
   [36 /* EventInitNone */]: () => "Event bindings only allow init=none.",
   [37 /* InitUnsupported */]: (type, init) => `Binding type "${type}" does not support init=${init}.`,
-  [38 /* MemberUndeclared */]: (name) => `Property "${name}" is not declared by wcBindable.`,
+  // (no code of its own hundred: the code lint reports for the same binding is written here; the core passes the tag)
+  [38 /* MemberUndeclared */]: (name, tag) => `[wcs/tag-member-unknown] "${name}" is not a wcBindable member of <${tag}>.`,
   [39 /* InitIncompatible */]: (init, name) => `init=${init} is incompatible with wcBindable member "${name}".`,
   [40 /* SyncConnectNeedsOutput */]: (name) => `sync=connect requires observable property "${name}".`,
   [44 /* OptionInvalid */]: (where, key) => `${where}: "${key}" is not one of its options, or not of the option's type.${where === "bootstrapState" && MOVED.includes(key) ? " 4.0 moved it to the state's $behavior." : ""}`,
@@ -454,7 +457,11 @@ var LINT_CODES = /* @__PURE__ */ new Set([
   "wildcard-rank",
   "token-undeclared",
   "binding-path-missing",
-  "index-param-range"
+  "index-param-range",
+  "path-readonly",
+  "getter-write",
+  "setter-cycle",
+  "tag-member-unknown"
 ]);
 var GUIDES = [
   [/no loop level in common with the context/, "; pass indexes ([] for all)."],
@@ -465,6 +472,8 @@ var GUIDES = [
   [/\[wcs\/wildcard-rank\] .* ranges over the rows of/, ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'],
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
+  [/\[wcs\/path-readonly\] "([^"]+)"/, ' Add a setter (set "$1"(v) { \u2026 }) or write what the getter reads; bind a two-way binding one way with #ro.'],
+  [/\[wcs\/tag-member-unknown\] "([^"]+)"/, ' Bind a property or an input its static wcBindable declares; an attribute of the tag is written in the markup ($1="\u2026") or bound as attr.$1:.'],
   [/\[wcs\/index-arity\] \$(?:resolve|update)/, ' $resolve and $update take one index per "*"; $getAll / $setAll take at most that many (fewer expands the rest).'],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" \u2014 write "$1" here.']
 ];

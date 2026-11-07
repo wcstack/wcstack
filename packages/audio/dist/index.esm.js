@@ -24,6 +24,24 @@ function defaultCreateContext() {
     registry[SHARED] = ctx;
     return ctx;
 }
+/**
+ * Whether `defaultCreateContext()` would now create an `AudioContext` the
+ * browser refuses to start: none exists yet, Web Audio is there, and the page
+ * has had no user gesture (`navigator.userActivation.hasBeenActive`; where the
+ * API is missing, assume none). Chromium and Firefox print a warning for such a
+ * context, so `<wcs-audio>` waits for the gesture instead (4.17).
+ *
+ * False where Web Audio is absent: the caller should go on and report
+ * `"unsupported"` at once rather than wait for a gesture that changes nothing.
+ */
+function contextAwaitsGesture() {
+    const registry = globalThis;
+    if (registry[SHARED])
+        return false;
+    if (!(registry.AudioContext ?? registry.webkitAudioContext))
+        return false;
+    return registry.navigator?.userActivation?.hasBeenActive !== true;
+}
 /** Drop the shared context (tests, and pages that tear everything down). */
 function releaseSharedContext() {
     const registry = globalThis;
@@ -111,7 +129,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/audio","version":"4.16.0"};
+var pkg = {"name":"@wcstack/audio","version":"4.17.0"};
 
 /**
  * audioCapabilities.ts
@@ -156,6 +174,87 @@ function deriveAudioErrorInfo(name, message) {
         return { code: WCS_AUDIO_ERROR_CODE.NotAllowed, phase: "start", recoverable: true, message };
     }
     return { code: WCS_AUDIO_ERROR_CODE.ContextError, phase: "execute", recoverable: true, message };
+}
+
+/**
+ * The ear-protection limiter each `<wcs-audio>` root puts between its master gain
+ * and the destination, unless `limiter="off"` (4.17; it was a bare compressor with
+ * only its threshold set, which let the README's 8-voice patch peak above 0 dBFS):
+ *
+ *   compressor → makeup compensation → soft clip (4x oversampled) → hard clip
+ *
+ * - **Compression from -18 dBFS**, 4:1, hard knee. A `DynamicsCompressorNode`
+ *   adds an automatic makeup gain of `(1 / curve(1.0)) ^ 0.6` (Web Audio,
+ *   "DynamicsCompressorNode" processing). With a hard knee the curve at 0 dBFS
+ *   is `threshold * (1 - 1 / ratio)` dB, so the makeup is
+ *   `-0.6 * threshold * (1 - 1 / ratio)` dB — +8.1 dB here, which would push a
+ *   quiet patch louder than its gains say. The gain after the compressor takes it
+ *   back out: a signal under the threshold leaves at the level it came in.
+ *   (Chromium, Firefox and Safari share the compressor's code; measured exact in
+ *   Chromium and Firefox.)
+ * - **A ceiling at -6 dBFS** (amplitude 0.501). The compressor reacts in
+ *   milliseconds, so an attack or a burst gets past it. A curve clamped to the
+ *   ceiling and run without oversampling bounds every sample exactly; an
+ *   oversampled clipper does not (its down-sampling filter rings past the clamp —
+ *   measured +2.4 dB over it on a burst). So the soft stage, oversampled to keep
+ *   the clipping it does free of aliasing, rounds the peaks off first, and the
+ *   hard stage only trims the little the soft stage's filter lets past.
+ */
+/** Where compression starts, in dBFS. */
+const LIMITER_THRESHOLD = -18;
+/** The compression ratio above the threshold. */
+const LIMITER_RATIO = 4;
+/** -6 dBFS as an amplitude (a hair under 10^(-6/20)): no sample leaves the limiter above it. */
+const LIMITER_CEILING = 0.501;
+/** Where the soft stage starts to bend, as an amplitude (-9 dBFS). Below it the stage is transparent. */
+const SOFT_KNEE = 0.355;
+// Odd, so input 0 lands on a point (0 out: no offset).
+const CURVE_POINTS = 2049;
+/** The linear gain that cancels the compressor's automatic makeup gain. */
+const MAKEUP_COMPENSATION = 10 ** ((0.6 * LIMITER_THRESHOLD * (1 - 1 / LIMITER_RATIO)) / 20);
+let softCurve = null;
+let hardCurve = null;
+/** A WaveShaper curve over [-1, 1]; an input beyond it takes the end value, so the bound holds for any input. */
+function makeCurve(shape) {
+    // Backed by a plain ArrayBuffer so the type matches WaveShaperNode.curve.
+    const curve = new Float32Array(new ArrayBuffer(CURVE_POINTS * Float32Array.BYTES_PER_ELEMENT));
+    for (let i = 0; i < CURVE_POINTS; i++) {
+        const x = (i / (CURVE_POINTS - 1)) * 2 - 1;
+        curve[i] = Math.sign(x) * shape(Math.abs(x));
+    }
+    return curve;
+}
+/** Transparent up to the knee, then bends smoothly (slope 1 at the knee) towards the ceiling. */
+function softClipCurve() {
+    return softCurve ??= makeCurve((a) => a <= SOFT_KNEE
+        ? a
+        : SOFT_KNEE + (LIMITER_CEILING - SOFT_KNEE) * Math.tanh((a - SOFT_KNEE) / (LIMITER_CEILING - SOFT_KNEE)));
+}
+/** The identity, clamped to the ceiling. Linear interpolation between points never exceeds it. */
+function hardClipCurve() {
+    return hardCurve ??= makeCurve((a) => Math.min(a, LIMITER_CEILING));
+}
+/**
+ * Build the limiter's stages, in signal order. They are not connected: the root
+ * wires master → stages → destination, and rewires around them for `limiter="off"`.
+ * The curves are shared: a WaveShaperNode copies the array it is given.
+ */
+function buildLimiter(ctx) {
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = LIMITER_THRESHOLD;
+    compressor.knee.value = 0;
+    compressor.ratio.value = LIMITER_RATIO;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    const makeup = ctx.createGain();
+    makeup.gain.value = MAKEUP_COMPENSATION;
+    const soft = ctx.createWaveShaper();
+    soft.curve = softClipCurve();
+    soft.oversample = "4x";
+    const hard = ctx.createWaveShaper();
+    hard.curve = hardClipCurve();
+    hard.oversample = "none";
+    return [compressor, makeup, soft, hard];
 }
 
 const nodeKey = (n) => `${n.kind}#${n.key}@${n.id ?? ""}|${(n.out ?? []).join(",")}|${n.param ?? ""}` +
@@ -500,6 +599,8 @@ function setOscNote(inst, freq, t, initial) {
 
 const UNSUPPORTED = "unsupported";
 const detailOf = (event) => event.detail;
+/** The master level: a number in [0, 1]; outside it is clamped, and anything else is the default 0.8. */
+const clampVolume = (value) => Math.min(1, Math.max(0, num(value, 0.8)));
 /**
  * Headless Web Audio graph primitive.
  *
@@ -550,7 +651,8 @@ class AudioGraphCore extends EventTarget {
     _createContext;
     _ctx = null;
     _master = null;
-    _limiter = null;
+    /** The limiter's stages in signal order (`limiter.ts`); empty without a context. */
+    _limiter = [];
     _masterTaps = [];
     _patch = null;
     _structureKey = null;
@@ -593,6 +695,17 @@ class AudioGraphCore extends EventTarget {
     get allocatedVoices() {
         return this._allocators.reduce((n, a) => n + a.allocated, 0);
     }
+    /**
+     * Whether a held note is sounding on the live (monophonic) graph, outside any
+     * voice: a key is down and the live graph has an envelope or a `note`
+     * oscillator it plays. Every note is held there too, so a patch whose notes
+     * all go to `<wcs-voice>` has nothing on the live graph to sound.
+     */
+    get liveNoteHeld() {
+        // A note is held only while a live graph exists: noteOn() pushes it with one
+        // in hand, and _teardown() clears both.
+        return this._held.length > 0 && (this._live.gates.length > 0 || this._live.noteOscs.length > 0);
+    }
     // --- Lifecycle ---
     /**
      * Install a patch and start observing. Idempotent — re-submitting the same
@@ -609,6 +722,15 @@ class AudioGraphCore extends EventTarget {
      * Not terminal. A later `observe()` / `setPatch()` rebuilds from scratch, so
      * an element that is detached and re-attached — or simply moved in the DOM —
      * comes back playing. `PermissionCore` treats its subscription the same way.
+     *
+     * What it changes is published (timing-and-firing-contract.md §22): `voices`
+     * goes to 0, and `state` to `"suspended"` — a Core holding no context reads as
+     * one that has not started yet. A route that removes `<wcs-audio>` keeps its
+     * bindings for the way back, and they learn a value only from its event; and
+     * since the Core stops listening to the shared context here, a `running` left
+     * behind could not even follow it. The reconnect's `setPatch()` publishes the
+     * context's real state again, an edge the same-value guard would otherwise eat.
+     * `"unsupported"` stays: there was no context to let go of.
      */
     dispose() {
         this._gen++;
@@ -617,24 +739,21 @@ class AudioGraphCore extends EventTarget {
         // Detach the shared context's listener: the context outlives this Core, so
         // leaving it attached would keep every disposed instance reachable.
         ctx?.removeEventListener?.("statechange", this._onContextState);
-        if (this._master) {
+        for (const node of this._master ? [this._master, ...this._limiter] : []) {
             try {
-                this._master.disconnect();
-            }
-            catch { /* already detached */ }
-        }
-        if (this._limiter) {
-            try {
-                this._limiter.disconnect();
+                node.disconnect();
             }
             catch { /* already detached */ }
         }
         this._master = null;
-        this._limiter = null;
+        this._limiter = [];
         this._ctx = null;
         // Force the next setPatch() to rebuild rather than compare against a key
         // whose graph no longer exists.
         this._structureKey = null;
+        this._publishVoices();
+        if (this._state !== UNSUPPORTED)
+            this._setState("suspended");
     }
     // --- Patch ---
     /**
@@ -689,9 +808,13 @@ class AudioGraphCore extends EventTarget {
             PROPS[inst.kind]?.[name]?.(inst, value);
         }
     }
-    /** Master output level. Desired only — the effective gain is never read back. */
+    /**
+     * Master output level, in [0, 1]: a value outside is clamped, not refused, and
+     * one that is not a number is the default 0.8. Desired only — the effective
+     * gain is never read back.
+     */
     setVolume(value) {
-        this._volume = num(value, 0.8);
+        this._volume = clampVolume(value);
         if (this._master && this._ctx) {
             this._master.gain.setTargetAtTime(this._volume, this._ctx.currentTime, 0.02);
         }
@@ -853,10 +976,10 @@ class AudioGraphCore extends EventTarget {
         this._ctx = ctx;
         this._master = ctx.createGain();
         this._master.gain.value = this._volume;
-        this._limiter = ctx.createDynamicsCompressor();
-        // -18 dBFS: quiet enough that stacking a chord cannot reach a painful level
-        // through headphones, which is the whole point of having it on by default.
-        this._limiter.threshold.value = -18;
+        // Ear protection, on by default: compression from -18 dBFS and a ceiling at
+        // -6 dBFS, so stacking a chord cannot reach a painful level through
+        // headphones (limiter.ts).
+        this._limiter = buildLimiter(ctx);
         this._wireMaster();
         this._syncState();
         ctx.addEventListener?.("statechange", this._onContextState);
@@ -865,21 +988,18 @@ class AudioGraphCore extends EventTarget {
     _wireMaster() {
         const ctx = this._ctx;
         const master = this._master;
-        const limiter = this._limiter;
-        if (!ctx || !master || !limiter)
+        if (!ctx || !master)
             return;
-        try {
-            master.disconnect();
+        for (const node of [master, ...this._limiter]) {
+            try {
+                node.disconnect();
+            }
+            catch { /* not connected */ }
         }
-        catch { /* not connected */ }
-        try {
-            limiter.disconnect();
-        }
-        catch { /* not connected */ }
-        if (this._limiterEnabled)
-            master.connect(limiter).connect(ctx.destination);
-        else
-            master.connect(ctx.destination);
+        // limiter="off" takes out every stage, the ceiling included: a measurement
+        // reads the patch's own level.
+        const stages = this._limiterEnabled ? this._limiter : [];
+        stages.reduce((from, to) => from.connect(to), master).connect(ctx.destination);
         // Master taps hang off the master gain, so they survive the rewire above
         // only if re-attached.
         for (const tap of this._masterTaps)
@@ -1431,6 +1551,27 @@ const isAudioElement = (node) => {
     return typeof el.tagName === "string" && AUDIO_TAG_RE.test(el.tagName);
 };
 /**
+ * `[wcs/audio-voices-cut]`: what changed, how many voices it cut, and the fix.
+ * The fix differs with the cause: a structural attribute is written in the
+ * markup, not bound; an audio tag stays in place rather than under `if:` / `for:`.
+ */
+const voicesCutWarning = (root, cause, voices) => {
+    const tag = cause ? `<${cause.element.localName}>` : "";
+    const what = cause === null ? "A change to the patch's structure"
+        : cause.attribute !== undefined ? `Changing "${cause.attribute}" on ${tag}`
+            : `${cause.removed ? "Removing" : "Adding"} ${tag}`;
+    const fix = cause === null
+        ? "Structure is declared, not bound: the audio tags and their id, out, param, note, master and poly attributes describe the graph. " +
+            "Bind the live values instead (frequency, gain, type, mix, attack, …), which change without a rebuild, and keep audio tags out of if: / for:."
+        : cause.attribute !== undefined
+            ? `"${cause.attribute}" is structural, like id, out, param, note, master and poly: write it in the markup, do not bind it. ` +
+                "Bind the live values instead (frequency, gain, type, mix, attack, …): they change without a rebuild, sounding voices included."
+            : "The audio tags are the patch's structure: keep them in place (not under if: or for:) and switch or silence a chain " +
+                "with live values instead (a gain's gain, an oscillator's type).";
+    return `[@wcstack/audio] [wcs/audio-voices-cut] ${what} rebuilt the graph of <${root}> and cut ${voices} sounding ` +
+        `voice${voices === 1 ? "" : "s"}. ${fix} To change the structure on purpose, call allNotesOff first. (Said once per <${root}>.)`;
+};
+/**
  * `<wcs-audio>` — the root of a patch.
  *
  * Owns the graph's lifecycle: it walks its own markup into a patch descriptor,
@@ -1440,7 +1581,13 @@ const isAudioElement = (node) => {
  * Rebuild policy (ADR-14 G5): a change to a numeric attribute is applied live,
  * a change to the shape of the patch rebuilds it, and **a rebuild cuts sounding
  * voices**. So the mutation observer is filtered to audio elements — adding a
- * `<div>` among the controls must not silence the instrument.
+ * `<div>` among the controls must not silence the instrument — and a rebuild
+ * that does cut voices is reported once (`_applyPatch`).
+ *
+ * With the default context provider the graph is not built before the page's
+ * first user gesture (or `resume()` / `noteOn()`): building it creates the
+ * shared `AudioContext`, which a browser refuses to start earlier and warns
+ * about (`_mustWait`).
  */
 class WcsAudio extends HTMLElement {
     static hasConnectedCallbackPromise = true;
@@ -1461,6 +1608,14 @@ class WcsAudio extends HTMLElement {
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
     _gestureBound = false;
+    /** The graph waits for the first gesture, `resume()` or `noteOn()` (`_mustWait`). */
+    _waiting = false;
+    /** A gesture, `resume()` or `noteOn()` has come: the context may be created at any time now. */
+    _armed = false;
+    /** What asked for the queued rebuild first, for `[wcs/audio-voices-cut]`. */
+    _rebuildCause = null;
+    /** `[wcs/audio-voices-cut]` is said once per root. */
+    _cutWarned = false;
     constructor() {
         super();
         // Read through getConfig() at call time rather than capturing the provider,
@@ -1529,11 +1684,12 @@ class WcsAudio extends HTMLElement {
     // direct assignment deliver it, @wcstack/state does not). Neither is ever
     // written as "null" / "undefined", and neither turns the ear-protection
     // limiter off.
-    get volume() {
-        const raw = this.getAttribute("volume");
-        const n = raw === null ? NaN : parseFloat(raw);
-        return Number.isFinite(n) ? n : 0.8;
-    }
+    /**
+     * The master level, in [0, 1] (4.17): a value outside reads — and sounds — as
+     * the nearer end; the attribute keeps what was written, as `<input type=range>`
+     * keeps its `value` attribute.
+     */
+    get volume() { return clampVolume(this.getAttribute("volume")); }
     set volume(value) { reflectAttribute(this, "volume", value); }
     /** Ear-protection limiter, on unless explicitly turned off. */
     get limiter() { return this.getAttribute("limiter") !== "off"; }
@@ -1560,9 +1716,13 @@ class WcsAudio extends HTMLElement {
     /** The patch this element's markup currently describes. */
     get patch() { return compilePatch(this); }
     // --- Commands ---
-    resume() { return this._core.resume(); }
+    // resume() and noteOn() are requests for sound: a graph that waited for a
+    // gesture is built here, so the context is created inside the gesture (or
+    // command) that called them. noteOn() too: a note dropped because no gesture
+    // had come yet would go unheard *and* unreported (no voices, no noteon event).
+    resume() { this._arm(); return this._core.resume(); }
     suspend() { return this._core.suspend(); }
-    noteOn(note, velocity) { this._core.noteOn(note, velocity); }
+    noteOn(note, velocity) { this._arm(); this._core.noteOn(note, velocity); }
     noteOff(note) { this._core.noteOff(note); }
     allNotesOff() { this._core.allNotesOff(); }
     /**
@@ -1572,15 +1732,21 @@ class WcsAudio extends HTMLElement {
      * A microtask, not a task: the cross-cutting contract puts microtasks ahead of
      * tasks precisely so a graph is in place before the first frame that could
      * observe it (timing-and-firing-contract.md §3).
+     *
+     * `cause` names the element (and the structural attribute) that asked, so the
+     * warning for a rebuild that cuts sounding voices can say what changed.
      */
-    requestRebuild() {
+    requestRebuild(cause) {
+        this._rebuildCause ??= cause ?? null;
         if (this._rebuildQueued)
             return;
         this._rebuildQueued = true;
         queueMicrotask(() => {
             this._rebuildQueued = false;
-            if (this.isConnected)
-                this._core.setPatch(compilePatch(this));
+            const first = this._rebuildCause;
+            this._rebuildCause = null;
+            if (this.isConnected && !this._waiting)
+                this._applyPatch(first);
         });
     }
     // --- Lifecycle ---
@@ -1597,7 +1763,8 @@ class WcsAudio extends HTMLElement {
             this._observer.observe(this, { childList: true, subtree: true });
         }
         this._bindGesture();
-        this._connectedCallbackPromise = this._core.observe(compilePatch(this));
+        this._waiting = this._mustWait();
+        this._connectedCallbackPromise = this._waiting ? Promise.resolve() : this._core.observe(compilePatch(this));
     }
     disconnectedCallback() {
         this._observer?.disconnect();
@@ -1622,13 +1789,52 @@ class WcsAudio extends HTMLElement {
     // --- Internal ---
     _onMutations = (records) => {
         for (const record of records) {
-            const touched = [...record.addedNodes, ...record.removedNodes];
-            if (touched.some(isAudioElement)) {
-                this.requestRebuild();
+            const added = [...record.addedNodes].find(isAudioElement);
+            const element = added ?? [...record.removedNodes].find(isAudioElement);
+            if (element) {
+                this.requestRebuild({ element: element, removed: added === undefined });
                 return;
             }
         }
     };
+    /**
+     * Hand the markup's patch to the Core. A rebuild cuts every sounding voice
+     * (timing-and-firing-contract.md §19.3), and when that happens it is said once
+     * per root: a structural attribute bound to state, or an audio tag under
+     * `if:`, cuts the notes on every change, and nothing else tells the author why.
+     * Nothing is said when nothing sounds — declaring the structure is not a mistake.
+     */
+    _applyPatch(cause) {
+        const core = this._core;
+        // The live (monophonic) graph's held note is one voice, however many keys are down.
+        const sounding = core.soundingVoices + (core.liveNoteHeld ? 1 : 0);
+        if (!core.setPatch(compilePatch(this)) || sounding === 0 || this._cutWarned)
+            return;
+        this._cutWarned = true;
+        console.warn(voicesCutWarning(this.localName, cause, sounding), this);
+    }
+    /**
+     * Whether building now would create the page's `AudioContext` before a user
+     * gesture, which the browser does not let start, and warns about (Chromium:
+     * "The AudioContext was not allowed to start", Firefox: "An AudioContext was
+     * prevented from starting automatically"). Then the graph waits for the first
+     * gesture (`resume-on-gesture`), `resume()` or `noteOn()`, and `state` reads
+     * `"suspended"` meanwhile, as it did before a gesture. Only the default
+     * provider waits: a `createContext` you supply (an `OfflineAudioContext`, which
+     * needs no gesture) is called at connect, as before.
+     */
+    _mustWait() {
+        return !this._armed && getConfig().createContext === defaultCreateContext && contextAwaitsGesture();
+    }
+    /** The first gesture, `resume()` or `noteOn()`: build the graph that waited, creating the context now. */
+    _arm() {
+        this._armed = true;
+        if (!this._waiting)
+            return;
+        this._waiting = false;
+        if (this.isConnected)
+            this._core.setPatch(compilePatch(this));
+    }
     // An AudioContext only leaves "suspended" inside a user gesture. Listeners are
     // attached to this element's root (not document) and removed on disconnect, so
     // the package leaves no global residue behind.
@@ -1652,10 +1858,17 @@ class WcsAudio extends HTMLElement {
         root.removeEventListener("keydown", this._onGesture, { capture: true });
         this._gestureBound = false;
     }
-    _onGesture = () => { void this._core.resume(); };
+    _onGesture = () => { this._arm(); void this._core.resume(); };
 }
 
 let nextKey = 0;
+/**
+ * The cause a structural attribute change reports. Before the element's first
+ * `connectedCallback` the change is part of its arrival — an upgrade replays
+ * every attribute the markup carries before connecting it — so it reports the
+ * element as added.
+ */
+const attributeCause = (element, attribute, connectedOnce) => connectedOnce ? { element, attribute } : { element };
 /**
  * Nearest enclosing `<wcs-audio>`, hopping shadow hosts on the way up so a patch
  * split across component boundaries still finds its root. Identified by a
@@ -1698,6 +1911,8 @@ class AudioNodeShell extends HTMLElement {
     }
     /** Stable identity for this element across rebuilds. */
     patchKey = `n${++nextKey}`;
+    /** Set by the first `connectedCallback` (`attributeCause`). */
+    _connectedOnce = false;
     patchParams() {
         const ctor = this.constructor;
         const params = {};
@@ -1728,7 +1943,8 @@ class AudioNodeShell extends HTMLElement {
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
-        this.root?.requestRebuild();
+        this._connectedOnce = true;
+        this.root?.requestRebuild({ element: this });
     }
     // No disconnectedCallback: by the time it runs `closest()` no longer reaches
     // the root. Removals are picked up by the root's MutationObserver, which sees
@@ -1750,7 +1966,7 @@ class AudioNodeShell extends HTMLElement {
             return;
         }
         // Structural: the topology changed, so the graph has to be rebuilt.
-        this.root?.requestRebuild();
+        this.root?.requestRebuild(attributeCause(this, name, this._connectedOnce));
     }
 }
 /**
@@ -1802,7 +2018,8 @@ function nodeInputs(ctor) {
  * It deliberately declares no `static wcBindable`. `poly` is **structural** — a
  * change rebuilds the graph and cuts every sounding voice — so advertising it as
  * a bindable input would invite exactly the reactive write that should not
- * happen. Set it in markup, not from state.
+ * happen. Set it in markup, not from state. (A change that cuts sounding voices
+ * is reported once per root, `[wcs/audio-voices-cut]`.)
  */
 class WcsVoice extends HTMLElement {
     static observedAttributes = ["poly"];
@@ -1810,6 +2027,8 @@ class WcsVoice extends HTMLElement {
     isAudioVoice = true;
     patchKey;
     static _next = 0;
+    /** Set by the first `connectedCallback` (`attributeCause`). */
+    _connectedOnce = false;
     constructor() {
         super();
         this.patchKey = `v${++WcsVoice._next}`;
@@ -1828,12 +2047,13 @@ class WcsVoice extends HTMLElement {
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
-        findAudioRoot(this)?.requestRebuild();
+        this._connectedOnce = true;
+        findAudioRoot(this)?.requestRebuild({ element: this });
     }
-    attributeChangedCallback(_name, oldValue, newValue) {
+    attributeChangedCallback(name, oldValue, newValue) {
         if (oldValue === newValue)
             return;
-        findAudioRoot(this)?.requestRebuild();
+        findAudioRoot(this)?.requestRebuild(attributeCause(this, name, this._connectedOnce));
     }
 }
 

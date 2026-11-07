@@ -25,7 +25,7 @@ This means a MIDI controller can drive your application state declaratively in H
 
 MIDI input and output look like two features, but a page holds exactly **one** `MIDIAccess` object, and both directions are derived from it. Splitting them into `<wcs-midi-in>` and `<wcs-midi-out>` would only force the two elements to coordinate over the same shared handle — so `<wcs-midi>` covers both, as `<wcs-ws>` does for WebSocket send/receive. (`@wcstack/speech` splits into two tags precisely because `SpeechSynthesis` and `SpeechRecognition` are two *different* APIs.)
 
-> **Chromium only.** Web MIDI ships in Chromium-based browsers. Firefox has it behind a pref and Safari does not implement it. Where the API is absent — including any non-secure context — `<wcs-midi>` reports `permission = "unsupported"` instead of throwing. Since 4.17 (not released yet) it does so as soon as it is connected, with or without `auto`: no prompt is involved when there is no API. Before, an element without `auto` said `prompt` until `request()` was called, so a page offered a Connect button that could never work.
+> **Chromium only.** Web MIDI ships in Chromium-based browsers. Firefox has it behind a pref and Safari does not implement it. Where the API is absent — including any non-secure context — `<wcs-midi>` reports `permission = "unsupported"` instead of throwing. Since 4.17 it does so as soon as it is connected, with or without `auto`: no prompt is involved when there is no API. Before, an element without `auto` said `prompt` until `request()` was called, so a page offered a Connect button that could never work.
 
 ## Install
 
@@ -148,9 +148,9 @@ Where the browser answers `navigator.permissions.query({ name: "midi" })`, a gra
 
 `@wcstack/router` takes a left route's content out of the document and puts the same elements back on the next entry, with their `@wcstack/state` bindings ([router README](../router/README.md#where-route-content-lives)). A `<wcs-midi>` in a route lives through both.
 
-- **Taken out**, the element releases its access: `connected` goes to `false` and, since 4.17 (not released yet), `devices` to `[]`, both published ([timing contract](../../docs/timing-and-firing-contract.md) §22). `close()` empties `devices` too. `permission` stays as it was: the browser's grant has not changed. Before, `devices` kept the old list, and a page that counted it said the keyboard was connected while no message could arrive.
-- **Put back**, an `auto` element requests as on its first connect. Since 4.17 (not released yet), so does an element whose last `request()` got access, without `auto` — but **only while the permission is still `granted`**, so no prompt can appear: where the browser answers `navigator.permissions.query({ name: "midi", sysex })` that answer decides, and where it does not, the outcome of that `request()` stands (for the same `sysex`). A `sysex` grant follows the same rule. An access `auto` got does not count: with `auto` turned off on the way back in, nothing is requested (§23). The decision waits one microtask and reads `sysex` then (§23); `close()` in the same task cancels it, and so does a `close()` before the element was taken out.
-- **An element that never requested**, whose last request was refused, or whose permission is now `prompt` or `denied`, requests nothing when put back. The page must request again, from a user gesture as on the first visit — which is why the Connect button above hides on `connected`. Since 4.17 (not released yet), when the Permissions API answers `prompt` or `denied` to an element whose last `request()` got access (the grant was revoked in site settings while the element was out), that answer is published as `permission`, as a revocation seen while connected is: the page reads `denied` (or `prompt`), not the `granted` it last saw. Where the browser does not answer, nothing new is known, and `permission` stays.
+- **Taken out**, the element releases its access: `connected` goes to `false` and, since 4.17, `devices` to `[]`, both published ([timing contract](../../docs/timing-and-firing-contract.md) §22). `close()` empties `devices` too. `permission` stays as it was: the browser's grant has not changed. Before, `devices` kept the old list, and a page that counted it said the keyboard was connected while no message could arrive.
+- **Put back**, an `auto` element requests as on its first connect. Since 4.17, so does an element whose last `request()` got access, without `auto` — but **only while the permission is still `granted`**, so no prompt can appear: where the browser answers `navigator.permissions.query({ name: "midi", sysex })` that answer decides, and where it does not, the outcome of that `request()` stands (for the same `sysex`). A `sysex` grant follows the same rule. An access `auto` got does not count: with `auto` turned off on the way back in, nothing is requested (§23). The decision waits one microtask and reads `sysex` then (§23); `close()` in the same task cancels it, and so does a `close()` before the element was taken out.
+- **An element that never requested**, whose last request was refused, or whose permission is now `prompt` or `denied`, requests nothing when put back. The page must request again, from a user gesture as on the first visit — which is why the Connect button above hides on `connected`. Since 4.17, when the Permissions API answers `prompt` or `denied` to an element whose last `request()` got access (the grant was revoked in site settings while the element was out), that answer is published as `permission`, as a revocation seen while connected is: the page reads `denied` (or `prompt`), not the `granted` it last saw. Where the browser does not answer, nothing new is known, and `permission` stays.
 
 ## CSS styling with `:state()`
 
@@ -181,7 +181,7 @@ core.send([0x90, 60, 100]);
 core.dispose();
 ```
 
-`observe(options)` is the Shell's connect step: it records the options, reports a missing API as `unsupported`, and requests when `auto` is set. Since 4.17 (not released yet), after `dispose()` it also acquires again the access the last `request()` got, by the rule of [Taken out and put back](#taken-out-and-put-back); `close()` forgets that access, and both empty `devices`.
+`observe(options)` is the Shell's connect step: it records the options, reports a missing API as `unsupported`, and requests when `auto` is set. Since 4.17, after `dispose()` it also acquires again the access the last `request()` got, by the rule of [Taken out and put back](#taken-out-and-put-back); `close()` forgets that access, and both empty `devices`.
 
 `parseMessage(data)` is exported separately for decoding bytes you obtained some other way.
 
@@ -191,7 +191,7 @@ Nothing throws. Failures surface as state:
 
 | Situation | `permission` | `error` | `errorInfo.code` |
 |---|---|---|---|
-| `navigator.requestMIDIAccess` absent (reported at connect since 4.17 (not released yet), `auto` or not) | `unsupported` | `"unsupported"` | `capability-missing` |
+| `navigator.requestMIDIAccess` absent (reported at connect since 4.17, `auto` or not) | `unsupported` | `"unsupported"` | `capability-missing` |
 | User denied / policy blocked | `denied` | rejection message | `not-allowed` |
 | Other access failure | `denied` | rejection message | `access-error` |
 | `send()` failed | unchanged | throw message | `send-failed` |
@@ -199,7 +199,7 @@ Nothing throws. Failures surface as state:
 ## Notes
 
 - **Since 4.8, the connect-time access request waits one microtask** and reads `auto` / `sysex` then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs, and the prompt asked for the previous route's level. `request()` reads the current `sysex`; `close()` in the same task cancels the pending request.
-- **Since 4.17 (not released yet), an element taken out empties `devices`, and one put back requests again** when its last `request()` got access and the permission is still `granted` — see [Taken out and put back](#taken-out-and-put-back). A `request()` in the same task as the connect takes the pending decision: one request, `auto` or not.
+- **Since 4.17, an element taken out empties `devices`, and one put back requests again** when its last `request()` got access and the permission is still `granted` — see [Taken out and put back](#taken-out-and-put-back). A `request()` in the same task as the connect takes the pending decision: one request, `auto` or not.
 - **Chromium only**, and a secure context is required.
 - **Velocity 0 note-ons are note-offs** — see above.
 - **`sysex` is a separate permission** and is often refused.

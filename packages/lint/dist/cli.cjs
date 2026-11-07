@@ -145,6 +145,19 @@ var WcsDiagnosticCode = {
   // パス getter どうしの循環参照。4.0 のランタイムは評価の時点で #701 として throw し、その getter を読む
   // 束縛はすべて失敗する（3.x はアドレススタック上限まで再帰してから落ちた）。error。
   GetterCycle: "wcs/getter-cycle",
+  // --- what a getter, a setter or a method writes (docs/script-write-checks.md) ---
+  // getter の評価中の書き込み（代入・複合代入・増減・`$setAll` / `$update` / 引数 3 つの `$resolve`、getter が同期に呼ぶ
+  // メソッドの書き込みも）。4.0 のランタイムは書き込みのたびに throw する（4.17 から書いたパスと getter を名指す）。
+  // 入れ子の関数の中は、評価中に走るとは限らないので見ない。error。
+  GetterWrite: "wcs/getter-write",
+  // setter が自分のパスに書く、または setter どうしが互いに書く（同期の書き込みだけ）。setter のパスはアクセサそのもの
+  // なので、書けば setter がまた呼ばれ、スタックが溢れるまで続く（4.17 から diagnostics の後付けが名指して throw する）。
+  // 自分のパスは error、2 つ以上の循環は条件で止まりうるので warning。
+  SetterCycle: "wcs/setter-cycle",
+  // setter が書くものを、同じ名前の getter が（呼ぶ getter・メソッドを通しても）一つも読まない。setter の後に getter は
+  // 元の値を返し、双方向の入力はそこへ戻る — 何も知らせない（4.17 から diagnostics の後付けが警告する）。setter・getter
+  // の読み書きを追えない（`this[key]`・`fn(this)`・知らないメソッド）なら黙る。warning。
+  SetterUnobserved: "wcs/setter-unobserved",
   // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
   // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
@@ -695,10 +708,11 @@ var SENTENCES = {
     1
     /* ScanRemoved */
   ]: () => "$scan was removed (use $watch or $on)",
+  // (no code of its own hundred: the code lint reports for the same write — a two-way binding or a script — is written here)
   [
     2
     /* GetterWithoutSetter */
-  ]: (p) => `"${p}" is a getter without a setter`,
+  ]: (p) => `[wcs/path-readonly] "${p}" is a getter without a setter`,
   [
     3
     /* NoRow */
@@ -719,10 +733,11 @@ var SENTENCES = {
     7
     /* EqIndexNoRow */
   ]: (p) => `$eqIndex("${p}") needs a list row scope.`,
+  // a write while a getter is evaluated names the getter (the core passes it, docs/script-write-checks.md); in a readonly callback, the path
   [
     8
     /* Readonly */
-  ]: () => "This state is readonly.",
+  ]: (p, g) => g ? `[wcs/getter-write] "${p}" is written while the getter "${g}" is evaluated: a getter only reads. Write it from a method, a setter or a $watch handler.` : p ? `cannot write "${p}": this state is readonly.` : "This state is readonly.",
   [
     9
     /* SetAllNeedsIndexes */
@@ -862,10 +877,11 @@ var SENTENCES = {
     37
     /* InitUnsupported */
   ]: (type, init) => `Binding type "${type}" does not support init=${init}.`,
+  // (no code of its own hundred: the code lint reports for the same binding is written here; the core passes the tag)
   [
     38
     /* MemberUndeclared */
-  ]: (name) => `Property "${name}" is not declared by wcBindable.`,
+  ]: (name, tag) => `[wcs/tag-member-unknown] "${name}" is not a wcBindable member of <${tag}>.`,
   [
     39
     /* InitIncompatible */
@@ -1121,7 +1137,11 @@ var LINT_CODES = /* @__PURE__ */ new Set([
   "wildcard-rank",
   "token-undeclared",
   "binding-path-missing",
-  "index-param-range"
+  "index-param-range",
+  "path-readonly",
+  "getter-write",
+  "setter-cycle",
+  "tag-member-unknown"
 ]);
 var GUIDES = [
   [/no loop level in common with the context/, "; pass indexes ([] for all)."],
@@ -1132,6 +1152,8 @@ var GUIDES = [
   [/\[wcs\/wildcard-rank\] .* ranges over the rows of/, ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'],
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
+  [/\[wcs\/path-readonly\] "([^"]+)"/, ' Add a setter (set "$1"(v) { \u2026 }) or write what the getter reads; bind a two-way binding one way with #ro.'],
+  [/\[wcs\/tag-member-unknown\] "([^"]+)"/, ' Bind a property or an input its static wcBindable declares; an attribute of the tag is written in the markup ($1="\u2026") or bound as attr.$1:.'],
   [/\[wcs\/index-arity\] \$(?:resolve|update)/, ' $resolve and $update take one index per "*"; $getAll / $setAll take at most that many (fewer expands the rest).'],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" \u2014 write "$1" here.']
 ];
@@ -2403,7 +2425,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.16.0";
+var version = "4.17.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -8398,7 +8420,7 @@ function readJsDocTypeBefore(content, propIndex) {
 function readJsDocReturnsBefore(content, propIndex) {
   const comment = jsDocCommentBefore(content, propIndex);
   if (comment === void 0) return void 0;
-  return (readBracedType(comment, "returns") ?? readBracedType(comment, "return"))?.type.trim();
+  return (readBracedType(comment, "returns") ?? readBracedType(comment, "return") ?? readBracedType(comment, "type"))?.type.trim();
 }
 function jsDocCommentBefore(content, propIndex) {
   let end = propIndex;
@@ -8487,17 +8509,41 @@ var ModuleScope = class _ModuleScope {
     const program = parseModule(this.text);
     return program !== null && program.type === "Program" ? program.body : [];
   }
-  /** The specifier a top-level name is imported from, if it is imported. */
+  /** The specifier a top-level name is imported from, if it is imported (for `M.NAME`, the one `M` is). */
   importOf(name) {
+    const local = namespaceMember(name)?.namespace ?? name;
     for (const statement of this.body) {
       if (statement.type !== "ImportDeclaration") continue;
-      if (statement.specifiers.some((s) => s.local.name === name)) return String(statement.source.value);
+      if (statement.specifiers.some((s) => s.local.name === local)) return String(statement.source.value);
     }
     return void 0;
   }
-  /** The value a top-level name of the module is bound to, or null when it cannot be followed. */
+  /** Whether `text` is `M.NAME` with `M` a namespace import of the module (`import * as M from "…"`). */
+  isNamespaceMember(text3) {
+    const member = namespaceMember(text3);
+    return member !== null && this.namespaceImport(member.namespace) !== void 0;
+  }
+  /** The specifier of a namespace import (`import * as M from "…"`) whose local name is `name`. */
+  namespaceImport(name) {
+    for (const statement of this.body) {
+      if (statement.type !== "ImportDeclaration") continue;
+      if (statement.specifiers.some((s) => s.type === "ImportNamespaceSpecifier" && s.local.name === name)) {
+        return String(statement.source.value);
+      }
+    }
+    return void 0;
+  }
+  /**
+   * The value a top-level name of the module is bound to, or null when it cannot be followed. `M.NAME` with `M` a
+   * namespace import (`import * as M from "./lib/music.js"`) is the module's export `NAME`, read as a named import is.
+   */
   resolveName(name, hops = 0) {
     if (hops > MAX_HOPS) return null;
+    const member = namespaceMember(name);
+    if (member !== null) {
+      const specifier = this.namespaceImport(member.namespace);
+      return specifier === void 0 ? null : this.module(specifier)?.resolveExport(member.name, hops + 1) ?? null;
+    }
     for (const statement of this.body) {
       if (statement.type === "ImportDeclaration") {
         const specifier = statement.specifiers.find((s) => s.local.name === name);
@@ -8580,6 +8626,10 @@ var ModuleScope = class _ModuleScope {
     return scope;
   }
 };
+function namespaceMember(text3) {
+  const m = /^([$A-Za-z_][$\w]*)\s*\.\s*([$A-Za-z_][$\w]*)$/.exec(text3.trim());
+  return m === null ? null : { namespace: m[1], name: m[2] };
+}
 function exportName(node) {
   return node.type === "Identifier" ? node.name : String(node.value);
 }
@@ -9376,7 +9426,7 @@ function readExpression(text3, scan, start) {
   }
   return text3.slice(start, i).trim();
 }
-function expressionShape(text3, paths, aliases) {
+function expressionShape(text3, paths, aliases, keepOpaque = false) {
   const expr = stripWrappingParens(text3.trim());
   if (expr === "") return null;
   const scan = maskCommentsAndStrings(expr);
@@ -9404,7 +9454,7 @@ function expressionShape(text3, paths, aliases) {
     } else {
       const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
       if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
-      const source = expressionShape(spread[1], paths, aliases);
+      const source = expressionShape(spread[1], paths, aliases, true);
       if (source === null || !source.isList) return null;
       shape = source;
     }
@@ -9412,12 +9462,26 @@ function expressionShape(text3, paths, aliases) {
     const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
     shape = expressionShape(inner, paths, aliases) ?? OPAQUE;
     rest = inner.length + 2;
+  } else if (/^Array\s*\.\s*from\s*\(/.test(scan)) {
+    const open = scan.indexOf("(");
+    const args = extractDelimitedContent(expr, scan, open, "(", ")");
+    const from = arrayFromShape(args, paths, aliases);
+    if (from === null) return null;
+    shape = from;
+    rest = open + args.length + 2;
   } else {
     const base = readBase(expr, scan, aliases, paths);
     if (base === null) return null;
     ({ shape, rest } = base);
   }
-  return applyChain(expr, scan, rest, shape, paths, aliases);
+  return applyChain(expr, scan, rest, shape, paths, aliases, keepOpaque);
+}
+function arrayFromShape(args, paths, aliases) {
+  const [source, mapper, ...more] = splitTopLevelElements(args);
+  if (source === void 0 || more.length > 1) return null;
+  const sourceShape = expressionShape(source, paths, aliases, true);
+  const rows = sourceShape !== null && sourceShape.isList ? sourceShape : OPAQUE;
+  return mapper === void 0 ? rows : mapRows(mapper, rows, paths, aliases);
 }
 function readBase(expr, scan, aliases, paths) {
   const alias = /^([$\w]+)/.exec(scan);
@@ -9464,7 +9528,7 @@ function readBase(expr, scan, aliases, paths) {
     rest: i
   };
 }
-function applyChain(expr, scan, start, initial, paths, aliases) {
+function applyChain(expr, scan, start, initial, paths, aliases, keepOpaque = false) {
   let shape = initial;
   let i = start;
   while (scan.slice(i).trim() !== "") {
@@ -9500,7 +9564,7 @@ function applyChain(expr, scan, start, initial, paths, aliases) {
       return null;
     }
   }
-  return shape.opaque ? null : shape;
+  return shape.opaque && !keepOpaque ? null : shape;
 }
 var OPAQUE = { isList: true, mirrors: [], fields: [], opaque: true };
 var EMPTY_LIST = { isList: true, mirrors: [], fields: [] };
@@ -9690,8 +9754,8 @@ function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs, scope) {
     const value = followed.value;
     const shapeHint = value === null ? void 0 : inferTypeHint(value.text);
     const typeHint = prop.typeHint ?? (shapeHint === "array" || shapeHint === "object" ? shapeHint : void 0);
-    const opaque = (value === null || !isReadableLiteral(value.text)) && prop.declaredType === void 0 ? { opaque: { ...followed.name !== void 0 ? { name: followed.name } : {}, ...followed.from !== void 0 ? { from: followed.from } : {} } } : {};
-    candidate = withHint({ path, kind: "data", rawInitial: prop.value?.trim(), ...opaque }, typeHint);
+    const opaque2 = (value === null || !isReadableLiteral(value.text)) && prop.declaredType === void 0 ? { opaque: { ...followed.name !== void 0 ? { name: followed.name } : {}, ...followed.from !== void 0 ? { from: followed.from } : {} } } : {};
+    candidate = withHint({ path, kind: "data", rawInitial: prop.value?.trim(), ...opaque2 }, typeHint);
     paths.push(candidate);
     if (value !== null) unread = pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
   }
@@ -9739,14 +9803,14 @@ function spreadLiteral(spread, scope) {
   const expr = unwrapFreeze(spread.replace(/^\.\.\./, ""));
   if (expr === "null" || expr === "undefined") return { text: null };
   if (isObjectLiteral(expr)) return { text: expr, scope };
-  if (!isBindingName(expr) || scope === void 0) return { unread: { text: spread } };
+  if (scope === void 0 || !isFollowableName(expr, scope)) return { unread: { text: spread } };
   const from = scope.importOf(expr);
   const unread = { unread: { text: spread, ...from !== void 0 ? { from } : {} } };
   let current2 = scope.resolveName(expr);
   for (let hops = 0; current2 !== null && hops < MAX_SPREAD_HOPS; hops++) {
     const inner = unwrapFreeze(current2.text);
     if (isObjectLiteral(inner)) return { text: inner, scope: current2.scope };
-    if (!isBindingName(inner)) return unread;
+    if (!isFollowableName(inner, current2.scope)) return unread;
     current2 = current2.scope.resolveName(inner);
   }
   return unread;
@@ -9778,6 +9842,9 @@ var WORD_LITERALS = /* @__PURE__ */ new Set(["true", "false", "null", "undefined
 function isBindingName(text3) {
   return /^[$A-Za-z_][$\w]*$/.test(text3) && !WORD_LITERALS.has(text3);
 }
+function isFollowableName(text3, scope) {
+  return isBindingName(text3) || scope.isNamespaceMember(text3);
+}
 function unwrapFreeze(text3) {
   let expr = text3.trim();
   for (; ; ) {
@@ -9807,7 +9874,7 @@ function followValue(prop, scope) {
     if (prop.value === void 0) return null;
     const written = prop.value.trim();
     const text3 = unwrapFreeze(written);
-    if (!isBindingName(text3)) return text3 === written ? null : { value: { text: text3, scope } };
+    if (!isFollowableName(text3, scope)) return text3 === written ? null : { value: { text: text3, scope } };
     name = text3;
     from = scope.importOf(text3);
     const resolved = scope.resolveName(text3);
@@ -9816,7 +9883,7 @@ function followValue(prop, scope) {
   }
   for (let hops = 0; hops < 8; hops++) {
     const inner = unwrapFreeze(current2.text);
-    if (!isBindingName(inner)) return { value: inner === current2.text ? current2 : { text: inner, scope: current2.scope }, name, from };
+    if (!isFollowableName(inner, current2.scope)) return { value: inner === current2.text ? current2 : { text: inner, scope: current2.scope }, name, from };
     const next = current2.scope.resolveName(inner);
     if (next === null) return { value: null, name, from };
     current2 = next;
@@ -10850,10 +10917,10 @@ function collectGetterReads(body, options = {}) {
   const fn = unwrapWrapper(program);
   if (fn === null) return null;
   const out = [];
-  const root = { thisIsState: true, aliases: /* @__PURE__ */ new Set() };
+  const root = { thisIsState: true, aliases: /* @__PURE__ */ new Set(), nested: false };
   collecting = options;
   try {
-    visit(fn.body, enterFunction(fn, root, true), out);
+    visit(fn.body, enterFunction(fn, root, true, false), out);
   } finally {
     collecting = {};
   }
@@ -10908,7 +10975,7 @@ function bindingNames(pattern, out) {
       return;
   }
 }
-function enterFunction(fn, outer, thisIsState) {
+function enterFunction(fn, outer, thisIsState, nested) {
   const shadowed = /* @__PURE__ */ new Set();
   const aliasInits = [];
   for (const param of fn.params) bindingNames(param, shadowed);
@@ -10956,7 +11023,7 @@ function enterFunction(fn, outer, thisIsState) {
     const ok = from === null ? thisIsState : aliases.has(from);
     if (!ok) aliases.delete(name);
   }
-  return { thisIsState, aliases };
+  return { thisIsState, aliases, nested };
 }
 function isThisRoot(node, scope) {
   return node.type === "ThisExpression" && scope.thisIsState || node.type === "Identifier" && scope.aliases.has(node.name);
@@ -11011,9 +11078,10 @@ function resolveChain(node) {
   }
   return { segments, base: current2 };
 }
-function emit(out, segments, options, start, end) {
+function emit(out, segments, options, start, end, scope) {
   if (segments.length === 0) return;
   const root = segments[0].text;
+  if (root === null && segments[0].dynamic !== null) opaque(out, options.written || options.form === "write", start, end, scope);
   if (root === null || root.length === 0 || root.startsWith("$")) return;
   let chain = [];
   for (let i = 0; i < segments.length; i++) {
@@ -11032,19 +11100,33 @@ function emit(out, segments, options, start, end) {
     callee: options.callee,
     written: options.written,
     ...lists !== void 0 ? { indexed: lists } : {},
+    ...scope.nested ? { nested: true } : {},
+    start: start - PREFIX.length,
+    end: end - PREFIX.length
+  });
+}
+function opaque(out, written, start, end, scope) {
+  if (!collecting.opaque) return;
+  out.push({
+    path: "",
+    chain: null,
+    form: "opaque",
+    callee: false,
+    written,
+    ...scope.nested ? { nested: true } : {},
     start: start - PREFIX.length,
     end: end - PREFIX.length
   });
 }
 function visit(node, scope, out) {
   if (isFunctionNode(node)) {
-    const inner = enterFunction(node, scope, node.type === "ArrowFunctionExpression" ? scope.thisIsState : false);
+    const inner = enterFunction(node, scope, node.type === "ArrowFunctionExpression" ? scope.thisIsState : false, true);
     for (const param of node.params) if (param.type === "AssignmentPattern") visit(param.right, inner, out);
     visit(node.body, inner, out);
     return;
   }
   if (isClassNode(node)) {
-    const inner = { thisIsState: false, aliases: scope.aliases };
+    const inner = { thisIsState: false, aliases: scope.aliases, nested: true };
     forEachChild(node, (child) => visit(child, inner, out));
     return;
   }
@@ -11059,9 +11141,13 @@ function visit(node, scope, out) {
       visitCall(node, scope, out);
       return;
     case "AssignmentExpression":
+      if (node.operator === "=" && node.left.type === "Identifier" && isThisRoot(node.right, scope)) return;
       if (node.operator === "=") visitWriteTarget(node.left, scope, out);
       else visitReadWriteTarget(node.left, scope, out);
       visit(node.right, scope, out);
+      return;
+    case "ThisExpression":
+      if (scope.thisIsState) opaque(out, true, node.start, node.end, scope);
       return;
     case "UpdateExpression":
       visitReadWriteTarget(node.argument, scope, out);
@@ -11076,7 +11162,7 @@ function visit(node, scope, out) {
 function visitMember(node, scope, out, options) {
   const { segments, base } = resolveChain(node);
   if (isThisRoot(base, scope)) {
-    emit(out, segments, options, node.start, node.end);
+    emit(out, segments, options, node.start, node.end, scope);
   } else {
     visit(base, scope, out);
   }
@@ -11090,8 +11176,9 @@ function visitCall(node, scope, out) {
     const { segments, base } = resolveChain(callee);
     if (isThisRoot(base, scope) && segments.length === 1 && segments[0].text !== null) {
       const api = segments[0].text;
-      if (UNTRACK_APIS.has(api)) return;
-      if (PATH_ARG_APIS.has(api)) {
+      if (UNTRACK_APIS.has(api) && !collecting.untracked) return;
+      const writes = collecting.writes === true && (WRITE_APIS.has(api) || collecting.resolveWrites === true && api === "$resolve" && node.arguments.length >= 3);
+      if (PATH_ARG_APIS.has(api) && !writes) {
         const first = node.arguments[0];
         const path = first !== void 0 && first.type !== "SpreadElement" ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith("$")) {
@@ -11101,14 +11188,15 @@ function visitCall(node, scope, out) {
             form: TRACK_APIS.has(api) ? "track" : "api",
             callee: false,
             written: false,
+            ...scope.nested ? { nested: true } : {},
             start: node.start - PREFIX.length,
             end: node.end - PREFIX.length
           });
-        }
+        } else if (path === null) opaque(out, false, node.start, node.end, scope);
         for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
-      if (collecting.writes && WRITE_APIS.has(api)) {
+      if (writes) {
         const first = node.arguments[0];
         const path = first !== void 0 && first.type !== "SpreadElement" ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith("$")) {
@@ -11118,10 +11206,11 @@ function visitCall(node, scope, out) {
             form: "api-write",
             callee: false,
             written: false,
+            ...scope.nested ? { nested: true } : {},
             start: first.start - PREFIX.length,
             end: first.end - PREFIX.length
           });
-        }
+        } else if (path === null) opaque(out, true, node.start, node.end, scope);
         for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
@@ -11140,7 +11229,7 @@ function visitWriteTarget(target, scope, out) {
   }
   const { segments, base } = resolveChain(unwrapped);
   if (!isThisRoot(base, scope)) visit(base, scope, out);
-  else if (collecting.writes) emit(out, segments, { form: "write", callee: false, written: false }, unwrapped.start, unwrapped.end);
+  else if (collecting.writes) emit(out, segments, { form: "write", callee: false, written: false }, unwrapped.start, unwrapped.end, scope);
   for (const segment of segments) {
     if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }
@@ -11188,7 +11277,7 @@ function visitDestructure(pattern, prefix, scope, out) {
       visitDestructure(value, segments, scope, out);
       continue;
     }
-    emit(out, segments, { form: "destructure", callee: false, written: false }, property.start, property.end);
+    emit(out, segments, { form: "destructure", callee: false, written: false }, property.start, property.end, scope);
   }
 }
 function collectThisMemberRefs(body, names2) {
@@ -11571,8 +11660,13 @@ var ja = {
   getterReadsLocation: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001location \u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u3001\u6700\u521D\u306B\u8AAD\u3093\u3060 URL \u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u30CA\u30D3\u30B2\u30FC\u30B7\u30E7\u30F3\u3067\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002URL \u306F state \u3092\u901A\u3057\u3066\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044 \u2014 <wcs-router> \u306E path / searchParams \u3092\u675F\u306D\u308B`,
   getterReadsClock: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001\u6642\u523B\u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u3067\u6BCE\u30D5\u30EC\u30FC\u30E0\u300C\u63CF\u304D\u76F4\u3057\u300D\u3066\u3082\u5909\u308F\u308A\u307E\u305B\u3093\uFF09\u3002\u6642\u523B\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-raf> \u3084 <wcs-timer> \u304C\u66F8\u304F\u5024\u3092\u675F\u306D\u308B`,
   updatedCallbackUnknownPath: (p) => `"${p}" \u306F state \u306E\u30D1\u30B9\u3067\u306F\u306A\u3044\u306E\u3067 $renderedCallback \u306E paths \u306B\u73FE\u308C\u305A\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093`,
-  commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.focus: ${t}\uFF09`,
+  commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u2014 <\u30E1\u30BD\u30C3\u30C9> \u306F\u305D\u306E\u8981\u7D20\u306E\u30E1\u30BD\u30C3\u30C9\u306E\u540D\u524D\uFF09`,
   writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
+  pathReadonlyWrite: (p) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u306A\u306E\u3067\u3001\u3053\u306E\u66F8\u304D\u8FBC\u307F\u306F\u5B9F\u884C\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001\u305D\u306E\u5024\u3092\u76F4\u63A5\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  getterWrite: (p, g, via) => `getter "${g}" \u306E\u8A55\u4FA1\u4E2D\u306B "${p}" \u3092\u66F8\u3044\u3066\u3044\u307E\u3059${via === void 0 ? "" : `\uFF08\u547C\u3093\u3067\u3044\u308B\u30E1\u30BD\u30C3\u30C9 "${via}" \u306E\u4E2D\uFF09`}\u3002getter \u306F\u8AAD\u3080\u3060\u3051\u3067\u3001\u66F8\u304D\u8FBC\u307F\u306F\u8A55\u4FA1\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u30E1\u30BD\u30C3\u30C9\u30FBsetter\u30FB$watch \u306E\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u66F8\u304F\u304B\u3001\u5024\u3092\u5225\u306E getter \u3067\u8A08\u7B97\u3057\u3066\u304F\u3060\u3055\u3044`,
+  setterCycleSelf: (p) => `"${p}" \u306E setter \u304C\u81EA\u5206\u306E\u30D1\u30B9 "${p}" \u306B\u66F8\u3044\u3066\u3044\u307E\u3059\u3002setter \u306E\u30D1\u30B9\u306F\u30A2\u30AF\u30BB\u30B5\u305D\u306E\u3082\u306E\u306A\u306E\u3067\u3001\u66F8\u3051\u3070 setter \u304C\u307E\u305F\u547C\u3070\u308C\u3001\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u308B\u307E\u3067\u7D9A\u304D\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\uFF08_${p.split(".").pop()} \u306A\u3069\uFF09\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
+  setterCycle: (cycle) => `setter \u304C\u4E92\u3044\u306B\u66F8\u304D\u5408\u3063\u3066\u3044\u307E\u3059: ${cycle}\u3002\u6761\u4EF6\u3067\u6B62\u307E\u3089\u306A\u3051\u308C\u3070\u3001\u4E92\u3044\u3092\u547C\u3073\u7D9A\u3051\u3066\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
+  setterUnobserved: (p, w) => `"${p}" \u306E setter \u306F ${w} \u3092\u66F8\u304D\u307E\u3059\u304C\u3001getter "${p}" \u306F\u305D\u306E\u3069\u308C\u3082\u8AAD\u307F\u307E\u305B\u3093\u3002\u66F8\u3044\u305F\u5F8C\u3082 getter \u306F\u5143\u306E\u5024\u3092\u8FD4\u3057\u3001"${p}" \u306B\u675F\u306D\u305F\u53CC\u65B9\u5411\u306E\u5165\u529B\u306F\u305D\u3053\u3078\u623B\u308A\u307E\u3059\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F\u304B\u3001setter \u304C\u66F8\u304F\u5024\u3092 getter \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   nestedWritePathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u66F8\u304D\u8FBC\u307F\u306F\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30D1\u30B9\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
   readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -11791,8 +11885,13 @@ var en = {
   getterReadsLocation: (read) => `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state \u2014 bind <wcs-router>'s path / searchParams`,
   getterReadsClock: (read) => `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state \u2014 bind the value <wcs-raf> or <wcs-timer> writes`,
   updatedCallbackUnknownPath: (p) => `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
-  commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
+  commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.<method>: ${t}, with <method> the name of that element's method)`,
   writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  pathReadonlyWrite: (p) => `"${p}" is a getter without a setter, so this write throws each time it runs ("${p}" is a getter without a setter). Add a setter that writes what the getter reads (set "${p}"(v) { \u2026 }), or write those values instead`,
+  getterWrite: (p, g, via) => `The getter "${g}" writes "${p}" while it is evaluated${via === void 0 ? "" : ` (in the method "${via}" it calls)`}. A getter only reads: the write throws each time the getter is evaluated. Write it from a method, a setter or a $watch handler, or compute the value in a getter of its own`,
+  setterCycleSelf: (p) => `The setter of "${p}" writes its own path "${p}". A setter's path is the accessor itself: writing it calls the setter again, until the stack overflows. Store the value under a data path the getter reads (such as _${p.split(".").pop()})`,
+  setterCycle: (cycle) => `Setters write each other: ${cycle}. Unless a condition stops them, they call each other until the stack overflows. Store the values under data paths the getters read`,
+  setterUnobserved: (p, w) => `The setter of "${p}" writes ${w}, none of which the getter "${p}" reads. After a write the getter returns its old value, and a two-way input bound to "${p}" goes back to it. Write what the getter reads, or read what the setter writes in the getter`,
   nestedWritePathMissing: (p) => `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
@@ -18180,9 +18279,9 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
     }
     const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
     if (applicationSchema === void 0) {
-      const opaque = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath)).filter((p) => p.opaque !== void 0);
-      const spans = opaque.length === 0 ? [] : analyzeDeclarationSpans(block.content);
-      for (const candidate of opaque) {
+      const opaque2 = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath)).filter((p) => p.opaque !== void 0);
+      const spans = opaque2.length === 0 ? [] : analyzeDeclarationSpans(block.content);
+      for (const candidate of opaque2) {
         const path = prefix + candidate.path;
         bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences.filter((o) => o.kind === "path").map((o) => hasIndexSegment(o.path) ? toWildcardForm(o.path) : o.path);
         const count = bound.filter((b) => b.startsWith(`${path}.`)).length;
@@ -18257,6 +18356,204 @@ function nearName(path, tree) {
     return { segment, names: [...names2 ?? []].filter((name) => name !== "*" && !name.startsWith("$")) };
   }
   return null;
+}
+
+// src/service/scriptWriteValidator.ts
+var OPTIONS = { writes: true, templates: true, resolveWrites: true, untracked: true, opaque: true };
+function isWrite(read) {
+  return read.form === "write" || read.form === "api-write" || read.written && read.form !== "opaque";
+}
+function bodyOf(callable) {
+  const found = collectGetterReads(callable.body, OPTIONS);
+  if (found === null) return { callable, writes: [], reads: [], calls: [], opaque: true };
+  const writes = [];
+  const reads = [];
+  const calls = [];
+  let opaque2 = false;
+  for (const read of found) {
+    const at2 = { start: callable.bodyStart + read.start, end: callable.bodyStart + read.end, nested: read.nested === true };
+    if (read.form === "opaque") {
+      opaque2 = true;
+      continue;
+    }
+    if (isWrite(read)) {
+      const state = read.form === "api-write" || read.chain !== null && read.chain.length === 1;
+      writes.push({ path: read.form === "api-write" ? read.path : read.chain?.join(".") ?? read.path, state, ...at2 });
+      if (read.form === "member") reads.push({ path: read.path, ...at2 });
+      continue;
+    }
+    if (read.callee && read.chain !== null && read.chain.length === 1) calls.push({ path: read.chain[0], ...at2 });
+    reads.push({ path: read.path, ...at2 });
+  }
+  return { callable, writes, reads, calls, opaque: opaque2 };
+}
+function overlaps(a, b) {
+  const x = toWildcardForm(a).split(".");
+  const y = toWildcardForm(b).split(".");
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    if (x[i] !== y[i] && x[i] !== "*" && y[i] !== "*") return false;
+  }
+  return true;
+}
+function syncWrites(body, state, seen2 = /* @__PURE__ */ new Set()) {
+  if (seen2.has(body)) return [];
+  seen2.add(body);
+  const out = body.writes.filter((w) => w.state === true && !w.nested);
+  for (const call of body.calls) {
+    const method = state.methods.get(call.path);
+    if (!call.nested && method !== void 0) out.push(...syncWrites(method, state, seen2));
+  }
+  return out;
+}
+function allWrites(body, state, seen2 = /* @__PURE__ */ new Set()) {
+  const out = /* @__PURE__ */ new Set();
+  if (seen2.has(body)) return out;
+  seen2.add(body);
+  if (body.opaque) return null;
+  for (const w of body.writes) {
+    out.add(w.path);
+    const setter = state.setters.get(toWildcardForm(w.path));
+    if (setter === void 0) continue;
+    const more = allWrites(setter, state, seen2);
+    if (more === null) return null;
+    for (const p of more) out.add(p);
+  }
+  for (const call of body.calls) {
+    const method = state.methods.get(call.path);
+    if (method === void 0) return null;
+    const more = allWrites(method, state, seen2);
+    if (more === null) return null;
+    for (const p of more) out.add(p);
+  }
+  return out;
+}
+function allReads(body, state, seen2 = /* @__PURE__ */ new Set()) {
+  const out = /* @__PURE__ */ new Set();
+  if (seen2.has(body)) return out;
+  seen2.add(body);
+  if (body.opaque) return null;
+  for (const r of body.reads) {
+    out.add(r.path);
+    const getter = state.getters.get(r.path);
+    if (getter !== void 0) {
+      const more = allReads(getter, state, seen2);
+      if (more === null) return null;
+      for (const p of more) out.add(p);
+    }
+  }
+  for (const call of body.calls) {
+    const method = state.methods.get(call.path);
+    if (method === void 0) return null;
+    const more = allReads(method, state, seen2);
+    if (more === null) return null;
+    for (const p of more) out.add(p);
+  }
+  return out;
+}
+function validateScriptWrites(html, stateTagName = "wcs-state", locale2) {
+  const blocks = parseLoadedScriptBlocks(html, stateTagName).filter((block) => hasDefaultExportObject(block.content));
+  if (blocks.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const block of blocks) {
+    const getters = /* @__PURE__ */ new Map();
+    const setters = /* @__PURE__ */ new Map();
+    const methods = /* @__PURE__ */ new Map();
+    for (const callable of analyzeCallableBodies(block.content)) {
+      const body = bodyOf(callable);
+      if (callable.kind === "method") methods.set(callable.name, body);
+      else (callable.accessor === "set" ? setters : getters).set(callable.name, body);
+    }
+    const state = { getters, setters, methods };
+    const at2 = (start, end) => ({ start: block.contentStart + start, end: block.contentStart + end });
+    out.push(...getterWrites(state, msgs, at2));
+    if (isReadableStateScript(block.content)) out.push(...readonlyWrites(state, msgs, at2));
+    out.push(...setterCycles(state, msgs, at2));
+    out.push(...unobservedSetters(state, msgs, at2));
+  }
+  return out;
+}
+function getterWrites(state, msgs, at2) {
+  const out = [];
+  for (const [name, getter] of state.getters) {
+    for (const w of getter.writes) {
+      if (w.state !== true || w.nested) continue;
+      out.push({ code: WcsDiagnosticCode.GetterWrite, ...at2(w.start, w.end), message: msgs.getterWrite(w.path, name), severity: "error" });
+    }
+    for (const call of getter.calls) {
+      const method = state.methods.get(call.path);
+      if (call.nested || method === void 0) continue;
+      const writes = syncWrites(method, state);
+      if (writes.length === 0) continue;
+      out.push({ code: WcsDiagnosticCode.GetterWrite, ...at2(call.start, call.end), message: msgs.getterWrite(writes[0].path, name, call.path), severity: "error" });
+    }
+  }
+  return out;
+}
+function readonlyWrites(state, msgs, at2) {
+  const readonly = new Set([...state.getters.keys()].filter((name) => !state.setters.has(name)));
+  if (readonly.size === 0) return [];
+  const out = [];
+  for (const body of [...state.methods.values(), ...state.setters.values()]) {
+    for (const w of body.writes) {
+      const path = toWildcardForm(w.path);
+      if (w.state !== true || hasRecursionWildcard(path) || !readonly.has(path)) continue;
+      out.push({ code: WcsDiagnosticCode.PathReadonly, ...at2(w.start, w.end), message: msgs.pathReadonlyWrite(path), severity: "error" });
+    }
+  }
+  return out;
+}
+function setterCycles(state, msgs, at2) {
+  const out = [];
+  const edges = /* @__PURE__ */ new Map();
+  for (const [name, setter] of state.setters) {
+    const targets = new Set(syncWrites(setter, state).map((w) => toWildcardForm(w.path)).filter((p) => state.setters.has(p)));
+    if (targets.has(name)) {
+      out.push({ code: WcsDiagnosticCode.SetterCycle, ...at2(setter.callable.start, setter.callable.end), message: msgs.setterCycleSelf(name), severity: "error" });
+      targets.delete(name);
+    }
+    edges.set(name, [...targets]);
+  }
+  const gray = /* @__PURE__ */ new Set();
+  const black = /* @__PURE__ */ new Set();
+  const stack = [];
+  const cycles = /* @__PURE__ */ new Map();
+  const visit2 = (name) => {
+    if (black.has(name)) return;
+    if (gray.has(name)) {
+      const from = stack.indexOf(name);
+      const cycle = [...stack.slice(from), name].map((p) => `"${p}"`).join(" -> ");
+      for (const member of stack.slice(from)) if (!cycles.has(member)) cycles.set(member, cycle);
+      return;
+    }
+    gray.add(name);
+    stack.push(name);
+    for (const next of edges.get(name) ?? []) visit2(next);
+    stack.pop();
+    gray.delete(name);
+    black.add(name);
+  };
+  for (const name of state.setters.keys()) visit2(name);
+  for (const [name, cycle] of cycles) {
+    const setter = state.setters.get(name);
+    out.push({ code: WcsDiagnosticCode.SetterCycle, ...at2(setter.callable.start, setter.callable.end), message: msgs.setterCycle(cycle), severity: "warning" });
+  }
+  return out;
+}
+function unobservedSetters(state, msgs, at2) {
+  const out = [];
+  for (const [name, setter] of state.setters) {
+    const getter = state.getters.get(name);
+    if (getter === void 0) continue;
+    const writes = allWrites(setter, state);
+    if (writes === null || writes.size === 0 || [...writes].some((w) => toWildcardForm(w) === name)) continue;
+    const reads = allReads(getter, state);
+    if (reads === null || reads.size === 0) continue;
+    if ([...writes].some((w) => [...reads].some((r) => overlaps(w, r)))) continue;
+    const listed = [...writes].map((w) => `"${w}"`).join(", ");
+    out.push({ code: WcsDiagnosticCode.SetterUnobserved, ...at2(setter.callable.start, setter.callable.end), message: msgs.setterUnobserved(name, listed), severity: "warning" });
+  }
+  return out;
 }
 
 // src/service/stateSourceValidator.ts
@@ -18781,6 +19078,7 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));
+  out.push(...validateScriptWrites(text3, stateTagName, locale2));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
   out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));

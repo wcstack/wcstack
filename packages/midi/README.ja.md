@@ -25,7 +25,7 @@
 
 MIDI の入力と出力は別機能に見えますが、ページが持つ `MIDIAccess` は**1つだけ**で、両方向はそこから派生します。`<wcs-midi-in>` と `<wcs-midi-out>` に分割しても、同じハンドルを2要素が調停する必要が生まれるだけです。そこで `<wcs-ws>` が WebSocket の送受信を1タグで扱うのと同様に、`<wcs-midi>` が両方向を担います。（`@wcstack/speech` が2タグに分かれているのは、`SpeechSynthesis` と `SpeechRecognition` が**別々の API** だからです。）
 
-> **Chromium 限定。** Web MIDI は Chromium 系のみで動きます。Firefox は既定で無効、Safari は未実装です。API が無い環境（非セキュアコンテキストを含む）では、`<wcs-midi>` は throw せず `permission = "unsupported"` を報告します。4.17（未リリース）からは、`auto` の有無にかかわらず接続した時点で報告します — API が無ければプロンプトも無いためです。それまでは `auto` の無い要素が `request()` を呼ぶまで `prompt` のままで、ページは決して働かない「接続」ボタンを出していました。
+> **Chromium 限定。** Web MIDI は Chromium 系のみで動きます。Firefox は既定で無効、Safari は未実装です。API が無い環境（非セキュアコンテキストを含む）では、`<wcs-midi>` は throw せず `permission = "unsupported"` を報告します。4.17 からは、`auto` の有無にかかわらず接続した時点で報告します — API が無ければプロンプトも無いためです。それまでは `auto` の無い要素が `request()` を呼ぶまで `prompt` のままで、ページは決して働かない「接続」ボタンを出していました。
 
 ## インストール
 
@@ -148,9 +148,9 @@ state.$command.midiSend.emit([0x90, 60, 100]);
 
 `@wcstack/router` は離れたルートの中身を文書から外し、次に入ったときに同じ要素を `@wcstack/state` の束縛ごと戻します（[router README](../router/README.ja.md#ルートの本文はどこに置くか)）。ルートの中の `<wcs-midi>` はその両方を経ます。
 
-- **外れると**、要素はアクセスを手放します。`connected` が `false` に、4.17（未リリース）からは `devices` も `[]` になり、どちらも知らせます（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §22）。`close()` も `devices` を空にします。`permission` はそのままです — ブラウザの許可は変わっていません。それまでは `devices` が古い一覧を保ち、その数を出すページは、メッセージが一つも届かないのにキーボードがつながっていると表示していました。
-- **戻ると**、`auto` の要素は最初の接続と同じく要求します。4.17（未リリース）からは、最後の `request()` でアクセスを取れた要素も、`auto` が無くても要求し直します — ただし**権限がまだ `granted` のときだけ**で、プロンプトは出ません。ブラウザが `navigator.permissions.query({ name: "midi", sysex })` に答えるならその答えで、答えないならその `request()` の結果（同じ `sysex` のもの）で決めます。`sysex` の許可も同じ規則に従います。`auto` が取ったアクセスは数えません — 戻るときに `auto` が外されていれば、何も要求しません（§23）。判断はマイクロタスクを 1 つ待ち、そのときの `sysex` を読みます（§23）。同じタスクの `close()` はそれを取り消し、外す前に `close()` していた要素も取り直しません。
-- **一度も要求していない要素**、最後の要求が拒否された要素、権限がいま `prompt` か `denied` の要素は、戻っても何も要求しません。ページが、最初の訪問と同じくユーザー操作から要求し直す必要があります — 上の「接続」ボタンを `connected` で隠すのはそのためです。4.17（未リリース）からは、最後の `request()` でアクセスを取れた要素に Permissions API が `prompt` か `denied` と答えたとき（外れている間にサイトの設定で許可が取り消された）は、接続中に見た取り消しと同じく、その答えを `permission` に知らせます — ページは最後に見た `granted` ではなく `denied`（または `prompt`）を読みます。ブラウザが答えないときは新しく分かったことが無いので、`permission` はそのままです。
+- **外れると**、要素はアクセスを手放します。`connected` が `false` に、4.17 からは `devices` も `[]` になり、どちらも知らせます（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §22）。`close()` も `devices` を空にします。`permission` はそのままです — ブラウザの許可は変わっていません。それまでは `devices` が古い一覧を保ち、その数を出すページは、メッセージが一つも届かないのにキーボードがつながっていると表示していました。
+- **戻ると**、`auto` の要素は最初の接続と同じく要求します。4.17 からは、最後の `request()` でアクセスを取れた要素も、`auto` が無くても要求し直します — ただし**権限がまだ `granted` のときだけ**で、プロンプトは出ません。ブラウザが `navigator.permissions.query({ name: "midi", sysex })` に答えるならその答えで、答えないならその `request()` の結果（同じ `sysex` のもの）で決めます。`sysex` の許可も同じ規則に従います。`auto` が取ったアクセスは数えません — 戻るときに `auto` が外されていれば、何も要求しません（§23）。判断はマイクロタスクを 1 つ待ち、そのときの `sysex` を読みます（§23）。同じタスクの `close()` はそれを取り消し、外す前に `close()` していた要素も取り直しません。
+- **一度も要求していない要素**、最後の要求が拒否された要素、権限がいま `prompt` か `denied` の要素は、戻っても何も要求しません。ページが、最初の訪問と同じくユーザー操作から要求し直す必要があります — 上の「接続」ボタンを `connected` で隠すのはそのためです。4.17 からは、最後の `request()` でアクセスを取れた要素に Permissions API が `prompt` か `denied` と答えたとき（外れている間にサイトの設定で許可が取り消された）は、接続中に見た取り消しと同じく、その答えを `permission` に知らせます — ページは最後に見た `granted` ではなく `denied`（または `prompt`）を読みます。ブラウザが答えないときは新しく分かったことが無いので、`permission` はそのままです。
 
 ## `:state()` による CSS スタイリング
 
@@ -181,7 +181,7 @@ core.send([0x90, 60, 100]);
 core.dispose();
 ```
 
-`observe(options)` は Shell の接続の段階です。オプションを記録し、API が無ければ `unsupported` を報告し、`auto` なら要求します。4.17（未リリース）からは、`dispose()` の後なら、最後の `request()` が取ったアクセスも[外して戻したとき](#外して戻したとき)の規則で取り直します。`close()` はそのアクセスを忘れ、どちらも `devices` を空にします。
+`observe(options)` は Shell の接続の段階です。オプションを記録し、API が無ければ `unsupported` を報告し、`auto` なら要求します。4.17 からは、`dispose()` の後なら、最後の `request()` が取ったアクセスも[外して戻したとき](#外して戻したとき)の規則で取り直します。`close()` はそのアクセスを忘れ、どちらも `devices` を空にします。
 
 別経路で得たバイト列をデコードするために `parseMessage(data)` も単体で export しています。
 
@@ -191,7 +191,7 @@ throw は一切しません。失敗は状態として現れます。
 
 | 状況 | `permission` | `error` | `errorInfo.code` |
 |---|---|---|---|
-| `navigator.requestMIDIAccess` 不在（4.17（未リリース）からは `auto` の有無にかかわらず接続時に報告） | `unsupported` | `"unsupported"` | `capability-missing` |
+| `navigator.requestMIDIAccess` 不在（4.17 からは `auto` の有無にかかわらず接続時に報告） | `unsupported` | `"unsupported"` | `capability-missing` |
 | ユーザーが拒否 / ポリシーでブロック | `denied` | rejection のメッセージ | `not-allowed` |
 | その他のアクセス失敗 | `denied` | rejection のメッセージ | `access-error` |
 | `send()` の失敗 | 変化なし | throw のメッセージ | `send-failed` |
@@ -199,7 +199,7 @@ throw は一切しません。失敗は状態として現れます。
 ## 注意点
 
 - **4.8 から、接続時のアクセスの要求はマイクロタスクを 1 つ待ち**、そのときの `auto` / `sysex` を読む（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後で、前のルートの水準で許可を求めていた。`request()` は今の `sysex` を読み、同じタスクの `close()` は待っている要求を取り消す。
-- **4.17（未リリース）から、外れた要素は `devices` を空にし、戻った要素は要求し直す** — 最後の `request()` でアクセスを取れていて、権限がまだ `granted` のとき（[外して戻したとき](#外して戻したとき)）。接続と同じタスクの `request()` は待っている判断を引き取り、`auto` でも要求は 1 回。
+- **4.17 から、外れた要素は `devices` を空にし、戻った要素は要求し直す** — 最後の `request()` でアクセスを取れていて、権限がまだ `granted` のとき（[外して戻したとき](#外して戻したとき)）。接続と同じタスクの `request()` は待っている判断を引き取り、`auto` でも要求は 1 回。
 - **Chromium 限定**。セキュアコンテキストが必要。
 - **velocity 0 の note-on は note-off**（上記）。
 - **`sysex` は別権限**で、拒否されやすい。

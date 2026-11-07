@@ -61,7 +61,7 @@ npm install @wcstack/audio
 
 音は最初のクリックかキー入力から始まります — ブラウザはそれ以前にページが音を出すことを許しません。`<wcs-audio>` は最初のジェスチャでコンテキストを resume します。自分で制御したい場合は `resume-on-gesture="off"` にして `command.resume` を撃ってください。
 
-4.17（未リリース）から、ページの `AudioContext` はそのジェスチャまで作りません。それより前に作った context は開始できず、Chromium と Firefox はページの読み込み時に警告を出していました（「The AudioContext was not allowed to start…」「An AudioContext was prevented from starting automatically…」）。それまでの `state` は、ジェスチャ前のこれまでと同じく `suspended`（`running` は false、`suspended` は true）と読めます。最初の `resume()` や `noteOn()` でも作るので、`resume-on-gesture="off"` のページは自分の `command.resume` で始まり、ジェスチャ前に届いた音（MIDI キーボードからなど）も落ちません。`<wcs-audio>` が接続した時点でページが既にジェスチャを受けていれば（クリックで入ったルートなど）、すぐに作ります。自分で渡した `createContext`（`OfflineAudioContext` など）は、これまでどおり接続時に呼びます。
+4.17 から、ページの `AudioContext` はそのジェスチャまで作りません。それより前に作った context は開始できず、Chromium と Firefox はページの読み込み時に警告を出していました（「The AudioContext was not allowed to start…」「An AudioContext was prevented from starting automatically…」）。それまでの `state` は、ジェスチャ前のこれまでと同じく `suspended`（`running` は false、`suspended` は true）と読めます。最初の `resume()` や `noteOn()` でも作るので、`resume-on-gesture="off"` のページは自分の `command.resume` で始まり、ジェスチャ前に届いた音（MIDI キーボードからなど）も落ちません。`<wcs-audio>` が接続した時点でページが既にジェスチャを受けていれば（クリックで入ったルートなど）、すぐに作ります。自分で渡した `createContext`（`OfflineAudioContext` など）は、これまでどおり接続時に呼びます。
 
 ### 2. state で駆動する8声シンセ
 
@@ -159,7 +159,7 @@ core.dispose();
 
 **rebuild は発音中のボイスを切ります。** この断絶は耳に聞こえます。構造は宣言するものであって、アニメーションさせるものではありません。束ねるのは live な値、構造はマークアップに書きます。
 
-4.17（未リリース）から、rebuild が発音中のボイスを切ったときは `<wcs-audio>` ごとに 1 回知らせます。`console.warn` の `[wcs/audio-voices-cut]` で、何を変えたか（タグと属性、またはタグの追加・削除）と、何声切ったかを言います。よくある原因は、構造属性を state に束ねたこと — select で動かす `<wcs-voice data-wcs="poly: polyphony">`、`data-wcs="attr.out: route"` — か、audio タグを `if:` / `for:` の下に置いたことです。意図して構造を変えるなら、先に `allNotesOff` を呼んでください。何も鳴っていなければ何も言いません。
+4.17 から、rebuild が発音中のボイスを切ったときは `<wcs-audio>` ごとに 1 回知らせます。`console.warn` の `[wcs/audio-voices-cut]` で、何を変えたか（タグと属性、またはタグの追加・削除）と、何声切ったかを言います。よくある原因は、構造属性を state に束ねたこと — select で動かす `<wcs-voice data-wcs="poly: polyphony">`、`data-wcs="attr.out: route"` — か、audio タグを `if:` / `for:` の下に置いたことです。意図して構造を変えるなら、先に `allNotesOff` を呼んでください。何も鳴っていなければ何も言いません。
 
 ## 値が可聴になる時刻について
 
@@ -191,9 +191,9 @@ wcs-audio:state(error)       { --led: crimson; }
 
 - **コンテキストは共有です。** ブラウザは同時 `AudioContext` 数を制限するため、ページ上の全 `<wcs-audio>` が1つを使います。`Symbol.for` レジストリ経由なのでバンドルが2コピー読み込まれても1つに収束します。マスター gain とリミッターはルートごとに持ちます。
 - **`noteOn` はそのルートの全体に届きます。** `<wcs-audio>` の中の `<wcs-voice>` はどれも各音を鳴らします — 1 つのルートに置いた 2 つの voice は重なって鳴り、2 つの楽器にはなりません。live グラフの `note` 付き oscillator とエンベロープも同じです。2 つの楽器（メロディとベース、ピアノとパッド）は 2 つの `<wcs-audio>` ルートにし、それぞれが自分の `noteOn` / `noteOff`・`volume`・`voices` を持ちます。これは安上がりです。ページに 1 つの context を共有するので、ルートを 1 つ足しても増えるのはマスター gain とリミッターで、`AudioContext` は増えません。
-- **リミッターは耳の保護で、既定で有効です。** 4.17（未リリース）から、-18 dBFS（振幅 ≒ 0.126）から 4:1 で圧縮し、その後ろのハードな天井が、パッチや `volume` によらず全サンプルを -6 dBFS（振幅 0.501）以下に保ちます。上の 8 声パッチで 8 音の和音を velocity 1・既定の volume で弾いても天井の下に収まります — 4.16 のリミッター（threshold だけを設定した compressor）では約 +5 dBFS に達していました。-18 dBFS より小さい信号は、そのままの大きさで通ります（compressor の自動メイクアップゲインは打ち消しています）。`limiter="off"` は両方の段を外します。振幅を測るときに使ってください。
-- **`volume` は 0〜1 です。** 4.17（未リリース）から、範囲外の値は拒まずに端へ丸めます。`volume="80"` は 1 として鳴り、1 と読め、`-1` は 0 になります。属性は書いた値のまま残ります。小さいパッチを大きくするには中の gain を上げてください。結果はリミッターが天井の下に収めます。
-- **文書から外れると音が止まり、それを知らせます。** `<wcs-audio>` が外されると（`if:` の枝が消える、ルートを離れる）、ボイスは止まり、4.17（未リリース）からはそれで変わったものを publish します。`voices` は 0、`state` は `suspended`（`running` は false）になるので、それらに束ねたページは楽器が止まったことを表示します。戻ってきたら、`state` は再び context の状態を読みます。
+- **リミッターは耳の保護で、既定で有効です。** 4.17 から、-18 dBFS（振幅 ≒ 0.126）から 4:1 で圧縮し、その後ろのハードな天井が、パッチや `volume` によらず全サンプルを -6 dBFS（振幅 0.501）以下に保ちます。上の 8 声パッチで 8 音の和音を velocity 1・既定の volume で弾いても天井の下に収まります — 4.16 のリミッター（threshold だけを設定した compressor）では約 +5 dBFS に達していました。-18 dBFS より小さい信号は、そのままの大きさで通ります（compressor の自動メイクアップゲインは打ち消しています）。`limiter="off"` は両方の段を外します。振幅を測るときに使ってください。
+- **`volume` は 0〜1 です。** 4.17 から、範囲外の値は拒まずに端へ丸めます。`volume="80"` は 1 として鳴り、1 と読め、`-1` は 0 になります。属性は書いた値のまま残ります。小さいパッチを大きくするには中の gain を上げてください。結果はリミッターが天井の下に収めます。
+- **文書から外れると音が止まり、それを知らせます。** `<wcs-audio>` が外されると（`if:` の枝が消える、ルートを離れる）、ボイスは止まり、4.17 からはそれで変わったものを publish します。`voices` は 0、`state` は `suspended`（`running` は false）になるので、それらに束ねたページは楽器が止まったことを表示します。戻ってきたら、`state` は再び context の状態を読みます。
 - **`<wcs-env>` は文脈で役割が変わります**: チェーン上なら VCA、`param` 付きならそのパラメータを整形します。
 - **`<wcs-env>` を持たない voice パッチ**には暗黙の 5ms アタックが付くのでクリック音が出ず、ノートオフで解放されるので鳴りっぱなしにもなりません。
 - **ボイスの回収は audio クロック基準**で、タイマーは使いません — バックグラウンドタブではタイマーが1分間隔まで絞られる一方オーディオは鳴り続けるため、タイマー方式だと押鍵ごとにボイスが漏れます。

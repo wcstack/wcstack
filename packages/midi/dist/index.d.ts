@@ -190,7 +190,9 @@ declare function getConfig(): IConfig;
  * Nothing starts on construction. `requestMIDIAccess()` can raise a permission
  * prompt, so it is deliberately command-driven (`request()`), matching the
  * `idle` / Generic Sensor family. `observe({ auto: true })` opts back into
- * requesting immediately.
+ * requesting immediately, and `observe()` after `dispose()` acquires again the
+ * access the last `request()` got, when no prompt can appear (an element taken
+ * out of the document and put back).
  *
  * The `MIDIAccess` handle itself is never published: the Core owns it and drops
  * it in `close()` / `dispose()`, as `worker` / `websocket` / `broadcast` do with
@@ -210,6 +212,8 @@ declare class MidiCore extends EventTarget {
     private _errorInfo;
     private _permissionStatus;
     private _gen;
+    private _pendingGen;
+    private _grantedSysex;
     private _ready;
     constructor(options?: IMidiOptions | null, target?: EventTarget);
     get message(): IMidiMessage | null;
@@ -230,9 +234,12 @@ declare class MidiCore extends EventTarget {
     /** Resolves once the current (or initial) access attempt settles. */
     get ready(): Promise<void>;
     /**
-     * Store the options and, when `auto` is set, request access. Idempotent:
-     * calling it again with new options re-applies port selection to the live
-     * access without re-requesting.
+     * Store the options and decide whether to request access: when `auto` is set,
+     * or when `dispose()` dropped an access the last `request()` acquired and its
+     * permission is still granted (so no prompt can appear). A missing API is
+     * reported as `unsupported` here, `auto` or not. Idempotent: calling it again
+     * with new options re-applies port selection to the live access without
+     * re-requesting, and it starts nothing while a request is in flight.
      */
     observe(options: IMidiOptions): Promise<void>;
     /**
@@ -245,9 +252,11 @@ declare class MidiCore extends EventTarget {
      * `permission` / `error` state (async-io-node-guidelines.md §3.6).
      */
     request(): Promise<void>;
+    private _request;
     /**
      * Release the access handle and detach every listener, keeping the observed
-     * permission state. A later `request()` re-acquires.
+     * permission state. `connected` goes to `false` and `devices` to `[]`, both
+     * published. A later `request()` re-acquires; `observe()` does not by itself.
      */
     close(): void;
     /**
@@ -265,6 +274,9 @@ declare class MidiCore extends EventTarget {
      * long as the ports are alive.
      */
     dispose(): void;
+    private _release;
+    private _reacquire;
+    private _queryPermission;
     private _resolveApi;
     private _messageOf;
     private _probePermission;
@@ -278,6 +290,7 @@ declare class MidiCore extends EventTarget {
     private _onMidiMessage;
     private _publishMessage;
     private _publishDevices;
+    private _setDevices;
     private _snapshotDevices;
     private _sameDevices;
     private _setConnected;
@@ -289,9 +302,13 @@ declare class MidiCore extends EventTarget {
 /**
  * `<wcs-midi>` — declarative Web MIDI input/output.
  *
- * Nothing happens on connect: `requestMIDIAccess()` can raise a permission
- * prompt, so access is command-driven (`command.request`). Add the `auto`
- * attribute to opt into requesting as soon as the element connects.
+ * Nothing happens on a first connect: `requestMIDIAccess()` can raise a
+ * permission prompt, so access is command-driven (`command.request`). Add the
+ * `auto` attribute to opt into requesting as soon as the element connects. An
+ * element whose last `request()` got access (and not `close()`d since), taken
+ * out and put back (a route left and entered again), requests again by itself,
+ * only while the permission is still granted, so no prompt can appear. Where
+ * the API is absent, `unsupported` is reported at connect, `auto` or not.
  */
 declare class WcsMidi extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
