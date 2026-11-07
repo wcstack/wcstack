@@ -7,6 +7,8 @@
  *   - getter の中の `location`（`wcs/getter-untracked-read`、router-admin）
  *   - map の代入の行・`{}` を種にしたキーへの代入（`wcs/binding-path-missing` の誤報）と、spread が書くパスを読む
  *     getter（`wcs/getter-untracked-read` が error、family-ledger）
+ *   - getter の `@type`・`Array.from` / `[...Array(n).keys()].map` の行・名前空間の import のメンバーの spread
+ *     （`wcs/binding-path-missing` / `wcs/path-dynamic-unknown` の誤報、music-room）
  */
 import { describe, it, expect } from 'vitest';
 import { validateDocument } from '../src/core/validateDocument';
@@ -217,5 +219,38 @@ describe('family-ledger — 動いたページの 22 件の誤報と、関門を
     expect(untracked[0].severity).toBe('error');
     expect(untracked[0].origin?.path).toBe('./state2.js');
     expect(untracked[0].message).toContain('"...: monthFetch" on <wcs-fetch> writes "monthFetch.value"');
+  });
+});
+
+describe('music-room — lint を黙らせるためだけに書いた回避策（getter の @type・Array.from の行・名前空間の import の spread）', () => {
+  const MUSIC = `export const DEFAULT_SOUND = { wave: "sawtooth", attack: 0.01, release: 0.4 };
+export const KEYS = ["C", "D", "E", "F", "G", "A", "B"];
+`;
+  const STATE = `import * as M from "./lib/music.js";
+export default {
+  sound: { ...M.DEFAULT_SOUND },
+  /** @type {{ label: string, down: boolean }[]} */
+  get keyRows() { return M.KEYS.length ? buildRows(this.sound) : []; },
+  get steps() { return Array.from({ length: 16 }, (_, i) => ({ label: String(i + 1), on: false })); },
+  get octaves() { return [...Array(3).keys()].map((i) => ({ label: \`C\${i + 3}\` })); },
+  get notes() { return Array.from(M.KEYS, (k) => ({ label: k })); },
+};
+`;
+  const PAGE = `<wcs-state src="./state.js"></wcs-state>
+<select data-wcs="value: sound.wave"></select>
+<input type="range" data-wcs="value: sound.release">
+<input type="range" data-wcs="value: sound.relaese">
+<template data-wcs="for: keyRows"><button data-wcs="textContent: .label; class.down: .down"></button></template>
+<template data-wcs="for: steps"><span data-wcs="textContent: .label; class.on: .on"></span></template>
+<template data-wcs="for: octaves"><span data-wcs="textContent: .label"></span></template>
+<template data-wcs="for: notes"><span data-wcs="textContent: .label; title: .lable"></span></template>
+`;
+  const files: Record<string, string> = { './state.js': STATE, './lib/music.js': MUSIC };
+  const found = () => validateDocument(PAGE, { locale: 'en', fileReader: (path) => files[path] });
+
+  it('回避策の無いページで誤報は 0 件・打ち間違いだけを報告すること', () => {
+    const missing = ofCode(found(), WcsDiagnosticCode.BindingPathMissing);
+    expect(missing.map((d) => textOf(PAGE, d))).toEqual(['sound.relaese', '.lable']);
+    expect(ofCode(found(), WcsDiagnosticCode.PathDynamicUnknown)).toEqual([]);
   });
 });

@@ -307,14 +307,16 @@ export function readJsDocTypeBefore(content: string, propIndex: number): string 
 }
 
 /**
- * getter の直前（空白だけを挟む）にある JSDoc コメントの `@returns {…}`（`@return` も）の型表現を返す。
+ * getter の直前（空白だけを挟む）にある JSDoc コメントの、getter の結果の型表現を返す — `@returns {…}`（`@return` も）、
+ * 無ければ `@type {…}`。
  * getter の本体から形を読めないとき（`{ ...r, ...live }`・早い `return []` の後の `[x].map(…)`）、
- * 作者が書いた戻りの型が唯一の手掛かり（docs/seam-apps.md、shift-desk）。
+ * 作者が書いた戻りの型が唯一の手掛かり（docs/seam-apps.md、shift-desk）。`@type` も同じに読む — データのキーに書く
+ * `@type` を getter にも書くのが自然で、読まないと宣言が黙って効かなかった（継ぎ目アプリ music-room）。
  */
 export function readJsDocReturnsBefore(content: string, propIndex: number): string | undefined {
   const comment = jsDocCommentBefore(content, propIndex);
   if (comment === undefined) return undefined;
-  return (readBracedType(comment, 'returns') ?? readBracedType(comment, 'return'))?.type.trim();
+  return (readBracedType(comment, 'returns') ?? readBracedType(comment, 'return') ?? readBracedType(comment, 'type'))?.type.trim();
 }
 
 function jsDocCommentBefore(content: string, propIndex: number): string | undefined {

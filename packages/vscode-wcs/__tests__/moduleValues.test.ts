@@ -121,6 +121,36 @@ export default { t };`, { fileReader: filesReader(files), path: '' });
     expect(scope.importOf('LOCAL')).toBeUndefined();
   });
 
+  it('名前空間の import のメンバー（`ns.NAME`）は、そのモジュールの export として辿ること（music-room）', () => {
+    const music = new ModuleScope(`import * as M from "./lib/music.js";
+import * as pkg from "@wcstack/state";
+import { site } from "./lib/music.js";
+const LOCAL = { a: 1 };
+export default {};`, {
+      fileReader: filesReader({
+        'lib/music.js': `export const DEFAULT_SOUND = { wave: "sawtooth", attack: 0.01 };
+export const ALIASED = DEFAULT_SOUND;
+const NOTES = [{ name: "C4" }];
+export { NOTES as SCALE };
+export default { never: true };`,
+      }),
+      path: '',
+    });
+    expect(music.resolveName('M.DEFAULT_SOUND')?.text).toBe('{ wave: "sawtooth", attack: 0.01 }');
+    expect(music.resolveName('M . ALIASED')?.text).toBe('{ wave: "sawtooth", attack: 0.01 }');
+    expect(music.resolveName('M.SCALE')?.text).toBe('[{ name: "C4" }]');
+    // the namespace's members are the module's exports: `default` is one, a name it does not export is not
+    expect(music.resolveName('M.default')?.text).toBe('{ never: true }');
+    expect(music.resolveName('M.MISSING')).toBeNull();
+    // a namespace of a bare specifier, a named import or a constant's member is not followed
+    expect(music.resolveName('pkg.anything')).toBeNull();
+    expect(music.resolveName('site.name')).toBeNull();
+    expect(music.resolveName('LOCAL.a')).toBeNull();
+    expect([music.isNamespaceMember('M.DEFAULT_SOUND'), music.isNamespaceMember('pkg.x'), music.isNamespaceMember('LOCAL.a'), music.isNamespaceMember('M')])
+      .toEqual([true, true, false, false]);
+    expect(music.importOf('M.DEFAULT_SOUND')).toBe('./lib/music.js');
+  });
+
   it('reader の無いモジュールは import を辿らず、モジュールの中の const だけを読むこと', () => {
     const bare = new ModuleScope('import { t } from "./catalog.js";\nconst A = { a: 1 };\nexport default { t, A };', undefined);
     expect(bare.resolveName('A')?.text).toBe('{ a: 1 }');

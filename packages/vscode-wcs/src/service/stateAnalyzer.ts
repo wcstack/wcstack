@@ -155,7 +155,7 @@ export function analyzeStatePaths(scriptContent: string, location?: ModuleLocati
         const settable = !recursive && effective !== 'data' && effective.set;
         paths.push({ path: prop.name, kind: recursive ? 'recursive' : 'computed', ...(settable ? { settable } : {}) });
       }
-      // `@returns {T}` が宣言する戻りの形（本体から読めた形は collectGetterResultShapes が足す）
+      // `@returns {T}` / `@type {T}` が宣言する戻りの形（本体から読めた形は collectGetterResultShapes が足す）
       if (prop.declaredType !== undefined) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
       continue;
     }
@@ -1079,8 +1079,8 @@ const MAX_GETTER_SHAPE_PASSES = 4;
  *   `slice` …）・`[...this.todos]` → 元のリストの下を写す（`visible.*.text` ← `todos.*.text`）
  * - `find` / `findLast` / `at` → 元の行の下を写す（`selected.name` ← `items.*.name`）
  * - `map(t => ({ … }))` → リテラルのフィールドが行になる（`...t` があれば元の行も写す）。元が state の外
- *   （`PERMS.map(…)`・`Object.entries(…).map(([k, v]) => ({ … }))`・`this.$getAll(…).map(…)`）でも、
- *   行の形はリテラルから分かる
+ *   （`PERMS.map(…)`・`Object.entries(…).map(([k, v]) => ({ … }))`・`this.$getAll(…).map(…)`・`[...Array(n).keys()].map(…)`）
+ *   でも、行の形はリテラルから分かる。`Array.from(source, (x) => ({ … }))` の mapper も `map` と同じに読む
  * - オブジェクトリテラル（`return { total: … }`）→ そのフィールド
  * - 三項演算子・`||` / `??` は両辺の和
  *
@@ -1294,8 +1294,16 @@ function readExpression(text: string, scan: string, start: number): string {
   return text.slice(start, i).trim();
 }
 
-/** 式の形。読めなければ null。 */
-function expressionShape(text: string, paths: PathCandidate[], aliases: Map<string, ResultShape>): ResultShape | null {
+/**
+ * 式の形。読めなければ null。`keepOpaque` は形の分からない元（OPAQUE）をそのまま返す — 外側の式（`[...x]`・`Array.from(x, …)`）が
+ * 続けて `map` で行の形を決めることがあるので。
+ */
+function expressionShape(
+  text: string,
+  paths: PathCandidate[],
+  aliases: Map<string, ResultShape>,
+  keepOpaque = false,
+): ResultShape | null {
   const expr = stripWrappingParens(text.trim());
   if (expr === '') return null;
   const scan = maskCommentsAndStrings(expr);
@@ -1333,7 +1341,9 @@ function expressionShape(text: string, paths: PathCandidate[], aliases: Map<stri
     } else {
       const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
       if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
-      const source = expressionShape(spread[1], paths, aliases);
+      // a spread of a source of unknown shape (`[...Array(n).keys()]`, `[...PERMS]`) stays one: a `map` after it decides
+      // the rows (the music-room seam app)
+      const source = expressionShape(spread[1], paths, aliases, true);
       if (source === null || !source.isList) return null;
       shape = source;
     }
@@ -1343,12 +1353,33 @@ function expressionShape(text: string, paths: PathCandidate[], aliases: Map<stri
     const inner = extractDelimitedContent(expr, scan, 0, '(', ')');
     shape = expressionShape(inner, paths, aliases) ?? OPAQUE;
     rest = inner.length + 2;
+  } else if (/^Array\s*\.\s*from\s*\(/.test(scan)) {
+    // `Array.from(source, mapper)`: the mapper is a `map` over the source (the music-room seam app)
+    const open = scan.indexOf('(');
+    const args = extractDelimitedContent(expr, scan, open, '(', ')');
+    const from = arrayFromShape(args, paths, aliases);
+    if (from === null) return null;
+    shape = from;
+    rest = open + args.length + 2;
   } else {
     const base = readBase(expr, scan, aliases, paths);
     if (base === null) return null;
     ({ shape, rest } = base);
   }
-  return applyChain(expr, scan, rest, shape, paths, aliases);
+  return applyChain(expr, scan, rest, shape, paths, aliases, keepOpaque);
+}
+
+/**
+ * `Array.from(source[, mapper])` の形。mapper は元の行への `map` と同じに読む — `Array.from({ length: n }, (_, i) => ({ … }))`・
+ * `Array.from(this.items, (x) => ({ ...x, … }))` の行はリテラル（`...x` があれば元の行も）。mapper が無ければ元の行のまま
+ * （`Array.from(this.items)`）。元がリストと分からなければ（`{ length: n }`・`"abc"`・`new Set(…)`）形の分からない元。
+ */
+function arrayFromShape(args: string, paths: PathCandidate[], aliases: Map<string, ResultShape>): ResultShape | null {
+  const [source, mapper, ...more] = splitTopLevelElements(args);
+  if (source === undefined || more.length > 1) return null;
+  const sourceShape = expressionShape(source, paths, aliases, true);
+  const rows = sourceShape !== null && sourceShape.isList ? sourceShape : OPAQUE;
+  return mapper === undefined ? rows : mapRows(mapper, rows, paths, aliases);
 }
 
 /** `this.a.b` / `this["a.*.b"]` / 別名。続く `.method(` の手前まで。 */
@@ -1407,7 +1438,10 @@ function readBase(
   };
 }
 
-/** `.filter(…)` / `.find(…)` / `.map(…)` の連鎖。最後まで読めたときだけ形を返す。 */
+/**
+ * `.filter(…)` / `.find(…)` / `.map(…)` の連鎖。最後まで読めたときだけ形を返す（`keepOpaque` なら、形の分からない元の
+ * ままでも返す）。
+ */
 function applyChain(
   expr: string,
   scan: string,
@@ -1415,6 +1449,7 @@ function applyChain(
   initial: ResultShape,
   paths: PathCandidate[],
   aliases: Map<string, ResultShape>,
+  keepOpaque = false,
 ): ResultShape | null {
   let shape = initial;
   let i = start;
@@ -1455,7 +1490,7 @@ function applyChain(
       return null;
     }
   }
-  return shape.opaque ? null : shape;
+  return shape.opaque && !keepOpaque ? null : shape;
 }
 
 /** 形の分からない元。 */
@@ -1823,7 +1858,7 @@ function spreadLiteral(
   const expr = unwrapFreeze(spread.replace(/^\.\.\./, ''));
   if (expr === 'null' || expr === 'undefined') return { text: null };
   if (isObjectLiteral(expr)) return { text: expr, scope };
-  if (!isBindingName(expr) || scope === undefined) return { unread: { text: spread } };
+  if (scope === undefined || !isFollowableName(expr, scope)) return { unread: { text: spread } };
   const from = scope.importOf(expr);
   const unread = { unread: { text: spread, ...(from !== undefined ? { from } : {}) } };
   let current = scope.resolveName(expr);
@@ -1831,7 +1866,7 @@ function spreadLiteral(
   for (let hops = 0; current !== null && hops < MAX_SPREAD_HOPS; hops++) {
     const inner = unwrapFreeze(current.text);
     if (isObjectLiteral(inner)) return { text: inner, scope: current.scope };
-    if (!isBindingName(inner)) return unread;
+    if (!isFollowableName(inner, current.scope)) return unread;
     current = current.scope.resolveName(inner);
   }
   return unread;
@@ -1868,6 +1903,11 @@ const WORD_LITERALS: ReadonlySet<string> = new Set(['true', 'false', 'null', 'un
 
 function isBindingName(text: string): boolean {
   return /^[$A-Za-z_][$\w]*$/.test(text) && !WORD_LITERALS.has(text);
+}
+
+/** A name the module binds, or a member of a namespace import (`M.DEFAULT_SOUND` with `import * as M from "…"`). */
+function isFollowableName(text: string, scope: ModuleScope): boolean {
+  return isBindingName(text) || scope.isNamespaceMember(text);
 }
 
 /** `Object.freeze(x)` → `x` (repeated); anything else as it is. */
@@ -1914,7 +1954,7 @@ function followValue(prop: PropertyInfo, scope: ModuleScope): { value: ResolvedV
     if (prop.value === undefined) return null;
     const written = prop.value.trim();
     const text = unwrapFreeze(written);
-    if (!isBindingName(text)) return text === written ? null : { value: { text, scope } };
+    if (!isFollowableName(text, scope)) return text === written ? null : { value: { text, scope } };
     name = text;
     from = scope.importOf(text);
     const resolved = scope.resolveName(text);
@@ -1924,7 +1964,7 @@ function followValue(prop: PropertyInfo, scope: ModuleScope): { value: ResolvedV
   // the value it leads to may be wrapped (`Object.freeze(DICT)`) or another name of the module it is in
   for (let hops = 0; hops < 8; hops++) {
     const inner = unwrapFreeze(current.text);
-    if (!isBindingName(inner)) return { value: inner === current.text ? current : { text: inner, scope: current.scope }, name, from };
+    if (!isFollowableName(inner, current.scope)) return { value: inner === current.text ? current : { text: inner, scope: current.scope }, name, from };
     const next = current.scope.resolveName(inner);
     if (next === null) return { value: null, name, from };
     current = next;
@@ -2253,7 +2293,7 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
       // 正規表現は `(?:get|set)` を非捕捉で畳んでいる（群番号を動かさないため）。
       // マッチは必ず `get` / `set` のどちらかで始まるので先頭 3 文字で判別する。
       const accessor: 'get' | 'set' = match[0].startsWith('set') ? 'set' : 'get';
-      // getter の JSDoc `@returns {T}` — 本体から読めない戻りの形を宣言する
+      // getter の JSDoc `@returns {T}`（`@type {T}` も）— 本体から読めない戻りの形を宣言する
       const returnsText = accessor === 'get' ? readJsDocReturnsBefore(objectContent, match.index) : undefined;
       const declaredType = returnsText === undefined ? null : parseJsDocType(returnsText);
       props.push({
