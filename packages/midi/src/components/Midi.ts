@@ -9,9 +9,13 @@ import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttr
 /**
  * `<wcs-midi>` — declarative Web MIDI input/output.
  *
- * Nothing happens on connect: `requestMIDIAccess()` can raise a permission
- * prompt, so access is command-driven (`command.request`). Add the `auto`
- * attribute to opt into requesting as soon as the element connects.
+ * Nothing happens on a first connect: `requestMIDIAccess()` can raise a
+ * permission prompt, so access is command-driven (`command.request`). Add the
+ * `auto` attribute to opt into requesting as soon as the element connects. An
+ * element whose last `request()` got access (and not `close()`d since), taken
+ * out and put back (a route left and entered again), requests again by itself,
+ * only while the permission is still granted, so no prompt can appear. Where
+ * the API is absent, `unsupported` is reported at connect, `auto` or not.
  */
 export class WcsMidi extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -151,7 +155,9 @@ export class WcsMidi extends HTMLElement {
 
   request(): Promise<void> {
     // 要求の sysex は属性が正本。接続時の判断（マイクロタスク）が Core へ渡すより先の
-    // request() でも、接続の後に sysex が変わった後でも、いまの属性で要求するよう渡しておく
+    // request() でも、接続の後に sysex が変わった後でも、いまの属性で要求するよう渡しておく。
+    // 判断の前の request() は判断を引き取る — 要求中の Core に observe() は要求を重ねない
+    // （timing-and-firing-contract §23.3）
     this._core.setOptions(this._options());
     return this._core.request();
   }
@@ -159,7 +165,8 @@ export class WcsMidi extends HTMLElement {
   close(): void {
     // 接続時の判断待ちなら、その auto の要求を取り消す — 同じタスクの append → close() で、
     // 後のマイクロタスクが要求しないように（判断が同期だった頃は、始めた要求を close() が
-    // 捨てていた）。入れ直せば、次の判断は auto に従う
+    // 捨てていた）。入れ直せば、次の判断は auto に従う。Core の close() は最後の request()
+    // が取ったアクセスも忘れるので、入れ直しでも取り直さない（明示の解放）
     if (this._connectResolve !== null) this._autoCancelled = true;
     this._core.close();
   }
@@ -183,7 +190,10 @@ export class WcsMidi extends HTMLElement {
   // channel）で 1 回だけ行う（timing-and-firing-contract §23）。router は遷移で同じノードを
   // 入れ直し、新しいルートの params から state が入力を書くのはマイクロタスク — その場で
   // 判断すると、前の auto / sysex で requestMIDIAccess を起こしていた（docs/seam-apps.md、
-  // shift-desk）。
+  // shift-desk）。判断は Core の observe() が下す: auto なら要求し、auto でなくても、最後の
+  // request() でアクセスを取れていた要素は、権限がまだ granted なら取り直す（プロンプトは
+  // 出ない。ルートを出て戻った要素が MIDI を失っていた — 音楽室の練習用シンセの継ぎ目アプリ）。
+  // API が無ければ auto でなくても unsupported を報告する。
   private _scheduleRequest(): void {
     if (this._requestPending) return;
     this._requestPending = true;
@@ -219,6 +229,8 @@ export class WcsMidi extends HTMLElement {
     this._connectResolve?.();
     this._connectResolve = null;
     this._autoCancelled = false;
+    // connected: false と devices: [] を知らせる（§22）。最後の request() が取ったアクセスは
+    // Core が覚えていて、入れ直しの判断が取り直す
     this._core.dispose();
   }
 

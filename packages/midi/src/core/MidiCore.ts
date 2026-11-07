@@ -48,7 +48,9 @@ const messageField = <K extends keyof IMidiMessage>(key: K) =>
  * Nothing starts on construction. `requestMIDIAccess()` can raise a permission
  * prompt, so it is deliberately command-driven (`request()`), matching the
  * `idle` / Generic Sensor family. `observe({ auto: true })` opts back into
- * requesting immediately.
+ * requesting immediately, and `observe()` after `dispose()` acquires again the
+ * access the last `request()` got, when no prompt can appear (an element taken
+ * out of the document and put back).
  *
  * The `MIDIAccess` handle itself is never published: the Core owns it and drops
  * it in `close()` / `dispose()`, as `worker` / `websocket` / `broadcast` do with
@@ -106,6 +108,20 @@ export class MidiCore extends EventTarget {
   // onto a torn-down instance.
   private _gen = 0;
 
+  // The generation of the request in flight: observe() starts none while it is
+  // the current one (a request() before the connect-time decision took it,
+  // timing-and-firing-contract §23.3).
+  private _pendingGen = -1;
+
+  // The sysex of the access the last request() acquired; null before one, after
+  // a refused one and after close(). dispose() keeps it: observe() acquires that
+  // access again when its permission is still granted (an element taken out of
+  // the document and put back, as a route left and entered again does). Only the
+  // command's success counts: an access `auto` acquired is `auto`'s to decide on
+  // the next connect, so an `auto` the page turns off there still requests
+  // nothing. A refused request, `auto`'s included, forgets it.
+  private _grantedSysex: boolean | null = null;
+
   private _ready: Promise<void> = Promise.resolve();
 
   constructor(options?: IMidiOptions | null, target?: EventTarget) {
@@ -139,15 +155,22 @@ export class MidiCore extends EventTarget {
   // --- Public API ---
 
   /**
-   * Store the options and, when `auto` is set, request access. Idempotent:
-   * calling it again with new options re-applies port selection to the live
-   * access without re-requesting.
+   * Store the options and decide whether to request access: when `auto` is set,
+   * or when `dispose()` dropped an access the last `request()` acquired and its
+   * permission is still granted (so no prompt can appear). A missing API is
+   * reported as `unsupported` here, `auto` or not. Idempotent: calling it again
+   * with new options re-applies port selection to the live access without
+   * re-requesting, and it starts nothing while a request is in flight.
    */
   observe(options: IMidiOptions): Promise<void> {
-    const wasIdle = this._access === null;
     this.setOptions(options);
-    if (options.auto && wasIdle) {
-      this._ready = this.request();
+    if (this._access !== null || this._pendingGen === this._gen) return this._ready;
+    if (options.auto || this._resolveApi() === null) {
+      // _request() reports a missing API at once: no prompt is involved, so the
+      // page learns it at connect rather than at its first request()
+      this._ready = this._request(false);
+    } else if (this._grantedSysex !== null) {
+      this._ready = this._reacquire();
     }
     return this._ready;
   }
@@ -166,6 +189,12 @@ export class MidiCore extends EventTarget {
    * `permission` / `error` state (async-io-node-guidelines.md §3.6).
    */
   request(): Promise<void> {
+    return this._request(true);
+  }
+
+  // `remember`: an access the command acquired is what observe() acquires again
+  // after dispose(); one `auto` acquired is not. Any refusal forgets it.
+  private _request(remember: boolean): Promise<void> {
     const requestAccess = this._resolveApi();
     if (!requestAccess) {
       this._setPermission(UNSUPPORTED);
@@ -174,10 +203,14 @@ export class MidiCore extends EventTarget {
       return this._ready;
     }
     const gen = ++this._gen;
+    this._pendingGen = gen;
+    const sysex = this._options.sysex === true;
     this._probePermission();
-    this._ready = requestAccess({ sysex: this._options.sysex === true }).then(
+    this._ready = requestAccess({ sysex }).then(
       (access: MidiAccessLike) => {
         if (gen !== this._gen) return;
+        this._pendingGen = -1;
+        if (remember) this._grantedSysex = sysex;
         this._access = access;
         access.onstatechange = this._onStateChange;
         this._setError(null);
@@ -188,6 +221,8 @@ export class MidiCore extends EventTarget {
       },
       (error: any) => {
         if (gen !== this._gen) return;
+        this._pendingGen = -1;
+        this._grantedSysex = null;
         this._setPermission("denied");
         this._setError(this._messageOf(error), error?.name);
       },
@@ -197,16 +232,12 @@ export class MidiCore extends EventTarget {
 
   /**
    * Release the access handle and detach every listener, keeping the observed
-   * permission state. A later `request()` re-acquires.
+   * permission state. `connected` goes to `false` and `devices` to `[]`, both
+   * published. A later `request()` re-acquires; `observe()` does not by itself.
    */
   close(): void {
-    this._gen++;
-    this._unhookInputs();
-    if (this._access) {
-      this._access.onstatechange = null;
-      this._access = null;
-    }
-    this._setConnected(false);
+    this._release();
+    this._grantedSysex = null;
   }
 
   /**
@@ -233,11 +264,65 @@ export class MidiCore extends EventTarget {
    * long as the ports are alive.
    */
   dispose(): void {
-    this.close();
+    // Unlike close(), keeps what the last request() acquired: a later observe()
+    // acquires it again when its permission is still granted.
+    this._release();
     if (this._permissionStatus) {
       this._permissionStatus.removeEventListener("change", this._onPermissionChange);
       this._permissionStatus = null;
     }
+  }
+
+  // --- Internal: access ---
+
+  // A disconnect publishes what it changes (timing-and-firing-contract §22).
+  // Without the access the ports are no longer tracked, so `devices` is emptied
+  // with its event: a page put back must not list a keyboard it cannot hear.
+  private _release(): void {
+    this._gen++;
+    this._unhookInputs();
+    if (this._access) {
+      this._access.onstatechange = null;
+      this._access = null;
+    }
+    this._setConnected(false);
+    this._setDevices([]);
+  }
+
+  // observe() after dispose(): request again only when the permission for the
+  // sysex asked now is granted, so no prompt can appear. A request(), close()
+  // or dispose() while the answer is pending takes the decision (_gen).
+  //
+  // Where the browser answers, its answer decides, and one that is not
+  // `granted` is published: the element learned that the grant went away (a
+  // page reading `granted` with `connected: false` could not tell it must ask
+  // again). Where it does not, the outcome last inferred from request() stands,
+  // and only for the sysex it was inferred at (a sysex grant is a separate
+  // permission); nothing new is known, so nothing is published.
+  private _reacquire(): Promise<void> {
+    const gen = this._gen;
+    const sysex = this._options.sysex === true;
+    return this._queryPermission(sysex).then((answer) => {
+      if (gen !== this._gen) return;
+      if (answer === null) {
+        if (this._permission === "granted" && this._grantedSysex === sysex) return this.request();
+        return;
+      }
+      if (answer === "granted") return this.request();
+      this._setPermission(answer);
+    });
+  }
+
+  // The Permissions API's answer for midi at this sysex; null where the browser
+  // gives none (no Permissions API, or the descriptor is not understood).
+  private _queryPermission(sysex: boolean): Promise<MidiPermissionState | null> {
+    // Only reached after _resolveApi() found navigator.requestMIDIAccess.
+    const permissions = (globalThis as { navigator?: any }).navigator.permissions;
+    if (!permissions || typeof permissions.query !== "function") return Promise.resolve(null);
+    return permissions.query({ name: "midi", sysex }).then(
+      (status: PermissionStatus) => status.state as MidiPermissionState,
+      () => null,
+    );
   }
 
   // --- Internal: API resolution ---
@@ -368,7 +453,10 @@ export class MidiCore extends EventTarget {
   }
 
   private _publishDevices(access: MidiAccessLike): void {
-    const next = this._snapshotDevices(access);
+    this._setDevices(this._snapshotDevices(access));
+  }
+
+  private _setDevices(next: IMidiDevice[]): void {
     if (this._sameDevices(next)) return;
     // Fresh array assigned before notifying (producer snapshot contract).
     this._devices = next;

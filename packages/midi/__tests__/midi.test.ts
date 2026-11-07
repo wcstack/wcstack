@@ -4,7 +4,7 @@ import { MidiCore } from "../src/core/MidiCore";
 import { registerComponents } from "../src/registerComponents";
 import {
   FakeMidiAccess, FakeMidiInput, FakeMidiOutput,
-  installMidi, removeMidi, removePermissions, record, flush,
+  installMidi, removeMidi, installPermissions, removePermissions, record, flush,
 } from "./mocks";
 
 const make = (attrs: Record<string, string> = {}): WcsMidi => {
@@ -186,6 +186,263 @@ describe("<wcs-midi>", () => {
       el.sysex = true;
       await el.request();
       expect(mock.calls).toEqual([{ sysex: true }]);
+    });
+
+    it("同じタスクで接続の後に request() が呼ばれると、auto でも要求は 1 回だけ（§23.3）", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      const explicit = el.request();
+      await el.connectedCallbackPromise;
+      await explicit;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(true);
+    });
+  });
+
+  // router はルートを出るとその要素を文書から外し、入り直すと同じ要素を戻す。state は束縛を
+  // 保ち、出力の値をイベントからしか知らない（timing-and-firing-contract §22 / §23、決定 Q2）
+  describe("ルートを出て戻る（外して入れ直す）", () => {
+    const keyboard = (): { access: FakeMidiAccess; input: FakeMidiInput } => {
+      const access = new FakeMidiAccess();
+      const input = new FakeMidiInput("in-1", "Keystation 49");
+      access.inputs.set(input.id, input);
+      access.outputs.set("out-1", new FakeMidiOutput("out-1", "Keystation 49"));
+      return { access, input };
+    };
+
+    it("外すと connected: false と devices: [] を知らせる。permission は変えない（§22）", async () => {
+      installMidi();
+      removePermissions();
+      const el = mount(make());
+      await el.request();
+      expect(el.devices).toHaveLength(2);
+      const devices = record(el, "wcs-midi:devices");
+      const connected = record(el, "wcs-midi:statechange");
+      const permission = record(el, "wcs-midi:permission");
+
+      el.remove();
+
+      expect(connected).toEqual([false]);
+      expect(devices).toEqual([[]]);
+      expect(el.devices).toEqual([]);
+      expect(permission).toEqual([]);
+      expect(el.permission).toBe("granted");
+    });
+
+    it("request() で取った要素は、戻すと自分で取り直し、メッセージが届く", async () => {
+      const { access, input } = keyboard();
+      const mock = installMidi({ access });
+      removePermissions();
+      const el = mount(make());
+      await el.request();
+      el.remove();
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.connected).toBe(true);
+      expect(el.devices.map((d) => d.id)).toEqual(["in-1", "out-1"]);
+      const seen = record(el, "wcs-midi:message");
+      input.emit([0x90, 60, 100]);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].type).toBe("noteon");
+    });
+
+    it("query が granted と答えるなら取り直す", async () => {
+      const mock = installMidi();
+      const permissions = installPermissions({ state: "granted" });
+      const el = mount(make());
+      await el.request();
+      await flush();
+      el.remove();
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(permissions.descriptors.at(-1)).toEqual({ name: "midi", sysex: false });
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.connected).toBe(true);
+    });
+
+    it.each(["prompt", "denied"])("外れている間に権限が %s になれば、戻しても要求せず（プロンプトを出さない）、その答えを permission に知らせる", async (state) => {
+      const mock = installMidi();
+      installPermissions({ state: "granted" });
+      const el = mount(make());
+      await el.request();
+      await flush();
+      el.remove();
+      installPermissions({ state });
+      const permission = record(el, "wcs-midi:permission");
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(false);
+      expect(el.devices).toEqual([]);
+      expect(permission).toEqual([state]);
+      expect(el.permission).toBe(state);
+      expect(el.granted).toBe(false);
+    });
+
+    it("サイトの設定で取り消されて戻ると、denied の状態（:state(denied)）が立ち、ボタンからの request() で尋ね直せる", async () => {
+      const mock = installMidi();
+      installPermissions({ state: "granted" });
+      const el = mount(make());
+      await el.request();
+      await flush();
+      el.remove();
+      installPermissions({ state: "denied" });
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(el.denied).toBe(true);
+      expect(el.debugStates).toContain("denied");
+      expect(el.debugStates).not.toContain("granted");
+
+      // 利用者が許可し直してからボタンを押した
+      installPermissions({ state: "granted" });
+      await el.request();
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.granted).toBe(true);
+      expect(el.connected).toBe(true);
+    });
+
+    it("sysex で取った要素は、sysex の権限がまだ granted なら sysex で取り直す", async () => {
+      const mock = installMidi();
+      const permissions = installPermissions({ state: "granted" });
+      const el = mount(make({ sysex: "" }));
+      await el.request();
+      await flush();
+      el.remove();
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(permissions.descriptors.at(-1)).toEqual({ name: "midi", sysex: true });
+      expect(mock.calls).toEqual([{ sysex: true }, { sysex: true }]);
+      expect(el.connected).toBe(true);
+    });
+
+    it("入れ直しの間に書かれた sysex で権限を尋ね、その sysex で取り直す（§23）", async () => {
+      const mock = installMidi();
+      const permissions = installPermissions({ state: "granted" });
+      const el = mount(make());
+      await el.request();
+      await flush();
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.sysex = true; });
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(permissions.descriptors.at(-1)).toEqual({ name: "midi", sysex: true });
+      expect(mock.calls).toEqual([{ sysex: false }, { sysex: true }]);
+    });
+
+    it("一度も request() していない要素は、戻しても要求しない", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const el = mount(make());
+      await el.connectedCallbackPromise;
+      el.remove();
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(mock.requestMIDIAccess).not.toHaveBeenCalled();
+    });
+
+    it("close() で手放してから外した要素は、戻しても要求しない", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const el = mount(make());
+      await el.request();
+      el.close();
+      el.remove();
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(false);
+    });
+
+    it("戻したのと同じタスクの close() は取り直しを取り消す（§23.3）", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const el = mount(make());
+      await el.request();
+      el.remove();
+
+      document.body.appendChild(el);
+      el.close();
+      await el.connectedCallbackPromise;
+      await flush();
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(false);
+    });
+
+    it("戻したのと同じタスクの request() が判断を引き取り、要求は 1 回だけ", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const el = mount(make());
+      await el.request();
+      el.remove();
+
+      document.body.appendChild(el);
+      const explicit = el.request();
+      await el.connectedCallbackPromise;
+      await explicit;
+      await flush();
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.connected).toBe(true);
+    });
+
+    it("権限の答えを待つ間にまた外すと要求せず、次に戻せば取り直す", async () => {
+      const mock = installMidi();
+      installPermissions({ state: "granted" });
+      const el = mount(make());
+      await el.request();
+      await flush();
+      el.remove();
+
+      document.body.appendChild(el);
+      await Promise.resolve(); // 判断のマイクロタスク（query を投げる）
+      el.remove();
+      await flush();
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.connected).toBe(true);
+    });
+
+    it("取り直しが拒否された要素は、次に戻しても要求しない", async () => {
+      const mock = installMidi();
+      removePermissions();
+      const el = mount(make());
+      await el.request();
+      el.remove();
+      mock.requestMIDIAccess.mockImplementation((options: any) => {
+        mock.calls.push(options);
+        return Promise.reject(Object.assign(new Error("no"), { name: "NotAllowedError" }));
+      });
+
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
+      expect(el.denied).toBe(true);
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -387,6 +644,32 @@ describe("<wcs-midi>", () => {
       expect(el.unsupported).toBe(true);
       expect(el.error).toBe("unsupported");
       expect(el.errorInfo?.code).toBe("capability-missing");
+    });
+
+    // API が無ければプロンプトも無い — request() を待たず接続で知らせる（v4-direction §5.3）
+    it("非対応環境では auto が無くても接続で unsupported を知らせる", async () => {
+      removeMidi();
+      const el = make();
+      const permission = record(el, "wcs-midi:permission");
+      const errorInfo = record(el, "wcs-midi:error-info-changed");
+      mount(el);
+      await el.connectedCallbackPromise;
+      expect(permission).toEqual(["unsupported"]);
+      expect(el.permission).toBe("unsupported");
+      expect(el.error).toBe("unsupported");
+      expect(errorInfo.map((info) => info?.code)).toEqual(["capability-missing"]);
+    });
+
+    it("判断の前に外した非対応環境の要素は何も報告しない", async () => {
+      removeMidi();
+      const el = make();
+      const permission = record(el, "wcs-midi:permission");
+      mount(el);
+      el.remove();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(permission).toEqual([]);
+      expect(el.permission).toBe("prompt");
     });
   });
 
