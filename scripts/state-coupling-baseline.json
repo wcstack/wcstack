@@ -18,6 +18,7 @@
     ],
     "diagnostics": [
       "config.ts",
+      "dom/view.ts",
       "engine.ts",
       "filters/registry.ts",
       "hooks.ts",
