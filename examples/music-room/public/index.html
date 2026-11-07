@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <title>音楽室のキーボード</title>
+  <link rel="stylesheet" href="./style.css">
+  <!-- I/O node packages first, @wcstack/state last: every wcs-* element is defined before state
+       wires a command token to it (a token emitted into an undefined element is dropped). -->
+  <script type="module" src="https://esm.run/@wcstack/audio/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/midi/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="./components.js"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+
+<wcs-state src="./state.js"></wcs-state>
+
+<!-- ===== Instruments and I/O: page level, never inside a route (they live as long as the page) ===== -->
+<wcs-audio id="synth" data-wcs="
+    command.noteOn: $command.synthOn;
+    command.noteOff: $command.synthOff;
+    command.allNotesOff: $command.synthPanic;
+    volume: settings.masterVolume;
+    voices: voices;
+    running: audioRunning;
+    unsupported: audioUnsupported">
+  <wcs-voice poly="8">
+    <wcs-osc note out="vcf" data-wcs="type: sound.wave; detune: osc1Detune">
+      <wcs-lfo type="sine" param="detune" data-wcs="rate: sound.vibratoRate; depth: vibratoDepth"></wcs-lfo>
+    </wcs-osc>
+    <wcs-osc note out="vcf" data-wcs="type: sound.wave; detune: osc2Detune">
+      <wcs-lfo type="sine" param="detune" data-wcs="rate: sound.vibratoRate; depth: vibratoDepth"></wcs-lfo>
+    </wcs-osc>
+    <wcs-biquad id="vcf" type="lowpass" data-wcs="frequency: sound.cutoff; q: sound.resonance">
+      <wcs-env out="bus" data-wcs="attack: sound.attack; decay: sound.decay; sustain: sound.sustain; release: sound.release"></wcs-env>
+    </wcs-biquad>
+  </wcs-voice>
+  <wcs-gain id="bus" data-wcs="gain: sound.volume">
+    <wcs-delay time="0.3" feedback="0.35" data-wcs="mix: sound.delayMix"></wcs-delay>
+  </wcs-gain>
+  <wcs-analyser id="meter" master fft="1024"
+    data-wcs="command.sample: $command.sampleMeter; eventToken.frame: meterFrame"></wcs-analyser>
+</wcs-audio>
+
+<!-- The metronome click is a second instrument: one root plays one patch (noteOn has no voice name). -->
+<wcs-audio id="click" data-wcs="
+    command.noteOn: $command.clickOn;
+    command.noteOff: $command.clickOff;
+    command.allNotesOff: $command.clickPanic;
+    volume: settings.masterVolume">
+  <wcs-voice poly="4">
+    <wcs-osc type="square" note>
+      <wcs-biquad type="highpass" frequency="800">
+        <wcs-env attack="0.001" decay="0.04" sustain="0" release="0.03"></wcs-env>
+      </wcs-biquad>
+    </wcs-osc>
+  </wcs-voice>
+</wcs-audio>
+
+<wcs-midi data-wcs="
+    input: midiInputAttr;
+    output: midiOutputAttr;
+    devices: midiDevices;
+    permission: midiPermission;
+    error: midiError;
+    command.request: $command.midiRequest;
+    command.send: $command.midiSend;
+    eventToken.message: onMidi"></wcs-midi>
+
+<mr-qwerty data-wcs="enabled: settings.qwerty; octave: qwertyOctave; eventToken.note: qwertyNote; eventToken.lost: qwertyLost"></mr-qwerty>
+
+<wcs-storage key="music-room.settings" data-wcs="value#init=element: savedSettings"></wcs-storage>
+<wcs-storage key="music-room.sounds" data-wcs="value#init=element: localSounds"></wcs-storage>
+
+<wcs-timer interval="20" manual data-wcs="command.start: $command.clockStart; command.stop: $command.clockStop; eventToken.tick: clockTick"></wcs-timer>
+<wcs-debounce wait="300" data-wcs="source: soundQuery; value: settledSoundQuery"></wcs-debounce>
+<wcs-network data-wcs="offline: offline"></wcs-network>
+
+<wcs-fetch data-wcs="url: soundsUrl; value: soundsList; loading: soundsLoading; error: soundsError; command.fetch: $command.reloadSounds"></wcs-fetch>
+<wcs-fetch data-wcs="url: soundDetailUrl; value: soundDetail; loading: soundDetailLoading; error: soundDetailError; command.fetch: $command.reloadSoundDetail"></wcs-fetch>
+<wcs-fetch method="POST" manual data-wcs="url: soundSaveUrl; body: soundSaveBody; trigger: soundSaveTrigger; error: soundSaveError; loading: soundSaveLoading; eventToken.value: soundSaved">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="X-Teacher-Key" data-wcs="value: teacher.key"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="url: takesUrl; value: takesList; loading: takesLoading; error: takesError; command.fetch: $command.reloadTakes"></wcs-fetch>
+<wcs-fetch data-wcs="url: openTakeUrl; value: openTake; loading: openTakeLoading; error: openTakeError; command.fetch: $command.reloadOpenTake"></wcs-fetch>
+<wcs-fetch method="POST" manual data-wcs="url: takeSaveUrl; body: takeSaveBody; trigger: takeSaveTrigger; error: takeSaveError; loading: takeSaveLoading; eventToken.value: takeSaved">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<!-- ===== The page ===== -->
+<header class="site">
+  <p class="brand">🎹 音楽室のキーボード</p>
+  <nav aria-label="メニュー">
+    <wcs-link to="/play">弾く</wcs-link>
+    <wcs-link to="/sounds" match="prefix">音</wcs-link>
+    <wcs-link to="/practice">練習</wcs-link>
+    <wcs-link to="/settings">設定</wcs-link>
+  </nav>
+</header>
+
+<div class="banners">
+  <p class="banner warn" data-wcs="hidden: audioRunning">
+    🔇 ブラウザのきまりで、最初に画面をクリックするかキーを押すまで音が出ません。どこかをクリックするか、キーを押してください。
+  </p>
+  <p class="banner error" data-wcs="hidden: audioUnsupported|not">このブラウザでは音を出せません。</p>
+  <p class="banner warn" data-wcs="hidden: offline|not">インターネットにつながっていません。先生の音や演奏の保存は、つながってから使えます。</p>
+  <p class="banner error" role="alert" data-wcs="textContent: appError; hidden: appError|not"></p>
+</div>
+<p class="sr-status" role="status" data-wcs="textContent: status"></p>
+
+<main id="main" tabindex="-1">
+<wcs-router focus="heading" announce="title" data-wcs="routeName: routeName; typedParams: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+  <template>
+    <wcs-route path="/" name="home">
+      <wcs-guard-handler><script type="module">
+        export default function () { return "/play"; }
+      </script></wcs-guard-handler>
+    </wcs-route>
+
+    <!-- ================= 弾く ================= -->
+    <wcs-route path="/play" name="play">
+      <wcs-head><title>弾く — 音楽室のキーボード</title></wcs-head>
+      <section class="page play">
+        <h1>弾く</h1>
+        <wcs-raf data-wcs="eventToken.tick: meterTick"></wcs-raf>
+
+        <div class="toolbar">
+          <button type="button" class="panic" data-wcs="onclick: panic">■ 音を止める</button>
+          <div class="stat"><span class="stat-label">鳴っている音</span> <output class="voices" data-wcs="textContent: voices"></output></div>
+          <div class="stat"><label for="level">レベル</label> <meter id="level" class="level" min="0" max="1" low="0.6" high="0.85" optimum="0.3" data-wcs="value: level"></meter></div>
+          <div class="stat">
+            <label for="master">全体の音量</label>
+            <input id="master" type="range" min="0" max="1" step="0.01" data-wcs="valueAsNumber: settings.masterVolume">
+            <output data-wcs="textContent: masterVolumePercent"></output>%
+          </div>
+        </div>
+
+        <section class="midi-area" aria-labelledby="midi-h">
+          <h2 id="midi-h">MIDI キーボード</h2>
+          <p class="midi-status" data-wcs="textContent: midiStatus"></p>
+          <p data-wcs="hidden: midiGranted|not">つながっている入力: <span data-wcs="textContent: midiDeviceNames"></span></p>
+          <button type="button" data-wcs="onclick: connectMidi; hidden: midiCanAsk|not">MIDI キーボードをつなぐ</button>
+        </section>
+
+        <mr-piano octaves="2" data-wcs="base: pianoBase; letterBase: qwertyBase; pressed: pressedNotes; eventToken.note: screenNote"></mr-piano>
+        <div class="under-keys">
+          <p>コンピューターのキーボード: <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> が白いけん、<kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> が黒いけん、<kbd>Z</kbd>/<kbd>X</kbd> でオクターブ（いま <span class="octave" data-wcs="textContent: qwertyRange"></span>）。</p>
+          <button type="button" class="pedal" data-wcs="onclick: togglePedal; attr.aria-pressed: pedalDown|string; class.on: pedalDown">ペダル</button>
+          <label>ビブラートの深さ <input type="range" min="0" max="127" step="1" data-wcs="valueAsNumber: modWheel"></label>
+          <span>ピッチ: <output data-wcs="textContent: bendText"></output> 半音</span>
+        </div>
+
+        <form class="sound-form" data-wcs="onsubmit#prevent: saveTeacherSound">
+          <fieldset>
+            <legend>音を作る</legend>
+            <div class="control">
+              <label for="c-wave">波形</label>
+              <select id="c-wave" data-wcs="value: sound.wave">
+                <option value="sine">サイン波</option>
+                <option value="triangle">三角波</option>
+                <option value="sawtooth">のこぎり波</option>
+                <option value="square">矩形波</option>
+              </select>
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.wave"></span>
+            </div>
+            <div class="control">
+              <label for="c-detune">デチューン</label>
+              <input id="c-detune" type="range" min="0" max="50" step="1" data-wcs="valueAsNumber: sound.detune">
+              <output data-wcs="textContent: sound.detune"></output> セント
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.detune"></span>
+            </div>
+            <div class="control">
+              <label for="c-cutoff">カットオフ</label>
+              <input id="c-cutoff" type="range" min="80" max="12000" step="1" data-wcs="valueAsNumber: sound.cutoff">
+              <output data-wcs="textContent: sound.cutoff"></output> Hz
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.cutoff"></span>
+            </div>
+            <div class="control">
+              <label for="c-resonance">レゾナンス</label>
+              <input id="c-resonance" type="range" min="0.1" max="20" step="0.1" data-wcs="valueAsNumber: sound.resonance">
+              <output data-wcs="textContent: sound.resonance"></output>
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.resonance"></span>
+            </div>
+            <div class="control">
+              <label for="c-attack">アタック</label>
+              <input id="c-attack" type="range" min="0" max="2" step="0.005" data-wcs="valueAsNumber: sound.attack">
+              <output data-wcs="textContent: sound.attack"></output> 秒
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.attack"></span>
+            </div>
+            <div class="control">
+              <label for="c-decay">ディケイ</label>
+              <input id="c-decay" type="range" min="0" max="2" step="0.01" data-wcs="valueAsNumber: sound.decay">
+              <output data-wcs="textContent: sound.decay"></output> 秒
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.decay"></span>
+            </div>
+            <div class="control">
+              <label for="c-sustain">サステイン</label>
+              <input id="c-sustain" type="range" min="0" max="1" step="0.01" data-wcs="valueAsNumber: sound.sustain">
+              <output data-wcs="textContent: sound.sustain"></output>
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.sustain"></span>
+            </div>
+            <div class="control">
+              <label for="c-release">リリース</label>
+              <input id="c-release" type="range" min="0" max="4" step="0.01" data-wcs="valueAsNumber: sound.release">
+              <output data-wcs="textContent: sound.release"></output> 秒
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.release"></span>
+            </div>
+            <div class="control">
+              <label for="c-vibrato">ビブラートの速さ</label>
+              <input id="c-vibrato" type="range" min="0.1" max="12" step="0.1" data-wcs="valueAsNumber: sound.vibratoRate">
+              <output data-wcs="textContent: sound.vibratoRate"></output> Hz
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.vibratoRate"></span>
+            </div>
+            <div class="control">
+              <label for="c-delay">エコー</label>
+              <input id="c-delay" type="range" min="0" max="1" step="0.01" data-wcs="valueAsNumber: sound.delayMix">
+              <output data-wcs="textContent: sound.delayMix"></output>
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.delayMix"></span>
+            </div>
+            <div class="control">
+              <label for="c-volume">音量</label>
+              <input id="c-volume" type="range" min="0" max="1" step="0.01" data-wcs="valueAsNumber: sound.volume">
+              <output data-wcs="textContent: sound.volume"></output>
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.volume"></span>
+            </div>
+            <p><button type="button" data-wcs="onclick: resetSound">はじめの音にもどす</button></p>
+          </fieldset>
+
+          <section class="link-box" aria-labelledby="link-h">
+            <h2 id="link-h">この音へのリンク</h2>
+            <p>このリンクを友だちに送ったり、ブックマークしたりすると、同じ音で弾けます。</p>
+            <input class="sound-link" type="text" readonly aria-label="この音へのリンク" data-wcs="value#ro: soundLink">
+          </section>
+
+          <section aria-labelledby="mine-h">
+            <h2 id="mine-h">このコンピューターに保存する</h2>
+            <label>名前 <input type="text" maxlength="30" class="local-name" data-wcs="value: localName"></label>
+            <button type="button" class="save-local" data-wcs="onclick: saveLocal">保存する</button>
+            <p class="message" data-wcs="textContent: localMessage"></p>
+          </section>
+
+          <details class="teacher">
+            <summary>先生用：サーバーに保存する</summary>
+            <div class="control">
+              <label for="t-name">音の名前</label>
+              <input id="t-name" type="text" data-wcs="value: teacher.name">
+              <span class="field-error" data-wcs="textContent: soundFieldErrors.name"></span>
+            </div>
+            <div class="control">
+              <label for="t-key">先生の鍵</label>
+              <input id="t-key" type="password" autocomplete="off" data-wcs="value: teacher.key">
+            </div>
+            <button type="submit" data-wcs="disabled: soundSaveLoading">サーバーに保存する</button>
+            <span data-wcs="hidden: soundSaveLoading|not">保存中…</span>
+            <p class="error" data-wcs="textContent: soundSaveErrorText"></p>
+            <p class="message" data-wcs="textContent: soundSaveMessage"></p>
+          </details>
+        </form>
+      </section>
+    </wcs-route>
+
+    <!-- ================= 音の一覧 ================= -->
+    <wcs-route path="/sounds" name="sounds">
+      <wcs-head><title>音をえらぶ — 音楽室のキーボード</title></wcs-head>
+      <section class="page sounds">
+        <h1>音をえらぶ</h1>
+        <section aria-labelledby="ts-h">
+          <h2 id="ts-h">先生の音</h2>
+          <p class="loading" data-wcs="hidden: soundsLoading|not">読みこみ中…</p>
+          <div class="error-box" data-wcs="hidden: soundsError|not">
+            <p data-wcs="textContent: soundsErrorText"></p>
+            <button type="button" data-wcs="onclick: retrySounds">もう一度</button>
+          </div>
+          <ul class="sound-list teacher-sounds">
+            <template data-wcs="for: serverSounds">
+              <li class="sound-item">
+                <span class="name" data-wcs="textContent: .name"></span>
+                <span class="wave" data-wcs="textContent: .waveLabel"></span>
+                <button type="button" class="play-it" data-wcs="onclick: playServerSound">この音で弾く</button>
+                <a data-wcs="attr.href: .href">くわしく</a>
+              </li>
+            </template>
+          </ul>
+        </section>
+        <section aria-labelledby="ms-h">
+          <h2 id="ms-h">自分の音（このコンピューター）</h2>
+          <p data-wcs="hidden: mySounds.length">まだありません。「弾く」のページで音を作って保存できます。</p>
+          <ul class="sound-list my-sounds">
+            <template data-wcs="for: mySounds">
+              <li class="sound-item">
+                <template data-wcs="if: .editing">
+                  <label>新しい名前 <input type="text" maxlength="30" class="rename-input" data-wcs="value: editName"></label>
+                  <button type="button" class="rename-ok" data-wcs="onclick: commitRename">決定</button>
+                  <button type="button" data-wcs="onclick: cancelRename">やめる</button>
+                  <span class="field-error" data-wcs="textContent: editError"></span>
+                </template>
+                <template data-wcs="else:">
+                  <span class="name" data-wcs="textContent: .name"></span>
+                  <span class="wave" data-wcs="textContent: .waveLabel"></span>
+                  <button type="button" class="play-it" data-wcs="onclick: playMySound">この音で弾く</button>
+                  <a data-wcs="attr.href: .href">くわしく</a>
+                  <button type="button" class="rename" data-wcs="onclick: startRename">名前を変える</button>
+                  <button type="button" class="delete" data-wcs="onclick: deleteMySound">消す</button>
+                </template>
+              </li>
+            </template>
+          </ul>
+        </section>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/sounds/:id" name="sound">
+      <wcs-head><title data-wcs="textContent: detailTitle"></title></wcs-head>
+      <section class="page sound-detail">
+        <h1 data-wcs="textContent: detailTitle">音</h1>
+        <p><wcs-link to="/sounds">← 音の一覧へ</wcs-link></p>
+        <p class="loading" data-wcs="hidden: detailState|ne('loading')">読みこみ中…</p>
+        <p data-wcs="hidden: detailState|ne('missing')">その音は見つかりません。</p>
+        <div class="error-box" data-wcs="hidden: detailState|ne('error')">
+          <p data-wcs="textContent: detailErrorText"></p>
+          <button type="button" data-wcs="onclick: retryDetail">もう一度</button>
+        </div>
+        <div data-wcs="hidden: detailState|ne('ready')">
+          <p class="owner" data-wcs="textContent: detail.owner"></p>
+          <table class="values">
+            <tbody>
+              <template data-wcs="for: detailRows">
+                <tr><th scope="row" data-wcs="textContent: .label"></th><td data-wcs="textContent: .value"></td></tr>
+              </template>
+            </tbody>
+          </table>
+          <button type="button" class="play-it" data-wcs="onclick: playDetail">この音で弾く</button>
+        </div>
+      </section>
+    </wcs-route>
+
+    <!-- ================= 練習 ================= -->
+    <wcs-route path="/practice" name="practice">
+      <wcs-head><title>練習 — 音楽室のキーボード</title></wcs-head>
+      <section class="page practice">
+        <h1>練習</h1>
+        <section class="metronome" aria-labelledby="mt-h">
+          <h2 id="mt-h">メトロノーム</h2>
+          <div class="control">
+            <label for="bpm">テンポ（BPM）</label>
+            <input id="bpm" type="range" min="40" max="208" step="1" data-wcs="valueAsNumber: bpm">
+            <input class="bpm-number" type="number" min="40" max="208" step="1" aria-label="テンポの数" data-wcs="valueAsNumber#onchange: bpm">
+          </div>
+          <div class="control">
+            <label for="beats">1小節の拍の数</label>
+            <select id="beats" data-wcs="value|number: beatsPerBar">
+              <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+              <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+            </select>
+          </div>
+          <button type="button" class="metronome-toggle" data-wcs="onclick: toggleMetronome; textContent: metronomeLabel; class.on: metronomeOn"></button>
+          <ol class="beats" aria-label="拍">
+            <template data-wcs="for: beatDots">
+              <li class="beat" data-wcs="class.on: .on; class.accent: .accent; textContent: .n"></li>
+            </template>
+          </ol>
+        </section>
+
+        <section class="sequencer" aria-labelledby="sq-h">
+          <h2 id="sq-h">シーケンサー（16ステップ）</h2>
+          <p>マスをおすと、その音がそのステップで鳴ります。いまの音（「弾く」で作った音）で鳴ります。</p>
+          <button type="button" class="seq-toggle" data-wcs="onclick: toggleSequencer; textContent: seqLabel; class.on: seqOn"></button>
+          <button type="button" data-wcs="onclick: clearSequence">ぜんぶ消す</button>
+          <table class="grid">
+            <thead><tr><th scope="col">音</th>
+              <template data-wcs="for: stepNumbers"><th scope="col" class="step-no" data-wcs="class.current: .current; class.downbeat: .beat; textContent: .n"></th></template>
+            </tr></thead>
+            <tbody>
+              <template data-wcs="for: seqRows">
+                <tr>
+                  <th scope="row" data-wcs="textContent: .label"></th>
+                  <template data-wcs="for: .cells">
+                    <td><button type="button" class="cell" data-wcs="onclick: toggleCell; class.on: .on; class.current: .current; attr.aria-pressed: .on|string; attr.aria-label: seqRows.*.label"></button></td>
+                  </template>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="recorder" aria-labelledby="rc-h">
+          <h2 id="rc-h">演奏を録音する</h2>
+          <p>メトロノームに合わせて弾いたものを録音します（MIDI キーボード、画面、コンピューターのキーボード）。</p>
+          <button type="button" class="rec-toggle" data-wcs="onclick: toggleRecording; textContent: recLabel; class.on: recActive"></button>
+          <span data-wcs="hidden: recActive|not"><span class="rec-count" data-wcs="textContent: recCount"></span> イベント</span>
+          <p class="message" data-wcs="textContent: recMessage"></p>
+          <div class="draft" data-wcs="hidden: draft|not">
+            <p>いま録音した演奏（<span data-wcs="textContent: draftLength"></span>）</p>
+            <button type="button" class="play-draft" data-wcs="onclick: playDraft">聞く</button>
+            <label>名前 <input type="text" maxlength="30" class="take-name" data-wcs="value: draftName"></label>
+            <button type="button" class="save-take" data-wcs="onclick: saveDraft; disabled: takeSaveLoading">サーバーに保存する</button>
+            <span data-wcs="hidden: takeSaveLoading|not">保存中…</span>
+            <span class="field-error" data-wcs="textContent: takeFieldErrors.name"></span>
+            <p class="error take-save-error" data-wcs="textContent: takeSaveErrorText"></p>
+          </div>
+          <p class="message take-saved" data-wcs="textContent: takeSaveMessage"></p>
+          <p class="playing" data-wcs="hidden: pbActive|not"><span data-wcs="textContent: pbLabel"></span> <button type="button" data-wcs="onclick: stopPlayback">再生を止める</button></p>
+          <mr-piano octaves="2" data-wcs="base: pianoBase; letterBase: qwertyBase; pressed: pressedNotes; eventToken.note: screenNote"></mr-piano>
+        </section>
+
+        <section class="takes" aria-labelledby="tk-h">
+          <h2 id="tk-h">保存した演奏</h2>
+          <p class="loading" data-wcs="hidden: takesLoading|not">読みこみ中…</p>
+          <div class="error-box" data-wcs="hidden: takesError|not">
+            <p data-wcs="textContent: takesErrorText"></p>
+            <button type="button" data-wcs="onclick: retryTakes">もう一度</button>
+          </div>
+          <ul class="take-list">
+            <template data-wcs="for: takes">
+              <li class="take-item" data-wcs="class.open: .open">
+                <span class="name" data-wcs="textContent: .name"></span>
+                <span>BPM <span data-wcs="textContent: .bpm"></span></span>
+                <span data-wcs="textContent: .lengthText"></span>
+                <button type="button" class="open-take" data-wcs="onclick: openTakeAt">開く</button>
+              </li>
+            </template>
+          </ul>
+          <div class="opened" data-wcs="hidden: openTakeId|not">
+            <p class="loading" data-wcs="hidden: openTakeLoading|not">読みこみ中…</p>
+            <div class="error-box" data-wcs="hidden: openTakeError|not">
+              <p data-wcs="textContent: openTakeErrorText"></p>
+              <button type="button" data-wcs="onclick: retryOpenTake">もう一度</button>
+            </div>
+            <div data-wcs="hidden: openedTake|not">
+              <p>開いている演奏: <strong data-wcs="textContent: openedTake.name"></strong>（BPM <span data-wcs="textContent: openedTake.bpm"></span>）</p>
+              <button type="button" class="play-take" data-wcs="onclick: playOpenedTake">再生する</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </wcs-route>
+
+    <!-- ================= 設定 ================= -->
+    <wcs-route path="/settings" name="settings">
+      <wcs-head><title>設定 — 音楽室のキーボード</title></wcs-head>
+      <section class="page settings">
+        <h1>設定</h1>
+        <p>設定はこのコンピューターに記録されます。</p>
+        <section class="midi-area" aria-labelledby="sm-h">
+          <h2 id="sm-h">MIDI</h2>
+          <p class="midi-status" data-wcs="textContent: midiStatus"></p>
+          <button type="button" data-wcs="onclick: connectMidi; hidden: midiCanAsk|not">MIDI キーボードをつなぐ</button>
+          <div class="control">
+            <label for="midi-in">MIDI 入力</label>
+            <select id="midi-in" data-wcs="value: settings.midiInput; disabled: midiGranted|not">
+              <option value="">つながっているすべてのキーボード</option>
+              <template data-wcs="for: midiInputs"><option data-wcs="value: .id; textContent: .label"></option></template>
+            </select>
+          </div>
+          <div class="control">
+            <label for="midi-out">MIDI 出力（音源モジュールへ送る）</label>
+            <select id="midi-out" data-wcs="value: settings.midiOutput; disabled: midiGranted|not">
+              <option value="">送らない</option>
+              <template data-wcs="for: midiOutputs"><option data-wcs="value: .id; textContent: .label"></option></template>
+            </select>
+          </div>
+        </section>
+        <section aria-labelledby="sk-h">
+          <h2 id="sk-h">キーボードと音</h2>
+          <p><label><input type="checkbox" class="qwerty-toggle" data-wcs="checked: settings.qwerty"> コンピューターのキーボードで弾く</label></p>
+          <div class="control">
+            <label for="s-master">全体の音量</label>
+            <input id="s-master" type="range" min="0" max="1" step="0.01" data-wcs="valueAsNumber: settings.masterVolume">
+            <output data-wcs="textContent: masterVolumePercent"></output>%
+          </div>
+          <p><label><input type="checkbox" class="click-toggle" data-wcs="checked: settings.click"> メトロノームのクリック音を鳴らす</label></p>
+        </section>
+      </section>
+    </wcs-route>
+
+    <wcs-route fallback name="notfound">
+      <wcs-head><title>ページが見つかりません — 音楽室のキーボード</title></wcs-head>
+      <section class="page">
+        <h1>ページが見つかりません</h1>
+        <p><wcs-link to="/play">弾くページへ</wcs-link></p>
+      </section>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+</main>
+</body>
+</html>

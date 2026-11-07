@@ -1,0 +1,17 @@
+{
+  "name": "wcstack-music-room",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a junior high school music room's practice keyboard — <wcs-midi> × state × <wcs-audio> (an event token into a command token), a sound in the URL's query, structural attributes × bindings, the browser's sound rule × the first gesture, a timer × the audio clock, a stored sound older than the app, the limiter × the patch's level.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/server": "^4.17.0",
+    "@wcstack/state": "^4.17.0",
+    "@wcstack/testing": "^4.17.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^4.1.12"
+  }
+}
