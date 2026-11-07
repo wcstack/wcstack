@@ -96,7 +96,8 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.ModifierValue]: (key, value) => `Invalid ${key} modifier value "${value}".`,
   [M.EventInitNone]: () => "Event bindings only allow init=none.",
   [M.InitUnsupported]: (type, init) => `Binding type "${type}" does not support init=${init}.`,
-  [M.MemberUndeclared]: (name) => `Property "${name}" is not declared by wcBindable.`,
+  // (no code of its own hundred: the code lint reports for the same binding is written here; the core passes the tag)
+  [M.MemberUndeclared]: (name, tag) => `[wcs/tag-member-unknown] "${name}" is not a wcBindable member of <${tag}>.`,
   [M.InitIncompatible]: (init, name) => `init=${init} is incompatible with wcBindable member "${name}".`,
   [M.SyncConnectNeedsOutput]: (name) => `sync=connect requires observable property "${name}".`,
   [M.OptionInvalid]: (where, key) => `${where}: "${key}" is not one of its options, or not of the option's type.${where === "bootstrapState" && MOVED.includes(key) ? " 4.0 moved it to the state's $behavior." : ""}`,

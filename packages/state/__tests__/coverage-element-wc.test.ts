@@ -279,7 +279,7 @@ describe("初期同期の権限（#init= / #sync=）", () => {
       [`<${input} data-wcs="label#init=element: st"></${input}>`, M.InitIncompatible, '"element" "label"'],
       [`<${input} data-wcs="label#init=auto: st"></${input}>`, M.InitIncompatible, '"auto" "label"'],
       [`<${input} data-wcs="label#sync=connect: st"></${input}>`, M.SyncConnectNeedsOutput, '"label"'],
-      [`<${both} data-wcs="title: st"></${both}>`, M.MemberUndeclared, '"title"'],
+      [`<${both} data-wcs="title: st"></${both}>`, M.MemberUndeclared, `"title" "${both}"`],
       [`<button data-wcs="onclick#init=state: go"></button>`, M.EventInitNone, ""],
       [`<input data-wcs="value#foo=1: st">`, M.ModifierUnknown, '"foo" "foo=1"'],
       [`<input data-wcs="value#init=none,init=state: st">`, M.ModifierTwice, '"init"'],

@@ -61,7 +61,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.ModifierValue, ["sync", "later"], 'Invalid sync modifier value "later".'],
   [M.EventInitNone, [], "Event bindings only allow init=none."],
   [M.InitUnsupported, ["radio", "element"], 'Binding type "radio" does not support init=element.'],
-  [M.MemberUndeclared, ["title"], 'Property "title" is not declared by wcBindable.'],
+  [M.MemberUndeclared, ["title", "x-el"], '[wcs/tag-member-unknown] "title" is not a wcBindable member of <x-el>.'],
   [M.InitIncompatible, ["auto", "status"], 'init=auto is incompatible with wcBindable member "status".'],
   [M.SyncConnectNeedsOutput, ["label"], 'sync=connect requires observable property "label".'],
   [M.RenderChain, [], `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`],
