@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { unsupportedTypeScript, unsupportedTypeScriptMessage } from "../src/typescriptSupport";
+import { typeScriptSupport, unsupportedTscMessage, unsupportedTypeScript, unsupportedTypeScriptMessage } from "../src/typescriptSupport";
 
 // TypeScript 7 の `typescript` が公開するのは `{ version, versionMajorMinor }` だけ（コンパイラ API も enum も無い）。
 vi.mock("typescript", () => ({ default: { version: "7.0.2", versionMajorMinor: "7.0" } }));
@@ -17,7 +17,29 @@ describe("unsupportedTypeScript", () => {
 
   it("文言は版と入れ直す版を名指しする", () => {
     expect(unsupportedTypeScriptMessage("7.0.2")).toBe(
-      "@wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript 7.0.2, which has no JavaScript compiler API: npm i -D typescript@6",
+      "@wcstack/typescript reads state files with the JavaScript compiler API of TypeScript 5 or 6, and the project has TypeScript 7.0.2, which has none: npm i -D typescript@6",
+    );
+  });
+});
+
+describe("typeScriptSupport — wcs-tsc の振り分け", () => {
+  it("5・6 は API、7.0 は断り、7.1 以降（プレリリース込み）は content mapper", () => {
+    expect(typeScriptSupport("5.0.4")).toBe("api");
+    expect(typeScriptSupport("6.0.3")).toBe("api");
+    expect(typeScriptSupport("7.0.2")).toBe("unsupported");
+    expect(typeScriptSupport("7.0.1-rc")).toBe("unsupported");
+    expect(typeScriptSupport("7.1.0-beta")).toBe("content-mapper");
+    expect(typeScriptSupport("7.1.0-dev.20261023.1")).toBe("content-mapper");
+    expect(typeScriptSupport("7.2.0")).toBe("content-mapper");
+    expect(typeScriptSupport("8.0.0")).toBe("content-mapper");
+    // 読めない版は API として進め、その先で typescript が無いと言う
+    expect(typeScriptSupport(undefined)).toBe("api");
+    expect(typeScriptSupport("next")).toBe("api");
+  });
+
+  it("7.0 の断りは 7.1 と 6 を名指しする", () => {
+    expect(unsupportedTscMessage("7.0.2")).toBe(
+      "the project has TypeScript 7.0.2, which has neither a JavaScript compiler API nor content mappers; wcs-tsc needs TypeScript 5 or 6, or 7.1 and later: npm i -D typescript@^7.1 (or typescript@6)",
     );
   });
 });

@@ -58,8 +58,9 @@ function runBin(dir: string, args: string[]): { status: number | null; stdout: s
 describe("parseTscArgs", () => {
   it("自前の 2 オプションだけを取り、残りは tsc に渡す", () => {
     const a = parseTscArgs(["--url-imports=error", "--wcs-defaults", "-p", "tsconfig.json", "--noEmit"]);
-    expect(a).toMatchObject({ urlImports: "error", wcsDefaults: true, tscArgs: ["-p", "tsconfig.json", "--noEmit"], invalid: [] });
-    expect(parseTscArgs([]).urlImports).toBe("any");
+    expect(a).toMatchObject({ urlImports: "error", urlImportsExplicit: true, wcsDefaults: true, tscArgs: ["-p", "tsconfig.json", "--noEmit"], invalid: [] });
+    expect(parseTscArgs([])).toMatchObject({ urlImports: "any", urlImportsExplicit: false });
+    expect(parseTscArgs(["--url-imports=any"]).urlImportsExplicit).toBe(true);
     expect(parseTscArgs(["--url-imports=maybe"]).invalid).toEqual(["--url-imports=maybe"]);
     expect(parseTscArgs(["--wcs-help"]).help).toBe(true);
     expect(parseTscArgs(["--wcs-version"]).version).toBe(true);
@@ -175,14 +176,14 @@ describe("main — プロセス内（runTsc を差し替え）", () => {
     expect(noTs.stderr).toContain("npm i -D typescript@6");
   });
 
-  it("TypeScript 7 なら 2（版を名指しし 5 か 6 を案内。Volar より先に言う）", () => {
+  it("TypeScript 7.0 なら 2（版を名指しし 7.1 か 6 を案内。Volar より先に言う）", () => {
     const fakePackage = join(tmp.dir, "ts7", "typescript", "package.json");
     const ts7 = run([], tmp.dir, {
       resolve: (id, cwd) => (id === "typescript/package.json" ? fakePackage : id.startsWith("@volar/") ? undefined : resolveFromProject(id, cwd)),
       load: (p) => (p === fakePackage ? { version: "7.0.2" } : realRequire(p)),
     });
     expect(ts7.code).toBe(2);
-    expect(ts7.stderr).toBe("wcs-tsc: @wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript 7.0.2, which has no JavaScript compiler API: npm i -D typescript@6\n");
+    expect(ts7.stderr).toBe("wcs-tsc: the project has TypeScript 7.0.2, which has neither a JavaScript compiler API nor content mappers; wcs-tsc needs TypeScript 5 or 6, or 7.1 and later: npm i -D typescript@^7.1 (or typescript@6)\n");
   });
 
   it("runTsc に .html 拡張・tsc モードの plugin・URL import の ambient 宣言を渡し、argv を組み立て、後始末する", () => {

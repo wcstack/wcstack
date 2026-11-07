@@ -14,7 +14,7 @@ npx wcs-schema emit src/state.ts          # ./wcstack.manifest.json を書く
 npx wcs-validate --strict index.html      # typo は error に、偽警告は消える
 ```
 
-ランタイム依存ゼロ。`typescript` は peer dependency — プロジェクト自身のコンパイラを使います。TypeScript 5 か 6 が必要です: TypeScript 7 は、どちらのコマンドも呼べる JavaScript のコンパイラ API を公開しません（`typescript` が公開するのは版だけで、`typescript/lib/tsc.js` もありません）。
+ランタイム依存ゼロ。`typescript` は peer dependency — プロジェクト自身のコンパイラを使います。`wcs-schema` には TypeScript 5 か 6 が必要です: TypeScript 7 は JavaScript のコンパイラ API を公開しません（`typescript` が公開するのは版だけで、`typescript/lib/tsc.js` もありません）。`wcs-tsc` は 5 か 6 で動き、4.8（未リリース）からは content mapper を通して 7.1 以降でも動きます（後述）。
 
 ## コマンド
 
@@ -76,7 +76,34 @@ npx wcs-tsc --noEmit
 | `--wcs-defaults` | プロジェクトの tsconfig に `**/*.html` を覆う `include`・`noImplicitThis`・`allowJs`・`checkJs` が無ければ、元を extends してそれらを足した一時 config で実行する（無指定なら警告だけで HTML が検査されないことがある） |
 | それ以外 | tsc にそのまま渡す（`-p`・`--noEmit` …） |
 
-exit code は tsc のもの（`0` クリーン・診断があれば非ゼロ）。`typescript` / `@volar/typescript` が解決できないときと不正なオプションは `2`。1 ページに複数の `<wcs-state>` があれば 1 本の仮想モジュールに合成（import は巻き上げ・各ブロックは自分のスコープ）し、インライン state の無いページは空のモジュールになります。仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当てます。
+exit code は tsc のもの（`0` クリーン・診断があれば非ゼロ）。`typescript` / `@volar/typescript` が解決できないときと不正なオプションは `2`。1 ページに複数の `<wcs-state>` があれば 1 本の仮想モジュールに合成（import は巻き上げ・各ブロックは自分のスコープ）し、インライン state の無いページは空のモジュールになります。TypeScript 5 と 6 での仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当てます。7.1 以降では、次の content mapper です。
+
+### TypeScript 7.1: content mapper（experimental）
+
+4.8（未リリース）から、このパッケージは [content mapper](https://github.com/wcstack/wcstack/blob/main/docs/typescript-content-mapper.ja.md) でもあります — TypeScript 7.1 が知らない種類のファイルを読む仕組みです。`tsconfig.json` で名指せば、TypeScript 自身の `tsc` が、`wcs-tsc` と同じ仮想コードで各 `<wcs-state>` のブロックを検査し、HTML の位置で報告します:
+
+```jsonc
+{
+  "compilerOptions": { "noEmit": true },
+  "contentMappers": [
+    { "package": "@wcstack/typescript", "extensions": [".html"] }
+  ]
+}
+```
+
+```bash
+npm i -D @wcstack/typescript typescript@^7.1
+npx tsc --runExternalCode          # TypeScript はこのフラグがあるときだけ mapper を動かす
+```
+
+| オプション（項目の `"options"`） | 説明 |
+|---|---|
+| `urlImports`: `"any"`（既定）/ `"error"` | `wcs-tsc --url-imports` と同じ: `http(s)://` のモジュール import を `any` にするか、それぞれ TS2307 にする |
+| `stateTagName`（既定 `"wcs-state"`） | state を持つ要素。VS Code 拡張の `wcstack.stateTagName` と同じ |
+
+- **7.1 以降の `wcs-tsc`** は tsconfig を変えなくてよい: プロジェクトの `tsc --runExternalCode` を動かし、設定が mapper を名指していなければ、設定の隣に一時の設定（`.wcs-tsc.<名前>`、終われば消す）を置いて mapper を足す。継承している他の content mapper は保つ。`--wcs-defaults` と警告は上と同じように働く（7.1 では、`.html` が program に入っていることと `noImplicitThis` が有効なことを確かめる）。`@wcstack/typescript` は tsconfig のある場所に入っている必要がある — TypeScript はそこから mapper を読む。Volar は要らない。TypeScript 7.0 には content mapper が無く、断る。
+- **エディタ。** VS Code に TypeScript 7 の拡張があり、ワークスペースを信頼していると、wcstack の拡張の隣で TypeScript のサーバーも `.html` に答える。どちらか一方にするには `"js/ts.contentMappers.enabled": false` を設定する。
+- `wcs-schema` は今までどおり TypeScript 5 か 6 が要る。
 
 ## 生成される schema の中身
 

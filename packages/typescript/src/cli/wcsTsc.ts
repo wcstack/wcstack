@@ -6,9 +6,11 @@
  * Every `<wcs-state>` inline `<script type="module">` is mapped through the same
  * Volar language plugin the VS Code extension uses (dist/tsc-core.cjs, built from
  * vscode-wcs), so `this.coutn++` fails CI with a `file.html(line,col): error TS2339`
- * exactly where the editor underlines it. The mechanism is vue-tsc's:
- * `@volar/typescript`'s `runTsc` patches the `typescript/lib/tsc.js` the project
- * already has to accept `.html` and to build the program through the plugin.
+ * exactly where the editor underlines it. On TypeScript 5 and 6 the mechanism is
+ * vue-tsc's: `@volar/typescript`'s `runTsc` patches the `typescript/lib/tsc.js` the
+ * project already has to accept `.html` and to build the program through the plugin.
+ * On TypeScript 7.1 and later it is the content mapper this package declares, run by
+ * the project's own `tsc --runExternalCode` (wcsTscMapper.ts).
  *
  * Options
  *   --url-imports=any    (default) treat every `https://` / `http://` module import
@@ -21,21 +23,25 @@
  *                        `checkJs`), run with a temporary config that extends it and
  *                        adds them, instead of only warning.
  *
- * Peers: `typescript` (required, 5 or 6 — TypeScript 7 has no lib/tsc.js, see
- * typescriptSupport.ts), `@volar/typescript` + `@volar/language-core` (optional —
- * only this command needs them). Resolved from the project first, then from this
- * package's own location.
+ * Peers: `typescript` (required: 5 or 6, or 7.1 and later — 7.0 has neither lib/tsc.js
+ * nor content mappers, see typescriptSupport.ts), `@volar/typescript` +
+ * `@volar/language-core` (optional — only this command needs them, and only on 5 / 6).
+ * Resolved from the project first, then from this package's own location.
  *
- * Exit codes: tsc's own (0 clean / 1 type errors / 2 usage) — plus 2 when the peers
- * are missing or unsupported, or the arguments are invalid.
+ * Exit codes: tsc's own (0 clean; 1 or 2 with errors — tsc gives 2 for type errors
+ * when it does not skip emitting, `--noEmit` included) — plus 2 when the peers are
+ * missing or unsupported, or the arguments are invalid. A refusal and a type error
+ * can both be 2; the message on stderr tells them apart.
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { unsupportedTypeScript, unsupportedTypeScriptMessage } from "../typescriptSupport.js";
+import { typeScriptSupport, unsupportedTscMessage } from "../typescriptSupport.js";
+import { argsWithProject, runWithContentMapper, type RunCommand } from "./wcsTscMapper.js";
 import { VERSION } from "../version.js";
 
 export interface TscIo {
@@ -46,6 +52,8 @@ export interface TscIo {
 
 export interface TscArgs {
   readonly urlImports: "any" | "error";
+  /** `--url-imports` was given (on 7.1, a tsconfig that configures the mapper wins over it). */
+  readonly urlImportsExplicit: boolean;
   readonly wcsDefaults: boolean;
   readonly help: boolean;
   readonly version: boolean;
@@ -60,6 +68,7 @@ const USAGE =
 
 export function parseTscArgs(argv: readonly string[]): TscArgs {
   let urlImports: TscArgs["urlImports"] = "any";
+  let urlImportsExplicit = false;
   let wcsDefaults = false;
   let help = false;
   let version = false;
@@ -68,14 +77,16 @@ export function parseTscArgs(argv: readonly string[]): TscArgs {
   for (const arg of argv) {
     if (arg.startsWith("--url-imports=")) {
       const value = arg.slice("--url-imports=".length);
-      if (value === "any" || value === "error") urlImports = value;
-      else invalid.push(arg);
+      if (value === "any" || value === "error") {
+        urlImports = value;
+        urlImportsExplicit = true;
+      } else invalid.push(arg);
     } else if (arg === "--wcs-defaults") wcsDefaults = true;
     else if (arg === "--wcs-help") help = true;
     else if (arg === "--wcs-version") version = true;
     else tscArgs.push(arg);
   }
-  return { urlImports, wcsDefaults, help, version, tscArgs, invalid };
+  return { urlImports, urlImportsExplicit, wcsDefaults, help, version, tscArgs, invalid };
 }
 
 /** Resolve a module from the project (cwd) first, then from this package. */
@@ -208,18 +219,31 @@ function tscCoreCandidates(fromUrl: string): string[] {
 export interface MainDeps {
   readonly resolve: (id: string, cwd: string) => string | undefined;
   readonly load: (path: string) => unknown;
+  /** Runs the project's tsc on TypeScript 7.1 and later (`node <bin> ...args`). */
+  readonly run?: RunCommand;
 }
 
-/* v8 ignore start -- the real resolver / loader; tests inject fakes to keep tsc from exiting the process */
+/* v8 ignore start -- the real resolver / loader / runner; tests inject fakes to keep tsc from exiting the process */
+const defaultRun: RunCommand = (file, args, options) => {
+  const result = spawnSync(process.execPath, [file, ...args], {
+    cwd: options.cwd,
+    encoding: "utf8",
+    stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
+  });
+  return { status: result.status, stdout: result.stdout ?? "" };
+};
+
 const defaultDeps: MainDeps = {
   resolve: (id, cwd) => resolveFromProject(id, cwd),
   load: (path) => createRequire(import.meta.url)(path),
+  run: defaultRun,
 };
 /* v8 ignore stop */
 
 /**
- * Prepare and run. Returns an exit code only on the paths that do not reach tsc;
- * tsc itself calls `process.exit` with its own code.
+ * Prepare and run. On TypeScript 5 / 6, returns an exit code only on the paths that do
+ * not reach tsc; tsc itself calls `process.exit` with its own code. On 7.1 and later,
+ * returns tsc's exit code.
  */
 export function main(argv: readonly string[], io: TscIo = defaultIo(), deps: MainDeps = defaultDeps): number {
   const args = parseTscArgs(argv);
@@ -237,14 +261,26 @@ export function main(argv: readonly string[], io: TscIo = defaultIo(), deps: Mai
   }
   const cwd = io.cwd();
 
-  // TypeScript 7 resolves as `typescript` but has no lib/tsc.js: name it rather than say typescript is missing.
+  // TypeScript 7 resolves as `typescript` but has no lib/tsc.js: 7.1 and later take the
+  // content mapper, and 7.0 is named rather than reported as typescript missing.
   const tsPackagePath = deps.resolve("typescript/package.json", cwd);
-  const unsupported = tsPackagePath === undefined
-    ? undefined
-    : unsupportedTypeScript((deps.load(tsPackagePath) as { version?: string }).version);
-  if (unsupported !== undefined) {
-    io.stderr(`wcs-tsc: ${unsupportedTypeScriptMessage(unsupported)}\n`);
+  const tsPackage = tsPackagePath === undefined ? undefined : (deps.load(tsPackagePath) as { version?: string; bin?: unknown });
+  const version = tsPackage?.version ?? "";
+  const support = typeScriptSupport(version);
+  if (support === "unsupported") {
+    io.stderr(`wcs-tsc: ${unsupportedTscMessage(version)}\n`);
     return 2;
+  }
+  if (support === "content-mapper") {
+    return runWithContentMapper({
+      version,
+      tsPackagePath: tsPackagePath as string,
+      tsPackage: tsPackage as { bin?: unknown },
+      args,
+      project: findProjectConfig(args.tscArgs, cwd),
+      io,
+      run: deps.run ?? defaultRun,
+    });
   }
 
   const runTscPath = deps.resolve("@volar/typescript/lib/quickstart/runTsc.js", cwd);
@@ -266,7 +302,7 @@ export function main(argv: readonly string[], io: TscIo = defaultIo(), deps: Mai
   }
 
   const ts = deps.load(tsApiPath) as TypeScriptLike;
-  const tscArgs = [...args.tscArgs];
+  let tscArgs = [...args.tscArgs];
   const temporaries: string[] = [];
 
   const project = findProjectConfig(tscArgs, cwd);
@@ -276,8 +312,7 @@ export function main(argv: readonly string[], io: TscIo = defaultIo(), deps: Mai
       if (args.wcsDefaults) {
         const tempConfig = writeDefaultsConfig(project.path, audit);
         temporaries.push(tempConfig);
-        if (project.index === -1) tscArgs.push("-p", tempConfig);
-        else tscArgs[project.index] = tempConfig;
+        tscArgs = argsWithProject(tscArgs, project.index, tempConfig);
         io.stderr(`wcs-tsc: running with a temporary config that adds ${audit.missing.join(", ")} (--wcs-defaults)\n`);
       } else {
         io.stderr(`wcs-tsc: ${project.path} is missing ${audit.missing.join(", ")} — HTML may not be checked; pass --wcs-defaults or add them\n`);

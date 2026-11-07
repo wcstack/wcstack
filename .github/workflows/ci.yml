@@ -250,6 +250,16 @@ jobs:
         run: |
           set -euo pipefail
           node packages/typescript/dist/wcs-tsc.mjs -p examples/tsconfig.wcs-tsc.json
+      # The TypeScript 7.1 content mapper (@wcstack/typescript's typescript.contentMapper)
+      # against wcs-tsc on 5.9 over every example page — the same diagnostics at the same
+      # positions — and `tsc --lsp` answering a page only with runExternalCode.
+      # Experimental and NON-GATING while TypeScript 7.1 is not stable
+      # (docs/typescript-content-mapper.md §9); the fixture e2e in the step above gates.
+      - name: Compare the TypeScript 7.1 content mapper with wcs-tsc over examples (experimental, non-gating)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node packages/typescript/scripts/content-mapper-parity.mjs
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail
