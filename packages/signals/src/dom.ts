@@ -201,11 +201,11 @@ function bindProp(el: Element, key: string, value: unknown): void {
   // `onadd-to-cart` → the name as written ("click", "add-to-cart" — data-wcs's `on<event>:`
   // form). A lowercase `onclick` used to fall through to the reactive path, so the handler
   // ran at render and never on click (docs/seam-apps.md, signals-shop).
-  const c2 = key.charCodeAt(2);
-  // `on` and a letter or `-` (no regex per prop: it ran twice for every prop of every element)
-  if (key.charCodeAt(0) === 111 && key.charCodeAt(1) === 110 &&
-    ((c2 >= 65 && c2 <= 90) || (c2 >= 97 && c2 <= 122) || c2 === 45) && typeof value === "function") {
-    const type = c2 >= 65 && c2 <= 90 ? key.slice(2).toLowerCase() : key.slice(2);
+  // `on` and a letter or `-` (no regex per prop: it ran twice for every prop of every element).
+  // `| 32` folds A-Z onto a-z and leaves "-" (45) as it is.
+  const c2 = key.charCodeAt(2) | 32;
+  if (key[0] === "o" && key[1] === "n" && ((c2 >= 97 && c2 <= 122) || c2 === 45) && typeof value === "function") {
+    const type = key.charCodeAt(2) < 91 ? key.slice(2).toLowerCase() : key.slice(2);
     const listener = value as EventListener;
     el.addEventListener(type, listener);
     // Remove the listener when the owning scope is torn down while the element is still in the
@@ -417,43 +417,37 @@ function insertReactive(parent: Node, accessor: () => unknown): void {
   }
   // The position: the first render's Text node while the value stays text (no anchor comment per text
   // child — most reactive children are text); an anchor comment from the first render of nodes on.
+  // Until the anchor exists, `current` is empty (before the first run) or that one Text node.
   let anchor: Comment | null = null;
   let current: Node[] = [];
-  let first = true;
 
   effect(() => {
     const value = accessor();
-    if (first && (typeof value === "string" || typeof value === "number")) {
-      first = false;
-      const text = document.createTextNode(String(value));
-      parent.appendChild(text);
-      current = [text];
-      return;
-    }
-    // FAST PATH: a plain text result that replaces a plain text result. The common
-    // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
-    // wholesale path would remove the old Text node, allocate a new one, and re-insert
-    // it on every change. When BOTH the previous and next renders are a single Text
-    // node, mutate the existing node's `data` in place instead — no allocation, no
-    // remove/insert, and the same DOM node identity is preserved across updates.
-    if ((typeof value === "string" || typeof value === "number") && current.length === 1) {
-      const node = current[0];
-      if (node.nodeType === 3 /* TEXT_NODE */) {
-        (node as Text).data = String(value);
+    if (typeof value === "string" || typeof value === "number") {
+      if (anchor === null && current.length === 0) {
+        current = [parent.appendChild(document.createTextNode(String(value)))];
+        return;
+      }
+      // FAST PATH: a plain text result that replaces a plain text result. The common
+      // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
+      // wholesale path would remove the old Text node, allocate a new one, and re-insert
+      // it on every change. When BOTH the previous and next renders are a single Text
+      // node, mutate the existing node's `data` in place instead — no allocation, no
+      // remove/insert, and the same DOM node identity is preserved across updates.
+      if (current.length === 1 && current[0].nodeType === 3 /* TEXT_NODE */) {
+        (current[0] as Text).data = String(value);
         return;
       }
     }
     if (anchor === null) {
+      // the first render of nodes: at the end, or right after the text rendered until now
       anchor = document.createComment("");
-      if (first) {
+      if (current.length === 0) {
         parent.appendChild(anchor);
       } else {
-        // text until now: the anchor goes where the text is
-        const at = current[0];
-        at.parentNode?.insertBefore(anchor, at.nextSibling);
+        (current[0] as ChildNode).after(anchor);
       }
     }
-    first = false;
     const next = toNodes(value);
     for (const node of current) {
       node.parentNode?.removeChild(node);

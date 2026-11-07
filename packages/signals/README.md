@@ -498,8 +498,8 @@ Zero runtime dependencies. Measured gzipped sizes of the minified bundles:
 
 | Entry | gzip |
 |---|---|
-| Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 3.1 KB** |
-| `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 3.8 KB** |
+| Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 3.5 KB** |
+| `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 4.0 KB** |
 
 Both published entries import the **one** shared core chunk, so a page that loads `dist/` as files pays for the core only once — a transforming ESM CDN endpoint (esm.run) instead inlines a copy per entry, which is why a buildless page should map only `/dom` (see [Buildless](#buildless-import-maps)). `package.json` declares `"sideEffects": false`, so a bundler tree-shakes away anything you don't import.
 
