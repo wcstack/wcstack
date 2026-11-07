@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.14.0 — 2026-11-07
+
+`@wcstack/state` 4.17.0 のパーサと manifest、4.17.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.17.0・`@wcstack/typescript` 4.17.0 と同じ判定）。新しい規則 3 つと、`wcs/path-readonly` の範囲の広がり、誤報の直しで minor。
 
 - **getter・setter・メソッドが書くものを、本体ごとの書き込み集合として読む**（docs/script-write-checks.ja.md）— 代入・複合代入・増減・`$setAll`・`$update`・値を渡す `$resolve` と、呼ぶメソッドの書き込み。リポジトリのページはどれも報告されない。
   - **getter の評価中の書き込みを告げる**（`wcs/getter-write`、error、新規）— 本体の中、または getter が呼ぶメソッドの中（呼び出しに、メソッドを名指して）。ランタイムは評価のたびに投げる。入れ子の関数の中（getter が返すハンドラ・後で走るコールバック）は数えない。
