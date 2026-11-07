@@ -38,6 +38,12 @@
     <wcs-analyser id="scope" master></wcs-analyser>
   </wcs-audio>
 
+  <!-- A hint bound to the sound's state, above the controls, as the music-room seam app had it: it hides
+       when the context runs, and what is below moves up. 4.17.0 built the graph inside the first
+       pointerdown, so the hint hid before the button went up and the page's first click landed on
+       another element; since 4.18 the graph is built after that gesture. -->
+  <p id="hint">Click anywhere or press a key to start the sound.</p>
+  <p><label><input id="option" type="checkbox"> an option</label></p>
   <button id="key" type="button">C4</button>
 
   <script type="module" src="/packages/audio/dist/auto.min.js"></script>
@@ -46,6 +52,8 @@
     const key = document.getElementById("key");
     key.addEventListener("pointerdown", () => synth.noteOn(60, 1));
     key.addEventListener("pointerup", () => synth.noteOff(60));
+    const hint = document.getElementById("hint");
+    synth.addEventListener("wcs-audio:statechange", () => { hint.hidden = synth.running; });
     await customElements.whenDefined("wcs-audio");
     window.__audioGestureReady = true;
   </script>

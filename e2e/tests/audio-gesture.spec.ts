@@ -75,6 +75,43 @@ test.describe("e2e/fixtures/audio-gesture", () => {
     expect(messages).toEqual([]);
   });
 
+  // 4.17.0 は最初の pointerdown の中でグラフ（と context）を作ったので、running で消えるヒントがボタンの上がる前に
+  // 消え、下の要素が上へずれて、ページで最初のクリックが別の要素に落ちた（音楽室の継ぎ目アプリの取り込み）。
+  // 4.18 はそのジェスチャが終わってから作る。ずれるかどうか（context が動き出すか）は出力デバイスによるので、
+  // 届いたことと context ができたことを見る。
+  test("ページで最初のクリックは押した要素に届き、context はそのクリックの後にできる @browsers", async ({ page }) => {
+    const messages = collectAudioContextMessages(page);
+    await page.goto("/e2e/fixtures/audio-gesture/index.html");
+    await page.waitForFunction(() => window.__audioGestureReady === true);
+    const created = () => page.evaluate(() => (globalThis as Record<symbol, unknown>)[Symbol.for("@wcstack/audio.context")] !== undefined);
+    await page.evaluate(() => {
+      const option = document.getElementById("option")!;
+      (window as any).__createdAtClick = null;
+      option.addEventListener("click", () => {
+        (window as any).__createdAtClick = (globalThis as Record<symbol, unknown>)[Symbol.for("@wcstack/audio.context")] !== undefined;
+      });
+    });
+
+    await page.locator("#option").click();
+    await expect(page.locator("#option")).toBeChecked();
+    expect(await page.evaluate(() => (window as any).__createdAtClick)).toBe(false);
+    await expect.poll(created).toBe(true);
+    expect(messages).toEqual([]);
+  });
+
+  test("人の押し方（押して 150 ms で離す）でも最初のクリックは押した要素に届く", async ({ page }) => {
+    await page.goto("/e2e/fixtures/audio-gesture/index.html");
+    await page.waitForFunction(() => window.__audioGestureReady === true);
+    const box = (await page.locator("#option").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(150);
+    await page.mouse.up();
+    await expect(page.locator("#option")).toBeChecked();
+    // Chromium はデバイスが無くても動き出すので、ヒントはクリックの後で消える
+    await expect(page.locator("#hint")).toBeHidden();
+  });
+
   // 鳴ったことまで確かめるのは Chromium だけ（@browsers を付けないので Firefox の project では走らない）。
   //
   // Firefox は出力デバイスの無い環境では AudioContext を開始しない。CI の Linux ランナーで

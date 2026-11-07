@@ -22,6 +22,9 @@ const mount = async (html: string): Promise<WcsAudio> => {
 
 /** Let the microtask-coalesced rebuild run. */
 const settle = (): Promise<void> => Promise.resolve().then(() => Promise.resolve());
+/** The next task: where a graph that waited for a gesture is built once the gesture ends. */
+const nextTask = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const gesture = (type: string): boolean => document.dispatchEvent(new Event(type));
 
 const record = (target: EventTarget, name: string): any[] => {
   const seen: any[] = [];
@@ -80,6 +83,15 @@ describe("切断は変えたものを publish する（§22）", () => {
 });
 
 describe("既定の context は最初のユーザー操作まで作らない", () => {
+  it("ジェスチャの途中で resume-on-gesture を off にすると、終わっても作らない", async () => {
+    const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    gesture("pointerdown");
+    root.resumeOnGesture = false;
+    gesture("pointerup");
+    await nextTask();
+    expect(constructed).toHaveLength(0);
+  });
+
   const registry = globalThis as unknown as Record<string, unknown>;
   let originalAudio: unknown;
   let constructed: FakeAudioContext[];
@@ -112,31 +124,123 @@ describe("既定の context は最初のユーザー操作まで作らない", (
     expect([root.state, root.running, root.suspended]).toEqual(["suspended", false, true]);
   });
 
-  it("最初のジェスチャで作って resume し、待っていたグラフを組む", async () => {
+  it("最初のジェスチャの終わり（pointerup の次のタスク）で作って resume し、待っていたグラフを組む", async () => {
     const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
-    document.dispatchEvent(new Event("pointerdown"));
+    const states = record(root, "wcs-audio:statechange");
+    gesture("pointerdown");
+    // pointerdown の中では作らない: 作るのも出力が変わるのも、ボタンが上がってクリックが届いた後（music-room）
+    await settle();
+    expect(constructed).toHaveLength(0);
+    expect(states).toEqual([]);
+    gesture("pointerup");
+    expect(constructed).toHaveLength(0);
+    await nextTask();
     expect(constructed).toHaveLength(1);
     await settle();
     expect(root.state).toBe("running");
     expect(constructed[0].nodesOf("osc")).toHaveLength(1);
     // 2 回目以降のジェスチャは作り直さない
-    document.dispatchEvent(new Event("keydown"));
+    gesture("keydown");
+    gesture("pointerdown");
+    gesture("pointerup");
+    await nextTask();
     expect(constructed).toHaveLength(1);
   });
 
-  it("待っている間の構造変更は context を作らず、ジェスチャの時点のマークアップで組む", async () => {
+  it("keydown のジェスチャは次のタスクで作る", async () => {
+    const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    gesture("keydown");
+    expect(constructed).toHaveLength(0);
+    await nextTask();
+    expect(constructed).toHaveLength(1);
+    await settle();
+    expect(root.running).toBe(true);
+  });
+
+  it("切断で document のジェスチャのリスナを外す（切断の中の getRootNode() は要素自身）", async () => {
+    const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    const removed = vi.spyOn(document, "removeEventListener");
+    gesture("pointerdown");
+    root.remove();
+    const types = removed.mock.calls.map((c) => c[0]);
+    removed.mockRestore();
+    expect(types).toEqual(expect.arrayContaining(["pointerdown", "keydown", "pointerup", "pointercancel"]));
+  });
+
+  it("keydown の直後、作る前に外されたら作らない", async () => {
+    const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    gesture("keydown");
+    root.remove();
+    await nextTask();
+    expect(constructed).toHaveLength(0);
+  });
+
+  it("pointercancel で終わったジェスチャでも作る", async () => {
+    await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    gesture("pointerdown");
+    gesture("pointercancel");
+    await nextTask();
+    expect(constructed).toHaveLength(1);
+  });
+
+  it("終わる前に重なったジェスチャでも 1 回だけ作る", async () => {
+    await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    gesture("pointerdown");
+    gesture("keydown");
+    gesture("pointerdown");
+    gesture("pointerup");
+    gesture("pointerup");
+    await nextTask();
+    expect(constructed).toHaveLength(1);
+  });
+
+  it("ジェスチャの途中の noteOn はその場で作り、終わりで作り直さない", async () => {
+    const root = await mount(VOICE_PATCH);
+    gesture("pointerdown");
+    root.noteOn(60, 0.8); // 画面の鍵盤は pointerdown で鳴らす
+    expect(constructed).toHaveLength(1);
+    expect(root.voices).toBe(1);
+    gesture("pointerup");
+    await nextTask();
+    expect(constructed).toHaveLength(1);
+  });
+
+  it("ジェスチャの途中で外されたら作らず、終わりのリスナも残さない", async () => {
+    const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+    gesture("pointerdown");
+    root.remove();
+    gesture("pointerup");
+    await nextTask();
+    expect(constructed).toHaveLength(0);
+    // 戻すと、また最初のジェスチャを待つ
+    document.body.appendChild(root);
+    await settle();
+    expect(constructed).toHaveLength(0);
+    gesture("pointerdown");
+    gesture("pointerup");
+    await nextTask();
+    expect(constructed).toHaveLength(1);
+  });
+
+  it("待っている間の構造変更は context を作らず、ジェスチャの終わりの時点のマークアップで組む", async () => {
     const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
     root.appendChild(document.createElement("wcs-biquad"));
     await settle();
     expect(constructed).toHaveLength(0);
-    document.dispatchEvent(new Event("pointerdown"));
+    gesture("pointerdown");
+    root.appendChild(document.createElement("wcs-delay"));
+    gesture("pointerup");
+    await nextTask();
     expect(constructed[0].nodesOf("osc")).toHaveLength(1);
     expect(constructed[0].nodesOf("biquad")).toHaveLength(1);
+    expect(constructed[0].nodesOf("delay")).toHaveLength(1);
   });
 
   it("resume-on-gesture=off ならジェスチャでは作らず、resume() で作る", async () => {
     const root = await mount(`<wcs-audio resume-on-gesture="off"><wcs-osc></wcs-osc></wcs-audio>`);
-    document.dispatchEvent(new Event("pointerdown"));
+    gesture("pointerdown");
+    gesture("pointerup");
+    await nextTask();
     expect(constructed).toHaveLength(0);
     await root.resume();
     expect(constructed).toHaveLength(1);

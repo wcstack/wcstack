@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/audio`: **the page's first click reaches what was clicked again.** 4.17.0 built a graph that waited for the first gesture inside that gesture's `pointerdown` — creating the `AudioContext` and every node, a few hundred milliseconds in Chromium — and the outputs it published re-rendered the page before the button went up: a hint bound to `running` above the controls hid, the content moved, and the click landed on another element (a button not pressed, a checkbox flipped back; found landing the music-room seam app, [docs/seam-apps.md](./docs/seam-apps.md)). The graph is now built once the gesture ends, after the click; `noteOn()` and `resume()` still build it at once. The gesture listeners also leave the document on disconnect: they stayed, because `getRootNode()` in `disconnectedCallback` is the element itself.
+
 ## [4.17.0] — 2026-11-07
 
 A minor from two pieces of work. A study of what a state's script writes ([docs/script-write-checks.md](./docs/script-write-checks.md)): the lint reads each getter's, setter's and method's writes as one set and joins it with the getters' reads — a getter that writes, a script write of a getter without a setter, setters that write each other, a setter whose writes its getter does not read — and the runtime names them, where it threw `This state is readonly.` or overflowed the stack. And the `music-room` seam app ([docs/seam-apps.md](./docs/seam-apps.md)), a school music room's practice synth, the last app of the second round: `<wcs-audio>`'s "ear protection" limiter let the README's own patch peak at +5 dBFS — it is now a ceiling at -6 dBFS — a `<wcs-midi>` put back by a route stayed dead until a reload, and removed elements left their outputs behind. `@wcstack/state`, `@wcstack/audio`, `@wcstack/midi`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.16.0 with a new version.
