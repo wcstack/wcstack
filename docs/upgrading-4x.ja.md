@@ -352,7 +352,16 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: getter の行の型を `@type` でなく `@returns` で書く、`Array.from(…)` / `[...Array(n).keys()].map(…)` の行を定数への `.map` に書き換える、名前空間の import の定数を名前でもう一度 import する — どれも `wcs/binding-path-missing` や `wcs/path-dynamic-unknown` の誤報を黙らせるためだけのもの。ルートに入るたびに MIDI を要求し直すページの処理。
 
-## 4.17.0 でもまだ要るもの
+### 4.18.0
+
+2026-11-08 — [CHANGELOG](../CHANGELOG.md#4180--2026-11-08)
+
+- `@wcstack/signals`: 所有者を片付けるとき、`h()` は文書にある要素からだけリスナーを外す。文書から外れた要素（消えた `For` の行、作り直したサブツリー、切り離された `SignalsElement` の中身）はリスナーごと回収される。行を消した後に `removeEventListener` を数えていたテストは 0 を見る。そういう要素を持ち続けてスクリプトからイベントを送れば、ハンドラは呼ばれる。値が文字のリアクティブな子の隣には目印のコメントが無いので、`childNodes` を数えていたテストは 1 つ少なく見る。
+- `@wcstack/audio`: 最初の操作を待っていたグラフは、その操作の `pointerdown` の中でなく、操作が終わってから（クリックの後に）組む。`noteOn()` と `resume()` はこれまでどおりその場で組む。何も鳴らさないクリックの直後にルートの context を読んでいたテストは、組まれるのを待つ。
+
+要らなくなった回避策: 4.17.0 で、ページで最初のクリックが押した要素に届くように、`running` に結んだ「音を出すには押してください」のヒントをレイアウトから外す、またはクリックの後で消すこと。
+
+## 4.18.0 でもまだ要るもの
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。

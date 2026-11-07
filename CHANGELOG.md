@@ -6,9 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.18.0] — 2026-11-08
 
-`@wcstack/signals` from a study of why it stayed slow on js-framework-benchmark while `@wcstack/state` became fast ([docs/signals-performance-study.md](./docs/signals-performance-study.md)): lists build, replace and clear with less work, and `selector()` re-runs only the two rows a selection changes.
+A minor from two pieces of work. A study of why `@wcstack/signals` stayed slow on js-framework-benchmark while `@wcstack/state` became fast ([docs/signals-performance-study.md](./docs/signals-performance-study.md)): lists build, replace and clear with less work per row, a listener comes off an element its owner tears down only while the element is still in the document, and `selector()` re-runs only the two rows a selection changes. And the landing of the `music-room` seam app in `examples/` ([docs/seam-apps.md](./docs/seam-apps.md)), which found a 4.17.0 regression: `<wcs-audio>` built its graph inside the page's first `pointerdown`, so a hint bound to `running` hid in the middle of the click and the page's first click landed on another element — the graph is now built once the gesture ends. `@wcstack/signals` and `@wcstack/audio` changed; every other package is 4.17.0 with a new version.
 
 ### Upgrading
 
