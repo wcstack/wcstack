@@ -1645,3 +1645,29 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.17.0 の公開（2026-11-07）
+
+- 中身: minor。2 つの仕事から。
+  - 書き込み集合の検査（[docs/script-write-checks.md](../script-write-checks.md)、著者の決定 3 点）。#623: lint がメソッド・setter・getter の書き込みを本体ごとの集合として読み、getter の読み取りと突き合わせる — `wcs/getter-write`（error）、スクリプトの書き込みへの `wcs/path-readonly`（error）、`wcs/setter-cycle`（自分のパスは error・2 つ以上は warning）、`wcs/setter-unobserved`（warning）。ランタイムは `Engine.refuseWrite(path)` で拒んだ書き込みのパスと評価中の getter を名指し（`[wcs/getter-write]`、core +15 B）、`#2` に `[wcs/path-readonly]`、diagnostics の後付けが setter の呼び出しを囲んで `[wcs/setter-cycle]`（64 段で throw）と `[wcs/setter-unobserved]` を出す（core 0 B）。
+  - 継ぎ目アプリ music-room（2 巡目の最後の 1 本、audio / midi。著者の決定 5 点 — v4-direction §5.13）。作者（入れ子の `claude -p`、4.16.0 固定）は API キーの残高切れで 98 ターンで止まり、再開せず進めた。#626 audio: リミッターを -6 dBFS の天井に（README のパッチが +5 dBFS で割れていた）、`volume` を 0〜1 に、AudioContext を最初の操作で作る、切断で `voices`・`state` を知らせる（§22）、`[wcs/audio-voices-cut]`。#625 midi: 切断で `devices: []`（§22）、許可が granted なら差し戻された要素が要求し直す、Web MIDI の無いところで接続時に `unsupported`。#627 state: `[wcs/input-undefined]`（core 0 B、`Binding.prototype.apply` を包む）、`#38` にタグと `[wcs/tag-member-unknown]`（core +4 B）。#624 lint: getter の `@type`、`Array.from` の行、名前空間の import の要素、`command.focus` の例。#628 記録、#629 目録の audio / midi 6 項目（151 項目）。
+  - 作業は worktree のサブエージェント 4 人（audio・midi・state・lint）。CI で audio の新しい e2e のうち Firefox の「最初のキーで音が鳴る」が落ちた — 出力の無い Linux の Firefox は AudioContext を始めない（`media.cubeb.force_null_context` で再現）。Firefox は出力が無くても成り立つことだけを確かめる形に。
+- 準備: PR #630（merge commit 5b683e63）。CHANGELOG を `[4.17.0] — 2026-11-07` として締め（要約、Upgrading＝大きな音のパッチは静かになる・最初の操作で context・midi の入れ直し・外せる回避策）、docs/upgrading-4x.md（日英）に 4.17.0 の節、固定版 18 か所。組み合わせ＝state・audio・midi を src からビルドして e2e 2 ワーカー 463/465（落ちた 2 件は homeroom の「server exited with 1」— 4.16.0 と同じ手元の環境）。
+- main で `minor`（run 42334619970）。成功した: 版を上げたコミット 50a495b1、タグ `v4.17.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 21/21（chunk の分かれ方が変わって 1 つ減った）。文書の固定 URL 8/8。1 回目で問題なし。
+  - 手元の main に版上げを取り込むとき、ビルドが残した未追跡の chunk が同じ名前でぶつかった（削除は権限で拒否）→ scratchpad へ移してから取り込んだ。
+- 公開後の作業（同日）:
+  - PR #631（merge commit 6f621033）: サイズの基準値を 4.17.0 の dist で取り直した（`core.min.js` 20,392 → 20,411 B、残り 69 B。分割の core 25,209 → 25,051 B、`index.esm.js` 55,364 → 56,301 B、`auto.min.js` 52,155 → 53,064 B、diagnostics 10,163 → 11,034 B — 間の 640 B の slack は外した）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字。拡張を 2.14.0 に。
+  - 拡張 2.14.0: 6f621033 から worktree で作成、試験 1,467、890 ファイル、SHA-256 `6298d818b374b58669975fe5f32a1d6e45b702a8536d52e61c7da44e97979317`。公開は著者。worktree は junction を `cmd //c rmdir` してから削除。
+  - wcstack-skill: PR #59（merge commit 66474d7）で書き込み集合の検査と music-room の分（audio の音量と天井・最初の操作・作り直しの警告、midi の `type`・ベロシティ・入れ直し、`[wcs/input-undefined]`、getter の `@type`）、刻印と固定 URL。注釈付きタグ `v4.17.0`。
+  - LP（wcstack.github.io 561141d）: リリースの表示、v4.17.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json` と手元の dist が一致、`sha384-Ll05Tw…`）、大きさは約 78 KB（77 から）、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
+- 残り:
+  - 拡張 2.14.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.14.0`。
+  - music-room の examples/ への取り込み（これまでの継ぎ目アプリと同じくリリースの後）。
+  - 2 巡目の 5 本が済んだ。3 巡目か、5.0 の議題（§3.3 の (a)）の準備かは著者の判断。
+  - midi の Permissions-Policy で止められた文書が `unsupported` でなく `denied` と読める（§5.3.2）— 次の minor の候補。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - 上流の js-framework-benchmark へページの変更を出すか（著者の判断）。
+  - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
