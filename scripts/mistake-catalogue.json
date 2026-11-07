@@ -1192,6 +1192,53 @@
       "effect": { "en": "That package follows npm `latest` while the rest stay pinned; the URL it redirects to names no version, and packages of different minors run together without a word (they are compatible, so nothing breaks until one needs another's newer part).", "ja": "そのパッケージだけ npm の `latest` に従い、残りは固定のまま。転送先の URL にも版が無く、minor の違うパッケージが黙って一緒に動く（互換なので、どれかが別のものの新しい部分を要るまでは壊れない）。" },
       "disposition": "docs-only",
       "note": { "en": "docs/upgrading-4x.md (mixed versions). A second copy of the same package warns (`[wcs/package-twice]`); different packages at different minors are compatible on purpose.", "ja": "docs/upgrading-4x.md（版の混在）。同じパッケージの 2 つ目の写しは警告する（`[wcs/package-twice]`）。違うパッケージの minor の違いは意図して互換。" }
+    },
+    {
+      "id": "audio-hot-output",
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Plays a loud patch, or binds a 0–100 slider straight to `<wcs-audio>`'s `volume`, trusting its \"ear protection\" limiter.", "ja": "大きな音のパッチを鳴らす、または 0〜100 のスライダーを `<wcs-audio>` の `volume` にそのまま束ね、「耳の保護」のリミッターに任せる。" },
+      "effect": { "en": "Up to 4.16 the limiter was a compressor with only its threshold set: the README's own 8-voice patch at the default volume peaked at +5 dBFS after it, and `volume` 80 at +11.6 dBFS — clipped, and loud in headphones. Since 4.17 it is a ceiling at -6 dBFS, and `volume` is clamped to [0, 1].", "ja": "4.16 まではリミッターは閾値だけを設定したコンプレッサーで、README の 8 声のパッチを既定の音量で鳴らすだけでその後で +5 dBFS、`volume` 80 で +11.6 dBFS に達した — 割れて、ヘッドホンでは大きい。4.17 から出口は -6 dBFS の天井で、`volume` は 0〜1 に丸める。" },
+      "note": { "en": "Found by the music-room seam app (docs/seam-apps.md). A louder patch plays quieter since 4.17 (the CHANGELOG's Upgrading).", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から大きな音のパッチは静かになる（CHANGELOG の Upgrading）。" }
+    },
+    {
+      "id": "audio-structure-bound",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Binds a structural attribute of an audio tag to state — `<wcs-voice data-wcs=\"poly: polyphony\">` from a select, `attr.out:` — or puts audio tags under `if:` / `for:`.", "ja": "audio のタグの構造の属性を state に束ねる — select で動かす `<wcs-voice data-wcs=\"poly: polyphony\">`、`attr.out:` — か、audio のタグを `if:` / `for:` の下に置く。" },
+      "effect": { "en": "Each change rebuilds the graph and cuts every sounding voice; the keys stay shown pressed. Since 4.17 `<wcs-audio>` warns `[wcs/audio-voices-cut]` once, naming the tag, the attribute and how many voices were cut.", "ja": "変わるたびにグラフを組み直し、鳴っている音をすべて切る。鍵は押された表示のまま。4.17 から `<wcs-audio>` が `[wcs/audio-voices-cut]` で 1 回警告し、タグと属性と切った声の数を言う。" },
+      "evidence": [{ "file": "packages/audio/src/components/Audio.ts", "text": "[wcs/audio-voices-cut]" }],
+      "note": { "en": "Found by the music-room seam app (docs/seam-apps.md). Nothing is said when nothing sounds: declaring the structure is not the mistake. A non-audio binding `out:` on an audio tag fails as `[wcs/tag-member-unknown]`.", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 何も鳴っていなければ言わない。構造の宣言そのものは誤りではない。audio のタグへの `out:` の束縛は `[wcs/tag-member-unknown]` で失敗する。" }
+    },
+    {
+      "id": "midi-reinserted-without-auto",
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Puts a `<wcs-midi>` without `auto` in a route's content, and shows its Connect button by `devices`.", "ja": "`auto` の無い `<wcs-midi>` をルートの中身に置き、接続のボタンを `devices` で出し分ける。" },
+      "effect": { "en": "Up to 4.16 a route left and entered again disconnected the element but kept `devices` listed, and it did not reconnect: the page said a keyboard was connected, hid its button, and MIDI was dead until a reload. Since 4.17 a disconnect publishes `devices: []`, and an element whose last `request()` got access requests again while the permission is still granted.", "ja": "4.16 までは、ルートを出て戻ると要素の接続は切れたのに `devices` は残り、接続し直さなかった: ページは鍵盤がつながっていると言ってボタンを隠し、再読み込みまで MIDI が死んだ。4.17 から切断は `devices: []` を知らせ、最後の `request()` でアクセスを取れた要素は、許可がまだ granted なら要求し直す。" },
+      "note": { "en": "Found by the music-room seam app (docs/seam-apps.md). Hide a Connect button on `connected`, not on `devices`.", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 接続のボタンは `devices` ではなく `connected` で隠す。" }
+    },
+    {
+      "id": "midi-connect-without-api",
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Offers a Connect button while `<wcs-midi>`'s `permission` is `prompt`, in a browser without Web MIDI (Safari, Firefox without its add-on step, a non-secure context).", "ja": "Web MIDI の無いブラウザ（Safari、アドオンの手順を踏んでいない Firefox、安全でない文脈）で、`<wcs-midi>` の `permission` が `prompt` の間、接続のボタンを出す。" },
+      "effect": { "en": "Up to 4.16 an element without `auto` said `prompt` there until `request()` was called, so the button could do nothing. Since 4.17 it says `unsupported` when it connects, `auto` or not.", "ja": "4.16 までは `auto` の無い要素は `request()` を呼ぶまでそこで `prompt` と言ったので、ボタンは何もできなかった。4.17 から `auto` の有無にかかわらず、接続の時点で `unsupported` と言う。" },
+      "note": { "en": "Found by the music-room seam app (docs/seam-apps.md).", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。" }
+    },
+    {
+      "id": "midi-status-byte",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Decides note-on and note-off from the raw status byte in `<wcs-midi>`'s `message.data[0]`.", "ja": "`<wcs-midi>` の `message.data[0]` の生のステータスバイトで、ノートのオン・オフを決める。" },
+      "effect": { "en": "A keyboard that ends notes with a velocity-0 note-on — many do — leaves the key held: shown pressed, its voice never released. `type` already reports it as `noteoff`.", "ja": "ノートをベロシティ 0 のノートオンで終える鍵盤 — 多い — では鍵が押されたまま残る: 押された表示のまま、その音は離されない。`type` はそれをすでに `noteoff` と言う。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the music-room seam app (docs/seam-apps.md). Since 4.17 the midi README says to decide from `type`.", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から midi の README が `type` で決めるよう言う。" }
+    },
+    {
+      "id": "midi-velocity-scaled",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Divides `<wcs-midi>`'s `velocity` by 127 before passing it to an instrument.", "ja": "`<wcs-midi>` の `velocity` を 127 で割ってから楽器に渡す。" },
+      "effect": { "en": "It is already 0–1: velocity 100 reaches the synth as 0.006, and the MIDI keyboard is practically silent while the screen keyboard is loud. Nothing says so.", "ja": "すでに 0〜1 なので、ベロシティ 100 は 0.006 としてシンセに届き、画面の鍵盤は大きく鳴るのに MIDI 鍵盤はほとんど聞こえない。何も知らせない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the music-room seam app (docs/seam-apps.md). The midi README and the skill say velocity is normalized to 0–1.", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 midi の README と skill はベロシティが 0〜1 に正規化されていると言う。" }
     }
   ],
   "uncounted": [

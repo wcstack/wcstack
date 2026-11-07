@@ -70,10 +70,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 作者に知らせるもの | 項目 |
 |---|---|
-| 設計（書けない、または害が無い） | 7 |
-| 実行時 | 72 |
+| 設計（書けない、または害が無い） | 10 |
+| 実行時 | 73 |
 | lint だけ — 条件付きの沈黙 | 25 |
-| 文書だけ — 沈黙 | 41 |
+| 文書だけ — 沈黙 | 43 |
 | 数えない lint の code | 19 |
 
 ### 文書だけ — 沈黙
@@ -107,6 +107,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | フレームワークから、オブジェクトの入力をその場で変える。`files={files}` で渡した配列への `files.push(file)` や、`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)`。 | 同じ参照には、フレームワークは何も書かないので、要素には何も伝わらない。アップロードは始まらず、前の要求で `body` を使い切った `<wcs-fetch>` は、次の要求を本文なしで送る。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。渡されたオブジェクトの中の変化は、要素からは見えない。統合の手引きは、新しいオブジェクトや配列を代入するよう書くようになった。 |
 | React 19 の JSX で、コロンを含む `wcs-*` のイベントを、`on` の後を大文字にして聞く: `onWcs-fetch:response={fn}`。 | コンパイルは通る。React 19 は `on` の後に書かれたとおりの名前のイベント（`Wcs-fetch:response`）を聞き、それは発火しないので、ハンドラは走らない。小文字の形（`onwcs-fetch:response`）は動く。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは、JSX ではコロンのイベントを書けないと書いていた。今は React 19 がどうするかを書き、引き続き `addEventListener` を勧める。 |
 | 遷移の後に聞かせる文（件数、「保存しました」）を、ルートの中身の `role="status"` のリージョンに置く。 | ルートの中身は文と一緒に挿入されるので、何も読み上げられない。応答で埋まるリージョンが聞こえるかは時機次第で、ビュー遷移があると Chromium は 10 回中 0 回、reduced motion では 10 回中 10 回読んだ。 | 動かない | どこからも見えない — 文書。router の README（4.10 の文書）: router の外のページの階層に 1 つのリージョンを置き、遷移の後に書く。lint の `wcs/live-region-inserted` は、文がマークアップにある形や枝を開く形を見るが、後で束ねるルートの本体は見ない。 |
+| `<wcs-midi>` の `message.data[0]` の生のステータスバイトで、ノートのオン・オフを決める。 | ノートをベロシティ 0 のノートオンで終える鍵盤 — 多い — では鍵が押されたまま残る: 押された表示のまま、その音は離されない。`type` はそれをすでに `noteoff` と言う。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から midi の README が `type` で決めるよう言う。 |
+| `<wcs-midi>` の `velocity` を 127 で割ってから楽器に渡す。 | すでに 0〜1 なので、ベロシティ 100 は 0.006 としてシンセに届き、画面の鍵盤は大きく鳴るのに MIDI 鍵盤はほとんど聞こえない。何も知らせない。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 midi の README と skill はベロシティが 0〜1 に正規化されていると言う。 |
 | セッションを state にだけ置き、ルートのガードはストレージから読む。 | ログインは成功してヘッダに会員が出るが、ガードはセッションを見つけず、ページはログインのフォームに留まる。読み直すとログアウトしている。 | 動かない | どこからも見えない — 文書。router の README とスキル: ガードは state を見られない。セッションは `<wcs-storage>` のキーに置き、ガードの中で読む。 |
 | セッションやトークンを、ガードや state のモジュールのトップレベルで 1 回だけ読む。 | モジュールは 1 回しか評価されない: ガードは読み込みの時点のセッション（ログイン前なら無し）で決め、state は最初のトークンを送り続ける — shift-desk の変種は 4 秒で 401 の要求を 1,428 回送った。見えるのはブラウザ自身の 401 の行だけ。 | 動かない | lint の規則 — 4.x。router の README はハンドラの中で読むと言い、スキルの失敗の一覧にもある。ガードや state のインラインのモジュールのトップレベルでの `localStorage` / `sessionStorage` / `document.cookie` の読みは、lint の規則に見える。 |
 | 他のタブに追随するために、フレームワークのアダプターの `<wcs-storage>` の `value` を、ページが保存する元の状態へ当て直す（`useEffect(() => apply(stored.value), [stored.value])`）。 | ページ自身の保存が 1 描画遅れて戻り、その間に打った分を巻き戻す。その書き込みがまた保存し、速く打つと 2 つの値を交互に保存して当てることが止まらない — 1 回ごとに要求が出て、エラーは無い。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory の取り込みで見つかった: 著者のフィルタがそうしていた。フレームワークが返してきた書き込みと編集は、要素から見分けられない。storage の README は、要素の `wcs-storage:value-changed` を聴き、自分の保存が出すイベントを飛ばす。 |
@@ -175,6 +177,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | アクセサペアの setter で、その getter が読まないものを書く: `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。 | 同じ code: 書いた後も getter は元の値を返し、束ねた双方向の入力は次の描画でそこへ戻る — 何も知らせない。4.17 から diagnostics の後付けが、何かを書いたのに、何かを読んだ getter がそのどれも読まない setter ごとに 1 回 `[wcs/setter-unobserved]` を警告する。 どちらも、何も書かない setter（`null` を捨てるもの）には黙る。lint は、どちらかが追えないもの（`this[key]`・`fn(this)`）を読み書きするときも黙る。 | `wcs/setter-unobserved` (warning) |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | カスタム要素の入力に、値の後で `undefined` を渡す: リセット、`undefined` を返す getter、そのキーの無いオブジェクトで置き換えた親（キーができる前に保存した値、値の欠けたリンク）。 | code なし: 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字、リンクが別の値を言う間も前の音色のエコー — を持ち続ける。4.17 から diagnostics の後付けが束縛ごとに 1 回 `[wcs/input-undefined]` と警告し、要素が持ち続ける値を言う。消すには `null` を書く。 継ぎ目アプリ music-room が 2 度当たった（値の欠けた音色のリンク、キーができる前に保存した音色）。ネイティブ要素のプロパティ（`<input>` の `value:`）と、ページの自作要素の宣言の無いプロパティも同じく値を保つが、まだ知らせない。 | — |
+| audio のタグの構造の属性を state に束ねる — select で動かす `<wcs-voice data-wcs="poly: polyphony">`、`attr.out:` — か、audio のタグを `if:` / `for:` の下に置く。 | code なし: 変わるたびにグラフを組み直し、鳴っている音をすべて切る。鍵は押された表示のまま。4.17 から `<wcs-audio>` が `[wcs/audio-voices-cut]` で 1 回警告し、タグと属性と切った声の数を言う。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 何も鳴っていなければ言わない。構造の宣言そのものは誤りではない。audio のタグへの `out:` の束縛は `[wcs/tag-member-unknown]` で失敗する。 | — |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
 | `<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。 | code なし: 読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。 | `wcs/bind-component-source` (error) |
 | state に無いパスを束ねる（`stateSchema` がそう言えば `wcs/path-nonexistent`）。 | 同じ code: トップレベルのキーが無ければ束縛が失敗する（`#301`）。入れ子の段が無ければ diagnostics の後付けが `[wcs/binding-path-missing]` で警告する（`/core` では無言）。`stateSchema` が無いと lint は警告だけ。 | `wcs/binding-path-missing` (varies), `wcs/path-nonexistent` (error) |
@@ -236,6 +239,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<base href="/">` を持つ SPA にスキップリンク（`href="#main"`）を書く。 | 4.9 までは base に対して解決され、ホームのルートへ移った。4.10 から router は素のフラグメントへのリンクを今のページに留め、指す要素へフォーカスを移す。 |
 | `<wcs-route>`（や `<wcs-guard-handler>`）を、別のルートの後の要素や `<wcs-layout>` の中に置く。または、守るルートの入れ子のルートの後にガードを置く。 | 4.3 から、ルートの親とガードの守るルートは、それを中に持つ `<wcs-route>`。以前は最後に解析したルートで、ルートは前のルートの下のパスになるか、絶対パスなら throw し（`is absolute but has a parent route`）、ガードは子のルートを守って自分のルートは開いていた。 |
 | 1 つのオブジェクトを一覧の 2 つの位置に置き（`items: [o, o]`）、片方の行の下へ書く。 | 4.3 から、書き込みはそのオブジェクトを持つすべての行、その行 getter、`$getAll` に届く（#365）。以前は書き込んだ行にしか届かなかった。 |
+| 大きな音のパッチを鳴らす、または 0〜100 のスライダーを `<wcs-audio>` の `volume` にそのまま束ね、「耳の保護」のリミッターに任せる。 | 4.16 まではリミッターは閾値だけを設定したコンプレッサーで、README の 8 声のパッチを既定の音量で鳴らすだけでその後で +5 dBFS、`volume` 80 で +11.6 dBFS に達した — 割れて、ヘッドホンでは大きい。4.17 から出口は -6 dBFS の天井で、`volume` は 0〜1 に丸める。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から大きな音のパッチは静かになる（CHANGELOG の Upgrading）。 |
+| Web MIDI の無いブラウザ（Safari、アドオンの手順を踏んでいない Firefox、安全でない文脈）で、`<wcs-midi>` の `permission` が `prompt` の間、接続のボタンを出す。 | 4.16 までは `auto` の無い要素は `request()` を呼ぶまでそこで `prompt` と言ったので、ボタンは何もできなかった。4.17 から `auto` の有無にかかわらず、接続の時点で `unsupported` と言う。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 |
+| `auto` の無い `<wcs-midi>` をルートの中身に置き、接続のボタンを `devices` で出し分ける。 | 4.16 までは、ルートを出て戻ると要素の接続は切れたのに `devices` は残り、接続し直さなかった: ページは鍵盤がつながっていると言ってボタンを隠し、再読み込みまで MIDI が死んだ。4.17 から切断は `devices: []` を知らせ、最後の `request()` でアクセスを取れた要素は、許可がまだ granted なら要求し直す。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 接続のボタンは `devices` ではなく `connected` で隠す。 |
 | 自動送信の `<wcs-upload>` に、`url` より先に `files` を渡す。その順の JSX の props（`files={files} url=…`）や、1 つの `data-wcs` で `url:` より前の `files:`。 | 4.6 から、ファイルは url を待ち、url が来たときに送られる。以前は何も送られず、すぐ後に来た url でも始まらず、要素が `[wcs/command-not-ready]` で 1 回警告していた。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。React 19 は props を書いた順に、要素を文書に入れる前に当てる。React の開発者は属性の順が効くとは思わない。 |
 | `<wcs-view-transition>` のあるページで、構造も変わる更新の `$watch` から画面を移す（フォーカスを動かす）。 | 4.9 までは、トランジションが 1 フレーム後に適用するバインディングより先に `$watch` が走った: 文書のログインは `<wcs-storage>` がセッションを保存する前に画面を移し、ガードが読み手を戻した。4.10 から `$watch` はそれを待つ。 |
 | `<wcs-router>` の `leaveConfirm` を真偽値に束ねる（`leaveConfirm: dirty`）。 | 4.8 までは真偽値が問いの文言になり、フォームがきれいな間も遷移のたびに `confirm("false")` が出た。4.9 から `true` は既定の文言で聞き、`false` は聞かない。 |
