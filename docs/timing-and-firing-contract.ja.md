@@ -526,8 +526,10 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 | websocket | `connected`・`loading`・`readyState`（`CLOSED`）— ソケット自身の `close` は古いものとして捨てる |
 | contacts、credential、eyedropper、share | `loading` |
 | upload | `loading` |
+| audio（4.17） | `voices`（0）、`state` / `running` / `suspended`（`"unsupported"` でなければ `"suspended"`）— 外したルートは context を持たないので、最初の操作の前と同じに読める。入れ直しの `setPatch()` が context の状態を知らせ直す |
+| midi（4.17） | `devices`（`[]`。`close()` も）— `connected` は以前から |
 
-ほかのノードは、切断で変えるものをすでにすべて知らせていたか、切断で何も変えない。
+ほかのノードは、切断で変えるものをすでにすべて知らせていたか、切断で何も変えない。audio と midi もそうだと思われていたが、継ぎ目アプリ `music-room` が、`voices`・`running`・`devices` が残るのを見つけた（4.17、[seam-apps.ja.md](./seam-apps.ja.md)）。
 
 ### 22.5 テスト
 各ノードに、操作の途中で切断し、イベントを確かめるテストがある。当てはまるものでは、再接続の後の次の操作がまだ `true` のエッジを出すことも確かめる。
@@ -560,7 +562,7 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 | camera | `<wcs-camera>` の自動開始（`autostart`）と、取得に使う制約（`device-id`・`facing-mode`・`audio`・`width`・`height`） |
 | speech | `<wcs-listen>` の自動開始（`manual`）と認識のオプション（`lang`・`continuous`・`interim`・`max-restarts`） |
 | geolocation | 取得か watch（`manual`・`watch`・`high-accuracy`・`timeout`・`maximum-age`） |
-| midi | アクセスの要求（`auto`・`sysex`） |
+| midi | アクセスの要求（`auto`・`sysex`）。4.17 からは、最後の `request()` が取ったアクセスの取り直し（まだ granted のとき）も — Permissions API の答えが `granted` でなければ `permission` に知らせる |
 | permission | 問い合わせ（`name`・`user-visible-only`・`sysex`） |
 | timer | 自動開始（`manual`・`interval`・`repeat`・`once`・`immediate`） |
 | clipboard | 監視（`monitor`） |
