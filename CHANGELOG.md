@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.17.0] — 2026-11-07
+
+A minor from two pieces of work. A study of what a state's script writes ([docs/script-write-checks.md](./docs/script-write-checks.md)): the lint reads each getter's, setter's and method's writes as one set and joins it with the getters' reads — a getter that writes, a script write of a getter without a setter, setters that write each other, a setter whose writes its getter does not read — and the runtime names them, where it threw `This state is readonly.` or overflowed the stack. And the `music-room` seam app ([docs/seam-apps.md](./docs/seam-apps.md)), a school music room's practice synth, the last app of the second round: `<wcs-audio>`'s "ear protection" limiter let the README's own patch peak at +5 dBFS — it is now a ceiling at -6 dBFS — a `<wcs-midi>` put back by a route stayed dead until a reload, and removed elements left their outputs behind. `@wcstack/state`, `@wcstack/audio`, `@wcstack/midi`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.16.0 with a new version.
 
 ### Upgrading
 
