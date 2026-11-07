@@ -341,7 +341,18 @@ No workaround became unnecessary.
 
 A workaround became unnecessary: a `$setAll` mapper read another field of its own row with `$resolve(path, [i])`; `this["items.*.price"]` inside it is that row's now.
 
-## Still needed on 4.16.0
+### 4.17.0
+
+2026-11-07 — [CHANGELOG](../CHANGELOG.md#4170--2026-11-07)
+
+- `@wcstack/lint`: `wcs/getter-write`, `wcs/path-readonly` on a script's write of a getter without a setter, and `wcs/setter-cycle` on a setter that writes its own path are errors — the runtime throws on each where it runs, so a page they report was already broken there. `wcs/setter-cycle` on setters that write each other and `wcs/setter-unobserved` are warnings, which fail `--strict`.
+- `@wcstack/state` console: `[wcs/getter-write]` names the path and the getter where it said `This state is readonly.`; `[wcs/setter-cycle]` throws where setters overflowed the stack; `[wcs/setter-unobserved]` and `[wcs/input-undefined]` warn once; `#2` and `#38` carry the lint's code (`#38` names the tag). A test that matched the old sentences matches the new ones.
+- `@wcstack/audio`: the limiter is a ceiling at -6 dBFS and `volume` is clamped to [0, 1], so a loud patch plays quieter (the README's 8-voice patch about 10 dB for one note, a patch under -18 dBFS about 1.75 dB) — raise the gains inside the patch. The `AudioContext` is created at the first gesture: a test that expected it before any gesture clicks first or calls `resume()`. A rebuild that cuts sounding voices warns `[wcs/audio-voices-cut]`.
+- `@wcstack/midi`: a disconnect (a route left) and `close()` publish `devices: []`; an element put back requests again while the permission is still granted; where Web MIDI is absent, `permission` is `unsupported` from the connect.
+
+Workarounds became unnecessary: a getter's row type written as `@returns` instead of `@type`, rows rewritten from `Array.from(…)` / `[...Array(n).keys()].map(…)` into a `.map` over a constant, and a namespace import's constant imported again by name — each only to quiet a false `wcs/binding-path-missing` or `wcs/path-dynamic-unknown`; and a page that requested MIDI again on every entry into a route.
+
+## Still needed on 4.17.0
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").

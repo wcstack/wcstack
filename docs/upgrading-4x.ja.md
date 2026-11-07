@@ -341,7 +341,18 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: `$setAll` の mapper が自分の行のほかのフィールドを `$resolve(path, [i])` で読んでいた。今はその中の `this["items.*.price"]` がその行のものになる。
 
-## 4.16.0 でもまだ要るもの
+### 4.17.0
+
+2026-11-07 — [CHANGELOG](../CHANGELOG.md#4170--2026-11-07)
+
+- `@wcstack/lint`: `wcs/getter-write`、setter の無い getter へのスクリプトの書き込みへの `wcs/path-readonly`、自分のパスに書く setter への `wcs/setter-cycle` は error — どれもランタイムがその場所で投げるので、報告されるページはそこですでに壊れていた。互いに書く setter への `wcs/setter-cycle` と `wcs/setter-unobserved` は warning で、`--strict` では落ちる。
+- `@wcstack/state` のコンソール: `[wcs/getter-write]` が `This state is readonly.` の代わりにパスと getter を名指す。`[wcs/setter-cycle]` はスタックが溢れていたところで投げる。`[wcs/setter-unobserved]` と `[wcs/input-undefined]` は 1 回警告する。`#2` と `#38` は lint の code を持つ（`#38` はタグも名指す）。前の文面に合わせていたテストは新しい文面に合わせる。
+- `@wcstack/audio`: リミッターは -6 dBFS の天井になり、`volume` は 0〜1 に丸めるので、大きな音のパッチは静かになる（README の 8 声のパッチは単音で約 10 dB、-18 dBFS より小さいパッチは約 1.75 dB）— パッチの中のゲインを上げる。`AudioContext` は最初の操作で作る: 操作の前に context を当てにしていたテストは、先にクリックするか `resume()` を呼ぶ。鳴っている音を切る作り直しは `[wcs/audio-voices-cut]` と警告する。
+- `@wcstack/midi`: 切断（ルートを出る）と `close()` は `devices: []` を知らせる。戻された要素は許可がまだ granted なら要求し直す。Web MIDI の無いところでは接続の時点で `permission` が `unsupported`。
+
+要らなくなった回避策: getter の行の型を `@type` でなく `@returns` で書く、`Array.from(…)` / `[...Array(n).keys()].map(…)` の行を定数への `.map` に書き換える、名前空間の import の定数を名前でもう一度 import する — どれも `wcs/binding-path-missing` や `wcs/path-dynamic-unknown` の誤報を黙らせるためだけのもの。ルートに入るたびに MIDI を要求し直すページの処理。
+
+## 4.17.0 でもまだ要るもの
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。
