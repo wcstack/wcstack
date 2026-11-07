@@ -263,8 +263,8 @@
       "lint": [{ "code": "wcs/tag-member-unknown", "severity": "error" }],
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Binds a member a `wcs-*` tag (or a custom element the page defines) does not declare, a DOM property such as `hidden` or `textContent` included.", "ja": "`wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。" },
-      "effect": { "en": "`#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. Only the HTML sinks are written without a declaration.", "ja": "`#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。" },
-      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "raise(M.MemberUndeclared, [name])" }],
+      "effect": { "en": "`#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. Only the HTML sinks are written without a declaration. Since 4.17 `#38` carries the lint's code and names the tag (`[wcs/tag-member-unknown] \"out\" is not a wcBindable member of <wcs-env>.`); it said only `Property \"out\" is not declared by wcBindable.` (the music-room seam app).", "ja": "`#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。4.17 から `#38` は lint の code を持ち、タグを名指す（`[wcs/tag-member-unknown] \"out\" is not a wcBindable member of <wcs-env>.`）。それまでは `Property \"out\" is not declared by wcBindable.` だけだった（継ぎ目アプリ music-room）。" },
+      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "raise(M.MemberUndeclared, [name, el.localName])" }, { "file": "packages/state/src/diagnostics/messages.ts", "text": "[wcs/tag-member-unknown]" }],
       "note": { "en": "A custom element the page defines itself (`customElements.define` in its scripts, an `src=` module and what it imports) is checked the same way, against its `static wcBindable`, when that declaration is a literal; a 7GUIs evaluation found its `eventToken.` / `command.` typos left to the runtime, which names no near member.", "ja": "ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。" }
     },
     {
@@ -785,11 +785,11 @@
     },
     {
       "id": "undefined-write-skipped",
-      "runtime": "silent", "harm": "stale",
-      "mistake": { "en": "Writes `undefined` to an element's input or property after a value: a reset, a getter that returns `undefined`.", "ja": "要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。" },
-      "effect": { "en": "4.0 never writes `undefined` (B8): the element keeps the previous value — the previous user's avatar, old text.", "ja": "4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。" },
-      "disposition": "runtime-report",
-      "note": { "en": "The diagnostics add-on can warn when an `undefined` follows a value; writing `null` clears.", "ja": "diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。" }
+      "runtime": "loud", "harm": "stale",
+      "mistake": { "en": "Gives a custom element's input `undefined` after a value: a reset, a getter that returns `undefined`, a parent replaced by an object without the key (a stored value saved before the key existed, a link without some values).", "ja": "カスタム要素の入力に、値の後で `undefined` を渡す: リセット、`undefined` を返す getter、そのキーの無いオブジェクトで置き換えた親（キーができる前に保存した値、値の欠けたリンク）。" },
+      "effect": { "en": "4.0 never writes `undefined` (B8): the element keeps the previous value — the previous user's avatar, old text, the previous sound's echo while the link says another. Since 4.17 the diagnostics add-on warns `[wcs/input-undefined]` once per binding, naming the value the element keeps; writing `null` clears.", "ja": "4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字、リンクが別の値を言う間も前の音色のエコー — を持ち続ける。4.17 から diagnostics の後付けが束縛ごとに 1 回 `[wcs/input-undefined]` と警告し、要素が持ち続ける値を言う。消すには `null` を書く。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/input-undefined]" }],
+      "note": { "en": "The music-room seam app hit it twice (a sound link without some values, a stored sound saved before a key existed). A native element's property (`value:` on an `<input>`) and an undeclared property of a page's own element keep their value the same way and are not reported yet.", "ja": "継ぎ目アプリ music-room が 2 度当たった（値の欠けた音色のリンク、キーができる前に保存した音色）。ネイティブ要素のプロパティ（`<input>` の `value:`）と、ページの自作要素の宣言の無いプロパティも同じく値を保つが、まだ知らせない。" }
     },
     {
       "id": "element-input-before-connected",

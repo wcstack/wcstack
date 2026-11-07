@@ -71,9 +71,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
-| 実行時 | 71 |
+| 実行時 | 72 |
 | lint だけ — 条件付きの沈黙 | 25 |
-| 文書だけ — 沈黙 | 42 |
+| 文書だけ — 沈黙 | 41 |
 | 数えない lint の code | 19 |
 
 ### 文書だけ — 沈黙
@@ -98,7 +98,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 同じブラウザの別のタブがログアウトしたり別の人でログインしたりしたとき、セッションの変化に遷移のときにしか反応しない。 | `<wcs-storage>` のイベントがセッションを消しても、開いたページは次の遷移まで会員のデータを出し続ける。よそのログインで、タブは黙って別の人のものになる。 | 古い表示 | どこからも見えない — 文書。examples/router-auth は、ここでも別のタブでも、セッションのどの変化も token への `$watch` 1 つで扱う形を示す。スキルはまだ言わない。 |
 | 1 つのオブジェクトを、getter が結ばない 2 つの配列に置き（`backup = items` で両方を描く）、片方の行の下へ書く。 | 書き込みは、もう片方の配列の行・行 getter・それらの `$getAll` の集計に届かない。 | 古い表示 | 設計で消す — 4.x。4.x の既知の制限として残す（#401、2026-10-17 決定）。届けるにはオブジェクトからすべての一覧の行を引く索引が要り、core のバイトと行ごとの手間がかかる。回避はもう片方の一覧の `$postUpdate`。 |
 | `<wcs-timer>` の刻みを数えて経過時間を測る（`tick` × `interval`）。 | 隠れたタブの刻みは間引かれ、スリープ中の刻みは失われるので、数は時計から遅れる: 1 時間のスリープの間に数えたのは 4 秒（継ぎ目アプリ shift-desk）。 | 古い表示 | どこからも見えない — 文書。timer の README が言い（4.8 の文書）、docs/long-lived-pages.ja.md は刻みごとに時計を読む。時間のつもりの数え方は実行時には見分けられない。 |
-| 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
 | 版を固定したページに、版を書かないクイックスタートの行（`https://esm.run/@wcstack/fetch/auto`）を写す。 | そのパッケージだけ npm の `latest` に従い、残りは固定のまま。転送先の URL にも版が無く、minor の違うパッケージが黙って一緒に動く（互換なので、どれかが別のものの新しい部分を要るまでは壊れない）。 | 古い表示 | どこからも見えない — 文書。docs/upgrading-4x.md（版の混在）。同じパッケージの 2 つ目の写しは警告する（`[wcs/package-twice]`）。違うパッケージの minor の違いは意図して互換。 |
 | `$connectedCallback` で取り直す（つなぎ直す・読み直す）。スリープ・凍結・back/forward cache からの復帰の後にも走ると思って。 | 走るのは `<wcs-state>` 要素が接続されたときで、ページが復帰したときではない: 接続が死んだまま 1 時間スリープした後、ページは 131〜140 件遅れたままで、ヘッダには "Live" とあった。 | 古い表示 | どこからも見えない — 文書。state の README が言い、docs/long-lived-pages.ja.md が復帰のハンドラを 1 つ示す。4.8 から `stale-after` が死んだ接続そのものに気づく。 |
 | `online` イベントでだけ取り直す。 | ネットワークが切れなかったスリープは `online` を出さない: ページは 134〜137 件遅れたままだった。 | 古い表示 | どこからも見えない — 文書。docs/long-lived-pages.ja.md が間の終わりのほかの知らせを挙げる（`visibilitychange`、persisted の `pageshow`、`resume`、時計の飛び）。 |
@@ -175,6 +174,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。 | code なし: その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。 7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。 | — |
 | アクセサペアの setter で、その getter が読まないものを書く: `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。 | 同じ code: 書いた後も getter は元の値を返し、束ねた双方向の入力は次の描画でそこへ戻る — 何も知らせない。4.17 から diagnostics の後付けが、何かを書いたのに、何かを読んだ getter がそのどれも読まない setter ごとに 1 回 `[wcs/setter-unobserved]` を警告する。 どちらも、何も書かない setter（`null` を捨てるもの）には黙る。lint は、どちらかが追えないもの（`this[key]`・`fn(this)`）を読み書きするときも黙る。 | `wcs/setter-unobserved` (warning) |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
+| カスタム要素の入力に、値の後で `undefined` を渡す: リセット、`undefined` を返す getter、そのキーの無いオブジェクトで置き換えた親（キーができる前に保存した値、値の欠けたリンク）。 | code なし: 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字、リンクが別の値を言う間も前の音色のエコー — を持ち続ける。4.17 から diagnostics の後付けが束縛ごとに 1 回 `[wcs/input-undefined]` と警告し、要素が持ち続ける値を言う。消すには `null` を書く。 継ぎ目アプリ music-room が 2 度当たった（値の欠けた音色のリンク、キーができる前に保存した音色）。ネイティブ要素のプロパティ（`<input>` の `value:`）と、ページの自作要素の宣言の無いプロパティも同じく値を保つが、まだ知らせない。 | — |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
 | `<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。 | code なし: 読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。 | `wcs/bind-component-source` (error) |
 | state に無いパスを束ねる（`stateSchema` がそう言えば `wcs/path-nonexistent`）。 | 同じ code: トップレベルのキーが無ければ束縛が失敗する（`#301`）。入れ子の段が無ければ diagnostics の後付けが `[wcs/binding-path-missing]` で警告する（`/core` では無言）。`stateSchema` が無いと lint は警告だけ。 | `wcs/binding-path-missing` (varies), `wcs/path-nonexistent` (error) |
@@ -217,7 +217,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | setter の中でその setter 自身のパスに書く（`set count(v) { this.count = v }`）、または互いに書き合う 2 つの setter を書く。 | 同じ code: setter のパスはアクセサそのものなので、書けば setter がまた呼ばれ、スタックが溢れるまで続く: 4.16 までは何も名指さない `RangeError`。4.17 から diagnostics の後付けが、setter の呼び出しが 64 段に達したところで循環を添えて `[wcs/setter-cycle]` を投げる。 lint は自分のパスに書く setter を error、2 つ以上の循環を各 setter に warning（条件で止まりうる）で報告する。値は getter が読むデータのパス（`_count`）に置く。 | `wcs/setter-cycle` (varies) |
 | `<wcs-listen>` → state → `<wcs-speak>` を、聞き取り中に読み上げを止めずに繋ぐ。 | code なし: マイクが読み上げを聞き、聞いたものがまた話され、回るたびに長くなる。ページの `<wcs-listen>` が聞いている間に話し始めると、`<wcs-speak>` が `[wcs/speech-echo]` で 1 回警告する。 | — |
 | `wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。 | 同じ code: 取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。 | `wcs/spread-no-bindable` (error) |
-| `wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。 ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。 | `wcs/tag-member-unknown` (error) |
+| `wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。4.17 から `#38` は lint の code を持ち、タグを名指す（`[wcs/tag-member-unknown] "out" is not a wcBindable member of <wcs-env>.`）。それまでは `Property "out" is not declared by wcBindable.` だけだった（継ぎ目アプリ music-room）。 ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。 | `wcs/tag-member-unknown` (error) |
 | ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | code なし: 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。 | `wcs/tag-package-missing` (warning) |
 | テンプレートの規則を破る: 1 つのテンプレートに構造ディレクティブを 2 つ、`for:`・`if:` のテンプレートの中の `outerHTML:`。 | 同じ code: 束縛の計画で `#201`〜`#203`、state は初期化に失敗する。`#204`（挿入された中身の先頭の構造テンプレート）は記録される。 | `wcs/template-syntax` (varies) |
 | コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。 | `wcs/token-misconfigured` (error) |
