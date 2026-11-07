@@ -102,10 +102,14 @@ test.describe("examples/synth-playground", () => {
   });
 
   test("2つ目の <wcs-audio> は独立して動く", async ({ page }) => {
-    // 4.17 から、既定の context は最初のユーザー操作の中で作られる（それまで各ルートは
+    // 4.17 から、既定の context は最初のユーザー操作で作られる（それまで各ルートは
     // グラフを組まずに待つ）。ページ上の操作は両方のルートに届く — 各ルートが自分で
-    // 最初のジェスチャを待っている — ので、まず空いた所を 1 回押す。
+    // 最初のジェスチャを待っている — ので、まず空いた所を 1 回押す。4.18 から、組むのは
+    // その操作が終わった次のタスク（pointerdown の中で組むと、クリックの前にページが描き直された）
+    // なので、両方のルートが組み終わるのを待つ。
     await page.mouse.click(2, 2);
+    await page.waitForFunction(() =>
+      ["bass", "synth"].every((id) => (document.getElementById(id) as any).audioCore._ctx != null));
     const result = await page.evaluate(() => {
       const bass = document.getElementById("bass") as any;
       const synth = document.getElementById("synth") as any;
