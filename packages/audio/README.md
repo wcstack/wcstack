@@ -63,6 +63,8 @@ Audio starts on your first click or key press — browsers do not let a page mak
 
 Since 4.17 the page's `AudioContext` is not even created before that gesture: a context created earlier cannot start, and Chromium and Firefox print a warning for it as the page loads ("The AudioContext was not allowed to start…", "An AudioContext was prevented from starting automatically…"). Until then `state` reads `suspended` (`running` false, `suspended` true), as it did before a gesture. The first `resume()` or `noteOn()` creates it too, so a `resume-on-gesture="off"` page still starts on its own `command.resume`, and a note sent before any gesture (from a MIDI keyboard, say) is not dropped. A page that has already had a gesture when `<wcs-audio>` connects (a route entered by a click) creates it at once. A `createContext` you supply (an `OfflineAudioContext`) is called at connect, as before.
 
+Since 4.18 (not released yet) a gesture creates it once that gesture is over — after the click, not inside its `pointerdown`. Building takes a while (a few hundred milliseconds in Chromium), and the outputs it publishes re-rendered the page before the button went up: a hint bound to `running` that hid there moved the page under the pointer, and the page's first click landed on another element. `noteOn()` and `resume()` still create it at once.
+
 ### 2. An 8-voice synth driven by state
 
 ```html

@@ -18,10 +18,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Added
 
 - `@wcstack/signals`: **`selector(source)`** (Solid's `createSelector`), from `@wcstack/signals` and `/dom`. `isSelected(key)` is true while `source` equals `key`; a change of `source` re-runs only the readers of the key it left and the key it took, where a row comparing `selected.get() === id` re-ran every row. Keys are compared as a `Map` compares them; a key no reader reads any more is forgotten. Create it under an owner. Evolving / experimental.
+- `examples/music-room`: the seam app, with its e2e spec — a junior high school music room's practice keyboard in Japanese (an 8-voice synth from a MIDI keyboard, the screen and the computer keyboard; sounds as links; a metronome, a 16-step sequencer, takes), on this tree's dists under `WCS_LOCAL=1`, without the workarounds 4.17.0 made unnecessary: `request()` at connect where Web MIDI is absent, rows over module constants, field errors copied by a `$watch`, an identity `.map` and a `@type`, each written only for the lint. The spec injects the author's Web MIDI stand-in and a probe that measures the sound at the speakers, and pins what 4.17.0 decided: no `AudioContext` before the first gesture, the -6 dBFS ceiling, a stored sound older than the app.
 
 ### Changed
 
 - `@wcstack/signals`: **lists do less work per row.** `For` makes a row's index and current-item signals only when `each` reads them, an effect has no observers `Set` of its own, an owned node is registered without a closure, `on…` props are told apart without a regular expression, and a reactive text child has no anchor comment. Measured in the page against 4.17.0 (JS time, 4× CPU throttling): selecting a row −80 % (the benchmark page reads it through `selector()`), clearing 10,000 rows −21 to −23 %, replacing 1,000 rows −11 to −19 %, appending 1,000 rows to 10,000 −13 to −30 %; creating 1,000 rows moved between +12 % and −16 % over three runs. The heap for 1,000 rows went from 2.99 to 2.63 MB.
+
+### Fixed
+
+- `@wcstack/audio`: **the page's first click reaches what was clicked again.** 4.17.0 built a graph that waited for the first gesture inside that gesture's `pointerdown` — creating the `AudioContext` and every node, a few hundred milliseconds in Chromium — and the outputs it published re-rendered the page before the button went up: a hint bound to `running` above the controls hid, the content moved, and the click landed on another element (a button not pressed, a checkbox flipped back; found landing the music-room seam app, [docs/seam-apps.md](./docs/seam-apps.md)). The graph is now built once the gesture ends, after the click; `noteOn()` and `resume()` still build it at once. The gesture listeners also leave the document on disconnect: they stayed, because `getRootNode()` in `disconnectedCallback` is the element itself.
 
 ## [4.17.0] — 2026-11-07
 
