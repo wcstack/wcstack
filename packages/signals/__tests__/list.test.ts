@@ -500,3 +500,33 @@ describe("Index: 位置キーのリスト", () => {
     ]);
   });
 });
+
+describe("For: index / current は読まれたときに作る（docs/signals-performance-study.md）", () => {
+  it("index を読まないまま動いた行も、あとで読めば今の位置と今の item を返し、その後の移動に追従する", () => {
+    const list = signal<readonly Person[]>([P(1, "a"), P(2, "b"), P(3, "c")]);
+    const readers = new Map<number, { index: () => number; current: () => Person }>();
+    const ul = h("ul", null,
+      For(list, (p, index, current) => {
+        readers.set(p.id, { index, current });
+        return h("li", null, p.name);
+      }, { key: (p) => p.id }),
+    ) as HTMLUListElement;
+    list.set([P(3, "c2"), P(1, "a"), P(2, "b")]);
+    flushSync();
+    // 初めての読み: 作った時点の値ではなく今の値
+    expect(readers.get(3)!.index()).toBe(0);
+    expect(readers.get(3)!.current().name).toBe("c2");
+    expect(readers.get(1)!.index()).toBe(1);
+
+    let shown = "";
+    createRoot(() => {
+      const r = readers.get(3)!;
+      h("span", null, () => (shown = `${r.index()}:${r.current().name}`));
+    });
+    expect(shown).toBe("0:c2");
+    list.set([P(1, "a"), P(2, "b"), P(3, "c3")]);
+    flushSync();
+    expect(shown).toBe("2:c3");
+    expect(ul.textContent).toBe("abc");
+  });
+});

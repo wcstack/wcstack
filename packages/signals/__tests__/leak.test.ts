@@ -106,8 +106,9 @@ describe("リーク非発生: For の mount/unmount 反復と listener バラン
       const src = signal(0);
       const baselineObs = observersOf(src).size;
 
+      let list!: Node;
       const dispose = createRoot((d) => {
-        h(
+        list = h(
           "ul",
           null,
           For(
@@ -129,6 +130,8 @@ describe("リーク非発生: For の mount/unmount 反復と listener バラン
       });
       flushSync();
 
+      document.body.appendChild(list);
+
       // 何度も「100 行追加 → 全削除」を繰り返す。
       const ROUNDS = 30;
       for (let r = 0; r < ROUNDS; r++) {
@@ -140,11 +143,18 @@ describe("リーク非発生: For の mount/unmount 反復と listener バラン
 
       // 全行 unmount 後、src の observer はベースラインに戻る（行の購読が残っていない）。
       expect(observersOf(src).size).toBe(baselineObs);
-      // addEventListener と removeEventListener の回数が一致（listener が積み上がっていない）。
-      // 全行を消した状態なので、付けた数 = 剥がした数。
-      expect(removeSpy.mock.calls.length).toBe(addSpy.mock.calls.length);
+      // listener は行ごとに 1 回付き、消えた行（文書から外してから片付ける）からは 1 本ずつ外さない:
+      // 要素ごと捨てられるので積み上がらない。
+      expect(addSpy.mock.calls.length).toBe(ROUNDS * 100);
+      expect(removeSpy).not.toHaveBeenCalled();
 
+      // 文書にある行のまま所有者を片付けると、要素が残るので listener を外す。
+      items.set(Array.from({ length: 100 }, (_, i) => i));
+      flushSync();
       dispose();
+      expect(removeSpy.mock.calls.length).toBe(100);
+      expect(observersOf(src).size).toBe(baselineObs);
+      (list as ChildNode).remove();
     } finally {
       addSpy.mockRestore();
       removeSpy.mockRestore();

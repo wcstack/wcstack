@@ -43,14 +43,16 @@
     <span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true"></span>
 
     <script type="module">
-      import { signal, For, h, render, createRoot } from "/packages/signals/dist/dom.esm.js";
+      import { signal, selector, For, h, render, createRoot } from "/packages/signals/dist/dom.esm.js";
       import { buildData } from "/packages/state/__e2e__/benchmark/buildData.js";
 
       // Idiomatic fine-grained jsfb implementation (Solid-style): the list is a
       // signal of row objects; each row's label is its own signal so "update
-      // every 10th row" touches only those rows' text bindings.
+      // every 10th row" touches only those rows' text bindings; the selected row
+      // is read through selector(), so a click re-runs the two rows it changes.
       const data = signal([]);
       const selected = signal(null);
+      let isSelected;
 
       const wrap = (items) => items.map((d) => ({ id: d.id, label: signal(d.label) }));
 
@@ -79,7 +81,7 @@
       }
 
       const row = (item) =>
-        h("tr", { class: () => (selected.get() === item.id ? "danger" : "") },
+        h("tr", { class: () => (isSelected(item.id) ? "danger" : "") },
           h("td", { class: "col-md-1" }, String(item.id)),
           h("td", { class: "col-md-4" },
             h("a", { onClick: () => selected.set(item.id) }, () => item.label.get()),
@@ -94,6 +96,7 @@
 
       const tbody = document.querySelector("tbody");
       createRoot(() => {
+        isSelected = selector(selected);
         render(For(data, row, { key: (r) => r.id }), tbody);
       });
     </script>

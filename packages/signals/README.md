@@ -12,7 +12,7 @@ The public API is shaped after the [TC39 Signals proposal](https://github.com/tc
 
 | Module | Entry | What it gives you |
 |---|---|---|
-| **Reactive core** | `@wcstack/signals` | `signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` |
+| **Reactive core** | `@wcstack/signals` | `signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `selector` |
 | **Async resource** | `@wcstack/signals` | `resource` — an async producer as a reactive `{ value, loading, error }` triad (switchMap cancel/restart) |
 | **Stream resource** | `@wcstack/signals` | `streamResource` — fold a continuous flow (async iterable / `ReadableStream`) into one reactive value |
 | **wc-bindable adapter** | `@wcstack/signals` | `bindNode` (properties→signals, event-token streams via `on`, input write-back via `bindInput`, command-token via `bindCommand`) + `nodeSource` (node cancel bridge for `resource`) |
@@ -22,7 +22,7 @@ The public API is shaped after the [TC39 Signals proposal](https://github.com/tc
 
 - **Pull-validated three-color marking** (after Reactively / Solid). A write marks direct observers DIRTY and transitive ones CHECK; effects run on a coalesced microtask. A computed that recomputes to an *equal* value does **not** propagate — downstream work is skipped.
 - **Fine-grained `h`, no VDOM.** `h(tag, props, ...children)` builds **real DOM once**. A prop or child passed as a function/signal is wired to a targeted `effect`, so only that one binding updates. No **VDOM reconciler** is shipped; keyed lists are handled by `For` / `Index` (array diffing that reuses and moves rows), not a VDOM.
-- **Ownership = lifecycle.** `createRoot` / effects collect the disposers of everything created during their run, so tearing down a subtree disposes its effects, listeners, and resources — no leaks.
+- **Ownership = lifecycle.** `createRoot` / effects collect the disposers of everything created during their run, so tearing down a subtree disposes its effects, listeners, and resources — no leaks. A listener is taken off an element that stays in the document; an element that has left it (a removed row) goes with its listeners (since 4.18 (not released yet)).
 - **IO is the node, reactivity is the core.** `bindNode` adapts a wc-bindable element (e.g. `<wcs-fetch>`) into signals. The element has no idea a signal is behind the binding.
 
 ## Install
@@ -162,6 +162,26 @@ h("ul", null,
 - **A keyed row is kept while its key is**, whatever object the list now holds under it — a reorder, a re-fetch and an immutable update all reuse the row (and its DOM, focus, input state). So the first argument is the item **the row was built with**: read what can change through `current()` (`() => current().text`), or `t.text` stays what it was.
 - `each` must return a **single** Node (one row = one node).
 
+**The selected row — `selector`** (since 4.18 (not released yet)). A row that compares `selected.get() === row.id` itself re-runs on every change of the selection, all of them. `selector(selected)` gives `isSelected(key)`, and a change re-runs only the row it left and the row it took:
+
+```typescript
+import { signal, selector, createRoot, h, For } from "@wcstack/signals/dom";
+
+const rows = signal([{ id: 1, label: "a" }, { id: 2, label: "b" }]);
+const selected = signal<number | null>(null);
+
+createRoot(() => {
+  const isSelected = selector(selected); // under the owner: it subscribes to `selected`
+  document.body.append(h("ul", null,
+    For(rows, (row) =>
+      h("li", { class: () => (isSelected(row.id) ? "active" : ""), onClick: () => selected.set(row.id) }, row.label),
+    { key: (r) => r.id }),
+  ));
+});
+```
+
+Keys are compared as a `Map` compares them (`===`, and `NaN` equals `NaN`); to select an object, select its id — `selector(computed(() => selectedItem.get()?.id))`.
+
 ### 7. Pages behind `@wcstack/router`, and a value kept in `<wcs-storage>`
 
 The router puts a route's content into `<wcs-outlet>` when the route is entered, takes it out when it is left, and puts **the same nodes** back on the next entry. `@wcstack/state` binds that content through the binder protocol; signals has no binder, so do not `render()` into route content from outside — the nodes come back with what you rendered last time, and a second render appends to it. Make each page a `SignalsElement` instead: it renders when it connects and disposes its effects when it disconnects, so a page is live exactly while its route is shown. Read the route's parameters by binding the router element:
@@ -242,12 +262,13 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `createRoot<T>` | `(fn: (dispose) => T) => T` | Fresh ownership scope. Everything created inside is disposed by `dispose`. The root is detached (not auto-disposed by an enclosing owner). If `fn` throws, the half-built scope is disposed before the error propagates. |
 | `onCleanup` | `(fn: () => void) => void` | Register a teardown with the current owner. No-op with no owner. |
 | `flushSync` | `() => void` | Run queued effects synchronously now. |
+| `selector<T>` | `(source: ReadSignal<T>) => (key: T) => boolean` | Since 4.18 (not released yet). `isSelected(key)` is true while `source` equals `key` (compared as a `Map` compares keys). A change of `source` re-runs only the readers of the key it left and the key it took (Solid's `createSelector`); the readers are told when effects run, and a call reads `source` as it is now. A key no reader reads any more is forgotten. Create it under an owner. |
 
 ### DOM layer (`@wcstack/signals/dom`)
 
 | Export | Signature | Notes |
 |---|---|---|
-| `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. A function under an `on…` key is an event listener: `onClick` → `click` (lowercased); `onclick` / `"onadd-to-cart"` → the name as written (`click`, `add-to-cart`). |
+| `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. A function under an `on…` key is an event listener: `onClick` → `click` (lowercased); `onclick` / `"onadd-to-cart"` → the name as written (`click`, `add-to-cart`). When the owner is torn down, the listener is removed from an element still in the document; an element that has left it keeps its listeners and is collected with them (since 4.18 (not released yet)). |
 | `render` | `(child, container) => Node` | Append a child (resolving fragments/arrays/reactives) into a container. |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` groups without a wrapper element. |
 | `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number, current: () => T)` returns one Node (`item` is the item the row was built with, `current()` the item under its key now); `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |
@@ -413,7 +434,7 @@ A step-by-step guide (esbuild / tsc / Vite setups, a verifying `.tsx` example, t
 
 Both entries ship as production code-split bundles that import **one shared reactive-core chunk** — but that chunk is imported by **relative path** (`./core-*.esm.js`), so whether a buildless page ends up with one reactive instance depends on how the files are served.
 
-- **Map the single `/dom` entry (the recommended CDN form).** `@wcstack/signals/dom` re-exports the entire headless core (`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `resource` / `streamResource` / `bindNode` / `nodeSource`) alongside the DOM helpers, so one specifier covers everything and the single instance is structural — nothing depends on chunk sharing. The signals demos in this repo all import from this one entry.
+- **Map the single `/dom` entry (the recommended CDN form).** `@wcstack/signals/dom` re-exports the entire headless core (`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `selector` / `resource` / `streamResource` / `bindNode` / `nodeSource`) alongside the DOM helpers, so one specifier covers everything and the single instance is structural — nothing depends on chunk sharing. The signals demos in this repo all import from this one entry.
 - **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@4.17.0/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
 
 Bundler users dedupe via the module graph and may use either entry.
@@ -425,6 +446,7 @@ The package is versioned with the rest of wcstack (**4.x**: every package is rel
 | API group | Exports | Stability |
 |---|---|---|
 | **Reactive core** | `signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` | **Stable** — semver-protected; shaped after the TC39 Signals proposal. |
+| **Selection** | `selector` | **Evolving / experimental** (since 4.18 (not released yet)) — the shape may still be tuned before it joins the stable core. |
 | **Error contract** | `DisposedError` / `isDisposedError` | **Stable** — brand-based, realm-safe. |
 | **Resources** | `resource` / `streamResource` | **Stable** (mostly). The shapes are settled; note the `streamResource` cooperative-cancellation contract (the `source` MUST honor its `AbortSignal` — see [Notes & limitations](#notes--limitations)). |
 | **wc-bindable adapter** | `bindNode` / `nodeSource` | **Evolving / experimental** — runtime behaviour is stable, but the **typed surface** (`bindNode<NodeShape>`, `NodeShape`) may still be tuned. |
@@ -440,6 +462,7 @@ The package is versioned with the rest of wcstack (**4.x**: every package is rel
 - **No backpressure (stream).** The fold result *is* the buffer — demand does not flow back to the producer. Bound the fold (latest / count / window) for infinite streams; unbounded accumulation is a footgun.
 - **Cooperative cancellation — the `source` MUST honor its `AbortSignal` (hard contract).** This is what drives switchMap restart/dispose. A `ReadableStream` is **fully** rescued on abort via `reader.cancel()` (the parked `read()` is force-unwound). A plain `AsyncIterable` / async generator is **partially** rescued: on abort the adapter calls the iterator's `return()` to fire your `finally`/cleanup, but a parked `await` (the producer stalling before its next `yield` while *ignoring* `signal`) cannot be force-unwound from outside — `return()` only takes effect when the generator next resumes. A generator that parks forever and never observes `signal` still leaks its `consume()` task. **Always observe `signal` in your `source`** (e.g. reject/break on `signal.aborted`).
 - **`setProp` covers the common attribute↔property cases, not all.** A small remap table handles `for`→`htmlFor`, `tabindex`→`tabIndex`, `colspan`/`rowspan`, etc.; read-only DOM members fall through to `setAttribute`; SVG tags are created in the SVG namespace and `class` is always set as an attribute (so SVG works). `style` objects accept camelCase, kebab-case, and CSS custom properties (`--x`). `null`/`undefined` on a DOM property are normalized to `""` (so a string prop like `id`/`src` clears, not `"null"`), but `false` is left as-is — correct for boolean props (`disabled = false`), so a reactive `false` on a *string* prop still lands as `"false"`. The same `""` normalization also hits **object/array-valued custom-element props** — a reactive `null` lands as `""`, not `null`; pass an empty array/object to clear such a prop. Pass `""` or guard in the thunk; `class` is special-cased (`false` → `""`). An object or array given to a custom element that is **not defined yet** (its module runs after `h()` made it) is not written as an attribute (`"[object Object]"`): it is held and assigned through the element's setter once the element is defined — the latest value, if it changed in between. Primitives still go to the attribute.
+- **A listener stays on an element torn down outside the document** (since 4.18 (not released yet)). When an owner is disposed, the listeners `h()` added come off the elements still in the document (they live on, e.g. a kept element under a reactive child) and stay on those that have left it — a removed `For` row, a replaced subtree, a disconnected `SignalsElement`'s content: such an element is collected with its listeners, and clearing 10,000 rows no longer removes 10,000 listeners one by one. A script that keeps such an element and dispatches an event to it still calls the handler.
 - **An effect that writes a value it depends on (mutating each run) loops.** A runaway flush is bounded by a hard iteration cap and throws rather than hanging.
 - **Out of scope for v1.** SSR/hydration (initialize from JS, not markup), deep/proxy reactivity (use `@wcstack/state` for path-based deep tracking), and stream backpressure are deliberately not provided — see the design doc.
 
@@ -475,8 +498,8 @@ Zero runtime dependencies. Measured gzipped sizes of the minified bundles:
 
 | Entry | gzip |
 |---|---|
-| Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 3.1 KB** |
-| `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 3.8 KB** |
+| Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 3.5 KB** |
+| `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 4.0 KB** |
 
 Both published entries import the **one** shared core chunk, so a page that loads `dist/` as files pays for the core only once — a transforming ESM CDN endpoint (esm.run) instead inlines a copy per entry, which is why a buildless page should map only `/dom` (see [Buildless](#buildless-import-maps)). `package.json` declares `"sideEffects": false`, so a bundler tree-shakes away anything you don't import.
 
