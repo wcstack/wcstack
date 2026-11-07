@@ -51,7 +51,39 @@ test.describe("e2e/fixtures/audio-gesture", () => {
     expect(messages).toEqual([]);
   });
 
-  test("最初のキー押下で context ができて、その音が鳴る @browsers", async ({ page }) => {
+  // 出力デバイスの有無によらず成り立つことだけを見る — Firefox でも CI でも。
+  test("最初のキー押下の中で context ができ、グラフが組まれ、その音が voices に届く @browsers", async ({ page }) => {
+    const messages = collectAudioContextMessages(page);
+    await page.goto("/e2e/fixtures/audio-gesture/index.html");
+    await page.waitForFunction(() => window.__audioGestureReady === true);
+
+    const read = () => page.evaluate(() => {
+      const synth = document.getElementById("synth") as unknown as { voices: number };
+      const scope = document.getElementById("scope") as unknown as { sample(): Uint8Array | null };
+      return {
+        created: (globalThis as Record<symbol, unknown>)[Symbol.for("@wcstack/audio.context")] !== undefined,
+        graph: scope.sample() !== null,   // analyser のインスタンスがあれば（＝グラフがあれば）フレームが返る
+        voices: synth.voices,
+      };
+    });
+    expect(await read()).toEqual({ created: false, graph: false, voices: 0 });
+
+    await page.locator("#key").hover();
+    await page.mouse.down();
+    await expect.poll(read, { timeout: 5_000 }).toEqual({ created: true, graph: true, voices: 1 });
+    await page.mouse.up();
+    expect(messages).toEqual([]);
+  });
+
+  // 鳴ったことまで確かめるのは Chromium だけ（@browsers を付けないので Firefox の project では走らない）。
+  //
+  // Firefox は出力デバイスの無い環境では AudioContext を開始しない。CI の Linux ランナーで
+  // この確認は Firefox だけ 3 回とも振れ幅 0 で落ちた。手元の Windows（デバイスあり）の Firefox
+  // では鳴るが、デバイス無しを模すテスト用の pref（media.cubeb.force_null_context）を立てると、
+  // 押下の後も state は "suspended"・currentTime は 0 のまま、analyser は無音を返し、警告も出ない
+  // — CI と同じ姿になる（Linux そのものは手元で再現できないので、この pref での観察からの推定）。
+  // Chromium はデバイスが無くても描画を進めるので、CI でも鳴る。
+  test("最初のキー押下の音が実際に鳴る（Chromium）", async ({ page }) => {
     const messages = collectAudioContextMessages(page);
     await page.goto("/e2e/fixtures/audio-gesture/index.html");
     await page.waitForFunction(() => window.__audioGestureReady === true);
