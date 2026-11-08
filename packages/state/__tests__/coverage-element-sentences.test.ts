@@ -146,7 +146,7 @@ describe("番号付きのメッセージの文面（診断の後付け）", () =
     'The specifier “/js/make.js” was a bare specifier, but was not remapped to anything.',
     "Module name, '/js/make.js' does not resolve to a valid URL.",
   ])("#43 は解決できない import に CSP でなく blob: の基底を言う（%s）", (detail) => {
-    expect(text(M.InlineFailed, [detail])).toBe(`Failed to evaluate the inline <script> of <wcs-state>: ${detail}. An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").`);
+    expect(text(M.InlineFailed, [detail])).toBe(`Failed to evaluate the inline <script> of <wcs-state>: ${detail.replace(/\.$/, "")}. An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").`);
   });
 
   it("#122 は attr: にも名前空間に合った文面を持つ", () => {
