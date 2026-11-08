@@ -1256,6 +1256,85 @@
       "effect": { "en": "It is already 0–1: velocity 100 reaches the synth as 0.006, and the MIDI keyboard is practically silent while the screen keyboard is loud. Nothing says so.", "ja": "すでに 0〜1 なので、ベロシティ 100 は 0.006 としてシンセに届き、画面の鍵盤は大きく鳴るのに MIDI 鍵盤はほとんど聞こえない。何も知らせない。" },
       "disposition": "docs-only",
       "note": { "en": "Found by the music-room seam app (docs/seam-apps.md). The midi README and the skill say velocity is normalized to 0–1.", "ja": "継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 midi の README と skill はベロシティが 0〜1 に正規化されていると言う。" }
+    },
+    {
+      "id": "inserted-markup-unbound",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Inserts `data-wcs` markup with another library after the page was bound — htmx's swaps, a Turbo frame, an `innerHTML` — and hands nothing to the binder, or hands over a container the page already had.", "ja": "ページを束縛した後に、別のライブラリで `data-wcs` のマークアップを入れ（htmx の入れ替え、Turbo のフレーム、`innerHTML`）、binder に何も渡さない。またはページが持っていた入れ物を渡す。" },
+      "effect": { "en": "The page is walked once: the inserted markup keeps its `data-wcs` and does nothing — a star button that does not toggle, a booking section that shows only its heading. A container the walk visited is left alone, with everything inserted into it since. Since 4.20 the diagnostics add-on warns once per root, a second after its content changed (`[wcs/inserted-unbound]`).", "ja": "ページは一度だけ歩かれるので、入れたマークアップは `data-wcs` を持ったまま何もしない（押しても切り替わらない星のボタン、見出しだけの予約の節）。走査が歩いた入れ物は、後から入ったものごとそのまま。4.20 から diagnostics の後付けが、ルートの中身が変わってから 1 秒後に、ルートごとに 1 回警告する（`[wcs/inserted-unbound]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/inserted-unbound]" }],
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). Hand each inserted element over: `globalThis[Symbol.for(\"wcstack.binder\")].bind(node)` (with htmx, on `htmx:load`) — docs/islands.md.", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 入れた要素を 1 つずつ渡す: `globalThis[Symbol.for(\"wcstack.binder\")].bind(node)`（htmx なら `htmx:load` で）— docs/islands.ja.md。" }
+    },
+    {
+      "id": "history-cache-copy",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Lets a history cache bring back a page wcstack drew: htmx's history snapshot (`hx-history`), Turbo's snapshot cache.", "ja": "wcstack が描いたページを履歴のキャッシュに戻させる: htmx の履歴のスナップショット（`hx-history`）、Turbo のスナップショットのキャッシュ。" },
+      "effect": { "en": "The copy is the page as drawn: no `<template>` left to render from, comment bindings turned to text. It looks right and never updates. Since 4.20 the diagnostics add-on warns when a root binds such a copy (`[wcs/rendered-copy]`).", "ja": "写しは描いたままのページで、描き直す元の `<template>` は残らず、コメントの束縛は文字になっている。見た目は正しく、二度と更新されない。4.20 から diagnostics の後付けが、ルートがそのような写しを束縛するときに警告する（`[wcs/rendered-copy]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/rendered-copy]" }],
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). Turn the cache off for the page: `hx-history=\"false\"` on `<body>`, `<meta name=\"turbo-cache-control\" content=\"no-cache\">`.", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 そのページではキャッシュを切る: `<body>` に `hx-history=\"false\"`、`<meta name=\"turbo-cache-control\" content=\"no-cache\">`。" }
+    },
+    {
+      "id": "src-module-shared",
+      "lint": [],
+      "runtime": "designed-out", "harm": "wrong-place",
+      "mistake": { "en": "Names one state module in several `<wcs-state src>` of a document over time: a DCC's or a component's instances, a page whose body htmx or Turbo replaced.", "ja": "1 つの文書で、1 つの状態のモジュールを複数の `<wcs-state src>` で指す: DCC やコンポーネントのインスタンス、htmx や Turbo が body を入れ替えたページ。" },
+      "effect": { "en": "Since 4.20 each gets its own evaluation of the module (a later one imports it under another fragment). Up to 4.19 they shared the module's `export default` and wrote into it: the next instance or the next page started with what the first had written — the second event's booking form showed the first event's tickets.", "ja": "4.20 から、それぞれがモジュールを評価し直したものを受け取る（2 つ目からは別の断片を付けて import する）。4.19 までは、モジュールの `export default` を共有してそこへ書き込んだので、次のインスタンスや次のページは 1 つ目が書いた値で始まった — 2 つ目のイベントの予約フォームに 1 つ目のイベントの枚数が出た。" },
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。" }
+    },
+    {
+      "id": "number-filter-absent-value",
+      "lint": [],
+      "runtime": "designed-out", "harm": "degraded",
+      "mistake": { "en": "Formats a number that arrives later with `locale`, `currency`, `toFixed`, `round`, `floor`, `ceil` or `percent` (`total|locale` before the island's value is there).", "ja": "後から届く数を `locale`・`currency`・`toFixed`・`round`・`floor`・`ceil`・`percent` で書く（アイランドの値が届く前の `total|locale`）。" },
+      "effect": { "en": "Since 4.20 the number display family passes `undefined` / `null` through, as the date family does since 4.7: nothing renders until the value is there. Up to 4.19 the binding failed on every fresh load (`filter locale requires a number value, not undefined`).", "ja": "4.20 から数の表示の族は `undefined` / `null` を素通しする（日付の族は 4.7 から）: 値が届くまで何も描かない。4.19 までは新しく開くたびに束縛が失敗した（`filter locale requires a number value, not undefined`）。" },
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。" }
+    },
+    {
+      "id": "handed-over-not-released",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Throws away markup it handed to the binder (htmx replacing search results) without `release(subtree)`.", "ja": "binder に渡したマークアップを、`release(subtree)` を呼ばずに捨てる（htmx が検索結果を入れ替える）。" },
+      "effect": { "en": "Its bindings stay as long as the root's state: every change writes into every copy ever shown — after 200 replacements, 200 detached nodes per change. Nothing says so.", "ja": "その束縛はルートの状態が続く限り残り、変更のたびにそれまでに出したすべての写しへ書き込む — 200 回入れ替えた後は、1 回の変更で外れた 200 個のノード。何も言われない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). Since 4.20 `release(subtree)` (binder protocol version 2, the release add-on) lets go of them. The binder cannot tell \"out for now\" (the router puts its content back) from \"out for good\": only the inserter can say it.", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 4.20 から `release(subtree)`（binder プロトコルの版 2、release add-on）で手放せる。binder は「しばらく外れた」（ルーターは中身を戻す）と「もう戻らない」を区別できず、言えるのは入れた側だけ。" }
+    },
+    {
+      "id": "oob-swap-bound-element",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Lets the server replace an element a binding renders (`hx-swap-oob`).", "ja": "束縛が描く要素をサーバーに置き換えさせる（`hx-swap-oob`）。" },
+      "effect": { "en": "The new element is not bound and the binding writes into the old one, which is gone: a header count said 0 after a search and stayed 0 while items were starred.", "ja": "新しい要素は束縛されず、束縛はもう無い古い要素へ書き込む: 検索の後にヘッダーの数が 0 になり、星を付けても 0 のままだった。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). One owner per element: the island renders it, or the server does (docs/islands.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 1 つの要素の持ち主は 1 人: アイランドが描くか、サーバーが描くか（docs/islands.ja.md）。" }
+    },
+    {
+      "id": "preserved-root",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Keeps the root `<wcs-state>` across a body swap with `hx-preserve`.", "ja": "`hx-preserve` で、ルートの `<wcs-state>` を body の入れ替えの間も残す。" },
+      "effect": { "en": "The old root stays, bound to the old page, and the new page's markup is never walked: the header count empty, the star buttons dead — while content handed to the binder still works, so the page looks half alive.", "ja": "古いルートが古いページに束縛されたまま残り、新しいページのマークアップは歩かれない: ヘッダーの数は空、星のボタンは動かない — binder に渡した中身は動くので、ページは半分生きて見える。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). Put the root in the body the navigator swaps (docs/islands.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 ルートはナビゲーションが入れ替える body の中に置く（docs/islands.ja.md）。" }
+    },
+    {
+      "id": "htmx-attrs-in-template",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes htmx attributes (`hx-get`, `hx-trigger`, …) inside a `for:` / `if:` template, or binds one (`attr.hx-get:`).", "ja": "`for:` / `if:` のテンプレートの中に htmx の属性（`hx-get`・`hx-trigger` など）を書く。または束縛する（`attr.hx-get:`）。" },
+      "effect": { "en": "Rows are cloned after htmx processed the page, and htmx reads its attributes when it processes an element: an `hx-get` in a row does nothing, and a bound `hx-get` keeps requesting the old URL — unless `htmx.process()` is called on the element.", "ja": "行は htmx がページを処理した後で複製され、htmx は要素を処理するときに属性を読む: 行の中の `hx-get` は何もせず、束縛した `hx-get` は古い URL を要求し続ける — その要素に `htmx.process()` を呼ばない限り。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。" }
+    },
+    {
+      "id": "server-template-braces",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes wcstack's `{{ }}` in a server template whose own language uses the same braces.", "ja": "同じ波括弧を使う言語のサーバーのテンプレートに、wcstack の `{{ }}` を書く。" },
+      "effect": { "en": "The server renders them first: one becomes empty text, another stays half substituted (`合計 {{ booking.total|locale }}円（枚）`), and with `enableMustache: false` what is left stays text.", "ja": "サーバーが先にそれを描く: 1 つは空の文字になり、もう 1 つは半分置き換わったまま残り（`合計 {{ booking.total|locale }}円（枚）`）、`enableMustache: false` のもとでは残ったものも文字のまま。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). On such a page write bindings as `data-wcs` and comment bindings, and declare `$behavior: { enableMustache: false }` (docs/islands.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 そうしたページでは束縛を `data-wcs` とコメントの束縛で書き、`$behavior: { enableMustache: false }` を宣言する（docs/islands.ja.md）。" }
     }
   ],
   "uncounted": [
