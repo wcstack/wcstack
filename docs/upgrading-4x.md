@@ -361,7 +361,15 @@ Workarounds became unnecessary: a getter's row type written as `@returns` instea
 
 Workarounds became unnecessary: on 4.17.0, a "press to start the sound" hint bound to `running` kept out of the layout, or hidden only after the click, so that the page's first click reached what was clicked.
 
-## Still needed on 4.18.0
+### 4.19.0
+
+2026-11-08 — [CHANGELOG](../CHANGELOG.md#4190--2026-11-08)
+
+- `@wcstack/signals`: nothing changes for a page that does not call the new `delegateEvents()` (opt-in event delegation). A page that calls it should know that a delegated handler runs when the event reaches the document — after the listeners of the elements in between — and not for an element outside the document, so a test that calls `el.click()` on an element it never attached sees no call (signals README, "Event delegation").
+
+No workaround became unnecessary.
+
+## Still needed on 4.19.0
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").
