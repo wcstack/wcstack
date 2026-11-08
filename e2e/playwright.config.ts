@@ -31,9 +31,10 @@ export default defineConfig({
     // So do the router's fragment links, which read Firefox's NavigateEvent (router-fragment-links), and the
     // city-library seam app's skip link, pagination, login under view transitions, time zones and languages.
     // And @wcstack/audio's context waiting for the first gesture, whose warning Firefox printed on load (audio-gesture).
+    // And @wcstack/signals' delegateEvents, which leans on composedPath() and an overridden currentTarget (signals-delegate).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },
