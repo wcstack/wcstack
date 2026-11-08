@@ -251,6 +251,7 @@ already defined by another copy of @wcstack/state that does not name its version
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
 | `@wcstack/state/features/formats` | 残りの 38 個のフィルタ: 算術・型変換・デフォルト（`add`・`int`・`coalesce` …）と書式（`upper`・`date`・`currency`・`round`・`truncate` …） |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
+| `@wcstack/state/features/release` | binder の `release(subtree)`: 渡してから捨てたマークアップの束縛を手放す — [マークアップを自分で差し込む](#マークアップを自分で差し込む)。4.20（未リリース）から |
 | `@wcstack/state/features/diagnostics` | エラーメッセージの文章（did-you-mean と lint への案内を含む）と、開発時の警告（束縛や `$watch` のパスが解決しない、`wcs/default-getter-mismatch`）。入れなければ、メッセージは番号と値だけになり（[エラーメッセージ](#エラーメッセージと番号)）、これらの警告は出ず、4.0 で外した 3.x の名前（`$scan`・`$streams`・`$updatedCallback`・`$trackDependency`・`$untrackDependency`）も見つけない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
 
@@ -291,7 +292,7 @@ already defined by another copy of @wcstack/state that does not name its version
 | 何のためか | どの `<wcs-state>` が動き出すよりも前に揃っているべきもの — `mount=` / `bind-component` / DCC の要素が何であるかを決める `scopes` — と、ページの開発補助（`diagnostics`・`devtools`） | その state が必要とするアドオン（`$watch` のための `temporal`、フィルタのための `formats`） |
 | 誰が読むか | 分割版の auto エントリだけ | すべてのエントリ: 分割版の auto エントリは足りないアドオンを読み込み、それ以外のエントリは入っているかを確かめ、入っていなければその state を `[wcs/feature-not-installed]` で失敗させる |
 
-名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools`・`native-commands` です。
+名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools`・`native-commands`・`release`（4.20（未リリース）から）です。
 `features=` にそれ以外の名前があると、分割版の auto エントリは `<wcs-state>` を定義する前に
 `[wcs/feature-unknown]` で失敗します。`$features` にあれば、その state が失敗します（分割版の auto
 エントリでは `[wcs/feature-unknown]`、それ以外では `[wcs/feature-not-installed]`）。配列でない
@@ -401,6 +402,8 @@ state ごとにアドオンを読み込むのは分割版の auto エントリ�
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
+**`<wcs-state src="x.js">` はそれぞれ自分の状態を持ちます**（4.20（未リリース）から）。ブラウザはモジュールを URL ごとに 1 回だけ評価し、その `export default` が状態になって、エンジンはそこへ書き込みます。同じ文書で同じモジュールを指す 2 つ目の `<wcs-state>` —— DCC やコンポーネントの次のインスタンス、htmx や Turbo が body を入れ替えたページ —— は、別の断片（`x.js#2`）を付けて import し、ブラウザはそれを評価し直します。4.19 までは全員が 1 つ目のオブジェクトを共有し、次のインスタンスや次のページは 1 つ目が書いた値で始まりました。1 つ目の `<wcs-state>` はページのほかのスクリプトが import するのと同じモジュールを受け取り、2 つ目からはモジュールのトップレベルのコードがもう一度走ります —— 副作用を置かないでください。
+
 状態の読み込み中にルートから外されたルートの `<wcs-state>`（ページの中身が入れ替わった、要素が移された）は、そこには何もマウントせず、次に接続された場所で（すでに接続されていればすぐに）始め直します。`setInitialState()` で渡された状態はそのために保持しますが、`state` / `src` / `json` / 内包スクリプトのソースは読み直します —— fetch はもう一度走り、内包モジュールはトップレベルのコードも含めてもう一度評価されます。
 
 `state="<id>"` が読むのは、その id を持つ `<script type="application/json">` だけです — まず要素自身のルート（shadow root）で、次に document で探し、同じ id を持つ別の要素は対象になりません。読めないソースは、その要素の初期化を失敗させます: そのような script がない（`#16`）、`.json` を取得できない（`#13`、HTTP ステータス付き）、JSON がパースできない、モジュールが throw する（[初期化の失敗](#初期化の失敗)）。空の JSON script は `{}` として扱います。
@@ -426,7 +429,7 @@ state ごとにアドオンを読み込むのは分割版の auto エントリ�
 
 拒否されたボリュームは、接ぎ木せずに決着し、理由を報告して、`connectedCallbackPromise` を resolve します。state の読み込みに失敗したボリュームも同じです。そのほかの拒否: 別のボリュームがすでに持っているマウントパス（`will not graft: another volume already holds "cart".`）、ルートの state がすでに持っているパス（`will not graft: the root state already has "cart".` —— ただし SSR では、ボリュームはそこにあるサーバーのデータを引き継ぎます）、ホストに配線されたコンポーネントの shadow root の中のボリューム（`will not graft: its component is wired to its host.` —— そのコンポーネントはホストのツリーを読むので、データはホストの state に置いてください）。ルートの `<wcs-state>` が初期化に失敗した場合、それを待っていたボリュームと、後から読み込まれるボリュームは `will not graft: the root state failed to initialize.` を報告し、永久に待たずに決着します。それが終点です: あとから修正版のルートを接続しても復帰しません —— 壊れたルートとボリュームを取り除き、新しい要素を追加してください。ボリュームの `$connectedCallback` が throw した場合は `console.error` で報告され、ボリュームは接ぎ木されたままです。
 
-接ぎ木済みのボリュームは、外してもデータとマウントパスを保ちます: アンマウントはありません。ルートを待っている間にページから外されたボリューム（ページの中身が入れ替わった）は、同じマウントパスを求める新しいボリュームにそれを譲り、接ぎ木せずに settle します。ルートはその下のパスに書き込めますが、ボリュームの接ぎ木先より上にあるオブジェクトを置き換える書き込み（`mount="shop.cart"` のときの `this.shop = …`）は throw し、ルートやボリュームの再設定（`setInitialState()`）も throw します。マウントパスは静的パスのみです（`*`・`$`・`#`・`@`・空白は不可）。初期化後に `mount` 属性を変更することはできず、変更は無視されます —— 要素を取り除き、望むパスで新しい要素を追加してください。
+接ぎ木済みのボリュームは、外してもデータとマウントパスを保ちます: アンマウントはありません。ルートを待っている間にページから外されたボリューム（ページの中身が入れ替わった）は、同じマウントパスを求める新しいボリュームにそれを譲り、接ぎ木せずに settle します。4.20（未リリース）から、接続したときに別のボリュームが持っていたマウントパスは、状態を読み終えて始めるときに決め直します: htmx はページの新しい中身を入れてから古い中身を外すので、新しいページのボリュームはまだ文書にある古いページのボリュームと出会い、入れ替えの 2 回に 1 回は拒否されていました。ルートはその下のパスに書き込めますが、ボリュームの接ぎ木先より上にあるオブジェクトを置き換える書き込み（`mount="shop.cart"` のときの `this.shop = …`）は throw し、ルートやボリュームの再設定（`setInitialState()`）も throw します。マウントパスは静的パスのみです（`*`・`$`・`#`・`@`・空白は不可）。初期化後に `mount` 属性を変更することはできず、変更は無視されます —— 要素を取り除き、望むパスで新しい要素を追加してください。
 
 **スコープごとに動くもの**（ここに無言で無視されるものはありません）:
 
@@ -766,7 +769,7 @@ export default {
 
 **`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。（このスキップは spread に限らず、要素の input に値を渡すすべてのプロパティバインディングに適用されます。前にそのパスが値を持っていても同じで、要素には状態が最後に書いた値が残ります。これは wc-bindable の applier プロファイル（0.10.0 の A2）より厳しい規則で、A2 は値の後の `undefined` を書いて要素を初期状態に戻させます。状態はこのプロファイルを宣言しません。ほかの書き手 — React 19 や直接の代入 — は `undefined` を届けるので、wcstack の I/O ノードは `undefined` を「値が無い」として扱います。4.17 から、入力への束縛が値のあとに `undefined` になると — キーの無いオブジェクトで親を置き換えた、キーができる前に保存した記録を読み込んだ、getter が `undefined` を返し始めた — `diagnostics` の後付けが束縛ごとに 1 回警告し、束縛と要素が持ち続ける値と直し方を名指します: `[wcs/input-undefined] "mix: sound.delayMix" on <wcs-delay> is undefined after a value, …: <wcs-delay> keeps a number (0.3). Write null to clear it …`。値を持ったことの無い束縛、`null`、表示の表面は言いません。）**表示の表面は別です:** `textContent` / `innerText` / `innerHTML`・mustache やコメントバインディングのテキスト・`attr.*`・`style.*`・`class.*` には生かすべき要素側の既定値が無いので、`undefined` も `null` も「値が無い」— テキストは空になり、属性やスタイルは削除され、クラスは外れます。`class.*` だけは範囲が狭く、「値が無い」扱いになるのは `undefined` と `null` だけです — **それ以外の非 boolean は今も throw します**。クラスの束縛は真偽の切り替えなので、truthy な文字列は意図というより書き間違いである方がずっと多いためです。「truthy として扱う」つもりなら `class.on: flag|truthy` と書いてください。
 
-**フィルタを挟んでも契約は保たれます。** 空値の判定はフィルタ**後**の値に対して行われるため、`String(value)` で結果を組み立てるフィルタは、値が無いときに `"undefined"` という**文字**を作ってしまいかねません。書式の族（`upper` / `lower` / `capitalize` / `trim` / `slice` / `padStart` / `padEnd` / `repeat` / `reverse` / `truncate` / `unit`）は代わりに `undefined` / `null` を素通しするので、`attr.title: x|trim` はフィルタの無い `attr.title: x` と同じく属性を消します。4.7 から、日付の族（`date` / `time` / `datetime` / `ymd` / `hms`）も素通しします: 後から届く日付（fetch、ルート）は、届くまで何も描きません — 4.6 までは読み込むたびに拒否され、無い日付の代わりになる `coalesce` の値もありませんでした。次の 3 群は**意図的に素通ししません**: 空値そのものが入力として意味を持つフィルタ（`defaults` / `coalesce` / `nullIfEmpty` / `boolean` / `truthy` / `falsy` / `not` / `eq` / `ne`）、変換が仕事のフィルタ（`int` / `float` / `number` / `string` — `undefined|string` は今も `"undefined"`）、値の型を検査するフィルタ（数値・配列の族。`toFixed` / `join` など）。最後の群は throw しますが、それは束縛 1 本に閉じ込められ `$errorCallback` に報告されます。値が無いことが正当にありうるなら前に `coalesce` を置いてください（`price|coalesce(0)|toFixed(2)`）。
+**フィルタを挟んでも契約は保たれます。** 空値の判定はフィルタ**後**の値に対して行われるため、`String(value)` で結果を組み立てるフィルタは、値が無いときに `"undefined"` という**文字**を作ってしまいかねません。書式の族（`upper` / `lower` / `capitalize` / `trim` / `slice` / `padStart` / `padEnd` / `repeat` / `reverse` / `truncate` / `unit`）は代わりに `undefined` / `null` を素通しするので、`attr.title: x|trim` はフィルタの無い `attr.title: x` と同じく属性を消します。4.7 から、日付の族（`date` / `time` / `datetime` / `ymd` / `hms`）も素通しします: 後から届く日付（fetch、ルート）は、届くまで何も描きません — 4.6 までは読み込むたびに拒否され、無い日付の代わりになる `coalesce` の値もありませんでした。4.20（未リリース）から、数の表示の族（`toFixed` / `round` / `floor` / `ceil` / `percent` / `locale` / `currency`）も素通しします: 合計・価格・件数は fetch やアイランドの状態が届くまで無く、4.19 までは `total|locale` が新しく開くたびに失敗しました。別の型の値（文字列）は今も throw します。次の 3 群は**意図的に素通ししません**: 空値そのものが入力として意味を持つフィルタ（`defaults` / `coalesce` / `nullIfEmpty` / `boolean` / `truthy` / `falsy` / `not` / `eq` / `ne`）、変換が仕事のフィルタ（`int` / `float` / `number` / `string` — `undefined|string` は今も `"undefined"`）、値の型を検査するフィルタ（算術・配列の族。`add` / `join` など）。最後の群は throw しますが、それは束縛 1 本に閉じ込められ `$errorCallback` に報告されます。値が無いことが正当にありうるなら前に `coalesce` を置いてください（`price|coalesce(0)|add(100)`）。
 
 **制約事項**：
 
@@ -933,6 +936,32 @@ this.items = await (await fetch("/api/items")).json();
 ```
 
 バインダはマークアップを理由に throw しません: 引き渡された部分木の中のエラーは `console.error` で報告され、それより前の部分はバインドされたまま残り、ナビゲーションは続きます。もう一度引き渡された部分木（router は挿入のたびに中身を引き渡します）がバインドされるのは 1 回だけで、ルートの `<wcs-state>` がページから外れている間に引き渡された部分木は、その要素が戻されたときに —— 引き渡されたときの範囲の宣言のとおりに —— バインドされます。引き渡されるのは要素だけなので、ルートの本体に要素の外で直接書いた `{{ }}` は、ナビゲーションでそのルートに入ったときにはバインドされません —— 要素で包んでください。これが問題になるのは、バインダを自分で呼ぶ場合か、`<wcs-route>` の直下に `for:` / `if:` を書く場合だけです。
+
+### マークアップを自分で差し込む
+
+束縛済みのページへ別のライブラリが入れるマークアップ —— htmx の入れ替え、Turbo のフレーム、自分で書く `innerHTML` —— は、`@wcstack/router` が自分の入れたものを渡すのと同じく、binder に渡したときに束縛されます。`<wcs-state>` はルートを 1 回だけ歩くので（[ページ走査が何をバインドするか](#ページ走査が何をバインドするか)）、誰も渡さないマークアップは `data-wcs` を持ったまま何もしません。4.20（未リリース）から `diagnostics` add-on がそれを言います: 束縛済みのルートに入り、何にも束縛されなかった束縛付きの要素を、ルートの中身が変わってから 1 秒後に、ルートごとに 1 回報告します（`[wcs/inserted-unbound]`）。
+
+```js
+// htmx: htmx:load は入れ替えが入れた要素ごとに、htmx:beforeCleanupElement は外す要素ごとに起きる
+const binder = () => globalThis[Symbol.for("wcstack.binder")];
+const handed = new WeakSet();
+document.addEventListener("htmx:load", (e) => {
+  handed.add(e.detail.elt);
+  binder()?.bind(e.detail.elt);
+});
+document.addEventListener("htmx:beforeCleanupElement", (e) => {
+  if (handed.has(e.detail.elt)) binder()?.release?.(e.detail.elt);
+});
+```
+
+- **入れ物ではなく、新しいノードを渡します。** ページの走査が一度歩いた要素は、渡し直されても、その中身ごと —— あとから入った子も含めて —— そのままです: `#results` への入れ替えの後に `bind(document.querySelector("#results"))` としても何も束縛されません。入れた要素を 1 つずつ渡してください（htmx の `htmx:load` が 1 つずつ教えます）。
+- **渡すものの最上位にある `for:` / `if:` のテンプレート**は、その行を一緒に出し入れする場合に `bind(node, { range: true })` で渡したときだけ描かれます（[挿入された内容の中の構造テンプレート](#挿入された内容の中の構造テンプレート)）。そうでなければ要素で包んでください。
+- **binder は `@wcstack/state` を読み込んだ時点で現れます**（`/auto`、または `bootstrapState()`）。それまでスロットは `undefined` です。それより前に入り、そのときもページにあるものは、最初の走査が束縛します。
+- **捨てるものは手放します。** 渡した部分木の束縛は、ルートの状態が続く限り残ります: 検索結果を 1 時間入れ替え続けたページは、それまでに出したすべての結果を持ち続け、変更のたびにそのすべてへ書き込んでいました。4.20（未リリース）から、`release(subtree)`（binder プロトコルの版 2。`release` add-on —— `@wcstack/state` と `/auto` に入っています。`/core` のページは `@wcstack/state/features/release` を入れます）が、それらの登録を外し、部分木の `for:` / `if:` の view を片付けます。部分木がページを出る前でも後でも呼べます。手放したノードは束縛し直されません: 新しいマークアップを渡してください。あとで戻すもの（隠してまた見せるパネル）は手放さないでください —— 中身がもう戻らないと知っているのは入れた側だけで、`@wcstack/router` が決して呼ばないのはそのためです。
+- **束縛済みのページの写しはマークアップではありません。** 描いたままのページを戻す履歴のキャッシュ —— htmx の履歴（`hx-history`）、Turbo のスナップショットのキャッシュ —— は、状態が描いた行と文字を戻しますが、描き直す元の `<template>` も、更新するコメントの束縛も残っていません: 見た目は正しく、二度と変わりません。そのページではキャッシュを切り（`<body>` に `hx-history="false"`、`<meta name="turbo-cache-control" content="no-cache">`）、戻るでサーバーからページを読み込ませてください。4.20（未リリース）から、`diagnostics` add-on は、ルートがそのような写しを束縛するときに警告します（`[wcs/rendered-copy]`）。
+- **`for:` / `if:` のテンプレートの中の、別のライブラリの属性**は、そのライブラリがページを処理した後で行と一緒に複製されます: 行の中の `hx-get` は、その行に `htmx.process()` を呼ばない限り htmx に見えません。
+
+全体像 —— htmx や Turbo のサーバー描画のサイト、その上のアイランド、別のサイトのページに置くウィジェット —— は [docs/islands.md](../../docs/islands.md) にあります。
 
 ## パス getter（算出プロパティ）
 
