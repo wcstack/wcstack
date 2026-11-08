@@ -71,10 +71,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | What tells the author | Entries |
 |---|---|
 | The design (cannot be written, or harmless) | 10 |
-| The runtime | 73 |
-| The lint only — conditional silence | 25 |
+| The runtime | 74 |
+| The lint only — conditional silence | 26 |
 | The documents only — silence | 43 |
-| Lint codes not counted | 19 |
+| Lint codes not counted | 20 |
 
 ### The documents only — silence
 
@@ -146,6 +146,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Reads a removed 3.x declaration through `this` (`this.$streams`, `this.$updatedCallback`). | `wcs/declaration-alias-read` (varies) | It reads `undefined`, and calling it is a generic TypeError. | broken | runtime report — 4.x. The diagnostics add-on's `dollar` hook can name the removed declaration (0 core bytes). |
 | `$renderedCallback(paths)` tests a declared path that no binding names (`paths.includes("feed")`), or a path the state does not have (`paths.includes("labell")`). | `wcs/updated-callback-unbound` (warning) | `paths` lists only the bindings that were applied, so the branch never runs. | broken | stays with the lint (the runtime cannot see it). A runtime heuristic (a `paths` whose `includes` warns) would catch the test, not the intent. A path the state does not have is reported only beside a near one it has (a likely typo), as the callback may compare strings of another kind. |
 | Binds `<wcs-storage>`'s `value#init=element` to a path seeded with a literal that is not `null` (`cart: []`). | `wcs/storage-init-seed` (warning) | An empty key reads as `null`, so the first pull replaces the seed: `for: cart` renders nothing, and code that reads `this.cart.length` throws a generic TypeError. | broken | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: warn when an explicit `#init=element` replaces a value with `null` (diagnostics add-on). 5.0: an absent key reads as `undefined`, which keeps the seed (the README documents `null`). |
+| Writes `{{ }}` or a comment binding in the document's `<head>` (`<title>{{ pageTitle }}</title>`). | `wcs/template-syntax` (warning) | A `<wcs-state>` binds the document's `<body>` (and shadow roots), never its `<head>`: the title keeps the braces as written, and nothing says so. A route's `<wcs-head>` is bound, because the router hands its clone to the binder. | broken | stays with the lint (the runtime cannot see it). Since 4.20 the lint reports it (`wcs/template-syntax`, warning) in an explicit `<head>`, with the page's state readable and `enableMustache` on, and checks no path there. Found by the community-hall seam app, whose CMS wrote `{{pageTitle}}` in the `<title>`; up to 4.19 the lint suggested the comment form there, which is not bound inside `<title>` either. The engine does not walk the head, so it cannot see the braces without a walk of its own. |
 | A `$watch` key has an empty segment (`a..b`). | `wcs/watch-declaration-invalid` (error) | The runtime does not check it: the watch never fires. | broken | runtime report — 4.x. One test in the temporal add-on (about 10 B). |
 | Misspells an ARIA attribute in `attr.aria-*:`. | `wcs/aria-attr-unknown` (warning) | The attribute is written; assistive technology ignores it. | degraded | stays with the lint (the runtime cannot see it). The name is in the markup, so the lint has everything; a runtime table of ARIA names would cost 300–400 B. |
 | Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`. | `wcs/script-order` (info) | 4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing. | degraded | runtime report — 4.x. DevTools can say that its timeline starts when it attached. |
@@ -201,6 +202,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Reads a loop index outside `$1` – `$128` (`this.$0`, `$129`). | Same code: `#1001`: thrown when the script reads it; in markup the binding fails. | `wcs/index-param-range` (error) |
 | Points `<wcs-infinite-scroll target>` at an id that is missing or not a `<wcs-fetch>`. | Without the code: No more pages load; when it comes into view, the element warns `[wcs/infinite-scroll-target]` once per `target` value. No lint rule yet; the id is in the markup. | — |
 | Loads an I/O node's `/auto` after `@wcstack/state/auto`. | Without the code: Command bindings wait for the tag's definition, so a `$command` emit in that window reaches no one and is dropped; the diagnostics add-on warns `[wcs/command-token-unbound]` once per token. A late definition does it too (an autoloader, a slow CDN — a 7GUIs evaluation's Timer). `wcs/script-order` checks DevTools only; extending it to the I/O `/auto` entries is small. | — |
+| Writes `<wcs-link to="/…">` on a page with no `<wcs-router>` — a page a server renders, with wcstack islands in it. | Without the code: The link throws `[@wcstack/router] wcs-link is not connected to a router.` when it connects, after hiding its host (`display: none`): no `<a>` is made and the link is gone. Since 4.20 the lint reports it on a page that loads the router and wcstack itself (the community-hall seam app); a page without the router wants `<a href>`. | `wcs/link-router-missing` (warning) |
 | Gives `mount=` an empty value or segment, `*`, `$`, `#`, `@` or whitespace. | Without the code: The scopes add-on refuses the volume with `console.error` (`has an invalid mount path`). | `wcs/mount-path-invalid` (error) |
 | Calls a removed 3.x API name (`$trackDependency`, `$untrackDependency`). | Same code: The diagnostics add-on throws `#1701` on the read; on `/core` it is `undefined` and the call a generic TypeError. | `wcs/name-alias` (error) |
 | Writes a v1 named-state selector, `path@name`. | Without the code: Parse error `#32`: the page's binding stops there (in route content, a `console.error`). | `wcs/named-state-deprecated` (error) |
@@ -268,6 +270,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | `wcs/manifest-unknown-keyword` | The sidecar manifest uses a schema keyword outside the subset the lint reads. |
 | `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). Since 4.10, also a key whose value it cannot read (a name bound to a computed value, `{ t }` with `t` merged from the locale catalogs) when the page binds under it — said once, at the key; a JSDoc `@type {typeof import("./en.js").default}` has those paths checked. |
 | `wcs/path-reserved-name` | Reserved in the code table, not emitted yet. |
+| `wcs/state-absent` | A limit of the lint, not necessarily an author's mistake: a file with bindings and no `<wcs-state>` — a CMS's partial template, a route's content in a file of its own — has no state to check the paths against, so they are not checked; said once, at the first binding (info). Up to 4.19 it said nothing, and the file was not listed under `nothing to check:` either. |
 | `wcs/state-src-unread` | A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing. |
 | `wcs/type-annotation` | A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value. |
 

@@ -618,6 +618,23 @@
       "note": { "en": "The router can warn: a text node of its own route content that still holds `{{` has never been bound (state replaces the text it binds). Binding text on navigation would need state to mark the text it renders — core bytes and a binder change.", "ja": "router が警告できる: 自分のルートの中身のテキストノードに `{{` が残っていれば、それは束ねられていない（state は束ねたテキストを置き換える）。遷移でテキストを束ねるには、state が描いたテキストに印を付ける必要がある — core のバイトと binder の変更。" }
     },
     {
+      "id": "text-binding-in-head",
+      "lint": [{ "code": "wcs/template-syntax", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes `{{ }}` or a comment binding in the document's `<head>` (`<title>{{ pageTitle }}</title>`).", "ja": "文書の `<head>` に `{{ }}` やコメント束縛を書く（`<title>{{ pageTitle }}</title>`）。" },
+      "effect": { "en": "A `<wcs-state>` binds the document's `<body>` (and shadow roots), never its `<head>`: the title keeps the braces as written, and nothing says so. A route's `<wcs-head>` is bound, because the router hands its clone to the binder.", "ja": "`<wcs-state>` が束ねるのは文書の `<body>`（とシャドウルート）で、`<head>` はけっして束ねない: タイトルは書いたままの中括弧を出し、何も言わない。ルートの `<wcs-head>` は、router が写しを binder に渡すので束ねられる。" },
+      "disposition": "static-only",
+      "note": { "en": "Since 4.20 the lint reports it (`wcs/template-syntax`, warning) in an explicit `<head>`, with the page's state readable and `enableMustache` on, and checks no path there. Found by the community-hall seam app, whose CMS wrote `{{pageTitle}}` in the `<title>`; up to 4.19 the lint suggested the comment form there, which is not bound inside `<title>` either. The engine does not walk the head, so it cannot see the braces without a walk of its own.", "ja": "4.20 から lint が報告する（`wcs/template-syntax`、warning）— 明示の `<head>` の中で、ページの state が読めて `enableMustache` が有効のとき。そこのパスは検査しない。継ぎ目アプリ community-hall で見つかった（CMS が `<title>` に `{{pageTitle}}` を書いた）。4.19 までの lint はそこでコメントの形を勧めていたが、`<title>` の中ではそれも束ねられない。エンジンは head を歩かないので、自分で歩かないと中括弧は見えない。" }
+    },
+    {
+      "id": "link-without-router",
+      "lint": [{ "code": "wcs/link-router-missing", "severity": "warning" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Writes `<wcs-link to=\"/…\">` on a page with no `<wcs-router>` — a page a server renders, with wcstack islands in it.", "ja": "`<wcs-router>` の無いページ — サーバーが描き、wcstack のアイランドを置いたページ — に `<wcs-link to=\"/…\">` を書く。" },
+      "effect": { "en": "The link throws `[@wcstack/router] wcs-link is not connected to a router.` when it connects, after hiding its host (`display: none`): no `<a>` is made and the link is gone. Since 4.20 the lint reports it on a page that loads the router and wcstack itself (the community-hall seam app); a page without the router wants `<a href>`.", "ja": "リンクはホストを隠した（`display: none`）後、接続した時点で `[@wcstack/router] wcs-link is not connected to a router.` を投げる: `<a>` は作られず、リンクが消える。4.20 から lint が、router と wcstack を自分で読み込むページで報告する（継ぎ目アプリ community-hall）。router の無いページには `<a href>` を書く。" },
+      "evidence": [{ "file": "packages/router/src/components/Link.ts", "text": "is not connected to a router." }]
+    },
+    {
       "id": "layout-slot-missing",
       "lint": [{ "code": "wcs/layout-slot-missing", "severity": "warning" }],
       "runtime": "same", "harm": "wrong-place",
@@ -1259,6 +1276,7 @@
     { "code": "wcs/type-annotation", "why": { "en": "A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value.", "ja": "初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。" } },
     { "code": "wcs/path-reserved-name", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
     { "code": "wcs/path-dynamic-unknown", "why": { "en": "A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). Since 4.10, also a key whose value it cannot read (a name bound to a computed value, `{ t }` with `t` merged from the locale catalogs) when the page binds under it — said once, at the key; a JSDoc `@type {typeof import(\"./en.js\").default}` has those paths checked.", "ja": "作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。4.10 から、値を読めないキー（計算した値を束縛する名前。ロケールの辞書を合わせた `t` の `{ t }`）の下をページが束ねるときも、キーの上で 1 回だけ言う。JSDoc の `@type {typeof import(\"./en.js\").default}` を付けると、そのパスを検査する。" } },
+    { "code": "wcs/state-absent", "why": { "en": "A limit of the lint, not necessarily an author's mistake: a file with bindings and no `<wcs-state>` — a CMS's partial template, a route's content in a file of its own — has no state to check the paths against, so they are not checked; said once, at the first binding (info). Up to 4.19 it said nothing, and the file was not listed under `nothing to check:` either.", "ja": "lint の限界で、作者の誤りとは限らない: 束縛があるのに `<wcs-state>` の無いファイル — CMS の部分テンプレート・ファイルに分けたルートの中身 — には、パスを照らす state が無いので検査しない。それを最初の束縛の上で 1 回だけ言う（info）。4.19 までは何も言わず、`nothing to check:` にも載らなかった。" } },
     { "code": "wcs/state-src-unread", "why": { "en": "A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing.", "ja": "作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。" } },
     { "code": "wcs/lint-version-behind", "why": { "en": "A tooling mismatch, not a mistake in the page: the page pins a newer minor than the lint's rules, so the lint does not check what that minor added and can report its correct syntax as an error (homeroom: 4.2.0's lint on a 4.10 page). Said once per page (warning).", "ja": "ページの誤りではなく道具の食い違い: ページが lint の規則より新しい minor を固定しているので、lint はその minor で加わったものを検査せず、その正しい書き方を error にもする（homeroom: 4.10 のページを 4.2.0 の lint で）。ページに 1 回言う（warning）。" } }
   ]
