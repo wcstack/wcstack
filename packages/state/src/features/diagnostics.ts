@@ -622,31 +622,39 @@ function watchUnbound(engine: Engine, phase: string): void {
   const root = el.getRootNode();
   const container = (root.nodeType === 9 ? (root as Document).body : root) as (Node & ParentNode) | null;
   if (!container) return;
-  // (held weakly: a state taken out of the page is not kept alive for the look — nor looked at)
-  const ref = new WeakRef(engine);
-  const attr = config.bindAttributeName;
-  const present = new WeakSet(container.querySelectorAll(`[${attr}]`));
+  // the engine, the root and its container held weakly — a look still pending when the page is taken out keeps
+  // nothing of it alive (e2e/tests/state-address-gc.spec.ts) — and what was there when the root was bound
+  const e = new WeakRef(engine);
+  const r = new WeakRef(root);
+  const c = new WeakRef(container);
+  const present = new WeakSet(container.querySelectorAll(`[${config.bindAttributeName}]`));
   let due = false;
-  const look = (): void => {
+  const observer = new MutationObserver(() => {
     if (due) return;
     due = true;
     setTimeout(() => {
       due = false;
-      if (!(ref.deref()?.element as Element | undefined)?.isConnected || toldUnbound.has(root)) {
-        observer.disconnect();
-        return;
-      }
-      const x = unboundIn(container, present);
-      if (x === null) return;
-      toldUnbound.add(root);
-      observer.disconnect();
-      const text = x.getAttribute(attr)!;
-      console.warn(`[@wcstack/state] [wcs/inserted-unbound] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> entered the page after it was bound, and nothing bound it: its bindings do nothing. The page is walked once; after that only markup handed over is bound: whoever inserts it (htmx, a Turbo frame, an innerHTML) calls globalThis[Symbol.for("wcstack.binder")].bind(node) for each new node — not for a container the page already had.${STRUCTURAL.test(x.localName === "template" ? text : "") ? " A for: / if: template at the top of what is handed over needs { range: true } (#204): put it inside an element." : ""} ${ISLANDS_GUIDE}`);
+      lookUnbound(e, r, c, present, observer);
     }, UNBOUND_AFTER);
-  };
-  const observer = new MutationObserver(look);
+  });
   // (quoted: `childList` is a name the build shortens — mangle.mjs — the observer's option is not)
   observer.observe(container, { "childList": true, subtree: true });
+}
+
+function lookUnbound(e: WeakRef<Engine>, r: WeakRef<Node>, c: WeakRef<Node & ParentNode>, present: WeakSet<Element>, observer: MutationObserver): void {
+  const root = r.deref();
+  const container = c.deref();
+  if (root === undefined || container === undefined || !(e.deref()?.element as Element | undefined)?.isConnected || toldUnbound.has(root)) {
+    observer.disconnect();
+    return;
+  }
+  const x = unboundIn(container, present);
+  if (x === null) return;
+  toldUnbound.add(root);
+  observer.disconnect();
+  const attr = config.bindAttributeName;
+  const text = x.getAttribute(attr)!;
+  console.warn(`[@wcstack/state] [wcs/inserted-unbound] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> entered the page after it was bound, and nothing bound it: its bindings do nothing. The page is walked once; after that only markup handed over is bound: whoever inserts it (htmx, a Turbo frame, an innerHTML) calls globalThis[Symbol.for("wcstack.binder")].bind(node) for each new node — not for a container the page already had.${STRUCTURAL.test(x.localName === "template" ? text : "") ? " A for: / if: template at the top of what is handed over needs { range: true } (#204): put it inside an element." : ""} ${ISLANDS_GUIDE}`);
 }
 
 /** The first element under `container` with bindings, not `present` before, that no walk took (or null). */
