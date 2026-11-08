@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.19.0] — 2026-11-08
+
+A minor from the next item of the `@wcstack/signals` performance study ([docs/signals-performance-study.md](./docs/signals-performance-study.md) §9): `delegateEvents()`, opt-in event delegation for the `on…` handlers `h()` gives elements — one listener per event type on the document instead of one per element, about 2.3 ms less per 2,000 handlers at 4× CPU throttling. Nothing changes for a page that does not call it. Only `@wcstack/signals` changed; every other package is 4.18.0 with a new version.
 
 ### Added
 
