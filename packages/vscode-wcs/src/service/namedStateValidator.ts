@@ -98,6 +98,8 @@ export function validateNamedState(
   // 3. mustache / コメントバインディング（`<!--@@: path@name-->` — 実 DOM では
   // mustache がこの形へ変換される。直書きも同じ runtime parse error になる）
   for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    // 文書の <head> の中はランタイムが読まない（templateSyntaxValidator がそう言う）
+    if (item.inDocumentHead && !item.insideTemplate) continue;
     const selector = findStateSelector(item.expression, true);
     if (selector !== null) {
       diagnostics.push({

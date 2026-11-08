@@ -18,6 +18,15 @@
  *   "Loaded" is any mention: a `<script src>`, `<link rel="modulepreload">`, an import map key or value, an import or
  *   a string in an inline script naming `@wcstack/<pkg>` (any version, any CDN, a local path), `/packages/<pkg>/dist/`
  *   (this repository's pages), or the `wcstack` bundle (its members: state, router, fetch, storage, autoloader).
+ * - LinkRouterMissing (`wcs/link-router-missing`, warning): from the `community-hall` seam app (islands on a page a
+ *   server renders): a `<wcs-link to="/…">` on a page with no `<wcs-router>`. The link throws `[@wcstack/router]
+ *   wcs-link is not connected to a router.` when it connects and its host stays `display: none` — the link is gone.
+ *   Once per page, at the first such link. Only where TagPackageMissing would speak (a page that loads wcstack itself,
+ *   with no local script it cannot read), and only when the link is defined — the router package is loaded, or the
+ *   autoloader covers the tag. A fragment — a route's content, a layout file the router page includes — loads no
+ *   wcstack script and is left out; so is a page that names `wcs-router` anywhere outside its HTML comments (a
+ *   `<wcs-router>`, in a `<template>` too, or a script that makes one), a `to` that is a URL or a query, and a `to`
+ *   bound with `attr.to:`.
  * - LintVersionBehind (`wcs/lint-version-behind`, warning): a URL on the page pins `@wcstack/<pkg>@X.Y[.Z]` (or
  *   `wcstack@…`) with the lint's major and a newer minor than the engine the lint is built from (`ENGINE_VERSION`).
  *   That lint cannot see the newer rules, and reports correct newer syntax as an error (4.2.0's lint on a 4.10 page:
@@ -34,6 +43,7 @@ import { ENGINE_VERSION } from './wcsManifest.js';
 import { joinModulePath } from './moduleValues.js';
 import { BUNDLE_PACKAGES, attrValue, blankHtmlComments, blankJsComments, extractSrc } from './documentEnvValidator.js';
 import type { FileReader } from './statePathResolver.js';
+import { extractAttribute, findStartTagRegions } from '../language/htmlParse.js';
 
 /**
  * The tags of the packages the generated catalogue leaves out (it holds the I/O nodes' wc-bindable contracts):
@@ -164,6 +174,43 @@ export function validatePackageLoads(html: string, locale?: string, fileReader?:
       tag: at.tags[0],
       message: msgs.tagPackageMissing(at.tags, `@wcstack/${pkg}`, `https://esm.run/@wcstack/${pkg}${version === null ? '' : `@${version}`}/auto`),
     });
+  }
+
+  // --- LinkRouterMissing: <wcs-link> to an internal path on a page with no <wcs-router> (the link is defined: the
+  // router package is loaded, or the autoloader covers the tag — without either, TagPackageMissing above says so)
+  const linkDefined = loads.pkgs.has('router') || defined.has('router')
+    || (autoloader && components.some((k) => coversTag(k, 'wcs-link')));
+  if (linkDefined) {
+    const links = findLinksWithoutRouter(scan);
+    if (links.length > 0) {
+      out.push({
+        code: WcsDiagnosticCode.LinkRouterMissing,
+        start: links[0].start, end: links[0].end, severity: 'warning',
+        tag: 'wcs-link',
+        message: msgs.linkRouterMissing(links[0].to, links.length),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The `<wcs-link>` start tags whose `to` is an internal path (`/…`), outside comments, `<script>` and `<style>`, on a
+ * page that does not name `wcs-router` anywhere outside its HTML comments — a `<wcs-router>` (in a `<template>` too),
+ * or a script that makes one (`createElement("wcs-router")`, a string of markup) silences it. Such a link looks for its
+ * router when it connects (the router's Link.ts: `closest()`, then the root's `querySelector()`), throws `wcs-link is
+ * not connected to a router.`, and its host stays `display: none` with no `<a>`. A `to` that is a URL or a query
+ * (`?page=2`) does not need the router to render, and one bound with `attr.to:` is not known: both are left out. The
+ * range is the tag name.
+ */
+function findLinksWithoutRouter(scan: string): { to: string; start: number; end: number }[] {
+  if (/\bwcs-router\b/i.test(scan)) return [];
+  const out: { to: string; start: number; end: number }[] = [];
+  for (const region of findStartTagRegions(scan)) {
+    if (region.tagName !== 'wcs-link') continue;
+    const to = extractAttribute(scan.slice(region.start, region.end), 'to');
+    if (to === null || !to.startsWith('/')) continue;
+    out.push({ to, start: region.start - 'wcs-link'.length, end: region.start });
   }
   return out;
 }

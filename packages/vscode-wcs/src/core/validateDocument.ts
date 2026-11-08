@@ -32,7 +32,9 @@ import { validateSemantics } from "../service/semanticValidator.js";
 import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import { validateScriptReads } from "../service/scriptReadValidator.js";
 import { validateScriptWrites } from "../service/scriptWriteValidator.js";
-import { validateStateSources } from "../service/stateSourceValidator.js";
+import { validateStateAbsent, validateStateSources } from "../service/stateSourceValidator.js";
+import { isMustacheDisabled } from "../service/stateBehavior.js";
+import { findAllMustacheSyntax } from "../service/templateSyntax.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
@@ -81,8 +83,13 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const fileReader = options.fileReader;
   const applicationSchema = options.applicationSchema
     ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
-  // A `src` the reader cannot read: once, on the page (the second pass below would find it again)
-  const found = [...validateText(text, options, applicationSchema), ...validateStateSources(text, stateTagName, options.locale, fileReader)];
+  // A `src` the reader cannot read: once, on the page (the second pass below would find it again). Bindings in a file
+  // with no `<wcs-state>` (a fragment): their paths are not checked — said once (no state, so no second pass)
+  const found = [
+    ...validateText(text, options, applicationSchema),
+    ...validateStateSources(text, stateTagName, options.locale, fileReader),
+    ...validateStateAbsent(text, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema),
+  ];
   // A state in a file of its own (`src=`): the page again, with each such script inline (core/externalState.ts).
   // A finding in a file is shown on its `src` value and carries where it is in the file (`origin`); one in the
   // page is added when the page alone did not find it (the handler of an `onsubmit:` written in the file)
@@ -172,8 +179,16 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   for (const d of validateNestedAssigns(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  // `data-wcs-ignore`: the runtime reads nothing in such an element as bindings, so nothing in it is reported
-  const ignored = findIgnoredRanges(text, bindAttribute);
+  // `data-wcs-ignore`: the runtime reads nothing in such an element as bindings, so nothing in it is reported.
+  // `$behavior: { enableMustache: false }` on the page's root state: no `{{ }}` is a binding — a CMS's or a server
+  // template's braces beside an island (the community-hall seam app) — so nothing is said about one (comment bindings
+  // are still bound, and checked). Read only when the state can be read: otherwise `{{ }}` is checked as before
+  const ignored: Array<readonly [number, number]> = [
+    ...findIgnoredRanges(text, bindAttribute),
+    ...(text.includes("{{") && isMustacheDisabled(text, stateTagName, fileReader)
+      ? findAllMustacheSyntax(text).map((m) => [m.matchStart, m.matchEnd] as const)
+      : []),
+  ];
   const kept = ignored.length === 0 ? out : out.filter((d) => !ignored.some(([start, end]) => d.start >= start && d.start < end));
   return sortDiagnostics(kept);
 }

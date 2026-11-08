@@ -1222,7 +1222,9 @@ describe('findAllBindAttributes — 開始タグの属性だけを拾う', () =>
   });
 
   it('診断も出ないこと（validateDocument 経由の対称性）', () => {
-    expect(validateDocument(HTML, { locale: 'en' })).toEqual([]);
+    // state の無いファイルなので、パスを検査していないことだけを最初の本物の束縛の上で言う（wcs/state-absent）
+    const diags = validateDocument(HTML, { locale: 'en' });
+    expect(diags.map((d) => [d.code, HTML.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.StateAbsent, 'textContent: name']]);
   });
 });
 

@@ -39,7 +39,7 @@ export interface StartTagRegion {
  *
  * 走査規則: `<!--…-->` / `<!…>` / 終了タグは飛ばし、`<` + 英字だけを開始タグとみなす。
  * タグの終端は**引用符を跨がずに**探す（`title="a>b"` で切れない）。`<script>` / `<style>` は
- * 本体をまとめて飛ばす（`findAllMustacheSyntax` が `isInsideTag` で同じ扱いをしているのと同じ方針）。
+ * 本体をまとめて飛ばす（`findAllMustacheSyntax` の markup の鏡像 — templateSyntax.ts の `maskMarkup` — と同じ方針）。
  */
 export function findStartTagRegions(html: string): StartTagRegion[] {
   const out: StartTagRegion[] = [];
