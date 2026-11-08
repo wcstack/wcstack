@@ -599,6 +599,8 @@ const UNBOUND_AFTER = 1000;
 const watchedRoots = new WeakSet<Engine>();
 /** The roots already told about an element nothing bound. */
 const toldUnbound = new WeakSet<Node>();
+/** A structural template's binding: handed over at the top of inserted content, it is refused without a range (#204). */
+const STRUCTURAL = /^\s*(?:for|if|elseif|else)\s*:/;
 /** A binding that sets an element's content: what it puts there is a value, not markup (walkBindings). */
 const CONTENT = /(?:^|;)\s*(?:html|innerHTML|textContent|innerText|outerHTML|outerText)\s*[:#]/;
 
@@ -639,7 +641,7 @@ function watchUnbound(engine: Engine, phase: string): void {
       toldUnbound.add(root);
       observer.disconnect();
       const text = x.getAttribute(attr)!;
-      console.warn(`[@wcstack/state] [wcs/inserted-unbound] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> entered the page after @wcstack/state bound it, and nothing bound it: its bindings do nothing. @wcstack/state walks the page once; after that it binds only the markup handed over to it (@wcstack/router hands over what it inserts). Markup another library inserts — htmx's swaps, a Turbo frame, your own innerHTML — is handed over by whoever inserts it: globalThis[Symbol.for("wcstack.binder")].bind(node) for each node it inserted — the new nodes, not a container the page already had (with htmx, on htmx:load). ${ISLANDS_GUIDE}`);
+      console.warn(`[@wcstack/state] [wcs/inserted-unbound] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> entered the page after @wcstack/state bound it, and nothing bound it: its bindings do nothing. @wcstack/state walks the page once; after that it binds only the markup handed over to it (@wcstack/router hands over what it inserts). Markup another library inserts — htmx's swaps, a Turbo frame, your own innerHTML — is handed over by whoever inserts it: globalThis[Symbol.for("wcstack.binder")].bind(node) for each node it inserted — the new nodes, not a container the page already had (with htmx, on htmx:load).${STRUCTURAL.test(x.localName === "template" ? text : "") ? " A for: / if: template at the top of what is handed over is not rendered without bind(node, { range: true }) — the inserter then carries its rows in and out with it (#204): put it inside an element." : ""} ${ISLANDS_GUIDE}`);
     }, UNBOUND_AFTER);
   };
   const observer = new MutationObserver(look);

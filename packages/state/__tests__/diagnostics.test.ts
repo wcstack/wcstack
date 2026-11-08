@@ -783,3 +783,38 @@ describe("後から入って束縛されない要素（wcs/inserted-unbound）�
     expect(second.root.querySelectorAll("li")).toHaveLength(2);
   });
 });
+
+describe("後から入った構造のテンプレート（wcs/inserted-unbound の添え書き — community-hall）", () => {
+  let warn: MockInstance<typeof console.warn>;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    warn.mockRestore();
+  });
+
+  it("渡された中身の最上位で拒まれた for: / if: のテンプレートには、範囲か要素で包むことを添える", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const h = document.createElement(`diag-test-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><main></main>`;
+      const el = root.querySelector("wcs-state") as any;
+      el.setInitialState({ on: true });
+      document.body.appendChild(h);
+      await el.connectedCallbackPromise;
+      const main = root.querySelector("main")!;
+      main.innerHTML = `<template data-wcs="if: on"><b>on</b></template>`;
+      (globalThis as any)[Symbol.for("wcstack.binder")].bind(main.firstElementChild);
+      await vi.advanceTimersByTimeAsync(1000);
+      const said = warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("inserted-unbound"));
+      expect(said).toEqual([expect.stringContaining(`<template data-wcs="if: on"> entered the page after @wcstack/state bound it`)]);
+      expect(said[0]).toContain(`(with htmx, on htmx:load). A for: / if: template at the top of what is handed over is not rendered without bind(node, { range: true }) — the inserter then carries its rows in and out with it (#204): put it inside an element. See https://github.com/wcstack/wcstack/blob/main/docs/islands.md`);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
