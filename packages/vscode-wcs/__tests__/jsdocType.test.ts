@@ -15,7 +15,8 @@ import {
 } from '../src/service/jsdocType.js';
 import { analyzeStatePaths, maskCommentsAndStrings } from '../src/service/stateAnalyzer.js';
 import { validateBindings } from '../src/service/bindingValidator.js';
-import { WcsDiagnosticCode } from '../src/core/diagnostics.js';
+import { validateDocument } from '../src/core/validateDocument.js';
+import { WcsDiagnosticCode, type WcsDiagnostic } from '../src/core/diagnostics.js';
 
 describe('parseJsDocType — 型表現のパース', () => {
   it('名前・配列・合併・オブジェクトを読むこと', () => {
@@ -52,17 +53,41 @@ describe('parseJsDocType — 型表現のパース', () => {
     expect(jsDocTypeHint(parseJsDocType('!string')!)).toBe('string');
   });
 
-  it('関数型・リテラル型・総称・索引シグネチャは形を持たない（unknown）として読み切ること', () => {
-    for (const text of ['(a: number) => void', '() => string', 'function(number): string', '"a" | "b"', 'Record<string, number>', '*', 'typeof x']) {
+  it('関数型・リテラル型・ほかの総称は形を持たない（unknown）として読み切ること', () => {
+    for (const text of ['(a: number) => void', '() => string', 'function(number): string', '"a" | "b"', 'Map<string, number>', '*', 'typeof x']) {
       const type = parseJsDocType(text);
       expect(type, text).not.toBeNull();
       expect(jsDocShape(type!, new Map())).toEqual({ element: null, fields: [] });
     }
-    // 索引シグネチャはフィールドに数えない（任意のキー）
+  });
+
+  it('索引シグネチャ・Record<string, T>・Object<string, T> は任意のキーのオブジェクト（index）として読むこと（community-hall）', () => {
+    // 索引シグネチャはフィールドに数えず（任意のキー）、値の型を index に持つ
     expect(parseJsDocType('{ [key: string]: number, id: number }')).toEqual({
       kind: 'object',
       fields: [{ name: 'id', type: { kind: 'name', name: 'number' } }],
+      index: { kind: 'name', name: 'number' },
     });
+    const bool = { kind: 'name', name: 'boolean' };
+    for (const text of ['Record<string, boolean>', 'Object<string, boolean>', 'Object.<string, boolean>', '{ [id: string]: boolean }', '{ [K in Keys]?: boolean }']) {
+      expect(jsDocShape(parseJsDocType(text)!, new Map()), text).toEqual({ element: null, fields: [], index: bool });
+    }
+    // 合併・null を挟んでも、@typedef の名前の先でも index は残る
+    const typedefs = new Map([['Flags', parseJsDocType('Record<string, boolean>')!]]);
+    expect(jsDocShape(parseJsDocType('Flags | null')!, typedefs).index).toEqual(bool);
+    expect(jsDocTypeHint(parseJsDocType('Record<string, boolean> | null')!)).toBe('null|object');
+  });
+
+  it('キーが文字列リテラルの合併の Record はその名前のフィールド、Readonly / Partial / Required は引数の形', () => {
+    expect(jsDocShape(parseJsDocType('Record<"open" | \'closed\', number>')!, new Map())).toEqual({
+      element: null,
+      fields: [{ name: 'open', type: { kind: 'name', name: 'number' } }, { name: 'closed', type: { kind: 'name', name: 'number' } }],
+    });
+    expect(jsDocShape(parseJsDocType('Readonly<{ id: number }>')!, new Map()).fields.map((f) => f.name)).toEqual(['id']);
+    expect(jsDocShape(parseJsDocType('Partial<Record<string, number>>')!, new Map()).index).toEqual({ kind: 'name', name: 'number' });
+    expect(parseJsDocType('Required<{ id: number }[]>')?.kind).toBe('array');
+    // 閉じない形は null（推測しない）
+    expect(parseJsDocType('Record<"a", number')).toBeNull();
   });
 
   it('読めない表現は null（推測で形を作らない）', () => {
@@ -238,4 +263,54 @@ describe('validateBindings — JSDoc の形で行の束縛が通ること', () =
       expect(missing[0]).toContain('.nmae');
     });
   }
+});
+
+// 継ぎ目アプリ community-hall の L3: getter の `@returns {Record<string, boolean>}` の下のパスを
+// `wcs/binding-path-missing` にしていた（生成した stateSchema の同じ型なら下は開いていて黙る）
+const validate = (html: string): WcsDiagnostic[] => validateDocument(html, { locale: 'en' });
+const ofCode = (diags: readonly WcsDiagnostic[], code: string): WcsDiagnostic[] => diags.filter((d) => d.code === code);
+const spans = (html: string, diags: readonly WcsDiagnostic[]): string[][] => diags.map((d) => [d.code, html.slice(d.start, d.end)]);
+
+describe('索引シグネチャの下は開いている — getter・データの JSDoc（community-hall）', () => {
+  const page = (body: string, bindings: string): string =>
+    `<wcs-state><script type="module">export default { ${body} };</script></wcs-state>${bindings}`;
+
+  it('getter の @returns {Record<string, boolean>} の下は黙る（stateSchema の {} の下と同じ）。名前の打ち間違いは言う', () => {
+    const html = page(`events: [{ id: 12, open: true }],
+  /** @returns {Record<string, boolean>} */
+  get soldOut() { return Object.fromEntries(this.events.map((e) => ["e" + e.id, !e.open])); },`,
+    `<p data-wcs="textContent: soldOut.e12"></p><p data-wcs="class.full: soldOut.e13"></p><p data-wcs="textContent: soldOt.e12"></p>`);
+    const diags = validate(html);
+    expect(spans(html, ofCode(diags, WcsDiagnosticCode.BindingPathMissing))).toEqual([[WcsDiagnosticCode.BindingPathMissing, 'soldOt.e12']]);
+    // 作者が宣言したので「読めない」の info も出さない
+    expect(ofCode(diags, WcsDiagnosticCode.PathDynamicUnknown)).toHaveLength(0);
+  });
+
+  it('getter の @type・{ [key: string]: T }・Object.<string, T>・データのキーの @type・入れ子のフィールドも同じ', () => {
+    const html = page(`
+  /** @type {{ [id: string]: number }} */
+  get counts() { return {}; },
+  /** @type {Object.<string, string>} */
+  labels: {},
+  /** @type {{ byId: Record<string, { name: string }> } | null} */
+  cache: null,
+  /** @type {Record<string, number>[]} */
+  rows: [],`,
+    `<p data-wcs="textContent: counts.a"></p><p data-wcs="textContent: labels.b"></p>`
+    + `<p data-wcs="textContent: cache.byId.k1.name"></p><p data-wcs="textContent: cache.byid.k1"></p>`
+    + `<template data-wcs="for: rows"><p data-wcs="textContent: .x"></p></template>`);
+    expect(spans(html, ofCode(validate(html), WcsDiagnosticCode.BindingPathMissing))).toEqual([[WcsDiagnosticCode.BindingPathMissing, 'cache.byid.k1']]);
+  });
+
+  it('{{ }}・getter の中の読み（wcs/read-path-missing）・$watch のキーも黙る', () => {
+    const html = page(`
+  /** @returns {Record<string, boolean>} */
+  get flags() { return {}; },
+  get any() { return this["flags.x"]; },
+  $watch: { "flags.y"() {} },`,
+    `<template data-wcs="if: any"><p>{{ flags.z }}</p></template>`);
+    const diags = validate(html);
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing || d.code === WcsDiagnosticCode.ReadPathMissing
+      || d.code === WcsDiagnosticCode.WatchPathMissing)).toEqual([]);
+  });
 });
