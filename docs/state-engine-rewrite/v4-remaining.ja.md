@@ -1682,11 +1682,12 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - main で `minor`（run 42424860437）。成功した: 版を上げたコミット bae090c7、タグ `v4.18.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed を足した）。
   - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 21/21。文書の固定 URL 8/8。1 回目で問題なし。
 - 公開後の作業（同日）:
-  - PR #637（merge commit 42b84843）: サイズの基準値を 4.18.0 の dist で取り直した。state の src は変わっていないので版の文字だけが動いた（`core.min.js` 20,411 B のまま、残り 69 B。分割の core 25,051 → 25,052 B、ssr 5,763 → 5,762 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の数字と版の行。拡張は出さない（vscode-wcs は変わっていない）。
+  - PR #637（merge commit 42b84843）: サイズの基準値を 4.18.0 の dist で取り直した。state の src は変わっていないので版の文字だけが動いた（`core.min.js` 20,411 B のまま、残り 69 B。分割の core 25,051 → 25,052 B、ssr 5,763 → 5,762 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の数字と版の行。
+  - 拡張: 2.14.0 は 4.17.0 の後（2026-11-07）に著者が公開済みだった（vspackage を解くと 6f621033 の vsix と SHA 一致、`6298d818…`）。記録は「公開待ち」のままだった。拡張は組み込んだ state の版を自分の版として読むので、2.14.0 は 4.18.0 に固定したページに `wcs/lint-version-behind` を出す。タグ `vscode-wcs-v2.14.0` を 6f621033 に付け、#639（2.14.0 の節を 4.18.0 と書き換えた — 誤り）を PR #640（merge commit 7ac4fe90）で直した: 2.14.0 の節を公開時の文面に戻し、4.18.0 から作り直した 2.14.1 を足した。7ac4fe90 から worktree で作成、試験 1,467、890 ファイル、SHA-256 `552fca32b069c579010945e30b433791aa2b9bee83b7613f8e4f7a8050233324`。CLI で 4.18.0 に固定したページは 0 件、4.19.0 は警告。著者が公開し、vspackage の SHA が一致、注釈付きタグ `vscode-wcs-v2.14.1`（7ac4fe90）。
   - wcstack-skill: PR #60（merge commit 1e6faea）で signals の `selector`（選んだ行）と audio の「操作が終わってから作る」、刻印と固定 URL。注釈付きタグ `v4.18.0`。
   - LP（wcstack.github.io 560d289）: リリースの表示、v4.18.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json` と手元の dist が一致、`sha384-liJ0x0…`）、大きさは約 78 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
 - 残り:
-  - 拡張 2.14.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.14.0`。
+  - state の版が上がるリリースでは、拡張も作り直さないと `wcs/lint-version-behind` の誤報になる（state の検査が変わらなくても）。
   - 2 巡目の 5 本が済み、取り込みも済んだ。3 巡目か、5.0 の議題（§3.3 の (a)）の準備かは著者の判断。
   - signals の残り: イベントの委譲（`h()` のハンドラの付け方を変える設計）、呼び出しごとの `isDev()`。公式の js-framework-benchmark での計測と、上流へページの変更を出すか（著者の判断）。
   - midi の Permissions-Policy で止められた文書が `unsupported` でなく `denied` と読める（§5.3.2）— 次の minor の候補。
