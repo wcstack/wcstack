@@ -1707,11 +1707,10 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 21/21。文書の固定 URL 8/8。1 回目で問題なし。
 - 公開後の作業（同日）:
   - PR #644（merge commit 9cfc9976）: サイズの基準値を 4.19.0 の dist で取り直した（state の src は変わらず版の文字だけ: devtools 2,519 → 2,516 B、ssr 5,762 → 5,764 B、`core.min.js` 20,411 B のまま、残り 69 B）。CLAUDE.md / AGENTS.md。拡張を 2.14.2 に — 規則は 2.14.1 と同じで、4.19.0 に固定したページに `wcs/lint-version-behind` を出さないための作り直し（2.14.1 の教訓）。
-  - 拡張 2.14.2: 9cfc9976 から worktree で作成、試験 1,467、890 ファイル、SHA-256 `7b97164df47fc24204bf1ecd9fef0f7b3c59c777e0fec7b2c2b763547774b3f6`。CLI で 4.19.0 に固定したページは 0 件、4.20.0 は警告。公開は著者。
+  - 拡張 2.14.2: 9cfc9976 から worktree で作成、試験 1,467、890 ファイル、SHA-256 `7b97164df47fc24204bf1ecd9fef0f7b3c59c777e0fec7b2c2b763547774b3f6`。CLI で 4.19.0 に固定したページは 0 件、4.20.0 は警告。著者が公開し、vspackage の SHA が一致、注釈付きタグ `vscode-wcs-v2.14.2`（9cfc9976）。
   - wcstack-skill: PR #61（merge commit 9f7d014）で signals の `delegateEvents`（大きなリストでの使い方、`<tbody>` に 1 本のハンドラで target を調べる書き方はしない、既定で off の理由）、刻印と固定 URL。注釈付きタグ `v4.19.0`。
   - LP（wcstack.github.io a24bedd）: リリースの表示、v4.19.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json` と手元の dist が一致、`sha384-qv/x+v…`）、大きさは約 78 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
 - 残り:
-  - 拡張 2.14.2 の公開（著者）と、その後のタグ `vscode-wcs-v2.14.2`。
   - 委譲の効き目を、静かなマシンか公式の js-framework-benchmark で測ること。上流へページの変更を出すか（著者の判断）。
   - 3 巡目の継ぎ目アプリか、5.0 の議題（§3.3 の (a)）の準備かは著者の判断。
   - midi の Permissions-Policy で止められた文書が `unsupported` でなく `denied` と読める（§5.3.2）— 次の minor の候補。
