@@ -7,6 +7,6 @@
   {
     "name": "./dom",
     "path": "dist/dom.esm.js",
-    "limit": "6.5 kB"
+    "limit": "6.9 kB"
   }
 ]

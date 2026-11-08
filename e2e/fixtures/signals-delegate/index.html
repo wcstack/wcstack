@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>@wcstack/signals — delegateEvents</title>
+</head>
+<body>
+  <!--
+    h()'s on… handlers delegated to one listener per type (delegateEvents, 4.19): the walk along
+    the composed path, currentTarget and this, stopPropagation, an open shadow root reached from
+    the document, a closed one registered as its own root, keyboard and input events.
+  -->
+  <main id="app"></main>
+  <script type="module">
+    import { h, delegateEvents, For, signal, createRoot } from "/packages/signals/dist/dom.esm.js";
+    const log = (window.__log = []);
+    delegateEvents();
+    const record = (name) => function (e) { log.push(`${name}:${e.currentTarget.id}:${this.id}:${e.type}`); };
+
+    const rows = signal([{ id: 1 }, { id: 2 }]);
+    createRoot(() => {
+      document.getElementById("app").append(
+        h("div", { id: "outer", onClick: record("outer") },
+          h("button", { id: "go", onClick: record("go") }, h("span", { id: "label" }, "go")),
+          h("button", { id: "stop", onClick: function (e) { record("stop").call(this, e); e.stopPropagation(); } }, "stop"),
+          h("ul", { id: "list" }, For(rows, (row) => h("li", { id: `row-${row.id}`, onClick: record("row") }, `row ${row.id}`), { key: (r) => r.id })),
+        ),
+        h("input", { id: "field", onInput: record("input"), onKeyDown: record("key") }),
+      );
+    });
+
+    // an open shadow root: the document's listener finds the button through composedPath()
+    const open = document.createElement("div");
+    open.id = "open-host";
+    open.attachShadow({ mode: "open" }).append(h("button", { id: "open-button", onClick: record("open") }, "open"));
+    // a closed shadow root: the document cannot see inside, so it is delegated as its own root
+    const closedHost = document.createElement("div");
+    closedHost.id = "closed-host";
+    const closed = closedHost.attachShadow({ mode: "closed" });
+    delegateEvents(["click"], closed);
+    closed.append(h("button", { id: "closed-button", onClick: record("closed") }, "closed"));
+    window.__clickClosed = () => closed.getElementById("closed-button").click();
+    // delegated, an element outside the document gets nothing (a listener on it would be called)
+    window.__clickDetached = () => h("button", { id: "detached", onClick: record("detached") }).click();
+    document.body.append(open, closedHost);
+    window.__ready = true;
+  </script>
+</body>
+</html>

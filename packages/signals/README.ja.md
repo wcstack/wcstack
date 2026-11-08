@@ -181,6 +181,25 @@ createRoot(() => {
 
 key は `Map` のキーと同じに比べます(`===`。`NaN` は `NaN` と等しい)。オブジェクトを選ぶときは id を選びます — `selector(computed(() => selectedItem.get()?.id))`。
 
+**イベントの委譲 — `delegateEvents`**(4.19（未リリース）から)。`on…` のハンドラは要素のリスナーなので、ハンドラが 2 つある 1,000 行のリストは、作るときに 2,000 本のリスナーを付けます。ビューを作る前に `delegateEvents()` を 1 回呼ぶと、`h()` はそうしたハンドラをリスナーなしで要素に持たせ、イベントの種類ごとに 1 本のリスナーを文書に置きます。そこに届いたイベントは、経路に沿って内側から順にハンドラへ渡されます:
+
+```typescript
+import { delegateEvents, h } from "@wcstack/signals/dom";
+
+delegateEvents(["click"]); // delegateEvents() なら委譲できるすべての種類
+h("button", { onClick: (e) => console.log(e.currentTarget) }, "go"); // これまでどおりボタン
+```
+
+委譲したハンドラにも `currentTarget` と `this` は要素で、`stopPropagation()` は周りの要素のハンドラを止め、投げたハンドラは報告されてほかは呼ばれます。要素のリスナーとの違い(既定で off の理由):
+
+- 呼ばれるのはイベントが文書に届いたとき — 間の要素のリスナーより後で、そのどれかがイベントを止めれば呼ばれない。
+- 文書の外の要素には届かない — 付けていない要素に `el.click()` するテストでは呼ばれない。
+- 委譲できるのは泡立って shadow root を越えるイベントだけ: `click`・`dblclick`・`contextmenu`・`input`・`beforeinput`・`keydown`・`keyup`・`focusin`・`focusout` と pointer・mouse のイベント。`focus`・`change`・`submit`、touch と wheel、独自のイベントはリスナーのまま。名前を挙げると投げる。
+- 呼ぶ前に作った要素はリスナーのまま。閉じた shadow root の中では root を渡す: `delegateEvents(types, shadowRoot)`。
+- 委譲したハンドラは要素と同じだけ生きる。
+
+その root での委譲を止める関数を返します。
+
 ### 7. `@wcstack/router` の裏のページと、`<wcs-storage>` に残す値
 
 router は、ルートに入ると中身を `<wcs-outlet>` に置き、出ると取り出し、次に入ると**同じノード**を戻す。`@wcstack/state` はその中身を binder プロトコルでバインドするが、signals に binder は無い。だから外からルートの中身へ `render()` しない — ノードは前回描いたものを持ったまま戻り、2 回目の描画はそれに足される。代わりに、ページごとに `SignalsElement` を作る: 接続したときに描き、外れたときに effect を破棄するので、ページはそのルートが表示されている間だけ生きる。ルートのパラメータは router 要素を bind して読む:
@@ -268,6 +287,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | エクスポート | シグネチャ | 備考 |
 |---|---|---|
 | `h` | `(tag, props?, ...children) => Node` | `tag` はタグ文字列・`Component`・`Fragment`。関数/signal の prop と child はリアクティブ。`on…` キーの関数はイベントリスナ: `onClick` → `click`(小文字化)、`onclick` / `"onadd-to-cart"` → 書いたままの名前(`click`・`add-to-cart`)。オーナーの片付けでは、文書にある要素からリスナを外し、文書から外れた要素はリスナごと回収に任せる(4.18 から)。 |
+| `delegateEvents` | `(types?: string[], root?: Document \| ShadowRoot) => () => void` | 4.19（未リリース）から。その後に `h()` が要素に付ける `on…` のハンドラを委譲する: 要素ごとでなく、種類ごとに 1 本のリスナーを `root`(既定は文書)に。泡立って shadow root を越えるイベントだけで、ほかは投げる。その root での委譲を止める関数を返す — [イベントの委譲](#6-keyed-リスト--for--index)参照。 |
 | `render` | `(child, container) => Node` | child(fragment/配列/リアクティブを解決)を container に追加。 |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` でラッパ要素なしにグループ化。 |
 | `For<T>` | `(list, each, options?) => ListView` | keyed リスト。`list` は signal または `() => T[]`、`each(item, index: () => number, current: () => T)` は単一 Node を返す(`item` は行を作ったときの値、`current()` はその key の今の item)、`options.key(item, i)` 既定は値の同一性。キーで行を再利用/移動し、削除行を dispose。 |
@@ -442,7 +462,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 | **エラー契約** | `DisposedError` / `isDisposedError` | **Stable** — ブランドベース・realm セーフ。 |
 | **リソース** | `resource` / `streamResource` | **Stable**(概ね)。形は確定済み。ただし `streamResource` の協調キャンセル契約に注意(`source` は `AbortSignal` を必ず honor すること — [注意・制限](#注意制限)参照)。 |
 | **wc-bindable アダプタ** | `bindNode` / `nodeSource` | **Evolving / experimental** — 実行時挙動は安定だが、**型サーフェス**(`bindNode<NodeShape>`・`NodeShape`)はまだ調整余地あり。 |
-| **DOM レイヤ** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — 今すぐ使えるが、安定昇格までにシグネチャや要素ファクトリの形が変わりうる。 |
+| **DOM レイヤ** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` / `delegateEvents` | **Evolving / experimental** — 今すぐ使えるが、安定昇格までにシグネチャや要素ファクトリの形が変わりうる。 |
 | **開発モード** | `globalThis.__WCS_DEV__` と各警告コード | **Experimental** — 診断専用。警告の集合や文言はいつでも変わりうる。本番では一切動かない。 |
 
 **deprecation ポリシー。** 同じメジャーバージョンの中では、**安定**な API は後方互換を維持します: 非互換な変更は、導入の最低 1 マイナーリリース前に deprecation として告知します。**evolving / experimental** とマークされた API は、マイナーリリースで変わりうる(シグネチャ・型の形・警告文言)ので、現在の形に依存する場合は厳密なバージョンを pin してください。
