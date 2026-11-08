@@ -369,7 +369,22 @@ Workarounds became unnecessary: on 4.17.0, a "press to start the sound" hint bou
 
 No workaround became unnecessary.
 
-## Still needed on 4.19.0
+### 4.20.0
+
+2026-11-09 — [CHANGELOG](../CHANGELOG.md#4200--2026-11-09)
+
+- `@wcstack/state`: each `<wcs-state src="x.js">` naming one module evaluates it — the first one in a document gets the module the page's other scripts import, as before, and a later one imports it under another fragment (`x.js#2`), so the module's top-level code runs once more for each. A DCC's or a component's instances no longer share one state object. Keep side effects out of a state module's top level.
+- `@wcstack/state`: `toFixed`, `round`, `floor`, `ceil`, `percent`, `locale` and `currency` pass `undefined` / `null` through; a test that expected `requires a number value` for an absent value gets the absent value.
+- `@wcstack/state`: the binder (`globalThis[Symbol.for("wcstack.binder")]`) is version 2 in the full entries and has `release(subtree)` (the release add-on); a `/core` page installs `@wcstack/state/features/release` for it. A caller that compared `version === 1` reads it as the protocol says: every version from 1 on is compatible.
+- `@wcstack/state` console: `[wcs/inserted-unbound]` and `[wcs/rendered-copy]` are new warnings, and `#43` names the `blob:` base when an inline state's import does not resolve.
+- `@wcstack/lint`: `wcs/link-router-missing` and a `{{ }}` or comment binding in the document's `<head>` (`wcs/template-syntax`) are warnings, which fail `--strict`; `wcs/state-absent` is an info. Under `enableMustache: false` nothing about `{{ }}` is reported, and the info on every comment binding is gone. A JSDoc `Record<string, T>` on a getter or key leaves the paths below it unchecked — and counts as an object for `wcs/type-annotation`, so `@type {Record<string, number>}` over a `null` seed warns as `{a: number}` does.
+
+Workarounds became unnecessary: a state module exported as a factory and built in an inline module (with an import map entry for the factory) so that each page or instance got a fresh state; no volumes on a page htmx swaps; `|coalesce(0)` in front of `locale` where the value can be absent; a generated `stateSchema` written only so that a getter's `Record<string, T>` paths stayed quiet; a script that listed the files for `wcs-validate` because npm scripts on Windows pass a pattern through.
+
+## Still needed on 4.20.0
+
+- Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
+- Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").

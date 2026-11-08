@@ -6,9 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.20.0] — 2026-11-09
 
-A minor from the `community-hall` seam app, the first of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: wcstack islands on a page wcstack does not own — a community hall's CMS site with htmx 2, and a booking widget on a partner inn's Turbo site that runs wcstack 4.17 for its own contact form ([docs/seam-apps.md](./docs/seam-apps.md)). The author's decisions are in §5.16; the new guide is [docs/islands.md](./docs/islands.md).
+A minor from the `community-hall` seam app, the first of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: wcstack islands on a page wcstack does not own — a community hall's CMS site with htmx 2, and a booking widget on a partner inn's Turbo site that runs wcstack 4.17 for its own contact form ([docs/seam-apps.md](./docs/seam-apps.md)). The author's decisions are in §5.16; the new guide is [docs/islands.md](./docs/islands.md). `@wcstack/state`, `@wcstack/lint` and `@wcstack/typescript` changed, and `@wcstack/router` carries the binder protocol's new type; every other package is 4.19.0 with a new version.
 
 ### Upgrading
 

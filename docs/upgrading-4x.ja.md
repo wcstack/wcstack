@@ -369,7 +369,22 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策はありません。
 
-## 4.19.0 でもまだ要るもの
+### 4.20.0
+
+2026-11-09 — [CHANGELOG](../CHANGELOG.md#4200--2026-11-09)
+
+- `@wcstack/state`: 1 つのモジュールを指す `<wcs-state src="x.js">` は、それぞれがモジュールを評価する — 文書の 1 つ目はこれまでどおりページのほかのスクリプトと同じモジュールを受け取り、2 つ目からは別の断片（`x.js#2`）を付けて import するので、モジュールのトップレベルのコードはその数だけもう一度走る。DCC やコンポーネントのインスタンスは 1 つの状態のオブジェクトを共有しなくなった。状態のモジュールのトップレベルに副作用を置かない。
+- `@wcstack/state`: `toFixed`・`round`・`floor`・`ceil`・`percent`・`locale`・`currency` は `undefined` / `null` を素通しする。値が無いときの `requires a number value` を期待していたテストは、その値をそのまま受け取る。
+- `@wcstack/state`: binder（`globalThis[Symbol.for("wcstack.binder")]`）は full の入口で版 2 になり、`release(subtree)` を持つ（release add-on）。`/core` のページは `@wcstack/state/features/release` を入れる。`version === 1` と比べていた呼び手は、プロトコルのとおりに読む: 版 1 以降はすべて互換。
+- `@wcstack/state` のコンソール: `[wcs/inserted-unbound]` と `[wcs/rendered-copy]` が新しい警告。`#43` は inline の状態の import が解決できないとき `blob:` の基底を言う。
+- `@wcstack/lint`: `wcs/link-router-missing` と、文書の `<head>` の `{{ }}` やコメントの束縛（`wcs/template-syntax`）は warning で、`--strict` では落ちる。`wcs/state-absent` は info。`enableMustache: false` のもとでは `{{ }}` について何も言わず、コメントの束縛ごとの info は無くなった。getter やキーの JSDoc の `Record<string, T>` は下のパスを検査しない — そして `wcs/type-annotation` ではオブジェクトとして数えるので、`null` の初期値への `@type {Record<string, number>}` は `{a: number}` と同じく警告する。
+
+要らなくなった回避策: ページやインスタンスごとに新しい状態にするため、状態のモジュールを factory として export し、inline のモジュールで作る（factory のモジュールを import map に載せる）。htmx が入れ替えるページで volume を使わない。値が無いことのある `locale` の前の `|coalesce(0)`。getter の `Record<string, T>` のパスを黙らせるためだけに生成した `stateSchema`。Windows の npm の scripts がパターンをそのまま渡すので、`wcs-validate` に渡すファイルを並べるスクリプト。
+
+## 4.20.0 でもまだ要るもの
+
+- 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
+- Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。
