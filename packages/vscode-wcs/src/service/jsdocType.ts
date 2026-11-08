@@ -14,7 +14,12 @@
  *   - 合併 `A | B`、括弧 `(A | B)[]`、`?T`（`T | null`）、`!T`（`T`）
  *   - 交差 `A & B` — 形を知るためには合併と同じに読む（オブジェクトの構成員のフィールドを合わせる）。
  *     getter の `@returns {(Ticket & { messages: Message[] }) | null}` の形（docs/seam-apps.md、shift-desk）
- * それ以外（関数型・リテラル型・`Record<…>` などの総称）は `unknown` に畳み、形を作らない。
+ *   - 索引シグネチャ `{ [key: string]: T }`・`Record<string, T>`・Closure の `Object<string, T>` / `Object.<string, T>`
+ *     — 任意のキーを持つオブジェクト（`index`）。その下のパスは開いている（どのキーも在りうる）: 候補を作らず、
+ *     stateAnalyzer がそのパスを「下が分からない」に載せる — stateSchema の `{}` の下と同じ（継ぎ目アプリ
+ *     community-hall の `/** @returns {Record<string, boolean>} *\/ get soldOut()`）。キーが文字列リテラルの合併の
+ *     `Record<"a" | "b", T>` はその名前のフィールド。`Readonly<T>` / `Partial<T>` / `Required<T>` は T の形。
+ * それ以外（関数型・リテラル型・ほかの総称）は `unknown` に畳み、形を作らない。
  * 読めない表現は全体を null にする — 推測で形を作らない（偽の候補で本物の誤りを隠さないため）。
  *
  * pure（DOM / vscode 非依存）。
@@ -22,7 +27,8 @@
 
 export type JsDocType =
   | { readonly kind: 'name'; readonly name: string }
-  | { readonly kind: 'object'; readonly fields: readonly JsDocField[] }
+  /** `index`: 索引シグネチャの値の型（任意のキーを持つ — `Record<string, T>`）。無ければ undefined。 */
+  | { readonly kind: 'object'; readonly fields: readonly JsDocField[]; readonly index?: JsDocType }
   | { readonly kind: 'array'; readonly element: JsDocType }
   | { readonly kind: 'union'; readonly members: readonly JsDocType[] }
   | { readonly kind: 'unknown' };
@@ -38,6 +44,10 @@ export type JsDocTypedefs = ReadonlyMap<string, JsDocType>;
 const UNKNOWN: JsDocType = { kind: 'unknown' };
 const NULL_TYPE: JsDocType = { kind: 'name', name: 'null' };
 const ARRAY_GENERICS = new Set(['Array', 'ReadonlyArray']);
+/** 任意のキーのオブジェクトを作る総称（キーの型・値の型の 2 引数）: TypeScript の `Record`、Closure の `Object`。 */
+const INDEX_GENERICS = new Set(['Record', 'Object']);
+/** 引数の形をそのまま持つ総称（パスの在りかは変えない）。 */
+const SAME_SHAPE_GENERICS = new Set(['Readonly', 'Partial', 'Required']);
 /** 名前の解決（`@typedef` の連鎖）の深さの上限。自己参照で回り続けないため。 */
 const MAX_RESOLVE_DEPTH = 8;
 
@@ -178,6 +188,11 @@ export function parseJsDocType(text: string): JsDocType | null {
     if (isPunct('.') && tokens[pos + 1]?.t === 'punct' && (tokens[pos + 1] as { v: string }).v === '<') pos++;
     if (isPunct('<')) {
       pos++;
+      // `Record<"a" | "b", T>`: the keys of a union of string literals are fields of that name
+      if (name === 'Record') {
+        const literal = parseLiteralKeyRecord();
+        if (literal !== undefined) return literal;
+      }
       const args: JsDocType[] = [];
       for (;;) {
         const arg = parseUnion();
@@ -186,22 +201,55 @@ export function parseJsDocType(text: string): JsDocType | null {
         if (!expect(',')) break;
       }
       if (!expect('>')) return null;
-      return ARRAY_GENERICS.has(name) && args.length === 1 ? { kind: 'array', element: args[0] } : UNKNOWN;
+      if (ARRAY_GENERICS.has(name) && args.length === 1) return { kind: 'array', element: args[0] };
+      // any key (`Record<string, T>`, `Object.<string, T>`): open below — the key type is not read further
+      if (INDEX_GENERICS.has(name) && args.length === 2) return { kind: 'object', fields: [], index: args[1] };
+      if (SAME_SHAPE_GENERICS.has(name) && args.length === 1) return args[0];
+      return UNKNOWN;
     }
     return { kind: 'name', name };
+  };
+
+  /**
+   * `Record<` の後: キーが文字列リテラルの合併（`"a" | "b"`）なら、その名前のフィールドのオブジェクトを読んで `>` まで
+   * 進む。そうでなければ位置を戻して undefined（ふつうの総称として読む）。
+   */
+  const parseLiteralKeyRecord = (): JsDocType | null | undefined => {
+    const start = pos;
+    const keys: string[] = [];
+    expect('|');
+    for (;;) {
+      const token = peek();
+      if (token === undefined || token.t !== 'string') break;
+      keys.push(token.v);
+      pos++;
+      if (!expect('|')) break;
+    }
+    if (keys.length === 0 || !expect(',')) {
+      pos = start;
+      return undefined;
+    }
+    const value = parseUnion();
+    if (value === null || !expect('>')) return null;
+    return { kind: 'object', fields: keys.map((name) => ({ name, type: value })) };
   };
 
   const parseObject = (): JsDocType | null => {
     pos++; // `{`
     const fields: JsDocField[] = [];
+    let index: JsDocType | undefined;
     while (!isPunct('}')) {
       const key = peek();
       if (key === undefined) return null;
-      // 索引シグネチャ `[key: string]: T` は形を持たない（任意のキー）
+      // 索引シグネチャ `[key: string]: T`（写像型 `[K in Keys]?: T` も）: 任意のキー — 下は開いている（`index`）
       if (key.t === 'punct' && key.v === '[') {
         pos++;
         if (!skipUntilClose('[', ']')) return null;
-        if (!expect(':') || parseUnion() === null) return null;
+        expect('?');
+        if (!expect(':')) return null;
+        const value = parseUnion();
+        if (value === null) return null;
+        index = index === undefined ? value : { kind: 'union', members: [index, value] };
       } else {
         if (key.t !== 'name' && key.t !== 'string') return null;
         pos++;
@@ -213,7 +261,7 @@ export function parseJsDocType(text: string): JsDocType | null {
       }
       if (!expect(',') && !expect(';')) break;
     }
-    return expect('}') ? { kind: 'object', fields } : null;
+    return expect('}') ? { kind: 'object', fields, ...(index !== undefined ? { index } : {}) } : null;
   };
 
   /** 開き括弧（現在位置）から、対応する閉じ括弧の直後まで進む。 */
@@ -388,19 +436,27 @@ export interface JsDocShape {
   readonly element: JsDocType | null;
   /** オブジェクトの構成員のフィールド（同名は先勝ち）。 */
   readonly fields: readonly JsDocField[];
+  /**
+   * オブジェクトの構成員に索引シグネチャがあれば、その値の型（複数あれば合併）: 任意のキーを持つ — 下のパスは
+   * 開いている。無ければ undefined。
+   */
+  readonly index?: JsDocType;
 }
 
 export function jsDocShape(type: JsDocType, typedefs: JsDocTypedefs): JsDocShape {
   const elements: JsDocType[] = [];
   const fields: JsDocField[] = [];
+  const indexes: JsDocType[] = [];
   for (const member of flattenJsDocType(type, typedefs)) {
     if (member.kind === 'array') elements.push(member.element);
     else if (member.kind === 'object') {
       for (const field of member.fields) {
         if (!fields.some((f) => f.name === field.name)) fields.push(field);
       }
+      if (member.index !== undefined) indexes.push(member.index);
     }
   }
   const element = elements.length === 0 ? null : elements.length === 1 ? elements[0] : { kind: 'union' as const, members: elements };
-  return { element, fields };
+  if (indexes.length === 0) return { element, fields };
+  return { element, fields, index: indexes.length === 1 ? indexes[0] : { kind: 'union', members: indexes } };
 }

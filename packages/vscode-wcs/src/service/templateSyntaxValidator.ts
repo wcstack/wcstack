@@ -80,22 +80,31 @@ export function validateTemplateSyntax(
   const comments = findAllCommentBindings(html);
 
   for (const item of [...mustaches, ...comments]) {
-    if (item.kind === "comment") {
+    // 文書の <head> の中は束ねない（ランタイムは文書の body だけを歩く — dom/mount.ts）: 書いたままの文字が出る。
+    // 束縛ではないので、パスやフィルタの検査は重ねない
+    if (item.inDocumentHead && !item.insideTemplate) {
       diagnostics.push({
         code: WcsDiagnosticCode.TemplateSyntax,
         start: item.matchStart,
         end: item.matchEnd,
-        message: msgs.wcsTextInfo(item.expression),
-        severity: "info",
+        message: msgs.textBindingInHead(item.kind === "mustache" ? `{{ ${item.expression} }}` : `<!--@@: ${item.expression}-->`),
+        severity: "warning",
       });
+      continue;
     }
 
+    // コメント束縛そのものは報告しない（4.19 までは 1 つずつ「wcs-text バインディング: …」の info を出していた —
+    // 束縛があると言うだけで、ページの意味のある info を埋もれさせた。継ぎ目アプリ community-hall）。
+    // <template> の外の mustache は FOUC の info。<title> / <textarea> の中ではコメントの形は束縛にならないので、
+    // 要素への束縛を勧める
     if (item.kind === "mustache" && !item.insideTemplate) {
       diagnostics.push({
         code: WcsDiagnosticCode.TemplateSyntax,
         start: item.matchStart,
         end: item.matchEnd,
-        message: msgs.moustacheFouc(item.expression),
+        message: item.textParent !== undefined
+          ? msgs.moustacheFoucTextParent(item.expression, item.textParent)
+          : msgs.moustacheFouc(item.expression),
         severity: "info",
       });
     }

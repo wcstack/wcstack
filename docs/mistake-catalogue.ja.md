@@ -71,10 +71,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 10 |
-| 実行時 | 73 |
-| lint だけ — 条件付きの沈黙 | 25 |
+| 実行時 | 74 |
+| lint だけ — 条件付きの沈黙 | 26 |
 | 文書だけ — 沈黙 | 43 |
-| 数えない lint の code | 19 |
+| 数えない lint の code | 20 |
 
 ### 文書だけ — 沈黙
 
@@ -146,6 +146,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。 | `wcs/declaration-alias-read` (varies) | `undefined` が返り、呼べば汎用の TypeError。 | 動かない | 実行時に知らせる — 4.x。diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。 |
 | `$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスか、state に無いパスを調べる（`paths.includes("feed")`・`paths.includes("labell")`）。 | `wcs/updated-callback-unbound` (warning) | `paths` には当てた束縛しか載らないので、その分岐は走らない。 | 動かない | lint のまま（実行時には見えない）。実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。state に無いパスは、近いパスがあるときだけ（打ち間違いらしいとき）報告する。コールバックはほかの種類の文字列も比べうるため。 |
 | `<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。 | `wcs/storage-init-seed` (warning) | 空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。 | 動かない | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。 |
+| 文書の `<head>` に `{{ }}` やコメント束縛を書く（`<title>{{ pageTitle }}</title>`）。 | `wcs/template-syntax` (warning) | `<wcs-state>` が束ねるのは文書の `<body>`（とシャドウルート）で、`<head>` はけっして束ねない: タイトルは書いたままの中括弧を出し、何も言わない。ルートの `<wcs-head>` は、router が写しを binder に渡すので束ねられる。 | 動かない | lint のまま（実行時には見えない）。4.20 から lint が報告する（`wcs/template-syntax`、warning）— 明示の `<head>` の中で、ページの state が読めて `enableMustache` が有効のとき。そこのパスは検査しない。継ぎ目アプリ community-hall で見つかった（CMS が `<title>` に `{{pageTitle}}` を書いた）。4.19 までの lint はそこでコメントの形を勧めていたが、`<title>` の中ではそれも束ねられない。エンジンは head を歩かないので、自分で歩かないと中括弧は見えない。 |
 | `$watch` のキーに空の段がある（`a..b`）。 | `wcs/watch-declaration-invalid` (error) | 実行時は調べないので、watch は発火しない。 | 動かない | 実行時に知らせる — 4.x。temporal の後付けに検査を 1 つ（約 10 B）。 |
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
@@ -201,6 +202,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
 | `<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。 | code なし: 次のページは読み込まれない。見えたときに、要素が `target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告する。 lint の規則はまだ無い。id はマークアップにある。 | — |
 | I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。 | code なし: コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。 定義が遅れても起きる（autoloader、遅い CDN — 7GUIs の評価の Timer）。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。 | — |
+| `<wcs-router>` の無いページ — サーバーが描き、wcstack のアイランドを置いたページ — に `<wcs-link to="/…">` を書く。 | code なし: リンクはホストを隠した（`display: none`）後、接続した時点で `[@wcstack/router] wcs-link is not connected to a router.` を投げる: `<a>` は作られず、リンクが消える。4.20 から lint が、router と wcstack を自分で読み込むページで報告する（継ぎ目アプリ community-hall）。router の無いページには `<a href>` を書く。 | `wcs/link-router-missing` (warning) |
 | `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 | `wcs/mount-path-invalid` (error) |
 | 外れた 3.x の API の名前を呼ぶ（`$trackDependency`・`$untrackDependency`）。 | 同じ code: diagnostics の後付けが読んだ時点で `#1701` を throw する。`/core` では `undefined` で、呼べば汎用の TypeError。 | `wcs/name-alias` (error) |
 | v1 の名前付き State の選択子 `path@name` を書く。 | code なし: 解析の誤り `#32`。ページの束縛はそこで止まる（ルートの中身では `console.error`）。 | `wcs/named-state-deprecated` (error) |
@@ -268,6 +270,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `wcs/manifest-unknown-keyword` | sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。 |
 | `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。4.10 から、値を読めないキー（計算した値を束縛する名前。ロケールの辞書を合わせた `t` の `{ t }`）の下をページが束ねるときも、キーの上で 1 回だけ言う。JSDoc の `@type {typeof import("./en.js").default}` を付けると、そのパスを検査する。 |
 | `wcs/path-reserved-name` | code の表に予約されているだけで、まだ出さない。 |
+| `wcs/state-absent` | lint の限界で、作者の誤りとは限らない: 束縛があるのに `<wcs-state>` の無いファイル — CMS の部分テンプレート・ファイルに分けたルートの中身 — には、パスを照らす state が無いので検査しない。それを最初の束縛の上で 1 回だけ言う（info）。4.19 までは何も言わず、`nothing to check:` にも載らなかった。 |
 | `wcs/state-src-unread` | 作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。 |
 | `wcs/type-annotation` | 初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。 |
 

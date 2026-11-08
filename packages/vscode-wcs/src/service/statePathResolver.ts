@@ -48,7 +48,8 @@ export interface StatePathScopes {
   readonly rootUnresolved: boolean;
   /**
    * The data paths whose value the validator could not read — a name it could not follow to a literal (`{ t }` with
-   * `t` imported and computed, moduleValues.ts): the path exists, the paths under it are unknown.
+   * `t` imported and computed, moduleValues.ts) — and the paths whose JSDoc type has an index signature
+   * (`Record<string, T>`): the path exists, the paths under it are unknown.
    */
   readonly opaquePaths: readonly string[];
 }
@@ -175,9 +176,12 @@ export function resolveStatePathIndex(
   };
 }
 
-/** The candidates whose value the analyzer could not read (`PathCandidate.opaque`). */
+/**
+ * The candidates whose contents are not known: a value the analyzer could not read (`PathCandidate.opaque`), and a
+ * path whose declared JSDoc type has an index signature (`PathCandidate.openKeys` — any key below).
+ */
 export function opaquePathsOf(paths: readonly PathCandidate[]): string[] {
-  return paths.filter((p) => p.opaque !== undefined).map((p) => p.path);
+  return paths.filter((p) => p.opaque !== undefined || p.openKeys === true).map((p) => p.path);
 }
 
 /**

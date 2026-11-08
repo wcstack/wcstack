@@ -54,6 +54,11 @@ export const WcsDiagnosticCode = {
   // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
   // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
   StateSrcUnread: "wcs/state-src-unread",
+  // lint の限界の告知（作者の誤りとは限らない）: 束縛（`data-wcs`・コメント束縛）があるのに `<wcs-state>` の無いファイル
+  // （ページが取り込む CMS の部分テンプレート・ルートの中身の断片・state をスクリプトで作るページ）。束縛のパスは
+  // 検査していない — それをファイルに 1 回だけ、最初の束縛の上で言う。stateSchema があれば検査するので黙る。info
+  // （継ぎ目アプリ community-hall — 何も出ず `nothing to check:` にも載らないので、検査済みに見えた）。
+  StateAbsent: "wcs/state-absent",
   // --- existing binding-expression validators (retrofitted) ---
   FilterUnknown: "wcs/filter-unknown",
   FilterArity: "wcs/filter-arity",
@@ -278,6 +283,13 @@ export const WcsDiagnosticCode = {
   // homeroom — 保存が「送信中 0%」で止まった）。パッケージごとに 1 回、最初のタグに。読めないローカルのスクリプトがある
   // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。warning。
   TagPackageMissing: "wcs/tag-package-missing",
+  // `<wcs-router>` の無いページの、内部のパス（`to="/…"`）へ飛ぶ `<wcs-link>`。リンクは接続で
+  // `[@wcstack/router] wcs-link is not connected to a router.` を投げ、ホストは `display: none` のまま `<a>` を作らない
+  // — リンクが消える（継ぎ目アプリ community-hall — サーバーが描くページにアイランドを置く形）。wcstack を自分で
+  // 読み込み、router を読み込むページだけ（断片・ルートの中身・レイアウトのファイルは黙る）。router を読み込まない
+  // ページは `wcs/tag-package-missing` が報告する。ページが HTML コメントの外のどこかで `wcs-router` を名指せば
+  // （`<template>` の中の `<wcs-router>`・それを作るスクリプトも）黙る。warning。
+  LinkRouterMissing: "wcs/link-router-missing",
   // ページの URL が、lint の規則の版（lint を作った @wcstack/state の版）より新しい minor の wcstack を固定している
   // （`@wcstack/state@4.11.0` と lint 4.10.1）。古い lint は新しい規則を知らず、新しい正しい書き方を error にもする
   // （homeroom — 4.2.0 の lint が 4.10 の `datetime(ja-JP,short,Asia/Tokyo)` を `wcs/filter-arity` に）。ページに 1 回、

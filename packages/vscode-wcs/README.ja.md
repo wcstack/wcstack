@@ -113,7 +113,9 @@ Mustache 構文 `{{ }}` とコメントバインディング構文 `<!--@@:-->` 
 <p><!--@@wcs-text:count--></p>
 ```
 
-@wcstack/state 4.0 もコメントバインディングを束ねます（`$behavior: { enableMustache: false }` のページでも）。SSR の無いページで `<template>` の外の FOUC を避ける書き方として、引き続き勧めます。どちらの形も式は複数行にまたがってよく、拡張も複数行の式を検証します。`<textarea>` と `<title>` の中のコメントはブラウザが文字にするので束縛ではなく、検証もしません（その中の `{{ }}` はテキストノードなので束ねられます）。
+@wcstack/state 4.0 もコメントバインディングを束ねます（`$behavior: { enableMustache: false }` のページでも）。SSR の無いページで `<template>` の外の FOUC を避ける書き方として、引き続き勧めます。どちらの形も式は複数行にまたがってよく、拡張も複数行の式を検証します。`<textarea>` と `<title>` の中のコメントはブラウザが文字にするので束縛ではなく、検証もしません（その中の `{{ }}` はテキストノードなので束ねられ、そこでの FOUC の案内はコメントの形ではなく要素への束縛 — `<title data-wcs="textContent: …">`・`<textarea data-wcs="value: …">` — を勧めます）。
+
+`{{ }}` はランタイムが束ねる場所でだけ読みます: テキストの中で、属性の値（`aria-current="{{ x }}"`）や HTML コメントの中ではありません。`<wcs-state>` が束ねるのは文書の `<body>`（とシャドウルート）で、`<head>` ではありません: 文書の `<head>` の `{{ }}` やコメント束縛（`<title>{{ pageTitle }}</title>`）は `wcs/template-syntax` の warning で、パスは検査しません（ルートの `<wcs-head>` は router を通して束ねられます）。ページの root の state が `$behavior: { enableMustache: false }` を宣言していれば — アイランドの横の CMS やサーバーのテンプレートの `{{ }}` — `{{ }}` はどれも束縛として検証しません。コメント束縛は検証します。設定は、拡張が読める場所の state から読みます（インライン・`json=`・`state=`・`src=` のファイル）。読めない state なら、`{{ }}` は従来どおり検証します。
 
 ### Hover・定義へ移動・参照の検索・インレイヒント
 
@@ -161,9 +163,11 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | イベント束縛以外の `#direct`（無視される） | `value#direct: name` | ⚠ warning |
 | 4.0 が root へ委譲するイベント（`click`・`input`・`submit` など 11 種）のハンドラ（root の state のメソッド `pick`、またはボリュームのメソッド `cart.pick` — 4.0 はボリュームのメソッドも接ぎ木して同じく呼ぶ）が、イベント引数の `currentTarget` を最初の `await` の前に読む（`wcs/delegated-current-target`。そこでは要素ではなく root になる — `on*#direct:` か `event.target.closest(…)`。`#direct` 付き・カスタム要素の `input` / `change` / `submit`・自前の `<wcs-state>` を持つ `<template>` の中・state が束ねない最上位の `<template>`（アプリの JS が複製するだけの雛形）の中は出さない。router の route と `<wcs-layout layout>` が指すレイアウトの雛形の中は出す — #203 と同じ範囲） | `onclick: pick` で `pick(e) { e.currentTarget.dataset.id }` | ⚠ warning |
 | パスの `__proto__` / `prototype` の段（4.0 の #120） | `textContent: a.__proto__.x` | ❌ error |
-| `<template>` 外の `{{ }}` (FOUC) | `<p>{{ count }}</p>` | ℹ info |
+| `<template>` 外の `{{ }}` (FOUC。`<title>` / `<textarea>` の中では要素への束縛を勧める — そこではコメント束縛は束ねられない) | `<p>{{ count }}</p>` | ℹ info |
+| 文書の `<head>` の `{{ }}`・コメント束縛（`wcs/template-syntax`。`<wcs-state>` が束ねるのは `<body>` だけ） | `<head><title>{{ pageTitle }}</title></head>` | ⚠ warning |
 | ネストされたプロパティへの代入 | `this.user.name = "..."` | ⚠ warning |
-| `<!--@@:-->` バインディング表示 | `<!--@@:count-->` | ℹ info |
+| 束縛があるのに `<wcs-state>` の無いファイル（`wcs/state-absent`。CMS の部分テンプレート・ファイルに分けたルートの中身 — パスは検査しない、と最初の束縛の上で 1 回だけ言う。`stateSchema` があれば言わない。テキストの束縛が `{{ }}` だけのファイルも言わない） | `<span data-wcs="textContent: booking.totl"></span>` だけのファイル | ℹ info |
+| router を読み込むのに `<wcs-router>` の無いページの `<wcs-link to="/…">`（`wcs/link-router-missing`。接続で投げ、リンクは隠れる。ページに 1 回。wcstack を自分で読み込むページだけ — 断片・ルートの中身・レイアウトのファイルは言わない。URL・クエリの `to` も言わない） | `<wcs-link to="/events/1">` | ⚠ warning |
 
 `if:`・`elseif:` には型を求めません。4.0 は条件の値（フィルタを通した後）の真偽で、最初に成り立つ枝を選びます。
 
@@ -210,7 +214,7 @@ export default {
 };
 ```
 
-読む型は TypeScript の JSDoc の部分集合です: 名前、オブジェクト型（`{ a: T; b?: U }`）、`T[]` / `Array<T>`、合併、`?T`、`@typedef` の名前（自己参照する typedef は入れ子の上限で止まる）。読めない型（関数型・`Record<…>`）は形を宣言しません。`any` / `unknown` / `*` は初期値と照合しません。
+読む型は TypeScript の JSDoc の部分集合です: 名前、オブジェクト型（`{ a: T; b?: U }`）、`T[]` / `Array<T>`、合併、`?T`、`@typedef` の名前（自己参照する typedef は入れ子の上限で止まる）。索引シグネチャ — `{ [key: string]: T }`・`Record<string, T>`・Closure の `Object<string, T>` / `Object.<string, T>` — は任意のキーのオブジェクトを宣言します: その下のパスは開いていて報告しません（`stateSchema` の開いたオブジェクトの下と同じ — `/** @returns {Record<string, boolean>} */ get soldOut()` と `soldOut.e12`）。`Record<"a" | "b", T>` はフィールド `a` と `b` を、`Readonly<T>` / `Partial<T>` / `Required<T>` は `T` の形を宣言します。読めない型（関数型・ほかの総称）は形を宣言しません。`any` / `unknown` / `*` は初期値と照合しません。
 
 ### Nested Property Assignment Warning
 
@@ -257,7 +261,11 @@ node packages/vscode-wcs/dist/cli.cjs [--attr=data-wcs] [--state-tag=wcs-state] 
 
 `--errors-only`（別名 `--quiet`）は表示を error severity の行だけに絞ります。warning/info の
 件数集計と exit code は変わりません。exit code は error が 1 件でもあれば `1`、引数不正・
-ファイル読み取り失敗は `2`、それ以外は `0` です。
+ファイル読み取り失敗・何にも当たらないパターンは `2`、それ以外は `0` です。
+
+在るファイルを名指さず、`*`・`**`・`?`・`[…]`・`{a,b}` を持つ `<file>` の引数は CLI が自分で展開します —
+cmd.exe と PowerShell（と Windows の npm scripts）はパターンをそのまま渡すためです。`*` は 1 つのディレクトリの中だけで
+`.` で始まる名前には当たらず、`**` はディレクトリをまたぎますが `node_modules` と `.` で始まるディレクトリには入りません。
 
 sidecar は**ツール専用**です: 稼働中の `static wcBindable` 宣言を上書きすることはなく、
 ファイルの欠落や陳腐化がランタイム挙動を変えることもありません。規範的なスキーマと解決

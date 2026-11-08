@@ -53,6 +53,13 @@ export interface PathCandidate {
    * not read (`draft: { ...makeDraft() }`, as written): the object has keys the analyzer does not know.
    */
   opaque?: { readonly name?: string; readonly from?: string; readonly spread?: string };
+  /**
+   * The JSDoc type declared for this path has an index signature — `Record<string, T>`, `{ [key: string]: T }` on a
+   * getter's `@returns` / `@type` or a key's `@type`: any key exists below it. Nothing under it is reported missing
+   * (statePathResolver's `StatePathScopes.opaquePaths`), as under a stateSchema's open object — and, unlike `opaque`,
+   * nothing says so: the author declared it (the community-hall seam app).
+   */
+  openKeys?: true;
 }
 
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
@@ -1986,6 +1993,11 @@ function pushDeclaredShapePaths(
   typedefs: JsDocTypedefs,
 ): void {
   const shape = jsDocShape(type, typedefs);
+  // an index signature: any key below — the path is open (no candidates are made for the keys)
+  if (shape.index !== undefined) {
+    const candidate = paths.find((p) => p.path === path);
+    if (candidate !== undefined) candidate.openKeys = true;
+  }
   if (shape.element !== null) {
     if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: 'list' });
     if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });

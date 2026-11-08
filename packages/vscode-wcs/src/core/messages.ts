@@ -115,6 +115,8 @@ export interface WcsMessageCatalog {
   pathDynamicUnknownObjectSpread(path: string, count: number, spread: string, from?: string): string;
   /** 読めない `<wcs-state src>`: その state のパスもスクリプトの規則も検査しない。 */
   stateSrcUnread(src: string): string;
+  /** 束縛があるのに `<wcs-state>` の無いファイル（`stateTag` は state のタグ名）: パスを検査していない。 */
+  stateAbsent(stateTag: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
   pathReadonlyTwoWay(path: string, property: string): string;
   /** A script writes a getter without a setter (`this.total = 0`, `$setAll` / `$update` / `$resolve` on its path). */
@@ -138,8 +140,11 @@ export interface WcsMessageCatalog {
   filterMaxArgs(name: string, maxArgs: number, argCount: number): string;
   filterArgType(name: string, argPosition: number, expectedType: string, argText: string, actualType: string): string;
   filterInputType(name: string, acceptTypes: string, currentType: string): string;
-  wcsTextInfo(expression: string): string;
   moustacheFouc(expression: string): string;
+  /** `<title>` / `<textarea>` の中の `{{ }}`（`<template>` の外）: コメントの形はそこでは束縛にならない。 */
+  moustacheFoucTextParent(expression: string, tag: 'title' | 'textarea'): string;
+  /** 文書の `<head>` の中の `{{ }}` / コメント束縛（`written` は書かれた形）: ランタイムは束ねない。 */
+  textBindingInHead(written: string): string;
   // --- nestedAssignValidator / stateTypeValidator ---
   nestedAssign(suggestedPath: string): string;
   typeAnnotationIncompatible(valueType: string, rawType: string): string;
@@ -256,6 +261,11 @@ export interface WcsMessageCatalog {
   // --- packageLoadValidator ---
   /** ページが `pkg`（`@wcstack/upload`）のタグ `tags` を書くのに、そのスクリプトを読み込んでいない。`url` は読み込む `/auto`。 */
   tagPackageMissing(tags: readonly string[], pkg: string, url: string): string;
+  /**
+   * `<wcs-router>` の無いページの `<wcs-link>`: 接続で投げ、リンクは隠れる。`to` は最初のリンクの行き先、`count` は
+   * そうなるリンクの数。
+   */
+  linkRouterMissing(to: string, count: number): string;
   /**
    * ページが lint の規則より新しい minor を固定している。`spec` は書かれたまま（`@wcstack/state@4.11.0`）、`version` は
    * その版、`minor` は `4.11`、`lint` は lint の規則の版（lint を作った @wcstack/state の版）。
@@ -407,6 +417,8 @@ const ja: WcsMessageCatalog = {
     : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
   stateSrcUnread: (src) =>
     `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（URL は読まず、/ から始まるパスは wcs-validate --root=<サイトのルート> のときだけその下で読みます）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指すか、--root を渡してください`,
+  stateAbsent: (tag) =>
+    `このファイルには束縛がありますが <${tag}> が無いので、束縛のパスは検査していません（ページが取り込む断片や、state をスクリプトで作るページ）。state のあるページを検査するか、このファイルの隣（か上）の wcstack.manifest.json の stateSchema にパスを宣言すると検査されます`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
@@ -432,9 +444,12 @@ const ja: WcsMessageCatalog = {
   filterMaxArgs: (n, max, c) => `フィルタ "${n}" の引数は最大 ${max} 個です（${c} 個指定）`,
   filterArgType: (n, i, exp, arg, act) => `フィルタ "${n}" の第${i}引数は ${exp} 型が必要です（"${arg}" は ${act} 型）`,
   filterInputType: (n, accepts, cur) => `フィルタ "${n}" は ${accepts} 型の入力が必要です（現在の型: ${cur}）`,
-  wcsTextInfo: (e) => `wcs-text バインディング: ${e}`,
   moustacheFouc: (e) =>
     `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${e}--> またはコメント構文の使用を検討してください。`,
+  moustacheFoucTextParent: (e, tag) =>
+    `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<${tag}> の中のコメント構文は束縛になりません — 要素に束ねてください（<${tag} data-wcs="${tag === 'textarea' ? 'value' : 'textContent'}: ${e}">）。`,
+  textBindingInHead: (w) =>
+    `${w} は文書の <head> の中にありますが、<wcs-state> が束ねるのは <body> とシャドウルートだけなので、書いたままの文字が出ます。タイトルは state のスクリプトから document.title に書く（$connectedCallback と $watch のハンドラ）か、ルートの <wcs-head> の <title> に置いてください`,
   nestedAssign: (sp) => `ネストされたプロパティへの代入はリアクティブ更新をトリガーしません。this["${sp}"] を使用してください。`,
   watchNotObject: () => `$watch は「パス → ハンドラ関数」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
   watchKeyCrossState: (k) => `$watch のキー "${k}" は他の state を指しています。@ 付きの越境 watch は使えません（自 state のパスのみ）`,
@@ -535,6 +550,8 @@ const ja: WcsMessageCatalog = {
     `この import map は @wcstack/signals と @wcstack/signals/dom の両方を割り当てています。CDN では各エントリがリアクティブコアを持つので、@wcstack/signals を import するモジュール（このページのものでも、読み込む .js でも）が 2 つ目のコアを持ち、境界で反応が壊れます。@wcstack/signals/dom だけを割り当ててください（コアの全部を export します）`,
   tagPackageMissing: (tags, pkg, url) =>
     `${tags.map((t) => `<${t}>`).join('・')} は ${pkg} のタグですが、このページは ${pkg} のスクリプトを読み込んでいません。要素は定義されないので、その束縛は待ち続けて何も起きず、コンソールにも何も出ません — <script type="module" src="${url}"></script> で読み込んでください`,
+  linkRouterMissing: (to, n) =>
+    `このページには <wcs-router> が無いので、この <wcs-link to="${to}">${n > 1 ? `（とページのほかの ${n - 1} 個）` : ''}は接続した時点で "[@wcstack/router] wcs-link is not connected to a router." を投げ、リンクは隠れます（display: none）。router の無いページでは <a href="${to}"> と書くか、<wcs-router> を置いてください`,
   lintVersionBehind: (spec, version, minor, lint) =>
     `このページは ${spec} を固定していますが、この lint の規則（@wcstack ${lint}）より新しい minor です。${minor} で加わった規則は検査されず、${minor} の正しい書き方が error になることもあります — @wcstack/lint を ${version} に上げてください（npm i -D @wcstack/lint@${version}。VS Code の拡張は ${minor} に対応する版へ）`,
   routeBareMustache: (inLayout) => inLayout
@@ -717,6 +734,8 @@ const en: WcsMessageCatalog = {
     : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) =>
     `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
+  stateAbsent: (tag) =>
+    `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>
@@ -742,9 +761,12 @@ const en: WcsMessageCatalog = {
   filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
   filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
   filterInputType: (n, accepts, cur) => `Filter "${n}" requires input of type ${accepts} (current type: ${cur})`,
-  wcsTextInfo: (e) => `wcs-text binding: ${e}`,
   moustacheFouc: (e) =>
     `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
+  moustacheFoucTextParent: (e, tag) =>
+    `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). A comment binding is not bound inside <${tag}>: bind the element instead (<${tag} data-wcs="${tag === 'textarea' ? 'value' : 'textContent'}: ${e}">).`,
+  textBindingInHead: (w) =>
+    `${w} is in the document's <head>, and a <wcs-state> binds only the <body> and shadow roots, so it stays as written. Write document.title from the state's script ($connectedCallback and a $watch handler), or put the <title> in a route's <wcs-head>`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
   watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
   watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
@@ -845,6 +867,8 @@ const en: WcsMessageCatalog = {
     `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals — this page's, or a .js file it loads — gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
   tagPackageMissing: (tags, pkg, url) =>
     `${tags.map((t) => `<${t}>`).join(', ')} ${tags.length === 1 ? 'is a tag' : 'are tags'} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
+  linkRouterMissing: (to, n) =>
+    `This page has no <wcs-router>, so this <wcs-link to="${to}">${n > 1 ? ` (and the ${n - 1} other${n > 2 ? 's' : ''} on the page)` : ''} throws "[@wcstack/router] wcs-link is not connected to a router." when it connects, and the link is hidden (display: none). On a page without the router write <a href="${to}">, or add the <wcs-router>`,
   lintVersionBehind: (spec, version, minor, lint) =>
     `This page pins ${spec}, a newer minor than the rules of this lint (@wcstack ${lint}): what ${minor} added is not checked, and correct ${minor} syntax can be reported as an error. Upgrade @wcstack/lint to ${version} (npm i -D @wcstack/lint@${version}; the VS Code extension to its release for ${minor})`,
   routeBareMustache: (inLayout) => inLayout

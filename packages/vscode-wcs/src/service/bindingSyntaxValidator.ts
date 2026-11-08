@@ -57,6 +57,8 @@ export function validateBindingSyntax(
   // `<!--@@:name|join('a)-->` のような形で lint だけが黙る（templateSyntaxValidator /
   // namedStateValidator / wiringLens は既に両方回している）。
   for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    // 文書の <head> の中はランタイムが読まない（templateSyntaxValidator がそう言う）— 文法も問わない
+    if (item.inDocumentHead && !item.insideTemplate) continue;
     const detail = bindingSyntaxDetail(parseEmbeddedTextWithPositions(item.expression).error);
     if (detail === null) continue;
     diagnostics.push({
