@@ -2,6 +2,10 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.14.2 — 2026-11-08
+
+`@wcstack/state` 4.19.0 から作り直した（npm の `@wcstack/lint` 4.19.0・`@wcstack/typescript` 4.19.0 と同じ判定）。4.19.0 は state の検査を変えていない（変わったのは `@wcstack/signals`）ので、規則は 2.14.1 と同じ。4.19.0 に固定したページに `wcs/lint-version-behind` を出さないための版。
+
 ## 2.14.1 — 2026-11-08
 
 `@wcstack/state` 4.18.0 から作り直した（npm の `@wcstack/lint` 4.18.0・`@wcstack/typescript` 4.18.0 と同じ判定）。拡張は組み込んだ state の版を自分の版として読むので、4.17.0 から作った 2.14.0 は、4.18.0 に固定したページ（`@wcstack/state@4.18.0` など）に `wcs/lint-version-behind` を出していた。4.18.0 は state の検査を変えていないので、規則は 2.14.0 と同じ。
