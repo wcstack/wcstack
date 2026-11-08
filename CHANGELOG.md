@@ -6,6 +6,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+A minor from the `community-hall` seam app, the first of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: wcstack islands on a page wcstack does not own — a community hall's CMS site with htmx 2, and a booking widget on a partner inn's Turbo site that runs wcstack 4.17 for its own contact form ([docs/seam-apps.md](./docs/seam-apps.md)). The author's decisions are in §5.16; the new guide is [docs/islands.md](./docs/islands.md).
+
+### Upgrading
+
+- `@wcstack/state`: **each `<wcs-state src="x.js">` evaluates its module.** The first one in a document gets the module the page's other scripts import, as before; a later one naming the same module — a DCC's or a component's next instance, the next page htmx or Turbo swapped in — imports it under another fragment (`x.js#2`), so its top-level code runs again. Up to 4.19 they shared the first one's object. Keep side effects out of a state module's top level (the skill already says so).
+- `@wcstack/state`: `toFixed`, `round`, `floor`, `ceil`, `percent`, `locale` and `currency` pass `undefined` / `null` through instead of failing the binding; a test that expected `requires a number value` for an absent value now gets the absent value.
+- `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/inserted-unbound]` and `[wcs/rendered-copy]` are new warnings, and `#43` says that an inline state is evaluated from a `blob:` URL when its import does not resolve, instead of pointing at the CSP guide.
+- `@wcstack/lint`: `wcs/state-absent` (info) and `wcs/link-router-missing` (warning) are new; a `{{ }}` or comment binding in the document's `<head>` is a `wcs/template-syntax` warning; the info on every comment binding is gone; under `$behavior: { enableMustache: false }` nothing about `{{ }}` is reported.
+- **Workarounds this release makes unnecessary**: a state module exported as a factory and built in an inline module (`export default createSiteState();`, with an import map entry for the factory) so that each page got a fresh state; no volumes on a page htmx swaps; `|coalesce(0)|locale` where the value can be absent; a second lint pass over rendered pages written only because a fragment's paths were not checked — that pass is still the way to check a fragment's paths, but the template pass no longer looks clean.
+
+### Added
+
+- `@wcstack/state`: **the release add-on** (`@wcstack/state/features/release`, in `.` and `/auto`): binder protocol version 2's `release(subtree)` lets go of markup handed over and then thrown away for good — it unregisters the subtree's bindings and disposes its `for:` / `if:` views. Content htmx replaced kept its bindings: after 200 replacements one change wrote into 200 detached nodes. The router never calls it (it puts its content back). No core bytes ([docs/binder-protocol-design.md](./docs/binder-protocol-design.md) §10).
+- `@wcstack/state`: **the diagnostics add-on warns about inserted markup nothing bound** (`[wcs/inserted-unbound]`): an element with `data-wcs` that entered a bound root after its walk and that no walk took, a second after the root's content changed, once per root — markup htmx or any library inserts does nothing until it is handed over, and handing over a container the page already had binds nothing in it. A refused top-level `for:` / `if:` template is told to go inside an element.
+- `@wcstack/state`: **the diagnostics add-on warns about a copy of a drawn page** (`[wcs/rendered-copy]`): a root that binds markup @wcstack/state had already drawn — a history cache that restored a page as it was drawn (htmx's `hx-history`, Turbo's snapshot cache) — whose lists, branches and texts never change.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/state-absent`** (info) for a file with bindings and no `<wcs-state>` (a CMS partial), whose paths were silently unchecked; **`wcs/link-router-missing`** (warning) for a `<wcs-link to="/…">` on a page with no `<wcs-router>`, where the link throws and is hidden.
+- `@wcstack/lint`: `wcs-validate` expands `*`, `**`, `?`, `[…]` and `{a,b}` itself when the shell passes a pattern through (cmd.exe, PowerShell, npm scripts on Windows); a pattern that matches no file exits 2 with `no file matches <pattern>`.
+- Docs: [docs/islands.md](./docs/islands.md) — a server-rendered site with htmx or Turbo, islands on it, and a widget on another site's page (a scoped registry, `bootstrapXxx(config, registry)`); the state README's "Inserting markup yourself".
+
+### Changed
+
+- `@wcstack/state`: **the number display filters pass an absent value through**, as the date family does since 4.7: a total, a price or a count is absent until its fetch or its island's state arrives, and `total|locale` failed on every fresh load. A value of another type still throws.
+- `@wcstack/state`: `#43` (an inline state that fails to evaluate) names the `blob:` base when an import does not resolve, and how to import (a full URL, an import map name, a `src` file); it pointed at the CSP guide on a page with no CSP.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`{{ }}` only where the runtime binds it.** Text in an attribute value, an HTML comment or the document's `<head>` is not a binding; nothing about `{{ }}` is reported when the page's state declares `enableMustache: false`; inside `<title>` / `<textarea>` the FOUC hint no longer suggests the comment form, which is not bound there; the info on every `<!--@@: -->` is gone.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: a JSDoc index signature (`Record<string, T>`, `{ [key: string]: T }`, `Object<string, T>`) on a getter or a key leaves the paths below it unchecked, as a `stateSchema` does.
+
+### Fixed
+
+- `@wcstack/state`: **a `<wcs-state src>` module's object was shared by every `<wcs-state>` naming it in a document**, and written into by each: a DCC's instances (against "each instance gets its own state"), a component's, and the next page htmx swapped in started with what the first had written — community-hall's second event's booking form showed the first event's tickets.
+- `@wcstack/state`: **every other htmx swap refused the new page's volume** (`another volume already holds`): htmx inserts the new content before it removes the old, so the new volume met the old page's, still in the document. A contested volume is decided when it starts.
+- `@wcstack/state`: `#43` no longer prints two periods after a browser's own sentence.
+
 ## [4.19.0] — 2026-11-08
 
 A minor from the next item of the `@wcstack/signals` performance study ([docs/signals-performance-study.md](./docs/signals-performance-study.md) §9): `delegateEvents()`, opt-in event delegation for the `on…` handlers `h()` gives elements — one listener per event type on the document instead of one per element, about 2.3 ms less per 2,000 handlers at 4× CPU throttling. Nothing changes for a page that does not call it. Only `@wcstack/signals` changed; every other package is 4.18.0 with a new version.
