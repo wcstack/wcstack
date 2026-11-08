@@ -234,10 +234,8 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
   const path = el.getAttribute("mount");
   if (path === null) return null;
   const v: Volume = { el, root, path, state: null, engine: null, chroot: null, settle: null };
-  let problem: string | null = null;
-  if (!validPath(path)) problem = `has an invalid mount path: it must be a static path (no "*", "$", "#", "@").`;
-  else if (el.hasAttribute(config.bindAttributeName)) problem = `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`;
-  else {
+  /** Takes the mount path on `root`, or says which volume holds it. */
+  const take = (): string | null => {
     let held = slots.get(root);
     if (held === undefined) slots.set(root, (held = new Map()));
     const other = held.get(path);
@@ -245,21 +243,29 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
     // out of the page (the page's content replaced): that one yields, and never grafts. (One out of
     // the page that no other volume asks for still grafts when its root comes.)
     if (other !== undefined && other !== v && (other.engine === null ? other.el.isConnected : live(other.engine))) {
-      problem = `will not graft: another volume already holds "${path}".`;
-    } else {
-      if (other?.engine === null) {
-        const list = waiting.get(root);
-        if (Array.isArray(list)) waiting.set(root, list.filter((x) => x !== other));
-        other.settle?.();
-        other.settle = null;
-      }
-      held.set(path, v);
+      return `will not graft: another volume already holds "${path}".`;
     }
-  }
+    if (other !== undefined && other !== v && other.engine === null) {
+      const list = waiting.get(root);
+      if (Array.isArray(list)) waiting.set(root, list.filter((x) => x !== other));
+      other.settle?.();
+      other.settle = null;
+    }
+    held.set(path, v);
+    return null;
+  };
+  let problem: string | null = null;
+  if (!validPath(path)) problem = `has an invalid mount path: it must be a static path (no "*", "$", "#", "@").`;
+  else if (el.hasAttribute(config.bindAttributeName)) problem = `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`;
+  // held by another when it connects: decided again when it starts, its state loaded. An inserter that puts
+  // the new content in before it takes the old out (htmx's swaps) still has the old page's volume and root
+  // in the document now — gone by then (community-hall, D2)
+  const contested = problem === null && take() !== null;
   return {
     // a volume that cannot load resolves its connectedCallbackPromise (3.x; it reports, as below)
     lenient: true,
     start(state): Promise<void> | void {
+      if (contested) problem = take();
       if (problem !== null) return fail(v, problem);
       // (it yielded its slot while it loaded: see above)
       if (slots.get(root)!.get(path) !== v) return;

@@ -112,6 +112,45 @@ describe("volume <wcs-state mount>", () => {
     error.mockRestore();
   });
 
+  it("新しい中身を入れてから古い中身を外す入れ替え（htmx）でも、新しいページの volume が接ぎ木される", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const page = (x: string) => `<wcs-state json='{"label":"root ${x}"}'></wcs-state><wcs-state mount="vol" json='{"x":"${x}"}'></wcs-state><p>{{ vol.x }}|{{ label }}</p>`;
+    const h = document.createElement(`scopes-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = page("a");
+    document.body.appendChild(h);
+    await getBindingsReady(root);
+    await flush();
+    expect(text(root, "p")).toBe("a|root a");
+    for (const x of ["b", "c", "d"]) {
+      // htmx's boosted swap of the body's children: the new nodes go in before the first old one, then
+      // the old ones go
+      const old = [...root.childNodes];
+      const t = document.createElement("template");
+      t.innerHTML = page(x);
+      root.insertBefore(document.importNode(t.content, true), root.firstChild);
+      for (const n of old) n.remove();
+      await getBindingsReady(root);
+      await flush();
+      expect(text(root, "p")).toBe(`${x}|root ${x}`);
+    }
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("接続した時に別の volume が持っていたパスは、その volume が文書に残っていれば、始めるときにも接ぎ木しない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, read } = await host(`<wcs-state></wcs-state><wcs-state mount="v" json='{"a":1}'></wcs-state>`, [{}]);
+    const second = document.createElement("wcs-state") as any;
+    second.setAttribute("mount", "v");
+    second.setAttribute("json", '{"a":2}');
+    root.appendChild(second);
+    await second.connectedCallbackPromise;
+    expect(read("v.a")).toBe(1);
+    expect(error).toHaveBeenCalledWith('[@wcstack/state] <wcs-state mount="v"> will not graft: another volume already holds "v".');
+    error.mockRestore();
+  });
+
   it("volume の再セットと、volume を持つ根の再セットは投げる", async () => {
     const { els } = await host(`<wcs-state></wcs-state><wcs-state mount="v"></wcs-state>`, [{}, { a: 1 }]);
     expect(() => els[1].setInitialState({ a: 2 })).toThrow("re-setting a volume is not supported");

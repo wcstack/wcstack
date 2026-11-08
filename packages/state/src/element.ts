@@ -44,6 +44,9 @@ async function loadInnerScript(script: HTMLScriptElement): Promise<Record<string
   }
 }
 
+/** The module URLs a `<wcs-state src>` of this document imported. */
+const imported = new Set<string>();
+
 async function loadSrc(src: string): Promise<Record<string, any>> {
   const url = new URL(src, document.baseURI).href;
   if (/\.json(?:[?#]|$)/.test(url)) {
@@ -53,7 +56,14 @@ async function loadSrc(src: string): Promise<Record<string, any>> {
   }
   // on the server, the renderer's local module for the URL (protocol/ssr-snapshot.ts, resolveModule):
   // Node's loader reads no http: URL
-  const mod = await import(/* @vite-ignore */ (globalThis as any)[Symbol.for("wcstack.ssr.resolveModule")]?.(url) ?? url);
+  let target: string = (globalThis as any)[Symbol.for("wcstack.ssr.resolveModule")]?.(url) ?? url;
+  // a module is evaluated once per URL, and its `export default` becomes the state, written into: a later
+  // <wcs-state> naming it (a DCC's or a component's instance, a page whose body was replaced) imports it
+  // under another fragment, which browsers and Node evaluate again — else they would share one object
+  // and each start with what the others wrote (community-hall, D1)
+  if (imported.has(target)) target += "#" + ++loads;
+  else imported.add(target);
+  const mod = await import(/* @vite-ignore */ target);
   return (mod.default ?? {}) as Record<string, any>;
 }
 

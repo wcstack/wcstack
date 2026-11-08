@@ -716,8 +716,22 @@ describe('表示面の空値契約（要件 B8）と書式フィルタ', () => {
   });
 
   it('値の型を検査するフィルタは今も落ちること（1 本に閉じ込められ $errorCallback に載る）', () => {
-    expect(() => getFilter('toFixed', ['2'])(undefined)).toThrow(/requires a number value/);
+    expect(() => getFilter('abs')(undefined)).toThrow(/requires a number value/);
+    expect(() => getFilter('add', ['1'])(null)).toThrow(/requires a number value/);
     expect(() => getFilter('join')(undefined)).toThrow(/requires an array value/);
+  });
+
+  // 4.20: 合計・価格・件数は fetch やアイランドの state が届くまで無い — `total|locale` は新しく開くたびに落ちた
+  // （docs/seam-apps.md、community-hall）
+  it.each([
+    ['toFixed', ['2']], ['round', []], ['floor', []], ['ceil', []], ['percent', []],
+    ['locale', []], ['currency', ['JPY']],
+  ])('数の表示の系統 %s は値の無いとき素通しし、別の型は今も落ちること', (name, args) => {
+    const fn = getFilter(name, args);
+    expect(fn(undefined)).toBeUndefined();
+    expect(fn(null)).toBeNull();
+    expect(() => fn('12')).toThrow(/requires a number value/);
+    expect(typeof fn(1234.5)).not.toBe('undefined');
   });
 
   it('日付の系統は値の無いとき素通しし（後から届く日付）、別の型は今も落ちること', () => {
