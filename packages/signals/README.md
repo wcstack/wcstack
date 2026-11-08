@@ -182,6 +182,25 @@ createRoot(() => {
 
 Keys are compared as a `Map` compares them (`===`, and `NaN` equals `NaN`); to select an object, select its id — `selector(computed(() => selectedItem.get()?.id))`.
 
+**Event delegation — `delegateEvents`** (since 4.19 (not released yet)). An `on…` handler is a listener on its element, so a list of 1,000 rows with two handlers each adds 2,000 listeners as it is built. `delegateEvents()`, called once before the view is built, makes `h()` keep such a handler on its element without a listener and puts one listener per event type on the document; an event that reaches it is handed to the handlers along its path, innermost first:
+
+```typescript
+import { delegateEvents, h } from "@wcstack/signals/dom";
+
+delegateEvents(["click"]); // or delegateEvents() for every type that can be delegated
+h("button", { onClick: (e) => console.log(e.currentTarget) }, "go"); // still the button
+```
+
+A delegated handler sees its element as `currentTarget` and `this`, `stopPropagation()` stops the handlers of the elements around it, and a handler that throws is reported while the others still run. What differs from a listener on the element, and why it is off by default:
+
+- It runs when the event reaches the document: after the listeners on the elements in between, and not at all if one of them stops the event.
+- An element outside the document gets nothing — a test that calls `el.click()` on an element it never attached sees no call.
+- Only events that bubble and cross shadow roots can be delegated: `click`, `dblclick`, `contextmenu`, `input`, `beforeinput`, `keydown`, `keyup`, `focusin`, `focusout` and the pointer and mouse events. `focus`, `change`, `submit`, touch and wheel events and your own events keep their listeners; naming one throws.
+- Elements made before the call keep their listeners. Inside a closed shadow root, pass the root: `delegateEvents(types, shadowRoot)`.
+- A delegated handler lives as long as its element.
+
+It returns a function that stops delegating at that root.
+
 ### 7. Pages behind `@wcstack/router`, and a value kept in `<wcs-storage>`
 
 The router puts a route's content into `<wcs-outlet>` when the route is entered, takes it out when it is left, and puts **the same nodes** back on the next entry. `@wcstack/state` binds that content through the binder protocol; signals has no binder, so do not `render()` into route content from outside — the nodes come back with what you rendered last time, and a second render appends to it. Make each page a `SignalsElement` instead: it renders when it connects and disposes its effects when it disconnects, so a page is live exactly while its route is shown. Read the route's parameters by binding the router element:
@@ -269,6 +288,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | Export | Signature | Notes |
 |---|---|---|
 | `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. A function under an `on…` key is an event listener: `onClick` → `click` (lowercased); `onclick` / `"onadd-to-cart"` → the name as written (`click`, `add-to-cart`). When the owner is torn down, the listener is removed from an element still in the document; an element that has left it keeps its listeners and is collected with them (since 4.18). |
+| `delegateEvents` | `(types?: string[], root?: Document \| ShadowRoot) => () => void` | Since 4.19 (not released yet). Opt in to event delegation for the `on…` handlers `h()` gives elements from then on: one listener per type on `root` (the document by default) instead of one per element. Only events that bubble and cross shadow roots; others throw. Returns a function that stops it at that root — see [Event delegation](#6-keyed-lists--for--index). |
 | `render` | `(child, container) => Node` | Append a child (resolving fragments/arrays/reactives) into a container. |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` groups without a wrapper element. |
 | `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number, current: () => T)` returns one Node (`item` is the item the row was built with, `current()` the item under its key now); `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |
@@ -450,7 +470,7 @@ The package is versioned with the rest of wcstack (**4.x**: every package is rel
 | **Error contract** | `DisposedError` / `isDisposedError` | **Stable** — brand-based, realm-safe. |
 | **Resources** | `resource` / `streamResource` | **Stable** (mostly). The shapes are settled; note the `streamResource` cooperative-cancellation contract (the `source` MUST honor its `AbortSignal` — see [Notes & limitations](#notes--limitations)). |
 | **wc-bindable adapter** | `bindNode` / `nodeSource` | **Evolving / experimental** — runtime behaviour is stable, but the **typed surface** (`bindNode<NodeShape>`, `NodeShape`) may still be tuned. |
-| **DOM layer** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — usable today; signatures and the element factory shape may adjust before they are promoted to stable. |
+| **DOM layer** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` / `delegateEvents` | **Evolving / experimental** — usable today; signatures and the element factory shape may adjust before they are promoted to stable. |
 | **Development mode** | `globalThis.__WCS_DEV__` + the warning codes | **Experimental** — diagnostics only; the set of warnings and their wording may change at any time. It never runs in production. |
 
 **Deprecation policy.** Within a major version, the **stable** APIs keep backward compatibility: any incompatible change is announced as a deprecation at least one minor release before it lands. APIs marked **evolving / experimental** may change in a minor release (signatures, type shapes, or warning wording) — pin an exact version if you depend on their current shape.

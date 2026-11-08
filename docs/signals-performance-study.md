@@ -112,6 +112,35 @@ The second line is the leak fixed: the prototype with D kept 1.90 MB there. Of t
 
 ## 8. What is left
 
-- **Event delegation** — one listener per event type on the root, a handler found from the target — is what the fastest libraries do for "create" and "clear". It changes how `h()` attaches handlers (and what `currentTarget` is), so it needs its own design.
+- **Event delegation** — one listener per event type on the root, a handler found from the target — is what the fastest libraries do for "create" and "clear". It changes how `h()` attaches handlers (and what `currentTarget` is), so it needs its own design. Done as an opt-in in 4.19 (§9).
 - **`isDev()`** is read on every call that may warn; reading it once per operation would save about 3 % of "create".
 - The new page has not been run on the official harness; from §7 the weighted geomean should land near 1.13 – 1.15, which is an estimate, not a measurement.
+
+## 9. Event delegation (4.19)
+
+The first item of §8, done as an opt-in on 2026-11-08 (the author asked for it).
+
+**Design.** `delegateEvents(types?, root = document)` (from `/dom`). From the call on, `h()` keeps the `on…` handler of a delegated type in a symbol-keyed slot on its element — no listener, no cleanup — and the root has one listener per type. That listener walks the event's composed path from the target outwards and calls each slot with the element as `currentTarget` and `this`. It stops where `stopPropagation()` was called, and a handler that throws is reported while the walk goes on, as with listeners. A composed event that reaches both a shadow root and the document is walked once. It is opt-in because the reach and the order differ from a listener on the element:
+
+| | A listener on the element | Delegated |
+|---|---|---|
+| When it runs | At the element, before the listeners of its ancestors | When the event reaches the root, after them; not at all if one of them stops it |
+| An element outside the document | Called on `el.click()` | Not called |
+| Which events | Any | Those that bubble and are composed — `click`, `dblclick`, `contextmenu`, `input`, `beforeinput`, `keydown`, `keyup`, `focusin`, `focusout`, the pointer and mouse events; others throw |
+| Inside a closed shadow root | — | Pass the root |
+| After its owner is disposed | Removed while the element is in the document (4.18) | Stays with its element |
+
+Touch and wheel events bubble and are composed, but they are refused: Chromium makes a root's listener for them passive, so `preventDefault()` in a handler would be ignored. `change` and `submit` bubble but are not composed.
+
+**Measurements.** The page-level A/B could not resolve the change. On this machine about a third of the CPU was busy with other programs: one build measured against itself differed by up to 16 %, and a paired run (A B B A in each round, 8 rounds) put "create 1,000 rows" anywhere between −8 % and +47 %. Clearing 10,000 rows was faster in 7 of 8 rounds (−6 %, median). The work itself was measured in isolation instead: 2,000 handlers on 1,000 rows, the four ways interleaved in one page, in three runs.
+
+| 2,000 handlers | Building (ms, 4× CPU) |
+|---|---|
+| No handler | 6.5 – 6.7 |
+| A listener and its cleanup (4.18) | 8.5 – 9.2 |
+| A symbol-keyed slot (this work) | 6.7 – 6.9 |
+| A string-keyed slot | 6.3 – 6.6 |
+
+A listener and its cleanup cost about 2.3 ms per 2,000 handlers at 4× CPU, 7 – 9 % of creating 1,000 rows. A slot costs about 0.2 ms, and clearing has no cleanup closure per handler to run. The slot is keyed by a symbol, not `$click` as in Solid: a few tenths of a millisecond, for not putting an enumerable name on an author's elements. The benchmark page delegates `click`.
+
+**Size.** `./dom` grows 376 B brotli (6,401 → 6,777 B). `delegateEvents` and the walk are about 277 B, which a bundler drops when the function is not imported; the slot in `h()` is about 124 B. The budget moves from 6.5 to 6.9 kB.
