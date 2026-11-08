@@ -9,6 +9,8 @@
  * 検査ロジックは全て core/cli/runValidation.ts(pure・テスト対象)。
  *
  * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<dir>] [--errors-only] [--strict] <file> ...
+ *   <file> は在るファイルか、パターン（`templates/*.html`・`src/**\/*.html`・`{a,b}`）。シェルが展開しなかった
+ *     パターン（cmd.exe・PowerShell）は CLI が展開する（core/cli/glob.ts）。何にも当たらなければ exit 2
  *   *.manifest.json → sidecar manifest として検査
  *   .js / .ts / .jsx / .tsx / .vue / .svelte → 読まない(summary の後に `not read:` として名前を出す)
  *   その他(.html 等)→ data-wcs バインディングとして検査。検査するもの(data-wcs・<wcs-*>・wcstack の
@@ -23,8 +25,9 @@
  *     その下で読む(`<base href="/ja/">` の下の `src="/app.js"`)。無ければ従来どおり読まない(`wcs/state-src-unread`)。
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { createFileReader } from "./fileReader.js";
+import { expandGlob, hasGlobMagic, type GlobFs } from "./core/cli/glob.js";
 import { inputKindOf, runValidation, type CliFileInput, type RunValidationOptions } from "./core/cli/runValidation.js";
 import type { FileReader } from "./service/statePathResolver.js";
 
@@ -72,11 +75,66 @@ export function resolveCliLocale(
   }
 }
 
+/** node の fs で読むディレクトリ（`expandGlob` 用）。読めなければ undefined。 */
+const nodeGlobFs: GlobFs = {
+  readDir(path) {
+    try {
+      return readdirSync(path, { withFileTypes: true }).map((entry) => ({ name: entry.name, dir: entry.isDirectory() }));
+    } catch {
+      return undefined;
+    }
+  },
+};
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ファイルの引数を展開する: 在るファイルを名指さず、パターンの文字（`*` `?` `[` `{`）を持つ引数は CLI が自分で
+ * 展開する（cmd.exe・PowerShell — npm が Windows で scripts を走らせるシェル — は展開せずにそのまま渡す。
+ * 継ぎ目アプリ community-hall）。Windows では `\` も区切り。何にも当たらないパターンは error（`unmatched`）。
+ * 同じファイルは最初の 1 回だけ。
+ */
+export function expandFileArgs(
+  args: readonly string[],
+  fs: GlobFs = nodeGlobFs,
+  exists: (path: string) => boolean = isFile,
+  windows: boolean = process.platform === "win32",
+): { files: string[]; unmatched?: string } {
+  const files: string[] = [];
+  const seen = new Set<string>();
+  const add = (path: string): void => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    files.push(path);
+  };
+  for (const arg of args) {
+    if (!hasGlobMagic(arg) || exists(arg)) {
+      add(arg);
+      continue;
+    }
+    const matches = expandGlob(windows ? arg.replace(/\\/g, "/") : arg, fs);
+    if (matches.length === 0) return { files, unmatched: arg };
+    for (const match of matches) add(match);
+  }
+  return { files };
+}
+
 export function main(argv: readonly string[]): number {
-  const { options, files, root } = parseArgs(argv);
+  const { options, files: args, root } = parseArgs(argv);
   const locale = resolveCliLocale(options.locale);
-  if (files.length === 0) {
+  if (args.length === 0) {
     process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<dir>] [--errors-only] [--strict] <file> [<file> ...]\n");
+    return 2;
+  }
+  const { files, unmatched } = expandFileArgs(args);
+  if (unmatched !== undefined) {
+    process.stderr.write(`no file matches ${unmatched}\n`);
     return 2;
   }
 
