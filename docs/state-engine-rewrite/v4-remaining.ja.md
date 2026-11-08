@@ -1695,3 +1695,27 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.19.0 の公開（2026-11-08）
+
+- 中身: minor。signals の速度の検討の次の候補、イベントの委譲（[docs/signals-performance-study.md](../signals-performance-study.md) §9、著者の依頼）。#642: opt-in の `delegateEvents(types?, root = document)`（`/dom`）。呼んだ後に `h()` が作る要素の `on…` のハンドラ（泡立って composed なイベント）を要素のシンボルのスロットに置き、root に種類ごとに 1 本のリスナー。composed な経路を内から外へ歩き、`currentTarget` と `this` を要素にして呼ぶ。`stopPropagation()` で止め、投げたら報告して続け、shadow root と文書の両方に届くイベントは 1 回だけ歩く。`focus`・`change`・`submit`、touch と wheel（root では passive）、独自のイベントは投げる。既定で off にしたのは、root で呼ぶので先祖のリスナーより後になり、文書の外の要素では呼ばれないため。ベンチのページは `click` を委譲する。
+  - 計測: 背景の負荷（CPU の約 37 %）で、ページ単位の A/B は同じビルドどうしで最大 16 % ずれ、対にした ABBA（8 回）でも作成は −8〜+47 % と読めなかった。全削除は 8 回中 7 回速い（−6 %）。そこで仕事そのものを 1 つのページで交互に測った: 1,000 行に 2,000 本のハンドラで、リスナーと片付けは約 2.3 ms、スロットは約 0.2 ms（4 倍 CPU）— 1,000 行の作成の 7〜9 %。最初の「上限 −24 %」は揺れで膨らんでいた。
+  - js-framework-benchmark の注釈 801（明示的な委譲）は、アプリのコードが target を調べて行を見分ける実装（strve-rv の直す前、kerfjs、openelement、re）に付き、フレームワークの委譲を opt-in で使って行ごとにハンドラを書く実装（vue-vapor の `.delegate`、miso-js の `delegator`）には付いていない。ベンチのページは後者の形。
+  - `./dom` は brotli で +376 B（6.40 → 6.78 kB、size-limit の上限を 6.9 kB に）。e2e `signals-delegate`（Chromium と Firefox）。
+- 準備: PR #643（merge commit 9968d7bf）。CHANGELOG を `[4.19.0] — 2026-11-08` として締め、docs/upgrading-4x.md（日英）に 4.19.0 の節（呼ばないページは何も変わらない）、固定版 18 か所。組み合わせ＝main は #642 の CI が試した木そのもの（signals をビルドし直して e2e 528 件）。
+- main で `minor`（run 42441434019）。成功した: 版を上げたコミット 01d531fc、タグ `v4.19.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Added を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 21/21。文書の固定 URL 8/8。1 回目で問題なし。
+- 公開後の作業（同日）:
+  - PR #644（merge commit 9cfc9976）: サイズの基準値を 4.19.0 の dist で取り直した（state の src は変わらず版の文字だけ: devtools 2,519 → 2,516 B、ssr 5,762 → 5,764 B、`core.min.js` 20,411 B のまま、残り 69 B）。CLAUDE.md / AGENTS.md。拡張を 2.14.2 に — 規則は 2.14.1 と同じで、4.19.0 に固定したページに `wcs/lint-version-behind` を出さないための作り直し（2.14.1 の教訓）。
+  - 拡張 2.14.2: 9cfc9976 から worktree で作成、試験 1,467、890 ファイル、SHA-256 `7b97164df47fc24204bf1ecd9fef0f7b3c59c777e0fec7b2c2b763547774b3f6`。CLI で 4.19.0 に固定したページは 0 件、4.20.0 は警告。公開は著者。
+  - wcstack-skill: PR #61（merge commit 9f7d014）で signals の `delegateEvents`（大きなリストでの使い方、`<tbody>` に 1 本のハンドラで target を調べる書き方はしない、既定で off の理由）、刻印と固定 URL。注釈付きタグ `v4.19.0`。
+  - LP（wcstack.github.io a24bedd）: リリースの表示、v4.19.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json` と手元の dist が一致、`sha384-qv/x+v…`）、大きさは約 78 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
+- 残り:
+  - 拡張 2.14.2 の公開（著者）と、その後のタグ `vscode-wcs-v2.14.2`。
+  - 委譲の効き目を、静かなマシンか公式の js-framework-benchmark で測ること。上流へページの変更を出すか（著者の判断）。
+  - 3 巡目の継ぎ目アプリか、5.0 の議題（§3.3 の (a)）の準備かは著者の判断。
+  - midi の Permissions-Policy で止められた文書が `unsupported` でなく `denied` と読める（§5.3.2）— 次の minor の候補。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
