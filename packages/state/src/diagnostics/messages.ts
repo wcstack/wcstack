@@ -70,7 +70,11 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.NotInitialized]: () => "state is not initialized",
   [M.NoScript]: (id) => `no <script> with id "${id}"`,
   [M.InlineBlocked]: () => `The inline <script> of <wcs-state> was blocked by Content-Security-Policy. Inline state is evaluated through a blob: URL: give the page's nonce to the <script> that loads @wcstack/state, or allow blob: in script-src. Moving the state into an external file (src="./state.js") needs neither. See ${CSP_GUIDE}`,
-  [M.InlineFailed]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${detail}. If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`,
+  // an import that does not resolve (Chromium "Failed to resolve module specifier", Firefox "… specifier …",
+  // WebKit "does not resolve"): the blob: URL is the base — no CSP is involved (community-hall, D6)
+  [M.InlineFailed]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${detail}. ${/specifier|does not resolve/i.test(String(detail))
+    ? `An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").`
+    : `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`}`,
   [M.TokenSubscriberThrew]: (name) => `a subscriber of token "${name}" threw.`,
   [M.TokenListNotArray]: (key) => `${key} must be an array of strings.`,
   [M.TokenEntryEmpty]: (key) => `${key} entries must be non-empty strings.`,

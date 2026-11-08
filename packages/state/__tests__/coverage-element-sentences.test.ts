@@ -140,6 +140,15 @@ describe("番号付きのメッセージの文面（診断の後付け）", () =
     expect(text(id, args)).toBe(expected);
   });
 
+  // 解決できない import（Chromium・Firefox・WebKit の文）は CSP ではなく blob: の基底を言う（community-hall）
+  it.each([
+    `Failed to resolve module specifier "/js/make.js". Invalid relative url or base scheme isn't hierarchical.`,
+    'The specifier “/js/make.js” was a bare specifier, but was not remapped to anything.',
+    "Module name, '/js/make.js' does not resolve to a valid URL.",
+  ])("#43 は解決できない import に CSP でなく blob: の基底を言う（%s）", (detail) => {
+    expect(text(M.InlineFailed, [detail])).toBe(`Failed to evaluate the inline <script> of <wcs-state>: ${detail}. An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").`);
+  });
+
   it("#122 は attr: にも名前空間に合った文面を持つ", () => {
     expect(text(M.NamespaceNeedsName, ["attr: url", "attr"])).toBe('[wcs/binding-syntax] "attr: url": "attr:" needs an attribute name — "attr.NAME:" sets one attribute (a bare "attr:" would set an element property named "attr", which does nothing).');
   });
