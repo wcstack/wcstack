@@ -1671,3 +1671,26 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.18.0 の公開（2026-11-08）
+
+- 中身: minor。2 つの仕事から。
+  - signals の速度の検討（[docs/signals-performance-study.md](../signals-performance-study.md)、著者の決定 4 点）。#633: `For` の行の index / current の signal を読まれたときに作る、effect の observers の `Set` を共有、所有されるノードをクロージャなしで登録、`on…` の判定を正規表現なしで、文字の子に目印のコメントを置かない（A・C）。所有者の片付けで、要素が文書にあるときだけリスナーを外す（B′）。`selector(source)`（Solid の createSelector。key は `Map` のキーと同じに比べ、最後の読み手が去った key は忘れる）、ベンチのページはそれで選んだ行を読む。ページ内の JS 時間で 4.17.0 に比べ、行の選択 −80 %、10,000 行の全削除 −21〜23 %、1,000 行の置換 −11〜19 %、1,000 行の追加 −13〜30 %。1,000 行のヒープは 2.99 → 2.63 MB。size-limit（brotli）を 3.1 / 6.2 → 3.3 / 6.5 kB に（`selector` が約 130 B）。依存の辺の配列化（E）とテンプレートの複製は採らない。
+  - 継ぎ目アプリ music-room の examples/ への取り込み（#635）。4.17.0 で要らなくなった回避策 5 つを外した（Web MIDI の無いところで接続時に出していた `request()`、lint のためだけの定数の行・`$watch` で写したフィールドの誤り・恒等の `.map`・`@type`）。e2e 34 件（Chromium、7500 + 10 × worker の番号）、作者の Web MIDI のスタンドインと音の探針で、4.17.0 の決定（操作まで context を作らない・-6 dBFS の天井・古い保存データの音）も固定した。取り込みで 4.17.0 の退行が見つかった: `<wcs-audio>` が待っていたグラフを最初の `pointerdown` の中で組み（約 230 ms）、`running` に結んだバナーがクリックの途中で消えてページがずれ、ページで最初のクリックが別の要素に落ちた（作者の e2e の 17 件）。著者の決定（v4-direction §5.14）で #634: 操作が終わってから（`pointerup` / `pointercancel` の後の次のタスク、`keydown` は次のタスク）組む。ついでに、外した要素の操作のリスナーが document に残っていたのも直した（`disconnectedCallback` の中の `getRootNode()` は要素自身）。synth-playground の e2e がこの変更で競争になったので、両方のルートが組み終わるのを待つように直した。
+  - #633 と #634 / #635 の CHANGELOG の `[Unreleased]` がぶつかり、#633 に main を取り込んで節を合わせた。組み合わせ（main と同じ木、148a4918）の e2e は audio と signals をビルドし直して 520 件パス。
+- 準備: PR #636（merge commit 5d499bba）。CHANGELOG を `[4.18.0] — 2026-11-08` として締め（要約、Upgrading＝signals のリスナーと目印、Added＝`selector`・examples/music-room、Changed＝行ごとの仕事、Fixed＝audio の最初のクリック）、docs/upgrading-4x.md（日英）に 4.18.0 の節、固定版 18 か所。
+- main で `minor`（run 42424860437）。成功した: 版を上げたコミット bae090c7、タグ `v4.18.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 21/21。文書の固定 URL 8/8。1 回目で問題なし。
+- 公開後の作業（同日）:
+  - PR #637（merge commit 42b84843）: サイズの基準値を 4.18.0 の dist で取り直した。state の src は変わっていないので版の文字だけが動いた（`core.min.js` 20,411 B のまま、残り 69 B。分割の core 25,051 → 25,052 B、ssr 5,763 → 5,762 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の数字と版の行。拡張は出さない（vscode-wcs は変わっていない）。
+  - wcstack-skill: PR #60（merge commit 1e6faea）で signals の `selector`（選んだ行）と audio の「操作が終わってから作る」、刻印と固定 URL。注釈付きタグ `v4.18.0`。
+  - LP（wcstack.github.io 560d289）: リリースの表示、v4.18.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json` と手元の dist が一致、`sha384-liJ0x0…`）、大きさは約 78 KB のまま、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
+- 残り:
+  - 拡張 2.14.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.14.0`。
+  - 2 巡目の 5 本が済み、取り込みも済んだ。3 巡目か、5.0 の議題（§3.3 の (a)）の準備かは著者の判断。
+  - signals の残り: イベントの委譲（`h()` のハンドラの付け方を変える設計）、呼び出しごとの `isDev()`。公式の js-framework-benchmark での計測と、上流へページの変更を出すか（著者の判断）。
+  - midi の Permissions-Policy で止められた文書が `unsupported` でなく `denied` と読める（§5.3.2）— 次の minor の候補。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
