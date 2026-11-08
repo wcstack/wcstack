@@ -64,6 +64,11 @@ var WcsDiagnosticCode = {
   // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
   // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
   StateSrcUnread: "wcs/state-src-unread",
+  // lint の限界の告知（作者の誤りとは限らない）: 束縛（`data-wcs`・コメント束縛）があるのに `<wcs-state>` の無いファイル
+  // （ページが取り込む CMS の部分テンプレート・ルートの中身の断片・state をスクリプトで作るページ）。束縛のパスは
+  // 検査していない — それをファイルに 1 回だけ、最初の束縛の上で言う。stateSchema があれば検査するので黙る。info
+  // （継ぎ目アプリ community-hall — 何も出ず `nothing to check:` にも載らないので、検査済みに見えた）。
+  StateAbsent: "wcs/state-absent",
   // --- existing binding-expression validators (retrofitted) ---
   FilterUnknown: "wcs/filter-unknown",
   FilterArity: "wcs/filter-arity",
@@ -288,6 +293,13 @@ var WcsDiagnosticCode = {
   // homeroom — 保存が「送信中 0%」で止まった）。パッケージごとに 1 回、最初のタグに。読めないローカルのスクリプトがある
   // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。warning。
   TagPackageMissing: "wcs/tag-package-missing",
+  // `<wcs-router>` の無いページの、内部のパス（`to="/…"`）へ飛ぶ `<wcs-link>`。リンクは接続で
+  // `[@wcstack/router] wcs-link is not connected to a router.` を投げ、ホストは `display: none` のまま `<a>` を作らない
+  // — リンクが消える（継ぎ目アプリ community-hall — サーバーが描くページにアイランドを置く形）。wcstack を自分で
+  // 読み込み、router を読み込むページだけ（断片・ルートの中身・レイアウトのファイルは黙る）。router を読み込まない
+  // ページは `wcs/tag-package-missing` が報告する。ページが HTML コメントの外のどこかで `wcs-router` を名指せば
+  // （`<template>` の中の `<wcs-router>`・それを作るスクリプトも）黙る。warning。
+  LinkRouterMissing: "wcs/link-router-missing",
   // ページの URL が、lint の規則の版（lint を作った @wcstack/state の版）より新しい minor の wcstack を固定している
   // （`@wcstack/state@4.11.0` と lint 4.10.1）。古い lint は新しい規則を知らず、新しい正しい書き方を error にもする
   // （homeroom — 4.2.0 の lint が 4.10 の `datetime(ja-JP,short,Asia/Tokyo)` を `wcs/filter-arity` に）。ページに 1 回、
@@ -1196,10 +1208,13 @@ var SENTENCES = {
     42
     /* InlineBlocked */
   ]: () => `The inline <script> of <wcs-state> was blocked by Content-Security-Policy. Inline state is evaluated through a blob: URL: give the page's nonce to the <script> that loads @wcstack/state, or allow blob: in script-src. Moving the state into an external file (src="./state.js") needs neither. See ${CSP_GUIDE}`,
+  // an import that does not resolve (Chromium "Failed to resolve module specifier", Firefox "… specifier …",
+  // WebKit "does not resolve"): the blob: URL is the base — no CSP is involved (community-hall, D6). (A browser's
+  // own sentence ends with a period of its own: one is enough)
   [
     43
     /* InlineFailed */
-  ]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${detail}. If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`,
+  ]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${String(detail).replace(/\.$/, "")}. ${/specifier|does not resolve/i.test(String(detail)) ? `An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").` : `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`}`,
   [
     17
     /* TokenSubscriberThrew */
@@ -2276,7 +2291,7 @@ var config = {
   locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   enableContractAnalyzer: false
 };
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release"];
 var NATIVE_COMMANDS = {
   "*": ["focus", "blur", "click", "scrollIntoView", "showPopover", "hidePopover", "togglePopover"],
   "dialog": ["show", "showModal", "close", "requestClose"],
@@ -2637,8 +2652,9 @@ var coalesce = (options, literals) => {
 var nullIfEmpty = () => (value) => value === "" ? null : value;
 var { eq: eq2, ne: ne2, not: not2, lt, le, gt, ge, falsy: falsy2, truthy: truthy2, boolean: boolean2 } = coreFilters;
 var registered = {
-  toFixed: { factory: toFixed, arity: [0, 1] },
-  locale: { factory: locale, arity: [0, 1] },
+  // The number display family passes an absent value through too (since 4.20 — see nullishPassthrough)
+  toFixed: { factory: nullishPassthrough(toFixed), arity: [0, 1] },
+  locale: { factory: nullishPassthrough(locale), arity: [0, 1] },
   // The `String(value)` family passes an absent value through (B8 — see nullishPassthrough)
   upper: { factory: nullishPassthrough(upper), arity: [0, 0] },
   lower: { factory: nullishPassthrough(lower), arity: [0, 0] },
@@ -2652,10 +2668,10 @@ var registered = {
   reverse: { factory: nullishPassthrough(reverse), arity: [0, 0] },
   truncate: { factory: nullishPassthrough(truncate), arity: [1, 2] },
   join: { factory: join, arity: [0, 1] },
-  round: { factory: round, arity: [0, 1] },
-  floor: { factory: floor, arity: [0, 1] },
-  ceil: { factory: ceil, arity: [0, 1] },
-  percent: { factory: percent, arity: [0, 1] },
+  round: { factory: nullishPassthrough(round), arity: [0, 1] },
+  floor: { factory: nullishPassthrough(floor), arity: [0, 1] },
+  ceil: { factory: nullishPassthrough(ceil), arity: [0, 1] },
+  percent: { factory: nullishPassthrough(percent), arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
   // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), a style (`date(ja-JP,long)`)
   // and, since 4.10, a time zone (`date(ja-JP,long,Asia/Tokyo)`)
@@ -2690,7 +2706,7 @@ var registered = {
   string: { factory: string, arity: [0, 0] },
   nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] },
   // (added in 4.2: last, so the order of the others is unchanged)
-  currency: { factory: currency, arity: [1, 2] }
+  currency: { factory: nullishPassthrough(currency), arity: [1, 2] }
 };
 var formatFilters = /* @__PURE__ */ Object.fromEntries(
   /* @__PURE__ */ Object.entries(registered).filter(([name]) => !(name in coreFilters))
@@ -2842,7 +2858,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.19.0";
+var version = "4.20.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -8603,6 +8619,8 @@ function parse3(input, options) {
 var UNKNOWN = { kind: "unknown" };
 var NULL_TYPE = { kind: "name", name: "null" };
 var ARRAY_GENERICS = /* @__PURE__ */ new Set(["Array", "ReadonlyArray"]);
+var INDEX_GENERICS = /* @__PURE__ */ new Set(["Record", "Object"]);
+var SAME_SHAPE_GENERICS = /* @__PURE__ */ new Set(["Readonly", "Partial", "Required"]);
 var MAX_RESOLVE_DEPTH = 8;
 function tokenize(text3) {
   const tokens = [];
@@ -8744,6 +8762,10 @@ function parseJsDocType(text3) {
     if (isPunct(".") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "<") pos++;
     if (isPunct("<")) {
       pos++;
+      if (name === "Record") {
+        const literal2 = parseLiteralKeyRecord();
+        if (literal2 !== void 0) return literal2;
+      }
       const args = [];
       for (; ; ) {
         const arg = parseUnion();
@@ -8752,20 +8774,47 @@ function parseJsDocType(text3) {
         if (!expect(",")) break;
       }
       if (!expect(">")) return null;
-      return ARRAY_GENERICS.has(name) && args.length === 1 ? { kind: "array", element: args[0] } : UNKNOWN;
+      if (ARRAY_GENERICS.has(name) && args.length === 1) return { kind: "array", element: args[0] };
+      if (INDEX_GENERICS.has(name) && args.length === 2) return { kind: "object", fields: [], index: args[1] };
+      if (SAME_SHAPE_GENERICS.has(name) && args.length === 1) return args[0];
+      return UNKNOWN;
     }
     return { kind: "name", name };
+  };
+  const parseLiteralKeyRecord = () => {
+    const start = pos;
+    const keys = [];
+    expect("|");
+    for (; ; ) {
+      const token = peek();
+      if (token === void 0 || token.t !== "string") break;
+      keys.push(token.v);
+      pos++;
+      if (!expect("|")) break;
+    }
+    if (keys.length === 0 || !expect(",")) {
+      pos = start;
+      return void 0;
+    }
+    const value = parseUnion();
+    if (value === null || !expect(">")) return null;
+    return { kind: "object", fields: keys.map((name) => ({ name, type: value })) };
   };
   const parseObject = () => {
     pos++;
     const fields = [];
+    let index;
     while (!isPunct("}")) {
       const key = peek();
       if (key === void 0) return null;
       if (key.t === "punct" && key.v === "[") {
         pos++;
         if (!skipUntilClose("[", "]")) return null;
-        if (!expect(":") || parseUnion() === null) return null;
+        expect("?");
+        if (!expect(":")) return null;
+        const value = parseUnion();
+        if (value === null) return null;
+        index = index === void 0 ? value : { kind: "union", members: [index, value] };
       } else {
         if (key.t !== "name" && key.t !== "string") return null;
         pos++;
@@ -8777,7 +8826,7 @@ function parseJsDocType(text3) {
       }
       if (!expect(",") && !expect(";")) break;
     }
-    return expect("}") ? { kind: "object", fields } : null;
+    return expect("}") ? { kind: "object", fields, ...index !== void 0 ? { index } : {} } : null;
   };
   const skipUntilClose = (open, close) => {
     let depth = 0;
@@ -8883,16 +8932,19 @@ function jsDocTypeHint(type, typedefs = /* @__PURE__ */ new Map()) {
 function jsDocShape(type, typedefs) {
   const elements = [];
   const fields = [];
+  const indexes = [];
   for (const member of flattenJsDocType(type, typedefs)) {
     if (member.kind === "array") elements.push(member.element);
     else if (member.kind === "object") {
       for (const field of member.fields) {
         if (!fields.some((f) => f.name === field.name)) fields.push(field);
       }
+      if (member.index !== void 0) indexes.push(member.index);
     }
   }
   const element2 = elements.length === 0 ? null : elements.length === 1 ? elements[0] : { kind: "union", members: elements };
-  return { element: element2, fields };
+  if (indexes.length === 0) return { element: element2, fields };
+  return { element: element2, fields, index: indexes.length === 1 ? indexes[0] : { kind: "union", members: indexes } };
 }
 
 // src/service/moduleValues.ts
@@ -10309,6 +10361,10 @@ function followValue(prop, scope) {
 }
 function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
   const shape = jsDocShape(type, typedefs);
+  if (shape.index !== void 0) {
+    const candidate = paths.find((p) => p.path === path);
+    if (candidate !== void 0) candidate.openKeys = true;
+  }
   if (shape.element !== null) {
     if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
     if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
@@ -10869,7 +10925,7 @@ function resolveStatePathIndex(elements, html, fileReader, includeRoots) {
   };
 }
 function opaquePathsOf(paths) {
-  return paths.filter((p) => p.opaque !== void 0).map((p) => p.path);
+  return paths.filter((p) => p.opaque !== void 0 || p.openKeys === true).map((p) => p.path);
 }
 function moduleLocationOf(fileReader, path) {
   return fileReader === void 0 ? void 0 : { fileReader, path: path ?? "" };
@@ -12087,6 +12143,7 @@ var ja = {
   nestedWritePathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u66F8\u304D\u8FBC\u307F\u306F\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30D1\u30B9\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
   readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
+  stateAbsent: (tag) => `\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306B\u306F\u675F\u7E1B\u304C\u3042\u308A\u307E\u3059\u304C <${tag}> \u304C\u7121\u3044\u306E\u3067\u3001\u675F\u7E1B\u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u30DA\u30FC\u30B8\u304C\u53D6\u308A\u8FBC\u3080\u65AD\u7247\u3084\u3001state \u3092\u30B9\u30AF\u30EA\u30D7\u30C8\u3067\u4F5C\u308B\u30DA\u30FC\u30B8\uFF09\u3002state \u306E\u3042\u308B\u30DA\u30FC\u30B8\u3092\u691C\u67FB\u3059\u308B\u304B\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u96A3\uFF08\u304B\u4E0A\uFF09\u306E wcstack.manifest.json \u306E stateSchema \u306B\u30D1\u30B9\u3092\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
@@ -12103,8 +12160,9 @@ var ja = {
   filterMaxArgs: (n, max, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u5F15\u6570\u306F\u6700\u5927 ${max} \u500B\u3067\u3059\uFF08${c} \u500B\u6307\u5B9A\uFF09`,
   filterArgType: (n, i, exp, arg, act) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u7B2C${i}\u5F15\u6570\u306F ${exp} \u578B\u304C\u5FC5\u8981\u3067\u3059\uFF08"${arg}" \u306F ${act} \u578B\uFF09`,
   filterInputType: (n, accepts, cur) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F ${accepts} \u578B\u306E\u5165\u529B\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${cur}\uFF09`,
-  wcsTextInfo: (e) => `wcs-text \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0: ${e}`,
   moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  moustacheFoucTextParent: (e, tag) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<${tag}> \u306E\u4E2D\u306E\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306F\u675F\u7E1B\u306B\u306A\u308A\u307E\u305B\u3093 \u2014 \u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">\uFF09\u3002`,
+  textBindingInHead: (w) => `${w} \u306F\u6587\u66F8\u306E <head> \u306E\u4E2D\u306B\u3042\u308A\u307E\u3059\u304C\u3001<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u3068\u30B7\u30E3\u30C9\u30A6\u30EB\u30FC\u30C8\u3060\u3051\u306A\u306E\u3067\u3001\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059\u3002\u30BF\u30A4\u30C8\u30EB\u306F state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089 document.title \u306B\u66F8\u304F\uFF08$connectedCallback \u3068 $watch \u306E\u30CF\u30F3\u30C9\u30E9\uFF09\u304B\u3001\u30EB\u30FC\u30C8\u306E <wcs-head> \u306E <title> \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
   nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   watchNotObject: () => `$watch \u306F\u300C\u30D1\u30B9 \u2192 \u30CF\u30F3\u30C9\u30E9\u95A2\u6570\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
   watchKeyCrossState: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u4ED6\u306E state \u3092\u6307\u3057\u3066\u3044\u307E\u3059\u3002@ \u4ED8\u304D\u306E\u8D8A\u5883 watch \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u81EA state \u306E\u30D1\u30B9\u306E\u307F\uFF09`,
@@ -12159,6 +12217,7 @@ var ja = {
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
   tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join("\u30FB")} \u306F ${pkg} \u306E\u30BF\u30B0\u3067\u3059\u304C\u3001\u3053\u306E\u30DA\u30FC\u30B8\u306F ${pkg} \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u3044\u307E\u305B\u3093\u3002\u8981\u7D20\u306F\u5B9A\u7FA9\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u675F\u7E1B\u306F\u5F85\u3061\u7D9A\u3051\u3066\u4F55\u3082\u8D77\u304D\u305A\u3001\u30B3\u30F3\u30BD\u30FC\u30EB\u306B\u3082\u4F55\u3082\u51FA\u307E\u305B\u3093 \u2014 <script type="module" src="${url}"></script> \u3067\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`,
+  linkRouterMissing: (to, n) => `\u3053\u306E\u30DA\u30FC\u30B8\u306B\u306F <wcs-router> \u304C\u7121\u3044\u306E\u3067\u3001\u3053\u306E <wcs-link to="${to}">${n > 1 ? `\uFF08\u3068\u30DA\u30FC\u30B8\u306E\u307B\u304B\u306E ${n - 1} \u500B\uFF09` : ""}\u306F\u63A5\u7D9A\u3057\u305F\u6642\u70B9\u3067 "[@wcstack/router] wcs-link is not connected to a router." \u3092\u6295\u3052\u3001\u30EA\u30F3\u30AF\u306F\u96A0\u308C\u307E\u3059\uFF08display: none\uFF09\u3002router \u306E\u7121\u3044\u30DA\u30FC\u30B8\u3067\u306F <a href="${to}"> \u3068\u66F8\u304F\u304B\u3001<wcs-router> \u3092\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
   lintVersionBehind: (spec, version3, minor, lint) => `\u3053\u306E\u30DA\u30FC\u30B8\u306F ${spec} \u3092\u56FA\u5B9A\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E lint \u306E\u898F\u5247\uFF08@wcstack ${lint}\uFF09\u3088\u308A\u65B0\u3057\u3044 minor \u3067\u3059\u3002${minor} \u3067\u52A0\u308F\u3063\u305F\u898F\u5247\u306F\u691C\u67FB\u3055\u308C\u305A\u3001${minor} \u306E\u6B63\u3057\u3044\u66F8\u304D\u65B9\u304C error \u306B\u306A\u308B\u3053\u3068\u3082\u3042\u308A\u307E\u3059 \u2014 @wcstack/lint \u3092 ${version3} \u306B\u4E0A\u3052\u3066\u304F\u3060\u3055\u3044\uFF08npm i -D @wcstack/lint@${version3}\u3002VS Code \u306E\u62E1\u5F35\u306F ${minor} \u306B\u5BFE\u5FDC\u3059\u308B\u7248\u3078\uFF09`,
   routeBareMustache: (inLayout) => inLayout ? `\u30EC\u30A4\u30A2\u30A6\u30C8\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u9077\u79FB\u3067\u306F\u675F\u306D\u3089\u308C\u307E\u305B\u3093 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<span>{{ \u2026 }}</span>\uFF09` : `<wcs-route> \u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u6700\u521D\u306B\u7740\u3044\u305F\u30EB\u30FC\u30C8\u3067\u3057\u304B\u675F\u306D\u3089\u308C\u307E\u305B\u3093\u3002\u9077\u79FB\u3067\u5165\u3063\u305F\u30EB\u30FC\u30C8\u3067\u306F\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<h1>{{ \u2026 }}</h1>\uFF09`,
   layoutSlotMissing: (l) => `\u30EC\u30A4\u30A2\u30A6\u30C8 "${l}" \u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306B\u65E2\u5B9A\u306E <slot>\uFF08name \u306E\u7121\u3044\u3082\u306E\uFF09\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3053\u306E <wcs-layout> \u306E\u540D\u524D\u4ED8\u304D\u30B9\u30ED\u30C3\u30C8\u306E\u5916\u306E\u4E2D\u8EAB\uFF08\u5165\u308C\u5B50\u306E\u30EB\u30FC\u30C8\u3068\u305D\u306E\u30DA\u30FC\u30B8\uFF09\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093 \u2014 \u30DA\u30FC\u30B8\u3092\u7F6E\u304F\u5834\u6240\u306B <slot></slot> \u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
@@ -12312,6 +12371,7 @@ var en = {
   nestedWritePathMissing: (p) => `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
+  stateAbsent: (tag) => `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
   pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
@@ -12328,8 +12388,9 @@ var en = {
   filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
   filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
   filterInputType: (n, accepts, cur) => `Filter "${n}" requires input of type ${accepts} (current type: ${cur})`,
-  wcsTextInfo: (e) => `wcs-text binding: ${e}`,
   moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
+  moustacheFoucTextParent: (e, tag) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). A comment binding is not bound inside <${tag}>: bind the element instead (<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">).`,
+  textBindingInHead: (w) => `${w} is in the document's <head>, and a <wcs-state> binds only the <body> and shadow roots, so it stays as written. Write document.title from the state's script ($connectedCallback and a $watch handler), or put the <title> in a route's <wcs-head>`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
   watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
   watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
@@ -12384,6 +12445,7 @@ var en = {
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
   signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
   tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join(", ")} ${tags.length === 1 ? "is a tag" : "are tags"} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
+  linkRouterMissing: (to, n) => `This page has no <wcs-router>, so this <wcs-link to="${to}">${n > 1 ? ` (and the ${n - 1} other${n > 2 ? "s" : ""} on the page)` : ""} throws "[@wcstack/router] wcs-link is not connected to a router." when it connects, and the link is hidden (display: none). On a page without the router write <a href="${to}">, or add the <wcs-router>`,
   lintVersionBehind: (spec, version3, minor, lint) => `This page pins ${spec}, a newer minor than the rules of this lint (@wcstack ${lint}): what ${minor} added is not checked, and correct ${minor} syntax can be reported as an error. Upgrade @wcstack/lint to ${version3} (npm i -D @wcstack/lint@${version3}; the VS Code extension to its release for ${minor})`,
   routeBareMustache: (inLayout) => inLayout ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ \u2026 }}</span>)` : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ \u2026 }}</h1>)`,
   layoutSlotMissing: (l) => `The template of layout "${l}" has no default <slot> (one without a name), so what this <wcs-layout> holds outside the named slots \u2014 the nested routes and their pages \u2014 is not shown. Put a <slot></slot> where the page goes`,
@@ -13557,21 +13619,24 @@ var COMMENT_BINDING = /<!--\s*@@\s*(?:wcs-text)?\s*:\s*((?:(?!-->)[\s\S])+?)\s*-
 var RAW_TEXT_TAGS = ["script", "style"];
 var TEXT_ONLY_COMMENT_PARENTS = ["textarea", "title"];
 function findAllMustacheSyntax(html) {
-  return collect(html, MUSTACHE, "mustache", RAW_TEXT_TAGS);
+  return collect(html, maskMarkup(html), MUSTACHE, "mustache", RAW_TEXT_TAGS);
 }
 function findAllCommentBindings(html) {
-  return collect(html, COMMENT_BINDING, "comment", [...RAW_TEXT_TAGS, ...TEXT_ONLY_COMMENT_PARENTS]);
+  return collect(html, html, COMMENT_BINDING, "comment", [...RAW_TEXT_TAGS, ...TEXT_ONLY_COMMENT_PARENTS]);
 }
-function collect(html, regex, kind, skipInside) {
+function collect(html, scan, regex, kind, skipInside) {
   const results = [];
   const skip = rangeTester(html, skipInside);
   const inTemplate = templateTester(html);
+  const inHead = documentHeadTester(html);
+  const textParent = kind === "mustache" ? rangeTester(html, TEXT_ONLY_COMMENT_PARENTS) : null;
   regex.lastIndex = 0;
   let match;
-  while ((match = regex.exec(html)) !== null) {
-    if (skip(match.index)) continue;
+  while ((match = regex.exec(scan)) !== null) {
+    if (skip(match.index) !== null) continue;
     const expr = match[1];
     const exprStart = match.indices[1][0];
+    const parent = textParent?.(match.index) ?? null;
     results.push({
       kind,
       expression: expr,
@@ -13579,10 +13644,83 @@ function collect(html, regex, kind, skipInside) {
       exprEnd: exprStart + expr.length,
       matchStart: match.index,
       matchEnd: match.index + match[0].length,
-      insideTemplate: inTemplate(match.index)
+      insideTemplate: inTemplate(match.index),
+      inDocumentHead: inHead(match.index),
+      ...parent !== null ? { textParent: parent } : {}
     });
   }
   return results;
+}
+function maskMarkup(html) {
+  if (!html.includes("{{")) return html;
+  const lower2 = asciiLowerCase(html);
+  const chunks = [];
+  let last = 0;
+  const mask = (from, to) => {
+    if (to <= from) return;
+    chunks.push(html.slice(last, from), "<", "x".repeat(to - from - 1));
+    last = to;
+  };
+  let i = 0;
+  while (i < html.length) {
+    const lt2 = html.indexOf("<", i);
+    if (lt2 === -1) break;
+    if (html.startsWith("<!--", lt2)) {
+      const close = html.indexOf("-->", lt2 + 4);
+      i = close === -1 ? html.length : close + 3;
+      mask(lt2, i);
+      continue;
+    }
+    const next = html[lt2 + 1];
+    if (next === "!" || next === "?" || next === "/") {
+      const close = html.indexOf(">", lt2 + 1);
+      i = close === -1 ? html.length : close + 1;
+      mask(lt2, i);
+      continue;
+    }
+    if (next === void 0 || !/[A-Za-z]/.test(next)) {
+      i = lt2 + 1;
+      continue;
+    }
+    let n = lt2 + 1;
+    while (n < html.length && /[^\s/>]/.test(html[n])) n++;
+    const tagName = lower2.slice(lt2 + 1, n);
+    let j = n;
+    let quote = null;
+    while (j < html.length) {
+      const c = html[j];
+      if (quote !== null) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === ">") {
+        break;
+      }
+      j++;
+    }
+    i = j < html.length ? j + 1 : html.length;
+    mask(lt2, i);
+    const raw = RAW_TEXT_TAGS.includes(tagName);
+    if (raw || TEXT_ONLY_COMMENT_PARENTS.includes(tagName)) {
+      const close = lower2.indexOf(`</${tagName}`, i);
+      const contentEnd = close === -1 ? html.length : close;
+      if (raw) mask(i, contentEnd);
+      i = contentEnd;
+    }
+  }
+  chunks.push(html.slice(last));
+  return chunks.join("");
+}
+function documentHeadTester(html) {
+  if (!/<head[\s>]/i.test(html)) return () => false;
+  const regions = findStartTagRegions(html);
+  const head = regions.find((r) => r.tagName === "head");
+  if (head === void 0) return () => false;
+  const close = asciiLowerCase(html).indexOf("</head", head.end);
+  const body = regions.find((r) => r.tagName === "body" && r.start > head.end);
+  const ends = [close, body === void 0 ? -1 : body.start].filter((at2) => at2 !== -1);
+  const end = ends.length === 0 ? html.length : Math.min(...ends);
+  return (offset2) => offset2 > head.end && offset2 < end;
 }
 function rangeTester(html, tags) {
   const ranges = [];
@@ -13591,15 +13729,16 @@ function rangeTester(html, tags) {
   let match;
   while ((match = open.exec(html)) !== null) {
     const start = match.index + match[0].length;
-    const close = lower2.indexOf(`</${match[1].toLowerCase()}`, start);
+    const tag = match[1].toLowerCase();
+    const close = lower2.indexOf(`</${tag}`, start);
     const end = close === -1 ? html.length : close;
-    ranges.push({ start, end });
+    ranges.push({ start, end, tag });
     open.lastIndex = end;
   }
   let i = 0;
   return (offset2) => {
     while (i < ranges.length && ranges[i].end <= offset2) i++;
-    return i < ranges.length && ranges[i].start <= offset2;
+    return i < ranges.length && ranges[i].start <= offset2 ? ranges[i].tag : null;
   };
 }
 function templateTester(html) {
@@ -13649,21 +13788,22 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
   const mustaches = findAllMustacheSyntax(html);
   const comments = findAllCommentBindings(html);
   for (const item of [...mustaches, ...comments]) {
-    if (item.kind === "comment") {
+    if (item.inDocumentHead && !item.insideTemplate) {
       diagnostics.push({
         code: WcsDiagnosticCode.TemplateSyntax,
         start: item.matchStart,
         end: item.matchEnd,
-        message: msgs.wcsTextInfo(item.expression),
-        severity: "info"
+        message: msgs.textBindingInHead(item.kind === "mustache" ? `{{ ${item.expression} }}` : `<!--@@: ${item.expression}-->`),
+        severity: "warning"
       });
+      continue;
     }
     if (item.kind === "mustache" && !item.insideTemplate) {
       diagnostics.push({
         code: WcsDiagnosticCode.TemplateSyntax,
         start: item.matchStart,
         end: item.matchEnd,
-        message: msgs.moustacheFouc(item.expression),
+        message: item.textParent !== void 0 ? msgs.moustacheFoucTextParent(item.expression, item.textParent) : msgs.moustacheFouc(item.expression),
         severity: "info"
       });
     }
@@ -13917,6 +14057,7 @@ function validateBindingSyntax(html, bindAttrName = "data-wcs", locale2) {
     }
   }
   for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    if (item.inDocumentHead && !item.insideTemplate) continue;
     const detail = bindingSyntaxDetail(parseEmbeddedTextWithPositions(item.expression).error);
     if (detail === null) continue;
     diagnostics.push({
@@ -16336,6 +16477,31 @@ function validatePackageLoads(html, locale2, fileReader) {
       message: msgs.tagPackageMissing(at2.tags, `@wcstack/${pkg}`, `https://esm.run/@wcstack/${pkg}${version3 === null ? "" : `@${version3}`}/auto`)
     });
   }
+  const linkDefined = loads.pkgs.has("router") || defined.has("router") || autoloader && components.some((k) => coversTag(k, "wcs-link"));
+  if (linkDefined) {
+    const links = findLinksWithoutRouter(scan);
+    if (links.length > 0) {
+      out.push({
+        code: WcsDiagnosticCode.LinkRouterMissing,
+        start: links[0].start,
+        end: links[0].end,
+        severity: "warning",
+        tag: "wcs-link",
+        message: msgs.linkRouterMissing(links[0].to, links.length)
+      });
+    }
+  }
+  return out;
+}
+function findLinksWithoutRouter(scan) {
+  if (/\bwcs-router\b/i.test(scan)) return [];
+  const out = [];
+  for (const region of findStartTagRegions(scan)) {
+    if (region.tagName !== "wcs-link") continue;
+    const to = extractAttribute(scan.slice(region.start, region.end), "to");
+    if (to === null || !to.startsWith("/")) continue;
+    out.push({ to, start: region.start - "wcs-link".length, end: region.start });
+  }
   return out;
 }
 function comparePins(a, b) {
@@ -17445,6 +17611,7 @@ function validateNamedState(html, attrName, stateTagName = "wcs-state", locale2)
     }
   }
   for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    if (item.inDocumentHead && !item.insideTemplate) continue;
     const selector = findStateSelector(item.expression, true);
     if (selector !== null) {
       diagnostics.push({
@@ -18801,6 +18968,71 @@ function validateStateSources(html, stateTagName = "wcs-state", locale2, fileRea
   }
   return out;
 }
+function validateStateAbsent(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, applicationSchema) {
+  if (applicationSchema !== void 0) return [];
+  if (!html.includes(bindAttribute) && !html.includes("@@")) return [];
+  if (parseWcsStateElements(html, stateTagName).length > 0) return [];
+  const ignored = findIgnoredRanges(html, bindAttribute);
+  const bindings = [
+    ...findAllBindAttributes(html, bindAttribute).filter((attr) => attr.value.trim() !== "").map((attr) => ({ start: attr.valueStart, end: attr.valueStart + attr.value.length })),
+    ...findAllCommentBindings(html).map((m) => ({ start: m.exprStart, end: m.exprEnd }))
+  ].filter((b) => !ignored.some(([start, end]) => b.start >= start && b.start < end));
+  if (bindings.length === 0) return [];
+  const first = bindings.reduce((a, b) => b.start < a.start ? b : a);
+  return [{
+    code: WcsDiagnosticCode.StateAbsent,
+    start: first.start,
+    end: first.end,
+    message: getMessages(locale2).stateAbsent(stateTagName),
+    severity: "info"
+  }];
+}
+
+// src/service/stateBehavior.ts
+var BEHAVIOR_KEY2 = "$behavior";
+var MUSTACHE_KEY = "enableMustache";
+function isMustacheDisabled(html, stateTagName = "wcs-state", fileReader) {
+  if (!html.includes(MUSTACHE_KEY) && (fileReader === void 0 || !html.includes("src"))) return false;
+  const elements = parseWcsStateElements(html, stateTagName);
+  if (elements.length === 0) return false;
+  const insideTemplate = createTemplateTester(html);
+  const root = elements.find((e) => e.mountPath === null && !e.bindComponent && !insideTemplate(e.tagStart));
+  if (root === void 0) return false;
+  if (root.stateAttr !== void 0) {
+    const json = findScriptJsonById(html, root.stateAttr);
+    return json !== null && jsonDisablesMustache(json);
+  }
+  if (root.srcAttr !== void 0) {
+    if (fileReader === void 0) return false;
+    if (root.srcAttr.endsWith(".json")) {
+      const json = fileReader(root.srcAttr);
+      return json !== void 0 && jsonDisablesMustache(json);
+    }
+    const script = readStateScript(root.srcAttr, fileReader);
+    return script !== void 0 && scriptDisablesMustache(script);
+  }
+  if (root.jsonAttr !== void 0) return jsonDisablesMustache(root.jsonAttr);
+  const block = root.scriptBlocks[0];
+  return block !== void 0 && scriptDisablesMustache(block.content);
+}
+function jsonDisablesMustache(text3) {
+  try {
+    const data2 = JSON.parse(text3);
+    const behavior = data2?.[BEHAVIOR_KEY2];
+    return typeof behavior === "object" && behavior !== null && behavior[MUSTACHE_KEY] === false;
+  } catch {
+    return false;
+  }
+}
+function scriptDisablesMustache(script) {
+  if (!script.includes(MUSTACHE_KEY)) return false;
+  const decl = findTopLevelDeclaration(script, BEHAVIOR_KEY2);
+  if (decl === null || decl.kind !== "data") return false;
+  return analyzeDeclarationEntries(script, BEHAVIOR_KEY2).some((entry) => entry.name === MUSTACHE_KEY && entry.kind === "data" && entry.value !== void 0 && stripComments(entry.value) === "false");
+}
+function stripComments(value) {
+  return value.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim();
+}
 
 // src/core/sidecar/discover.ts
 var APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
@@ -18913,7 +19145,11 @@ function validateDocument(text3, options = {}) {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const fileReader = options.fileReader;
   const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
-  const found = [...validateText(text3, options, applicationSchema), ...validateStateSources(text3, stateTagName, options.locale, fileReader)];
+  const found = [
+    ...validateText(text3, options, applicationSchema),
+    ...validateStateSources(text3, stateTagName, options.locale, fileReader),
+    ...validateStateAbsent(text3, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema)
+  ];
   const page = fileReader === void 0 ? null : inlineExternalStates(text3, stateTagName, fileReader);
   if (page === null) return sortDiagnostics(found);
   const key = (d) => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\0");
@@ -18980,7 +19216,10 @@ function validateText(text3, options, applicationSchema) {
   for (const d of validateNestedAssigns(text3, stateTagName, locale2)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  const ignored = findIgnoredRanges(text3, bindAttribute);
+  const ignored = [
+    ...findIgnoredRanges(text3, bindAttribute),
+    ...text3.includes("{{") && isMustacheDisabled(text3, stateTagName, fileReader) ? findAllMustacheSyntax(text3).map((m) => [m.matchStart, m.matchEnd]) : []
+  ];
   const kept = ignored.length === 0 ? out : out.filter((d) => !ignored.some(([start, end]) => d.start >= start && d.start < end));
   return sortDiagnostics(kept);
 }

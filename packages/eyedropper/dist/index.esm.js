@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/eyedropper","version":"4.19.0"};
+var pkg = {"name":"@wcstack/eyedropper","version":"4.20.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

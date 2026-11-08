@@ -713,7 +713,8 @@
     "recursion",
     "ssr",
     "devtools",
-    "native-commands"
+    "native-commands",
+    "release"
   ],
   "nativeCommands": {
     "*": [

@@ -27,7 +27,7 @@ var config = {
 };
 
 // src/load.ts
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release"];
 
 // src/native/commands.ts
 var NATIVE_COMMANDS = {
@@ -400,8 +400,9 @@ var coalesce = (options, literals) => {
 var nullIfEmpty = () => (value) => value === "" ? null : value;
 var { eq: eq2, ne: ne2, not: not2, lt, le, gt, ge, falsy: falsy2, truthy: truthy2, boolean: boolean2 } = coreFilters;
 var registered = {
-  toFixed: { factory: toFixed, arity: [0, 1] },
-  locale: { factory: locale, arity: [0, 1] },
+  // The number display family passes an absent value through too (since 4.20 — see nullishPassthrough)
+  toFixed: { factory: nullishPassthrough(toFixed), arity: [0, 1] },
+  locale: { factory: nullishPassthrough(locale), arity: [0, 1] },
   // The `String(value)` family passes an absent value through (B8 — see nullishPassthrough)
   upper: { factory: nullishPassthrough(upper), arity: [0, 0] },
   lower: { factory: nullishPassthrough(lower), arity: [0, 0] },
@@ -415,10 +416,10 @@ var registered = {
   reverse: { factory: nullishPassthrough(reverse), arity: [0, 0] },
   truncate: { factory: nullishPassthrough(truncate), arity: [1, 2] },
   join: { factory: join, arity: [0, 1] },
-  round: { factory: round, arity: [0, 1] },
-  floor: { factory: floor, arity: [0, 1] },
-  ceil: { factory: ceil, arity: [0, 1] },
-  percent: { factory: percent, arity: [0, 1] },
+  round: { factory: nullishPassthrough(round), arity: [0, 1] },
+  floor: { factory: nullishPassthrough(floor), arity: [0, 1] },
+  ceil: { factory: nullishPassthrough(ceil), arity: [0, 1] },
+  percent: { factory: nullishPassthrough(percent), arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
   // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), a style (`date(ja-JP,long)`)
   // and, since 4.10, a time zone (`date(ja-JP,long,Asia/Tokyo)`)
@@ -453,7 +454,7 @@ var registered = {
   string: { factory: string, arity: [0, 0] },
   nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] },
   // (added in 4.2: last, so the order of the others is unchanged)
-  currency: { factory: currency, arity: [1, 2] }
+  currency: { factory: nullishPassthrough(currency), arity: [1, 2] }
 };
 var formatFilters = /* @__PURE__ */ Object.fromEntries(
   /* @__PURE__ */ Object.entries(registered).filter(([name]) => !(name in coreFilters))
