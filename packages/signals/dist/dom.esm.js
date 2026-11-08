@@ -1,5 +1,5 @@
-import { h as innerEffect, o as onCleanup, b as bindNode, j as isDev, k as hasOwner, w as warnDev, d as signal, a as createRoot } from './core-D0iUHBKc.esm.js';
-export { D as DisposedError, c as computed, e as effect, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, s as selector, g as streamResource } from './core-D0iUHBKc.esm.js';
+import { h as innerEffect, o as onCleanup, b as bindNode, j as reportError, k as isDev, l as hasOwner, w as warnDev, d as signal, a as createRoot } from './core-BreHgNBK.esm.js';
+export { D as DisposedError, c as computed, e as effect, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, s as selector, g as streamResource } from './core-BreHgNBK.esm.js';
 
 // Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //
@@ -137,6 +137,12 @@ function bindProp(el, key, value) {
     if (key[0] === "o" && key[1] === "n" && ((c2 >= 97 && c2 <= 122) || c2 === 45) && typeof value === "function") {
         const type = key.charCodeAt(2) < 91 ? key.slice(2).toLowerCase() : key.slice(2);
         const listener = value;
+        if (delegatedRoots.has(type)) {
+            // Delegated (delegateEvents): the handler waits in the element's slot for the root's one listener. No
+            // listener and no cleanup per element — it goes with the element.
+            el[handlerKey(type)] = listener;
+            return;
+        }
         el.addEventListener(type, listener);
         // Remove the listener when the owning scope is torn down while the element is still in the
         // document (e.g. a reactive child of a kept element, or a SignalsElement re-render), so handlers
@@ -158,6 +164,94 @@ function bindProp(el, key, value) {
         return;
     }
     setProp(el, key, value);
+}
+// --- event delegation (opt-in) ---------------------------------------------
+//
+// `delegateEvents()` makes `h()` keep an `on…` handler of a delegated type in a slot of its element instead of
+// adding a listener, and puts ONE listener per type on the root (the document, or a shadow root). An event that
+// reaches the root is walked along its composed path from the target outwards, calling each slot it finds — what
+// the fastest fine-grained libraries do: no listener to add per row on create, none to remove on clear. Opt-in,
+// because the order and reach differ from a listener on the element (README, "Event delegation").
+/** Events that bubble and are composed (cross shadow roots): the ones a root can see for any element under it. */
+const DELEGABLE = ("beforeinput click contextmenu dblclick focusin focusout input keydown keyup " +
+    "mousedown mousemove mouseout mouseover mouseup pointerdown pointermove pointerout pointerover pointerup").split(" ");
+/** A delegated type → the roots that listen for it. */
+const delegatedRoots = new Map();
+/** A type → the symbol under which an element keeps its delegated handler. */
+const handlerKeys = new Map();
+function handlerKey(type) {
+    let key = handlerKeys.get(type);
+    if (key === undefined)
+        handlerKeys.set(type, (key = Symbol(type)));
+    return key;
+}
+/** Events already walked: a composed event reaches a shadow root and the document; the first walks it all. */
+const walked = new WeakSet();
+function dispatchDelegated(event) {
+    if (walked.has(event))
+        return;
+    walked.add(event);
+    const key = handlerKey(event.type);
+    try {
+        for (const node of event.composedPath()) {
+            const handler = node[key];
+            if (handler === undefined)
+                continue;
+            // What a listener on the element would see: the element as `currentTarget` and `this`.
+            Object.defineProperty(event, "currentTarget", { configurable: true, value: node });
+            try {
+                handler.call(node, event);
+            }
+            catch (err) {
+                reportError(err); // as a listener's throw: reported, and the walk goes on
+            }
+            if (event.cancelBubble)
+                break; // stopPropagation() / stopImmediatePropagation()
+        }
+    }
+    finally {
+        delete event.currentTarget;
+    }
+}
+/**
+ * Delegate the `on…` handlers `h()` gives elements from now on, for these event types, to one listener per type
+ * on `root` (default: the document). Each handler still sees its element as `currentTarget` and `this`, and
+ * `stopPropagation()` stops the handlers of the elements around it. A handler then lives as long as its element.
+ *
+ * Only events that bubble and are composed can be delegated (the default is all of them); others throw. Call it
+ * before building the view: elements made earlier keep their listeners. For a closed shadow root, pass the root.
+ * Differences from a listener on the element: the handlers run when the event reaches the root (after listeners on
+ * the elements between), not at all if one of those stops it, and not for an element outside the document.
+ *
+ * @returns a function that stops delegating at this root.
+ */
+function delegateEvents(types = DELEGABLE, root = document) {
+    for (const type of types) {
+        if (!DELEGABLE.includes(type)) {
+            // (touch / wheel bubble, but a root's listener for them is passive: preventDefault() would be ignored)
+            throw new Error(`delegateEvents: "${type}" cannot be delegated (it does not bubble, cross shadow roots, or allow preventDefault at a root). Delegable: ${DELEGABLE.join(", ")}.`);
+        }
+    }
+    const added = [];
+    for (const type of types) {
+        let roots = delegatedRoots.get(type);
+        if (roots === undefined)
+            delegatedRoots.set(type, (roots = new Set()));
+        if (roots.has(root))
+            continue;
+        roots.add(root);
+        root.addEventListener(type, dispatchDelegated);
+        added.push(type);
+    }
+    return () => {
+        for (const type of added.splice(0)) {
+            root.removeEventListener(type, dispatchDelegated);
+            const roots = delegatedRoots.get(type);
+            roots.delete(root);
+            if (roots.size === 0)
+                delegatedRoots.delete(type);
+        }
+    };
 }
 /**
  * Objects given to a custom element that is not defined yet, by element → property, until it is
@@ -901,5 +995,5 @@ function mountNode(tagName, options = {}) {
     };
 }
 
-export { For, Fragment, Index, SignalsElement, bindNode, createRoot, createSignalsElement, h, mountNode, onCleanup, render, signal };
+export { For, Fragment, Index, SignalsElement, bindNode, createRoot, createSignalsElement, delegateEvents, h, mountNode, onCleanup, render, signal };
 //# sourceMappingURL=dom.esm.js.map

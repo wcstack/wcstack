@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/idle","version":"4.18.0"};
+var pkg = {"name":"@wcstack/idle","version":"4.19.0"};
 
 /**
  * idleCapabilities.ts

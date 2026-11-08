@@ -182,7 +182,7 @@ createRoot(() => {
 
 Keys are compared as a `Map` compares them (`===`, and `NaN` equals `NaN`); to select an object, select its id — `selector(computed(() => selectedItem.get()?.id))`.
 
-**Event delegation — `delegateEvents`** (since 4.19 (not released yet)). An `on…` handler is a listener on its element, so a list of 1,000 rows with two handlers each adds 2,000 listeners as it is built. `delegateEvents()`, called once before the view is built, makes `h()` keep such a handler on its element without a listener and puts one listener per event type on the document; an event that reaches it is handed to the handlers along its path, innermost first:
+**Event delegation — `delegateEvents`** (since 4.19). An `on…` handler is a listener on its element, so a list of 1,000 rows with two handlers each adds 2,000 listeners as it is built. `delegateEvents()`, called once before the view is built, makes `h()` keep such a handler on its element without a listener and puts one listener per event type on the document; an event that reaches it is handed to the handlers along its path, innermost first:
 
 ```typescript
 import { delegateEvents, h } from "@wcstack/signals/dom";
@@ -288,7 +288,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | Export | Signature | Notes |
 |---|---|---|
 | `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. A function under an `on…` key is an event listener: `onClick` → `click` (lowercased); `onclick` / `"onadd-to-cart"` → the name as written (`click`, `add-to-cart`). When the owner is torn down, the listener is removed from an element still in the document; an element that has left it keeps its listeners and is collected with them (since 4.18). |
-| `delegateEvents` | `(types?: string[], root?: Document \| ShadowRoot) => () => void` | Since 4.19 (not released yet). Opt in to event delegation for the `on…` handlers `h()` gives elements from then on: one listener per type on `root` (the document by default) instead of one per element. Only events that bubble and cross shadow roots; others throw. Returns a function that stops it at that root — see [Event delegation](#6-keyed-lists--for--index). |
+| `delegateEvents` | `(types?: string[], root?: Document \| ShadowRoot) => () => void` | Since 4.19. Opt in to event delegation for the `on…` handlers `h()` gives elements from then on: one listener per type on `root` (the document by default) instead of one per element. Only events that bubble and cross shadow roots; others throw. Returns a function that stops it at that root — see [Event delegation](#6-keyed-lists--for--index). |
 | `render` | `(child, container) => Node` | Append a child (resolving fragments/arrays/reactives) into a container. |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` groups without a wrapper element. |
 | `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number, current: () => T)` returns one Node (`item` is the item the row was built with, `current()` the item under its key now); `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |

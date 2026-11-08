@@ -61,7 +61,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/sse","version":"4.18.0"};
+var pkg = {"name":"@wcstack/sse","version":"4.19.0"};
 
 /**
  * sseCapabilities.ts

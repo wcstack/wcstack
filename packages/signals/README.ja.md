@@ -181,7 +181,7 @@ createRoot(() => {
 
 key は `Map` のキーと同じに比べます(`===`。`NaN` は `NaN` と等しい)。オブジェクトを選ぶときは id を選びます — `selector(computed(() => selectedItem.get()?.id))`。
 
-**イベントの委譲 — `delegateEvents`**(4.19（未リリース）から)。`on…` のハンドラは要素のリスナーなので、ハンドラが 2 つある 1,000 行のリストは、作るときに 2,000 本のリスナーを付けます。ビューを作る前に `delegateEvents()` を 1 回呼ぶと、`h()` はそうしたハンドラをリスナーなしで要素に持たせ、イベントの種類ごとに 1 本のリスナーを文書に置きます。そこに届いたイベントは、経路に沿って内側から順にハンドラへ渡されます:
+**イベントの委譲 — `delegateEvents`**(4.19 から)。`on…` のハンドラは要素のリスナーなので、ハンドラが 2 つある 1,000 行のリストは、作るときに 2,000 本のリスナーを付けます。ビューを作る前に `delegateEvents()` を 1 回呼ぶと、`h()` はそうしたハンドラをリスナーなしで要素に持たせ、イベントの種類ごとに 1 本のリスナーを文書に置きます。そこに届いたイベントは、経路に沿って内側から順にハンドラへ渡されます:
 
 ```typescript
 import { delegateEvents, h } from "@wcstack/signals/dom";
@@ -287,7 +287,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | エクスポート | シグネチャ | 備考 |
 |---|---|---|
 | `h` | `(tag, props?, ...children) => Node` | `tag` はタグ文字列・`Component`・`Fragment`。関数/signal の prop と child はリアクティブ。`on…` キーの関数はイベントリスナ: `onClick` → `click`(小文字化)、`onclick` / `"onadd-to-cart"` → 書いたままの名前(`click`・`add-to-cart`)。オーナーの片付けでは、文書にある要素からリスナを外し、文書から外れた要素はリスナごと回収に任せる(4.18 から)。 |
-| `delegateEvents` | `(types?: string[], root?: Document \| ShadowRoot) => () => void` | 4.19（未リリース）から。その後に `h()` が要素に付ける `on…` のハンドラを委譲する: 要素ごとでなく、種類ごとに 1 本のリスナーを `root`(既定は文書)に。泡立って shadow root を越えるイベントだけで、ほかは投げる。その root での委譲を止める関数を返す — [イベントの委譲](#6-keyed-リスト--for--index)参照。 |
+| `delegateEvents` | `(types?: string[], root?: Document \| ShadowRoot) => () => void` | 4.19 から。その後に `h()` が要素に付ける `on…` のハンドラを委譲する: 要素ごとでなく、種類ごとに 1 本のリスナーを `root`(既定は文書)に。泡立って shadow root を越えるイベントだけで、ほかは投げる。その root での委譲を止める関数を返す — [イベントの委譲](#6-keyed-リスト--for--index)参照。 |
 | `render` | `(child, container) => Node` | child(fragment/配列/リアクティブを解決)を container に追加。 |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` でラッパ要素なしにグループ化。 |
 | `For<T>` | `(list, each, options?) => ListView` | keyed リスト。`list` は signal または `() => T[]`、`each(item, index: () => number, current: () => T)` は単一 Node を返す(`item` は行を作ったときの値、`current()` はその key の今の item)、`options.key(item, i)` 既定は値の同一性。キーで行を再利用/移動し、削除行を dispose。 |

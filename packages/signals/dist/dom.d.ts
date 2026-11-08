@@ -270,6 +270,19 @@ type Component = (props: Record<string, unknown> & {
 declare function h(tag: string | typeof Fragment | Component, props?: Props, ...children: Child[]): Node;
 /** Append `child` into `container`, resolving fragments/arrays. */
 declare function render(child: Child, container: Node): Node;
+/**
+ * Delegate the `on…` handlers `h()` gives elements from now on, for these event types, to one listener per type
+ * on `root` (default: the document). Each handler still sees its element as `currentTarget` and `this`, and
+ * `stopPropagation()` stops the handlers of the elements around it. A handler then lives as long as its element.
+ *
+ * Only events that bubble and are composed can be delegated (the default is all of them); others throw. Call it
+ * before building the view: elements made earlier keep their listeners. For a closed shadow root, pass the root.
+ * Differences from a listener on the element: the handlers run when the event reaches the root (after listeners on
+ * the elements between), not at all if one of those stops it, and not for an element outside the document.
+ *
+ * @returns a function that stops delegating at this root.
+ */
+declare function delegateEvents(types?: readonly string[], root?: EventTarget): () => void;
 type ListAccessor<T> = ReadSignal<readonly T[]> | (() => readonly T[]);
 /**
  * `For`'s row builder. `item` is the item the row was built for — a plain value. A keyed row is
@@ -360,5 +373,5 @@ interface MountedNode<S extends NodeShape = DefaultNodeShape> extends BoundNode<
 }
 declare function mountNode<S extends NodeShape = DefaultNodeShape>(tagName: string, options?: MountNodeOptions): MountedNode<S>;
 
-export { DisposedError, For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, createSignalsElement, effect, flushSync, h, isDisposedError, mountNode, nodeSource, onCleanup, render, resource, selector, signal, streamResource };
+export { DisposedError, For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, createSignalsElement, delegateEvents, effect, flushSync, h, isDisposedError, mountNode, nodeSource, onCleanup, render, resource, selector, signal, streamResource };
 export type { BoundNode, Child, Cleanup, Component, DefaultNodeShape, EffectHandle, Equals, EventStreamOptions, ForEach, ForOptions, IndexEach, ListAccessor, ListView, MountNodeOptions, MountedNode, NodeShape, Props, ReadSignal, ResourceOptions, ResourceSource, ResourceState, SignalsElementClass, StreamProducer, StreamResourceOptions, StreamResourceState, StreamSource, StreamStatus, WcBindableDescriptor, WcBindableProperty, WriteSignal };
