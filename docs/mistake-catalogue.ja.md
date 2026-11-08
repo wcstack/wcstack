@@ -70,10 +70,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 作者に知らせるもの | 項目 |
 |---|---|
-| 設計（書けない、または害が無い） | 10 |
-| 実行時 | 74 |
+| 設計（書けない、または害が無い） | 12 |
+| 実行時 | 76 |
 | lint だけ — 条件付きの沈黙 | 26 |
-| 文書だけ — 沈黙 | 43 |
+| 文書だけ — 沈黙 | 48 |
 | 数えない lint の code | 20 |
 
 ### 文書だけ — 沈黙
@@ -93,6 +93,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `date` フィルタの `Date` を、日付だけの文字列から `new Date("2026-10-01")` で作る。 | 日付だけの文字列は UTC の真夜中として読まれる: グリニッジより西では、どの日付も 1 日早く出て、11 月 1 日の記録は 11 月のページで 10 月 31 日と書かれる。 | 出ない・違う場所 | どこからも見えない — 文書。4.9 から、日付だけの文字列をそのまま渡したときの日付のフィルタの文面が `new Date(y, m - 1, d)` と言う。ページが自分で `Date` を作った後は、何も見分けられない。 |
 | `<wcs-sse>` や `<wcs-ws>` を、`stale-after` なしで何時間も開いておく。 | 閉じられずに死んだ接続（スリープ・NAT・proxy）は、何も届かないのに `OPEN` で `connected: true` のまま: キューは 80 件遅れて止まり、"Live" と出ていた。 | 古い表示 | 設計で消す — 5.0 の議題（破壊的）。4.8 から `stale-after`（任意）が気づく。既定にすると、すべてのサーバーが定期的に何かを送る必要がある — 5.0 の問い。 |
 | `url` が変わった直後の `<wcs-fetch>` の `value` を、今ページが出している項目として読む。 | `value` は次の応答が届くまで前の応答のまま — 新しい要求が進む間も、空の `url` の後も: 編集フォームは前の記録で埋まり、古い `version` で保存した。 | 古い表示 | どこからも見えない — 文書。fetch の README（4.9 の文書）: 応答が出している項目のものか確かめる（`v && v.id === this.entryId`）。 |
+| 束縛が描く要素をサーバーに置き換えさせる（`hx-swap-oob`）。 | 新しい要素は束縛されず、束縛はもう無い古い要素へ書き込む: 検索の後にヘッダーの数が 0 になり、星を付けても 0 のままだった。 | 古い表示 | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 1 つの要素の持ち主は 1 人: アイランドが描くか、サーバーが描くか（docs/islands.ja.md）。 |
 | すべての行のつもりで `*` を含むパスで `$postUpdate` を呼ぶ（イベントのハンドラから `$postUpdate("rows.*.cells.*.text")`）。 | `*` は getter と同じく今の行の添字で、イベントが来た行だけが通知され、それに依存するセルは古いまま。 | 古い表示 | 設計で消す — 5.0 の議題（破壊的）。7GUIs の評価（Cells）で見つかった。README は 4.4 からそう書く。`$getAll` は `[]` ですべての行を指せるが、`$postUpdate` にその形は無い。5.0 で足すか、行の文脈が解決しない `*` を拒むかを決める。 |
 | `<wcs-raf>` の `dt` を積んで、壁の時計に沿って描く。 | `dt` は活動していた時間: 1 時間隠れた後はグラフが 1 時間遅れ、タブが見えたままのスリープの後は 1 フレームがスリープ全体を運ぶ。 | 古い表示 | どこからも見えない — 文書。raf の README が言う（4.8 の文書）。 |
 | 同じブラウザの別のタブがログアウトしたり別の人でログインしたりしたとき、セッションの変化に遷移のときにしか反応しない。 | `<wcs-storage>` のイベントがセッションを消しても、開いたページは次の遷移まで会員のデータを出し続ける。よそのログインで、タブは黙って別の人のものになる。 | 古い表示 | どこからも見えない — 文書。examples/router-auth は、ここでも別のタブでも、セッションのどの変化も token への `$watch` 1 つで扱う形を示す。スキルはまだ言わない。 |
@@ -105,10 +106,13 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | HTML を処理するバンドラ（Vite）でページを作り、state を `<wcs-state>` のインラインの `<script type="module">` に書く。 | バンドラは警告なしにスクリプトをバンドルへ取り込む: `<wcs-state>` は `setInitialState()` を待ち続け、何も束ねられない（`<wcs-guard-handler>` のスクリプトも同じ: 4.7 からはルートを閉じ、router が知らせる）。 | 動かない | 実行時に知らせる — 4.x。state の README: `vite-ignore` か `src=`。ページの読み込み後も源の無い `<wcs-state>` が待っていれば、診断の後付けが警告できる。 |
 | リクエストが終わったことを、`<wcs-fetch>` の `status`（や `value`）への `$watch` で知る。 | どちらも state の出力で、同じ値をもう一度書いても何も発火しない。`204` を返した 1 回目の `DELETE` ではページが進んだが、2 回目は進まず、フォームは消した記録のままだった。 | 動かない | どこからも見えない — 文書。fetch の README（4.9 の文書）: 応答のイベント（`eventToken.value` ＋ `$on`、応答ごと）か、`loading` が `false` に戻るのを受ける。 |
 | フレームワークから、オブジェクトの入力をその場で変える。`files={files}` で渡した配列への `files.push(file)` や、`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)`。 | 同じ参照には、フレームワークは何も書かないので、要素には何も伝わらない。アップロードは始まらず、前の要求で `body` を使い切った `<wcs-fetch>` は、次の要求を本文なしで送る。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。渡されたオブジェクトの中の変化は、要素からは見えない。統合の手引きは、新しいオブジェクトや配列を代入するよう書くようになった。 |
+| `for:` / `if:` のテンプレートの中に htmx の属性（`hx-get`・`hx-trigger` など）を書く。または束縛する（`attr.hx-get:`）。 | 行は htmx がページを処理した後で複製され、htmx は要素を処理するときに属性を読む: 行の中の `hx-get` は何もせず、束縛した `hx-get` は古い URL を要求し続ける — その要素に `htmx.process()` を呼ばない限り。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 |
 | React 19 の JSX で、コロンを含む `wcs-*` のイベントを、`on` の後を大文字にして聞く: `onWcs-fetch:response={fn}`。 | コンパイルは通る。React 19 は `on` の後に書かれたとおりの名前のイベント（`Wcs-fetch:response`）を聞き、それは発火しないので、ハンドラは走らない。小文字の形（`onwcs-fetch:response`）は動く。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは、JSX ではコロンのイベントを書けないと書いていた。今は React 19 がどうするかを書き、引き続き `addEventListener` を勧める。 |
 | 遷移の後に聞かせる文（件数、「保存しました」）を、ルートの中身の `role="status"` のリージョンに置く。 | ルートの中身は文と一緒に挿入されるので、何も読み上げられない。応答で埋まるリージョンが聞こえるかは時機次第で、ビュー遷移があると Chromium は 10 回中 0 回、reduced motion では 10 回中 10 回読んだ。 | 動かない | どこからも見えない — 文書。router の README（4.10 の文書）: router の外のページの階層に 1 つのリージョンを置き、遷移の後に書く。lint の `wcs/live-region-inserted` は、文がマークアップにある形や枝を開く形を見るが、後で束ねるルートの本体は見ない。 |
 | `<wcs-midi>` の `message.data[0]` の生のステータスバイトで、ノートのオン・オフを決める。 | ノートをベロシティ 0 のノートオンで終える鍵盤 — 多い — では鍵が押されたまま残る: 押された表示のまま、その音は離されない。`type` はそれをすでに `noteoff` と言う。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から midi の README が `type` で決めるよう言う。 |
 | `<wcs-midi>` の `velocity` を 127 で割ってから楽器に渡す。 | すでに 0〜1 なので、ベロシティ 100 は 0.006 としてシンセに届き、画面の鍵盤は大きく鳴るのに MIDI 鍵盤はほとんど聞こえない。何も知らせない。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 midi の README と skill はベロシティが 0〜1 に正規化されていると言う。 |
+| `hx-preserve` で、ルートの `<wcs-state>` を body の入れ替えの間も残す。 | 古いルートが古いページに束縛されたまま残り、新しいページのマークアップは歩かれない: ヘッダーの数は空、星のボタンは動かない — binder に渡した中身は動くので、ページは半分生きて見える。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 ルートはナビゲーションが入れ替える body の中に置く（docs/islands.ja.md）。 |
+| 同じ波括弧を使う言語のサーバーのテンプレートに、wcstack の `{{ }}` を書く。 | サーバーが先にそれを描く: 1 つは空の文字になり、もう 1 つは半分置き換わったまま残り（`合計 {{ booking.total\|locale }}円（枚）`）、`enableMustache: false` のもとでは残ったものも文字のまま。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 そうしたページでは束縛を `data-wcs` とコメントの束縛で書き、`$behavior: { enableMustache: false }` を宣言する（docs/islands.ja.md）。 |
 | セッションを state にだけ置き、ルートのガードはストレージから読む。 | ログインは成功してヘッダに会員が出るが、ガードはセッションを見つけず、ページはログインのフォームに留まる。読み直すとログアウトしている。 | 動かない | どこからも見えない — 文書。router の README とスキル: ガードは state を見られない。セッションは `<wcs-storage>` のキーに置き、ガードの中で読む。 |
 | セッションやトークンを、ガードや state のモジュールのトップレベルで 1 回だけ読む。 | モジュールは 1 回しか評価されない: ガードは読み込みの時点のセッション（ログイン前なら無し）で決め、state は最初のトークンを送り続ける — shift-desk の変種は 4 秒で 401 の要求を 1,428 回送った。見えるのはブラウザ自身の 401 の行だけ。 | 動かない | lint の規則 — 4.x。router の README はハンドラの中で読むと言い、スキルの失敗の一覧にもある。ガードや state のインラインのモジュールのトップレベルでの `localStorage` / `sessionStorage` / `document.cookie` の読みは、lint の規則に見える。 |
 | 他のタブに追随するために、フレームワークのアダプターの `<wcs-storage>` の `value` を、ページが保存する元の状態へ当て直す（`useEffect(() => apply(stored.value), [stored.value])`）。 | ページ自身の保存が 1 描画遅れて戻り、その間に打った分を巻き戻す。その書き込みがまた保存し、速く打つと 2 つの値を交互に保存して当てることが止まらない — 1 回ごとに要求が出て、エラーは無い。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory の取り込みで見つかった: 著者のフィルタがそうしていた。フレームワークが返してきた書き込みと編集は、要素から見分けられない。storage の README は、要素の `wcs-storage:value-changed` を聴き、自分の保存が出すイベントを飛ばす。 |
@@ -116,6 +120,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<script setup>` で `@wc-bindable/vue` のテンプレート ref を `:ref="ref"` で束ねる。fetch・storage・websocket の README（とアダプター自身のもの）がそう示していた。 | テンプレートが ref を剥がすので、`:ref` には `null` が渡る。アダプターは束縛せず、`values` は初期値のまま。エラーも無い。 | 動かない | どこからも見えない — 文書。fw-inventory の直しを確かめる中で見つかった。Vue のテンプレートの ref は、実行時にも lint にも見えない。README と統合の手引きは `ref="名前"` と書くようになった。アダプターの README は @wc-bindable の issue に入れた。 |
 | `/ja/` のページから、別の言語の basename へ `<wcs-link to="/en/search">` でつなぐ。 | `to` は basename を足すルートのパス: リンクは `/ja/en/search` — 同じ言語の not-found のページ — へ行く。 | 動かない | どこからも見えない — 文書。router の README: basename を出るリンクは素の `<a href>`。`examples/router-i18n` が言語の切り替えを示す。 |
 | `$errorCallback` を置き、失敗の報告を `window.onerror` / `error` のリスナーに任せる。 | 4.7 からエンジンのエラーは `reportError()` でページのエラーハンドラに届くが、`$errorCallback` のある state のバインディングの失敗はコールバックにだけ行く: エラーの報告に届かない（homeroom の 4.2.0 の形のコールバック、更新の後）。 | 劣化 | どこからも見えない — 文書。state の README: `$errorCallback` の中で `reportError(error)` を呼ぶ（homeroom、4.11）。 |
+| binder に渡したマークアップを、`release(subtree)` を呼ばずに捨てる（htmx が検索結果を入れ替える）。 | その束縛はルートの状態が続く限り残り、変更のたびにそれまでに出したすべての写しへ書き込む — 200 回入れ替えた後は、1 回の変更で外れた 200 個のノード。何も言われない。 | 劣化 | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 4.20 から `release(subtree)`（binder プロトコルの版 2、release add-on）で手放せる。binder は「しばらく外れた」（ルーターは中身を戻す）と「もう戻らない」を区別できず、言えるのは入れた側だけ。 |
 | その場で言語を切り替える: 別の言語の basename へ移る代わりに、`<html lang>` を変えて state の辞書を差し替える。 | 文は変わるが、フィルタは state を読み込んだときのロケール（日付、金額）のまま、`<title>` と URL も最初の言語のまま。 | 劣化 | どこからも見えない — 文書。docs/i18n-design.md（ライブの切り替えは無い）、state の README のロケールの節、スキル: 言語は state を読み込む前にマークアップにある。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。`for:` の行や `if:` の枝では接続の前に束ねるので最初の値は届き、ページの階層のリンクでは届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |
 | イベントが届くたびに通知を出す。 | スリープの間に届いたものは、復帰したときにまとめて届く: 一度に 37 件の通知、その多くはもう閉じたチケットのもの。 | 劣化 | どこからも見えない — 文書。notification の README と docs/long-lived-pages.ja.md: 復帰の後は通知を止め、要約する。 |
@@ -198,9 +203,11 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 無いフィルタか、3.x の名前（`uc`・`substr`）を使う。 | 同じ code: 束縛の計画で `#501`、state は初期化に失敗する。formats の後付けの無い書式フィルタは、`/core` でも文で言う。 | `wcs/filter-unknown` (error) |
 | 互いを読み合って循環する getter を書く。 | 同じ code: 評価の時点で `#701`、それを読む束縛はすべて失敗する。 | `wcs/getter-cycle` (error) |
 | getter の中、または getter が呼ぶメソッドの中で state に書く: 遅延のキャッシュ（`this._cache ??= …`）、カウンタ。 | 同じ code: 評価のたびに `#8` を投げ、その getter を読む束縛はすべて失敗する。4.17 から文面がパスと getter を名指す（`[wcs/getter-write]`）。4.16 までは `This state is readonly.` で、どちらも名指さなかった。 | `wcs/getter-write` (error) |
+| wcstack が描いたページを履歴のキャッシュに戻させる: htmx の履歴のスナップショット（`hx-history`）、Turbo のスナップショットのキャッシュ。 | code なし: 写しは描いたままのページで、描き直す元の `<template>` は残らず、コメントの束縛は文字になっている。見た目は正しく、二度と更新されない。4.20 から diagnostics の後付けが、ルートがそのような写しを束縛するときに警告する（`[wcs/rendered-copy]`）。 継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 そのページではキャッシュを切る: `<body>` に `hx-history="false"`、`<meta name="turbo-cache-control" content="no-cache">`。 | — |
 | `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。 | `wcs/index-arity` (error) |
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
 | `<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。 | code なし: 次のページは読み込まれない。見えたときに、要素が `target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告する。 lint の規則はまだ無い。id はマークアップにある。 | — |
+| ページを束縛した後に、別のライブラリで `data-wcs` のマークアップを入れ（htmx の入れ替え、Turbo のフレーム、`innerHTML`）、binder に何も渡さない。またはページが持っていた入れ物を渡す。 | code なし: ページは一度だけ歩かれるので、入れたマークアップは `data-wcs` を持ったまま何もしない（押しても切り替わらない星のボタン、見出しだけの予約の節）。走査が歩いた入れ物は、後から入ったものごとそのまま。4.20 から diagnostics の後付けが、ルートの中身が変わってから 1 秒後に、ルートごとに 1 回警告する（`[wcs/inserted-unbound]`）。 継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 入れた要素を 1 つずつ渡す: `globalThis[Symbol.for("wcstack.binder")].bind(node)`（htmx なら `htmx:load` で）— docs/islands.ja.md。 | — |
 | I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。 | code なし: コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。 定義が遅れても起きる（autoloader、遅い CDN — 7GUIs の評価の Timer）。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。 | — |
 | `<wcs-router>` の無いページ — サーバーが描き、wcstack のアイランドを置いたページ — に `<wcs-link to="/…">` を書く。 | code なし: リンクはホストを隠した（`display: none`）後、接続した時点で `[@wcstack/router] wcs-link is not connected to a router.` を投げる: `<a>` は作られず、リンクが消える。4.20 から lint が、router と wcstack を自分で読み込むページで報告する（継ぎ目アプリ community-hall）。router の無いページには `<a href>` を書く。 | `wcs/link-router-missing` (warning) |
 | `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 | `wcs/mount-path-invalid` (error) |
@@ -240,6 +247,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | `<base href="/">` を持つ SPA にスキップリンク（`href="#main"`）を書く。 | 4.9 までは base に対して解決され、ホームのルートへ移った。4.10 から router は素のフラグメントへのリンクを今のページに留め、指す要素へフォーカスを移す。 |
 | `<wcs-route>`（や `<wcs-guard-handler>`）を、別のルートの後の要素や `<wcs-layout>` の中に置く。または、守るルートの入れ子のルートの後にガードを置く。 | 4.3 から、ルートの親とガードの守るルートは、それを中に持つ `<wcs-route>`。以前は最後に解析したルートで、ルートは前のルートの下のパスになるか、絶対パスなら throw し（`is absolute but has a parent route`）、ガードは子のルートを守って自分のルートは開いていた。 |
+| 1 つの文書で、1 つの状態のモジュールを複数の `<wcs-state src>` で指す: DCC やコンポーネントのインスタンス、htmx や Turbo が body を入れ替えたページ。 | 4.20 から、それぞれがモジュールを評価し直したものを受け取る（2 つ目からは別の断片を付けて import する）。4.19 までは、モジュールの `export default` を共有してそこへ書き込んだので、次のインスタンスや次のページは 1 つ目が書いた値で始まった — 2 つ目のイベントの予約フォームに 1 つ目のイベントの枚数が出た。 継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 |
 | 1 つのオブジェクトを一覧の 2 つの位置に置き（`items: [o, o]`）、片方の行の下へ書く。 | 4.3 から、書き込みはそのオブジェクトを持つすべての行、その行 getter、`$getAll` に届く（#365）。以前は書き込んだ行にしか届かなかった。 |
 | 大きな音のパッチを鳴らす、または 0〜100 のスライダーを `<wcs-audio>` の `volume` にそのまま束ね、「耳の保護」のリミッターに任せる。 | 4.16 まではリミッターは閾値だけを設定したコンプレッサーで、README の 8 声のパッチを既定の音量で鳴らすだけでその後で +5 dBFS、`volume` 80 で +11.6 dBFS に達した — 割れて、ヘッドホンでは大きい。4.17 から出口は -6 dBFS の天井で、`volume` は 0〜1 に丸める。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から大きな音のパッチは静かになる（CHANGELOG の Upgrading）。 |
 | Web MIDI の無いブラウザ（Safari、アドオンの手順を踏んでいない Firefox、安全でない文脈）で、`<wcs-midi>` の `permission` が `prompt` の間、接続のボタンを出す。 | 4.16 までは `auto` の無い要素は `request()` を呼ぶまでそこで `prompt` と言ったので、ボタンは何もできなかった。4.17 から `auto` の有無にかかわらず、接続の時点で `unsupported` と言う。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 |
@@ -247,6 +255,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 自動送信の `<wcs-upload>` に、`url` より先に `files` を渡す。その順の JSX の props（`files={files} url=…`）や、1 つの `data-wcs` で `url:` より前の `files:`。 | 4.6 から、ファイルは url を待ち、url が来たときに送られる。以前は何も送られず、すぐ後に来た url でも始まらず、要素が `[wcs/command-not-ready]` で 1 回警告していた。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。React 19 は props を書いた順に、要素を文書に入れる前に当てる。React の開発者は属性の順が効くとは思わない。 |
 | `<wcs-view-transition>` のあるページで、構造も変わる更新の `$watch` から画面を移す（フォーカスを動かす）。 | 4.9 までは、トランジションが 1 フレーム後に適用するバインディングより先に `$watch` が走った: 文書のログインは `<wcs-storage>` がセッションを保存する前に画面を移し、ガードが読み手を戻した。4.10 から `$watch` はそれを待つ。 |
 | `<wcs-router>` の `leaveConfirm` を真偽値に束ねる（`leaveConfirm: dirty`）。 | 4.8 までは真偽値が問いの文言になり、フォームがきれいな間も遷移のたびに `confirm("false")` が出た。4.9 から `true` は既定の文言で聞き、`false` は聞かない。 |
+| 後から届く数を `locale`・`currency`・`toFixed`・`round`・`floor`・`ceil`・`percent` で書く（アイランドの値が届く前の `total\|locale`）。 | 4.20 から数の表示の族は `undefined` / `null` を素通しする（日付の族は 4.7 から）: 値が届くまで何も描かない。4.19 までは新しく開くたびに束縛が失敗した（`filter locale requires a number value, not undefined`）。 継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 |
 | ページ送りを `<wcs-link to="/search?q=a&page=2">` で書く。 | 4.9 までは検索のどのページでもリンクが `active` で `aria-current="page"` だった: 「次のページ、現在のページ」。4.10 からクエリ付きのリンクはそのクエリのときだけ current。 |
 
 ### 数えない lint の code
