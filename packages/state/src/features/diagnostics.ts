@@ -14,6 +14,7 @@ import { parseBindTextsForElement } from "../parser/parseBindTextsForElement";
 import { config } from "../config";
 import type { WcsState } from "../element";
 import { Binding, K_CUSTOM, type RowPlan } from "../dom/view";
+import { walked } from "../dom/plan";
 import type { StateList } from "../list";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
@@ -559,6 +560,116 @@ function lookLater(engine: Engine, phase: string): void {
   else addEventListener("load", look, { once: true });
 }
 
+// ---------------------------------------------------------------- pages wcstack does not own
+
+/** The guide to a page wcstack does not own (htmx, Turbo, a widget on another site). */
+const ISLANDS_GUIDE = "See https://github.com/wcstack/wcstack/blob/main/docs/islands.md";
+
+/** The roots already told about a copy of drawn markup. */
+const toldCopies = new WeakSet<Node>();
+
+/**
+ * A root `<wcs-state>` about to bind markup @wcstack/state had already drawn: the marks that stand where its
+ * `for:` / `if:` templates were (a template leaves the page when it renders — walkBindings' anchorFor). A copy
+ * of a bound page — a history cache that restores the page as it was drawn: htmx's, Turbo's — has no template
+ * left to render from and no comment binding left to update: it looks right and never changes
+ * (docs/seam-apps.md, community-hall). A server's output marks its rows otherwise (`@@wcs-for…`). Once per root.
+ */
+function renderedCopy(engine: Engine, phase: string): void {
+  const el = engine.element as Element | null;
+  if (phase !== "mounting" || !el) return;
+  const root = el.getRootNode();
+  const container = root.nodeType === 9 ? (root as Document).body : root;
+  if (!container || toldCopies.has(root)) return;
+  const marks = [config.commentForPrefix, config.commentIfPrefix, config.commentElseIfPrefix, config.commentElsePrefix];
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT);
+  for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+    if (!marks.includes((n as Comment).data)) continue;
+    toldCopies.add(root);
+    console.warn(`[@wcstack/state] [wcs/rendered-copy] ${describeState(el)} binds a copy of a page it had drawn (a <!--${(n as Comment).data}--> mark stands where a template was): a history cache restored the page as drawn (htmx's hx-history, Turbo's snapshot cache), and its lists, branches and texts never change. Turn that cache off for the page: hx-history="false" on <body>, <meta name="turbo-cache-control" content="no-cache">. ${ISLANDS_GUIDE}`);
+    return;
+  }
+}
+
+/**
+ * How long an element with bindings may be in a bound root without being bound: whoever inserts markup hands
+ * it over right after (the router at once, htmx on htmx:load). Also the least time between two looks.
+ */
+const UNBOUND_AFTER = 1000;
+const watchedRoots = new WeakSet<Engine>();
+/** The roots already told about an element nothing bound. */
+const toldUnbound = new WeakSet<Node>();
+/** A structural template's binding: handed over at the top of inserted content, it is refused without a range (#204). */
+const STRUCTURAL = /^\s*(?:for|if|elseif|else)\s*:/;
+/** A binding that sets an element's content: what it puts there is a value, not markup (walkBindings). */
+const CONTENT = /(?:^|;)\s*(?:html|innerHTML|textContent|innerText|outerHTML|outerText)\s*[:#]/;
+
+/**
+ * After a root's walk, @wcstack/state binds only what is handed over to it (the binder protocol): markup another
+ * library inserts — htmx's swaps, a Turbo frame, an innerHTML — keeps its `data-wcs` and does nothing, without
+ * a word, and so does what is inserted into a container the page already had and handed over as that container
+ * (walked once, it is left alone) (docs/seam-apps.md, community-hall). Once its bindings are built, a root is
+ * looked at UNBOUND_AFTER after its content changes: an element with bindings that entered it since and that no
+ * walk took is said once per root (one there when it was bound and not walked is not: the walk stopped at an
+ * error, which was reported). Rows and branches carry no `data-wcs` (compilePlan takes it), so
+ * one query finds only page markup. Not looked at: what a binding put in an element as a value (`html:` and
+ * the content bindings), a Light DOM component's content (its own state binds it), `data-wcs-ignore`.
+ */
+function watchUnbound(engine: Engine, phase: string): void {
+  const el = engine.element as Element | null;
+  if (phase !== "connected" || !el || watchedRoots.has(engine) || document.documentElement.hasAttribute("data-wcs-server")) return;
+  watchedRoots.add(engine);
+  const root = el.getRootNode();
+  const container = (root.nodeType === 9 ? (root as Document).body : root) as (Node & ParentNode) | null;
+  if (!container) return;
+  // the engine, the root and its container held weakly — a look still pending when the page is taken out keeps
+  // nothing of it alive (e2e/tests/state-address-gc.spec.ts) — and what was there when the root was bound
+  const e = new WeakRef(engine);
+  const r = new WeakRef(root);
+  const c = new WeakRef(container);
+  const present = new WeakSet(container.querySelectorAll(`[${config.bindAttributeName}]`));
+  let due = false;
+  const observer = new MutationObserver(() => {
+    if (due) return;
+    due = true;
+    setTimeout(() => {
+      due = false;
+      lookUnbound(e, r, c, present, observer);
+    }, UNBOUND_AFTER);
+  });
+  // (quoted: `childList` is a name the build shortens — mangle.mjs — the observer's option is not)
+  observer.observe(container, { "childList": true, subtree: true });
+}
+
+function lookUnbound(e: WeakRef<Engine>, r: WeakRef<Node>, c: WeakRef<Node & ParentNode>, present: WeakSet<Element>, observer: MutationObserver): void {
+  const root = r.deref();
+  const container = c.deref();
+  if (root === undefined || container === undefined || !(e.deref()?.element as Element | undefined)?.isConnected || toldUnbound.has(root)) {
+    observer.disconnect();
+    return;
+  }
+  const x = unboundIn(container, present);
+  if (x === null) return;
+  toldUnbound.add(root);
+  observer.disconnect();
+  const attr = config.bindAttributeName;
+  const text = x.getAttribute(attr)!;
+  console.warn(`[@wcstack/state] [wcs/inserted-unbound] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> entered the page after it was bound, and nothing bound it: its bindings do nothing. The page is walked once; after that only markup handed over is bound: whoever inserts it (htmx, a Turbo frame, an innerHTML) calls globalThis[Symbol.for("wcstack.binder")].bind(node) for each new node — not for a container the page already had.${STRUCTURAL.test(x.localName === "template" ? text : "") ? " A for: / if: template at the top of what is handed over needs { range: true } (#204): put it inside an element." : ""} ${ISLANDS_GUIDE}`);
+}
+
+/** The first element under `container` with bindings, not `present` before, that no walk took (or null). */
+function unboundIn(container: ParentNode, present: WeakSet<Element>): Element | null {
+  const attr = config.bindAttributeName;
+  next: for (const x of container.querySelectorAll(`[${attr}]`)) {
+    if (walked.has(x) || present.has(x) || x.closest(`[${attr}-ignore]`) !== null) continue;
+    for (let p = x.parentElement; p !== null; p = p.parentElement) {
+      if (hooks.componentScope?.(p) || CONTENT.test(p.getAttribute(attr) ?? "")) continue next;
+    }
+    return x;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- for: over a value that is not an array
 
 /** The lists already told about, by pattern. */
@@ -774,7 +885,7 @@ export const diagnostics: Feature = {
       declaredKeys.set(engine, new Set(keysOf(target)));
     };
     hooks.handlerThrew = handlerThrew;
-    hooks.element = chain(chain(hooks.element, secondRoot), lookLater);
+    hooks.element = chain(chain(chain(chain(hooks.element, secondRoot), renderedCopy), lookLater), watchUnbound);
     hooks.written = chain(chain(chain(hooks.written, written), elementWrote), setterWrote);
     hooks.drained = chain(chain(hooks.drained, drained), setterDrained);
     hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeSetter);

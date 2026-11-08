@@ -18,6 +18,7 @@
     ],
     "diagnostics": [
       "config.ts",
+      "dom/plan.ts",
       "dom/view.ts",
       "engine.ts",
       "filters/registry.ts",
@@ -51,6 +52,12 @@
       "messages.ts",
       "parser/parseStatePart.ts",
       "parser/raiseError.ts"
+    ],
+    "release": [
+      "dom/binder.ts",
+      "dom/mount.ts",
+      "hooks.ts",
+      "protocol/binder.ts"
     ],
     "scopes": [
       "config.ts",

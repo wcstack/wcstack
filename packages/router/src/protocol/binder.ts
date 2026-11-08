@@ -72,6 +72,21 @@ export interface IWcsBinder {
    *     ({@link IWcsBindOptions}).
    */
   bind(subtree: Node, options?: IWcsBindOptions): void;
+  /**
+   * Since version 2, and optional (a binder of version 1 has none: check that it is a function). Let go
+   * of what was bound in a subtree whose inserter throws it away for good — htmx replacing search
+   * results: the binder stops updating its nodes and keeps nothing of them, so a page that replaces
+   * content for hours does not keep every copy it showed (docs/seam-apps.md, community-hall).
+   *
+   * Contract (docs/binder-protocol-design.md §10):
+   *   - Synchronous. Never throws; a subtree with nothing bound in it is a no-op.
+   *   - For good: nodes released are not bound again when handed over again — hand over new markup.
+   *   - May be called while the subtree is still in the document or after it left.
+   *   - An inserter that puts its content back later does not call it (the router hides a route's
+   *     content and shows it again): a binder cannot tell "out for now" from "out for good" — only
+   *     the inserter knows.
+   */
+  release?(subtree: Node): void;
 }
 
 /**

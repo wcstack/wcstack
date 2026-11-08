@@ -687,3 +687,134 @@ describe("for: が配列でない値を回す（wcs/binding-type-expectation —
     }
   });
 });
+
+// docs/seam-apps.md、community-hall — wcstack がページを持たない（htmx・Turbo）
+describe("後から入って束縛されない要素（wcs/inserted-unbound）と、描画済みの写し（wcs/rendered-copy）", () => {
+  const BIND = Symbol.for("wcstack.binder");
+  const GUIDE = "See https://github.com/wcstack/wcstack/blob/main/docs/islands.md";
+  async function bound(html: string, state: Record<string, any>) {
+    const h = document.createElement(`diag-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state>${html}`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState(state);
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    return { root, el };
+  }
+  let warn: MockInstance<typeof console.warn>;
+  const said = (code: string) => warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes(code));
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    warn.mockRestore();
+  });
+
+  it("束縛の後に入り、誰も渡さなかった data-wcs の要素を、入ってから 1 秒後にルートごとに 1 回知らせる", async () => {
+    const { root } = await bound(`<main id="slot"></main><p>{{ n }}</p>`, { n: 1 });
+    root.querySelector("#slot")!.innerHTML = `<span data-wcs="textContent: n"></span><i data-wcs="textContent: n"></i>`;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(said("inserted-unbound")).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(said("inserted-unbound")).toEqual([
+      `[@wcstack/state] [wcs/inserted-unbound] <span data-wcs="textContent: n"> entered the page after it was bound, and nothing bound it: its bindings do nothing. The page is walked once; after that only markup handed over is bound: whoever inserts it (htmx, a Turbo frame, an innerHTML) calls globalThis[Symbol.for("wcstack.binder")].bind(node) for each new node — not for a container the page already had. ${GUIDE}`,
+    ]);
+    // 同じルートでは言い直さない
+    root.querySelector("#slot")!.insertAdjacentHTML("beforeend", `<b data-wcs="textContent: n"></b>`);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(said("inserted-unbound")).toHaveLength(1);
+  });
+
+  it("入れた新しいノードを binder に渡せば言わない。入れ物（ページが持っていた要素）を渡したときは中身が束縛されないので言う", async () => {
+    const a = await bound(`<main id="slot"></main>`, { n: 1 });
+    const slot = a.root.querySelector("#slot")!;
+    slot.innerHTML = `<span data-wcs="textContent: n"></span>`;
+    for (const x of [...slot.children]) (globalThis as any)[BIND].bind(x);
+    expect(slot.querySelector("span")!.textContent).toBe("1");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(said("inserted-unbound")).toEqual([]);
+    const b = await bound(`<main id="slot"></main>`, { n: 1 });
+    const box = b.root.querySelector("#slot")!;
+    box.innerHTML = `<span data-wcs="textContent: n"></span>`;
+    (globalThis as any)[BIND].bind(box);
+    expect(box.querySelector("span")!.textContent).toBe("");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(said("inserted-unbound")).toHaveLength(1);
+  });
+
+  it("束縛が値として入れた中身（html:）・data-wcs-ignore の中・長い属性は、それぞれのとおりに扱う", async () => {
+    const { root, el } = await bound(`<div data-wcs="html: markup"></div><main id="slot"></main>`, { markup: "", n: 1 });
+    el.createState("writable", (s: any) => { s.markup = `<b data-wcs="textContent: n">value</b>`; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(root.querySelector("div b")).not.toBeNull();
+    root.querySelector("#slot")!.innerHTML = `<section data-wcs-ignore><i data-wcs="textContent: n"></i></section>`;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(said("inserted-unbound")).toEqual([]);
+    root.querySelector("#slot")!.insertAdjacentHTML("beforeend", `<input data-wcs="value: n; attr.aria-label: n; class.on: n; style.color: n; title: n">`);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(said("inserted-unbound")).toEqual([expect.stringContaining(`<input data-wcs="value: n; attr.aria-label: n; class.on: n; style.color: n..."> entered the page`)]);
+  });
+
+  it("<wcs-state> をページから外した root は見ない", async () => {
+    const { root, el } = await bound(`<span data-wcs="textContent: n"></span>`, { n: 1 });
+    el.remove();
+    root.appendChild(document.createElement("div")).innerHTML = `<b data-wcs="textContent: n"></b>`;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(said("inserted-unbound")).toEqual([]);
+  });
+
+  it("描画済みのページの写し（履歴のキャッシュ）を束ねる root は、テンプレートの跡の印を見つけてルートごとに 1 回知らせる。書かれたままのページでは黙る", async () => {
+    const page = `<ul><template data-wcs="for: items"><li data-wcs="textContent: .v"></li></template></ul><template data-wcs="if: on"><b>on</b></template>`;
+    const first = await bound(page, { items: [{ v: "a" }, { v: "b" }], on: true });
+    expect(first.root.querySelectorAll("li")).toHaveLength(2);
+    expect(said("rendered-copy")).toEqual([]);
+    // htmx が body.innerHTML を取っておき、Back で戻す形
+    const copy = [...first.root.childNodes].filter((n) => (n as Element).localName !== "wcs-state").map((n) => (n as Element).outerHTML ?? "").join("");
+    expect(copy).toContain("<!--wcs-for-->");
+    const second = await bound(copy, { items: [{ v: "x" }], on: false });
+    expect(said("rendered-copy")).toEqual([
+      `[@wcstack/state] [wcs/rendered-copy] <wcs-state> binds a copy of a page it had drawn (a <!--wcs-for--> mark stands where a template was): a history cache restored the page as drawn (htmx's hx-history, Turbo's snapshot cache), and its lists, branches and texts never change. Turn that cache off for the page: hx-history="false" on <body>, <meta name="turbo-cache-control" content="no-cache">. ${GUIDE}`,
+    ]);
+    // 写しの行は描かれたまま（状態の 1 行にならない）
+    expect(second.root.querySelectorAll("li")).toHaveLength(2);
+  });
+});
+
+describe("後から入った構造のテンプレート（wcs/inserted-unbound の添え書き — community-hall）", () => {
+  let warn: MockInstance<typeof console.warn>;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    warn.mockRestore();
+  });
+
+  it("渡された中身の最上位で拒まれた for: / if: のテンプレートには、範囲か要素で包むことを添える", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const h = document.createElement(`diag-test-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><main></main>`;
+      const el = root.querySelector("wcs-state") as any;
+      el.setInitialState({ on: true });
+      document.body.appendChild(h);
+      await el.connectedCallbackPromise;
+      const main = root.querySelector("main")!;
+      main.innerHTML = `<template data-wcs="if: on"><b>on</b></template>`;
+      (globalThis as any)[Symbol.for("wcstack.binder")].bind(main.firstElementChild);
+      await vi.advanceTimersByTimeAsync(1000);
+      const said = warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("inserted-unbound"));
+      expect(said).toEqual([expect.stringContaining(`<template data-wcs="if: on"> entered the page after it was bound`)]);
+      expect(said[0]).toContain(`not for a container the page already had. A for: / if: template at the top of what is handed over needs { range: true } (#204): put it inside an element. See https://github.com/wcstack/wcstack/blob/main/docs/islands.md`);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});

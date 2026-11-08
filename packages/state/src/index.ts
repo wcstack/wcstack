@@ -16,3 +16,4 @@ export { ssr } from "./features/ssr";
 export { devtools } from "./features/devtools";
 export { scopes } from "./features/scopes";
 export { nativeCommands } from "./features/native-commands";
+export { release } from "./features/release";

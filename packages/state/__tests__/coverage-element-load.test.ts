@@ -130,6 +130,36 @@ describe("src 属性", () => {
     expect(text(root)).toBe("module src");
   });
 
+  it("同じ src を指す 2 つ目の <wcs-state> は、モジュールを評価し直した新しい状態を持つ（1 つ目が書いた値で始まらない）", async () => {
+    const src = "data:text/javascript;charset=utf-8," + encodeURIComponent(`export default { count: 0, tag: {} };`);
+    const a = await load(`<wcs-state></wcs-state><p>{{ count }}</p>`, (el) => el.setAttribute("src", src));
+    a.el.engine.proxy.count = 3;
+    await flush();
+    expect(text(a.root)).toBe("3");
+    const b = await load(`<wcs-state></wcs-state><p>{{ count }}</p>`, (el) => el.setAttribute("src", src));
+    expect(text(b.root)).toBe("0");
+    expect(b.el.engine.target).not.toBe(a.el.engine.target);
+    expect(b.el.engine.target.tag).not.toBe(a.el.engine.target.tag);
+    // a third gets yet another evaluation; the first keeps its own
+    const c = await load(`<wcs-state></wcs-state><p>{{ count }}</p>`, (el) => el.setAttribute("src", src));
+    expect(c.el.engine.target).not.toBe(b.el.engine.target);
+    expect(text(a.root)).toBe("3");
+  });
+
+  it("サーバーの読み先（resolveModule）も、2 つ目からは別の断片を付けて評価し直す", async () => {
+    const key = Symbol.for("wcstack.ssr.resolveModule");
+    const file = "data:text/javascript;charset=utf-8," + encodeURIComponent("export default { msg: 'per element' };");
+    (globalThis as any)[key] = () => file;
+    try {
+      const a = await load(`<wcs-state src="js/twice.js"></wcs-state><p>{{ msg }}</p>`);
+      const b = await load(`<wcs-state src="js/twice.js"></wcs-state><p>{{ msg }}</p>`);
+      expect(text(b.root)).toBe("per element");
+      expect(b.el.engine.target).not.toBe(a.el.engine.target);
+    } finally {
+      delete (globalThis as any)[key];
+    }
+  });
+
   it("サーバーが読み先を置いていれば（ssr-snapshot プロトコルの resolveModule）、その指定を import する", async () => {
     const key = Symbol.for("wcstack.ssr.resolveModule");
     const asked: string[] = [];
