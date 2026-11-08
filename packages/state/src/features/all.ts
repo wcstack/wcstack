@@ -12,5 +12,6 @@ import { recursion } from "./recursion";
 import { ssr } from "./ssr";
 import { devtools } from "./devtools";
 import { nativeCommands } from "./native-commands";
+import { release } from "./release";
 
-export const ALL_FEATURES: readonly Feature[] = [formats, diagnostics, temporal, listKeys, scopes, recursion, ssr, devtools, nativeCommands];
+export const ALL_FEATURES: readonly Feature[] = [formats, diagnostics, temporal, listKeys, scopes, recursion, ssr, devtools, nativeCommands, release];
