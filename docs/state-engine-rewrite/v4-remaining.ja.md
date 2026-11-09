@@ -1718,3 +1718,30 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.20.0 の公開（2026-11-09）
+
+- 中身: minor。3 巡目の継ぎ目アプリの 1 本目 community-hall（[v4-direction-2026-10.md](../v4-direction-2026-10.md) §3.2・§5.16、[seam-apps.ja.md](../seam-apps.ja.md)）— htmx 2 の CMS のサイトの上の wcstack のアイランドと、自分の wcstack 4.17 を動かす Turbo のサイトに置くウィジェット。作者の 23 件の引っかかりと 14 件の間違いを 4.19.0 の dist で再現してから分類し、著者が 6 つの問いを推奨どおりに決めた。
+  - #648（state）: `<wcs-state src>` が同じモジュールのオブジェクトを共有して書き換えていた（3.x から。DCC とコンポーネントのインスタンスも）→ 2 つ目からは別の断片を付けて import（Chromium・Firefox・WebKit・Node で評価し直すのを確かめた、core +30 B）。htmx の入れ替えの 2 回に 1 回 volume が拒否された → 始めるときに決める。`[wcs/inserted-unbound]`・`[wcs/rendered-copy]`・`#43` の文面（diagnostics）。binder プロトコルの版 2 の `release(subtree)` を新しい `release` add-on に（core 0 B）。数の表示の族が `undefined` / `null` を素通し。docs/islands.md（+ ja）、state README の「Inserting markup yourself」、binder-protocol-design.md §10（D7 を改めた）。最初の CI で e2e の `state-address-gc` が落ちた — `[wcs/inserted-unbound]` の 1 秒の timer の closure が root を強く握り、外したツリーが回収されなかった。WeakRef に直した（3b7ce613）。
+  - #649（lint、worktree のエージェント）: `{{ }}` は束縛されるところだけ（`enableMustache: false` に従う、属性値・コメント・`<head>` は束縛でない、`<head>` の束縛は warning — 頼んだ範囲の外、著者に伝えてそのまま）、`wcs/state-absent`、JSDoc の添字の型、コメントの束縛ごとの info をやめた、glob の展開、`wcs/link-router-missing`。
+  - #650（記録）・#651（目録に 9 項目、計 162 件）。
+- 準備: PR #652（merge commit a5c347a8）。CHANGELOG を `[4.20.0] — 2026-11-09` として締め（変わったパッケージの一文を足した）、docs/upgrading-4x.md（日英）に 4.20.0 の節と「4.20.0 でもまだ要るもの」2 件、固定版 18 か所。組み合わせ＝#652 の CI（wcs-validate は state をソースから作り、新しい lint で全ページを読む）。
+- main で `minor`（run 42535070936）。成功した: 版を上げたコミット c192adaf、タグ `v4.20.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 23/23（`release` の add-on の分だけ増えた）。文書の固定 URL 8/8。1 回目で問題なし。
+- 公開後の作業（同日）:
+  - PR #653（merge commit 97e5388b）: サイズの基準値を 4.20.0 の dist で取り直した — `core.min.js` 20,441 B（残り 39 B）、diagnostics 12,140 B（リリースまでの slack 800 B を外した）、`release` 528 B、分割の core 24,761 B、`index.esm.js` 57,711 B、`auto.min.js` 54,375 B。結合の基準値は変わらず。CLAUDE.md / AGENTS.md。拡張を 2.15.0 に（lint の community-hall の規則）。
+  - 拡張 2.15.0: 97e5388b から worktree で作成、試験 1,498、890 ファイル、SHA-256 `fa5d908b7ae61691e476e62c28b043362a1c0b52ca61876d29f15e98e89841cc`。CLI で 4.20.0 に固定したページは 0 件、4.21.0 は警告、`<wcs-router>` の無いページの `<wcs-link>` に `wcs/link-router-missing`。公開は著者。
+  - wcstack-skill: PR #62（merge commit 8c3b92d）で `references/islands.md`（ページを持たないとき — 入れ替わる body の中のルート、差し込みを binder に渡す・捨てるときに `release()`、履歴のキャッシュを切る、テンプレートの外の `hx-*`、scoped registry のウィジェット）、`<wcs-link>` をルーターのページに限る、失敗の表に 3 行、lint の新しい規則、数の filter と `src` の要素ごとの評価、刻印と固定 URL。注釈付きタグ `v4.20.0`。
+  - LP（wcstack.github.io 250c3be）: リリースの表示、v4.20.0 の一文（日英、islands の案内へのリンク）、固定版、ステップ 16 の integrity（`sri.json`、`sha384-B34hyk…`）、大きさを約 79 KB に（81,187 B）、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
+- 残り:
+  - 拡張 2.15.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.15.0`。
+  - community-hall を examples/ に取り込み、e2e の spec を付ける（回避策を外して確かめる）。
+  - `bootstrapXxx(config, registry)` の第 2 引数は 50 本の README のうち 5 本にだけある（案内には書いた）。
+  - 古いルートが歩いた入れ物の中の領域に新しいルートを置くと、その入れ物を飛ばす（走査の印が全エンジンに共通）。community-hall は当たらなかった。
+  - 3 巡目の 2 本目「壊れたアプリを直す作者」。入れ子の作者の claude.ai のログインが 2026-11-12〜15 に切れる（`claude auth login`）。
+  - 委譲の効き目を、静かなマシンか公式の js-framework-benchmark で測ること。上流へページの変更を出すか（著者の判断）。
+  - midi の Permissions-Policy で止められた文書が `unsupported` でなく `denied` と読める（§5.3.2）— 次の minor の候補。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
