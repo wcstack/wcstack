@@ -9,23 +9,31 @@
  * - `wcs/command-token-unbound` (warning): a declared token that is emitted — `.emit()` in the script, or
  *   `on*: $command.<name>` in the markup — while no `command.<method>: $command.<name>` binding in the document
  *   receives it. The emit reaches nothing, without a word.
+ * - `wcs/event-token-unbound` (warning, since 4.21): the mirror of the command rule — a name `$eventTokens` declares that no
+ *   `eventToken.<member>: <name>` binding in the document emits. Nothing fires it, so its `$on` handler never runs, and
+ *   the runtime says nothing (the ledger-repair seam app: the page declared `deleteDone`, removed its binding and its
+ *   handler, and watched `deleteFetch.status` instead — a second 204 fired nothing). Only a binding emits an event
+ *   token (a script cannot), but one the lint does not see can: so it stays quiet on a page that loads a layout from a
+ *   file (`<wcs-layout src>`) or has a script, besides the states' modules, that writes `eventToken.` bindings.
  * - `wcs/write-path-missing` (warning): `this.<key> = …` where the state declares no `<key>` but a near one
  *   (`this.selectedID` beside `selectedId`). The write creates a new key, and the declared key's bindings stay as
  *   they were. Only with a near name: a key the state adds on purpose is not a mistake. A nested path a script writes
  *   (`this["items.*.nmae"] = …`, `$setAll` / `$update`) is scriptReadValidator's, which looks paths up as bindings do.
  *
  * Each needs the state to be readable (an `export default { … }` literal); the command checks need its
- * `$commandTokens` to be a literal list. A volume's `$commandTokens` are ignored by the runtime
- * (`wcs/volume-declaration`), so the command checks read the page's root states only.
+ * `$commandTokens` (`$eventTokens`) to be a literal list. A volume's `$commandTokens` / `$eventTokens` are ignored by the
+ * runtime (`wcs/volume-declaration`), so the token checks read the page's root states only.
  */
 
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnosticCode, type WcsDiagnostic } from '../core/diagnostics.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
-import { analyzeStatePaths, maskCommentsAndStrings } from './stateAnalyzer.js';
+import { analyzeOnHandlerSources, analyzeStatePaths, findTopLevelDeclaration, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { isReadableStateScript } from './statePathResolver.js';
 import { suggestion } from './suggestion.js';
+import { arrayElements, literalKind } from './configDeclarationValidator.js';
+import { blankComments } from './scriptCallArgs.js';
 
 /** `.$command.<name>` (on `this`, or on the state a handler receives). */
 const COMMAND_USE = /\.\s*\$command\s*\.\s*([A-Za-z_$][\w$]*)/dg;
@@ -46,15 +54,21 @@ export function validateScriptStateUses(
   if (blocks.length === 0) return [];
   const msgs = getMessages(locale);
   const out: WcsDiagnostic[] = [];
+  // the page may emit event tokens from markup the lint does not see (read once, when a token is unbound)
+  let hidden: boolean | null = null;
 
   // the document's command bindings: the tokens a `command.<method>:` receives, and the `on*:` that emit one
   let receivers: Set<string> | null = null;
   let markupEmits: Map<string, { start: number; end: number }> | null = null;
+  // the event tokens an `eventToken.<member>: <name>` binding emits
+  let eventEmits: Set<string> | null = null;
   const bindings = (): void => {
     if (receivers !== null) return;
     receivers = new Set();
     markupEmits = new Map();
+    eventEmits = new Set();
     for (const o of buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName }).occurrences) {
+      if (o.kind === 'eventToken') eventEmits.add(o.path);
       if (!o.path.startsWith('$command.')) continue;
       const name = o.path.slice('$command.'.length);
       const prop = o.propName ?? '';
@@ -104,6 +118,25 @@ export function validateScriptStateUses(
       }
     }
 
+    // --- the event tokens (the root's): a declared name no binding emits
+    const events = paths.filter((p) => p.kind === 'eventToken').map((p) => p.path);
+    if (block.mountPath === null && events.length > 0) {
+      bindings();
+      const unbound = events.filter((name) => !eventEmits!.has(name));
+      if (unbound.length > 0 && !(hidden ??= hidesEmitters(html, blocks))) {
+        const handlers = new Set(analyzeOnHandlerSources(block.content).map((h) => h.name));
+        for (const at of declaredNames(block.content, unbound)) {
+          out.push({
+            code: WcsDiagnosticCode.EventTokenUnbound,
+            start: block.contentStart + at.start,
+            end: block.contentStart + at.end,
+            message: msgs.eventTokenUnbound(at.name, handlers.has(at.name)),
+            severity: 'warning',
+          });
+        }
+      }
+    }
+
     // --- writes of a key the state does not declare (a likely typo of one it does)
     const keys = [...new Set(paths.map((p) => p.path.split('.')[0]).filter((key) => key !== '' && !key.startsWith('$')))];
     const reported = new Set<string>();
@@ -128,4 +161,41 @@ export function validateScriptStateUses(
     }
   }
   return out;
+}
+
+/** The string entries of `$eventTokens` among `names` (once each): the name inside its quotes. */
+function declaredNames(script: string, names: readonly string[]): { name: string; start: number; end: number }[] {
+  const decl = findTopLevelDeclaration(script, '$eventTokens');
+  if (decl === null || decl.value === undefined || decl.valueStart === undefined || literalKind(decl.value) !== 'array') return [];
+  const out: { name: string; start: number; end: number }[] = [];
+  for (const element of arrayElements(blankComments(decl.value))) {
+    if (literalKind(element.text) !== 'string') continue;
+    const name = element.text.slice(1, -1);
+    if (!names.includes(name) || out.some((o) => o.name === name)) continue;
+    const start = decl.valueStart + element.start + 1;
+    out.push({ name, start, end: start + name.length });
+  }
+  return out;
+}
+
+/** A layout read from a file (`<wcs-layout src>`), outside the HTML comments. */
+const LAYOUT_SRC = /<wcs-layout\b(?:"[^"]*"|'[^']*'|[^>"'])*?\ssrc\s*=/i;
+const SCRIPT = /(<script\b(?:"[^"]*"|'[^']*'|[^>"'])*>)([\s\S]*?)<\/script\s*>/gi;
+
+/**
+ * Whether the page can emit an event token from markup the lint does not see: a layout template in a file of its own
+ * (`<wcs-layout src>` — the outlet hands its content to the state's binder), or a script on the page — other than the
+ * states' modules — that writes `eventToken.` bindings (markup it builds and hands over).
+ */
+function hidesEmitters(html: string, blocks: readonly { contentStart: number; contentEnd: number }[]): boolean {
+  const text = html.replace(/<!--[\s\S]*?-->/g, (c) => ' '.repeat(c.length));
+  if (LAYOUT_SRC.test(text)) return true;
+  SCRIPT.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SCRIPT.exec(text)) !== null) {
+    const contentStart = m.index + m[1].length;
+    if (blocks.some((b) => b.contentStart === contentStart)) continue;
+    if (m[2].includes('eventToken.')) return true;
+  }
+  return false;
 }

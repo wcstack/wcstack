@@ -72,6 +72,11 @@ export const WcsDiagnosticCode = {
   // `command.<method>:` 束縛にも結ばれていない。emit は誰にも届かず、ランタイムは何も言わない（7GUIs の評価）。warning
   // （ページの外 — 別ファイルのルートのテンプレート — で束ねる形は見えない）。
   CommandTokenUnbound: "wcs/command-token-unbound",
+  // `$eventTokens` に宣言したのに、ドキュメントのどの `eventToken.<member>: <name>` 束縛も出さないトークン（command-token-unbound
+  // の逆）。どの要素も発火させないので `$on` のハンドラは走らず、ランタイムは何も言わない（継ぎ目アプリ ledger-repair — 束縛と
+  // ハンドラを外して `deleteFetch.status` を見た）。warning。ファイルから読むレイアウト（`<wcs-layout src>`）や、state の
+  // モジュールのほかに `eventToken.` の束縛を書くスクリプトがあるページは、見えない束縛が出しうるので黙る。root の state だけ。
+  EventTokenUnbound: "wcs/event-token-unbound",
   // state が宣言していないトップレベルのキーへの書き込み（`this.selectedID = …` と `selectedId`）。新しいキーができる
   // だけで、宣言したキーの束縛は変わらない。ランタイムは何も言わない。近い名前（打ち間違い）があるときだけ、warning。
   WritePathMissing: "wcs/write-path-missing",
@@ -209,8 +214,15 @@ export const WcsDiagnosticCode = {
   DelegatedCurrentTarget: "wcs/delegated-current-target",
   // `<form data-wcs="onsubmit: login">` の `#prevent` 忘れ（ハンドラも preventDefault を呼ばない）。ブラウザが
   // フォームも送る — ページが読み直されるか、router があれば GET が欄（パスワードも）を URL と履歴に載せる
-  // （docs/seam-apps.md、router-auth）。warning（action 付きのフォームと、読めないハンドラでは黙る）。
+  // （docs/seam-apps.md、router-auth）。error（4.21 から — 4.20 までは warning で、`--errors-only` に隠れた: 継ぎ目アプリ
+  // ledger-repair）。action 付きのフォームと、読めないハンドラでは黙る。
   SubmitWithoutPrevent: "wcs/submit-without-prevent",
+  // `localStorage` / `sessionStorage` / `document.cookie` を、1 回しか評価されないモジュールのトップレベル（関数の外）で読む。
+  // `<wcs-guard-handler>` のモジュールは 1 回だけ評価され、export した関数が遷移のたびに走る（router の README）ので、ガードは
+  // 読み込みの時点のセッションで決め続ける — ログインしても守られたページはすべて /login へ戻され、何も言わない（継ぎ目アプリ
+  // ledger-repair）。ガードは error、`<wcs-state>` のモジュール（インライン・`src=`）は warning（state は読み込みの時点の値を
+  // 持ち続ける — 意図した種もありうる）。関数の中（export した関数・そこから呼ぶ補助関数・getter・メソッド）の読みは黙る。
+  SessionReadAtModuleTop: "wcs/session-read-at-module-top",
   // 4.0 で外れた API の旧名（`this.$trackDependency` → `$dependOn`、`$untrackDependency` → `$untracked`）。
   // ランタイムは読んだ時点で同じ code（#1701）で throw するので error。3.x（3.2〜3.3）では「動くが 4.0 で
   // 外れる」info だった。フィルタの旧名（`uc` など）は 4.0 のランタイムと同じく `wcs/filter-unknown` で、
@@ -281,7 +293,8 @@ export const WcsDiagnosticCode = {
   // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その
   // パッケージのスクリプトを読み込んでいない。要素は定義されず、束縛は待ち続け、コンソールにも何も出ない（継ぎ目アプリ
   // homeroom — 保存が「送信中 0%」で止まった）。パッケージごとに 1 回、最初のタグに。読めないローカルのスクリプトがある
-  // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。warning。
+  // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。error
+  // （4.21 から — 4.20 までは warning で、`--errors-only` に隠れた: 継ぎ目アプリ ledger-repair）。
   TagPackageMissing: "wcs/tag-package-missing",
   // `<wcs-router>` の無いページの、内部のパス（`to="/…"`）へ飛ぶ `<wcs-link>`。リンクは接続で
   // `[@wcstack/router] wcs-link is not connected to a router.` を投げ、ホストは `display: none` のまま `<a>` を作らない

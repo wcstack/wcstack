@@ -82,8 +82,8 @@ describe('外部 state（<wcs-state src>）にもスクリプトの規則をか�
     for (const page of ['app/a.html', 'app/b.html']) {
       expect(result.lines.filter((l) => l.startsWith(`${page}:`)).map((l) => l.split(' ')[2])).toEqual(['wcs/submit-without-prevent', 'wcs/binding-path-missing']);
     }
-    // the file's 3 errors once (not once per page)
-    expect(result.errorCount).toBe(3);
+    // the file's 3 errors once (not once per page), and each page's wcs/submit-without-prevent (an error since 4.21)
+    expect(result.errorCount).toBe(5);
     expect(result.exitCode).toBe(1);
   });
 

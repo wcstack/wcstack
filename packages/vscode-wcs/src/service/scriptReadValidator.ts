@@ -44,7 +44,7 @@ import { pathExistsInCandidates, resolveIndexedSchemaPath } from './bindingValid
 import { collectGetterReads } from './scriptAst.js';
 import { hasIndexSegment, toWildcardForm } from './indexPath.js';
 import { hasRecursionWildcard } from './recursionPaths.js';
-import { suggestion } from './suggestion.js';
+import { missingSegment, pathTree, suggestion } from './suggestion.js';
 
 export function validateScriptReads(
   html: string,
@@ -116,7 +116,7 @@ export function validateScriptReads(
         if (read.indexed !== undefined && !read.indexed.every((list) => isList(prefix + list, candidates, candidateSet))) continue;
         if (pathExistsInCandidates(path, candidates, candidateSet)) continue;
         if (applicationSchema !== undefined ? resolveIndexedSchemaPath(applicationSchema, path).kind !== 'nonexistent' : isUnresolvedPath(path, index.scopes)) continue;
-        const near = nearName(path, (tree ??= treeOf(candidates)));
+        const near = missingSegment(path, (tree ??= pathTree(candidates)));
         if (near === null) continue;
         const said = suggestion(near.segment, near.names, msgs);
         if (said === '') continue;
@@ -147,36 +147,4 @@ const THIS_PART = /^this\s*(?:\?\.\s*|\.\s*)(?:[A-Za-z_$][\w$]*)|^this\s*(?:\?\.
 
 function statePart(text: string): number {
   return THIS_PART.exec(text)?.[0].length ?? text.length;
-}
-
-/** The candidates as a tree: a path → the names under it. A deeper candidate makes the segments on its way. */
-function treeOf(candidates: readonly PathCandidate[]): Map<string, Set<string>> {
-  const tree = new Map<string, Set<string>>();
-  for (const c of candidates) {
-    let parent = '';
-    for (const segment of c.path.split('.')) {
-      let names = tree.get(parent);
-      if (names === undefined) tree.set(parent, (names = new Set()));
-      names.add(segment);
-      parent = parent === '' ? segment : `${parent}.${segment}`;
-    }
-  }
-  return tree;
-}
-
-/**
- * The first segment of `path` the candidates lack, with the names they have beside it (the keys of its parent). A
- * numeric index reads as `*`, as the runtime reads it. null when every segment is there.
- */
-function nearName(path: string, tree: ReadonlyMap<string, ReadonlySet<string>>): { segment: string; names: string[] } | null {
-  let parent = '';
-  for (const segment of (hasIndexSegment(path) ? toWildcardForm(path) : path).split('.')) {
-    const names = tree.get(parent);
-    if (names?.has(segment)) {
-      parent = parent === '' ? segment : `${parent}.${segment}`;
-      continue;
-    }
-    return { segment, names: [...(names ?? [])].filter((name) => name !== '*' && !name.startsWith('$')) };
-  }
-  return null;
 }

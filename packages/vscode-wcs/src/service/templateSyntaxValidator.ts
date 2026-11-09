@@ -24,6 +24,7 @@ import { pathExistsInCandidates, resolveIndexedSchemaPath, type BindingDiagnosti
 import { hasRecursionWildcard } from "./recursionPaths.js";
 import { removedFilterMessage } from "./removedNames.js";
 import { classifyIndexParam, hasUnsafeSegment, MAX_INDEX_PARAM } from "./indexPath.js";
+import { rowFieldSuggestion } from "./suggestion.js";
 
 export function validateTemplateSyntax(
   html: string,
@@ -75,6 +76,11 @@ export function validateTemplateSyntax(
   const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
+  /** A row field the rows lack, near one they have (bindingValidator's rule): `. Did you mean "…"?`, or ''. */
+  const nearRowField = (code: WcsDiagnosticCodeValue, path: string): string =>
+    code === WcsDiagnosticCode.BindingPathMissing || code === WcsDiagnosticCode.PathNonexistent
+      ? rowFieldSuggestion(path, defaultPaths, msgs)
+      : "";
 
   const mustaches = findAllMustacheSyntax(html);
   const comments = findAllCommentBindings(html);
@@ -226,7 +232,7 @@ export function validateTemplateSyntax(
               code: verdict.code,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: verdict.message + msgs.expansionSuffix(expandedPath),
+              message: verdict.message + msgs.expansionSuffix(expandedPath) + nearRowField(verdict.code, expandedPath),
               severity: verdict.severity,
             });
           }
@@ -238,7 +244,7 @@ export function validateTemplateSyntax(
             code: verdict.code,
             start: item.exprStart,
             end: item.exprStart + pathPart.length,
-            message: verdict.message,
+            message: verdict.message + nearRowField(verdict.code, pathPart),
             severity: verdict.severity,
           });
         }
