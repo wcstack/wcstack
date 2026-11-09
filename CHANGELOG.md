@@ -8,8 +8,35 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Upgrading
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/submit-without-prevent` and `wcs/tag-package-missing` are errors.** They were warnings. A page that passed `wcs-validate --errors-only` with one of them now fails it.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: two new rules. `wcs/session-read-at-module-top` is an error in a guard module and a warning in a state module. `wcs/event-token-unbound` is a warning.
+- `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/binding-path-missing]` can now name a row field of a list a getter returns. It can also name a path under a list that started empty, once that list has rows.
+
+### Added
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/session-read-at-module-top`**. A `localStorage`, `sessionStorage` or `document.cookie` read at the top level of a `<wcs-guard-handler>` module is an error. The router evaluates that module once and calls its function on every navigation, so the guard decided every navigation with the session it read when the page loaded. After a login, every guarded page bounced back to the login page, and nothing said so (the `ledger-repair` seam app, [docs/seam-apps.md](./docs/seam-apps.md)). The same read at the top level of a `<wcs-state>` module is a warning.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/event-token-unbound`** (warning). It reports a name in `$eventTokens` that no `eventToken.<member>:` binding emits, so its `$on` handler never runs. It is the mirror of `wcs/command-token-unbound`.
+- `@wcstack/devtools`: **failures are counted.**
+  - The failure kinds are `binding-apply-error`, `watch-error`, `path-unresolved`, `watch-chain-limit` / `render-chain-limit`, `propagation-hop-limit` and `contract-drift`.
+  - The closed badge shows a red count of these failures, which the runtime logged and carried on from.
+  - The header shows the count as a button that switches the Timeline to failures only.
+  - Failures are kept apart from `write` / `batch` rows, and are counted while the timeline is paused. In `ledger-repair`, 2 failures among 72 rows read as "failures are not shown".
+  - `DevtoolsCore` adds `failureCount`, `getFailures()` and `isFailureKind()`.
+- `@wcstack/devtools`: **the Wiring pane marks a path the runtime reported as unresolved.** When a binding row's path matches a `state:path-unresolved` report, the row carries an `unresolved` badge, in the ⌖ pick view too. The badge names the missing segment (`DevtoolsCore.getUnresolvedReport()`).
+
+### Changed
+
+- `@wcstack/state`: **the diagnostics add-on looks into the rows of a list a getter returns.** When no row has a field and the rows have a near name, the field gets the same warning as a data list's row field (`.amountLabl` under `for: rows` with `get rows()`). A path under an empty list is now checked again when the list gets rows. Before, rows that a fetch brought later were never checked. No core bytes.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `wcs/submit-without-prevent` and `wcs/tag-package-missing` are errors. Both are defects wherever they are reported, and as warnings the skill's `--errors-only` pass line hid them. `wcs/binding-path-missing` stays a warning.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: a row field that the rows lack now names the nearest field (`Did you mean "amountLabel"?`).
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `wcs/array-index-assign` on an object's key now says it assigns a key, not "an array index".
+- `@wcstack/devtools`: the README says the overlay renders in its own **open** shadow root, and shows how a test reads it (`document.querySelector("wcs-devtools").shadowRoot`, the element's `core`, Playwright locators). It said "in a closed world", and the `ledger-repair` author drove the overlay by clicking coordinates.
+
 ### Fixed
 
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: the rows of a list changed in place (`splice`, `push`, `this.rows[i] =`) are no longer reported field by field as missing when no literal or JSDoc type gives their shape. Those false lines had the same code as a real typo, and they taught the `ledger-repair` maintainer to ignore it. `wcs/array-mutation` still reports the change in place.
 - `@wcstack/state` README and [docs/islands.md](./docs/islands.md): **the htmx example released only the markup it had handed over**, so what the server rendered first in a region — bound by the page walk, not handed over — stayed bound after htmx threw it away. It now releases a swapped region's own children on `htmx:beforeCleanupElement`, and the README says that `release` takes whatever is bound under the node. Found while landing the `community-hall` seam app in `examples/` ([docs/seam-apps.md](./docs/seam-apps.md)).
 
 ## [4.20.0] — 2026-11-09
