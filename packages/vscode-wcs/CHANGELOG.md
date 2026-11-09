@@ -2,6 +2,15 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.15.0 — 2026-11-09
+
+`@wcstack/state` 4.20.0 から作った（npm の `@wcstack/lint` 4.20.0・`@wcstack/typescript` 4.20.0 と同じ判定）。継ぎ目アプリ community-hall（htmx の CMS のサイトの上の wcstack のアイランド）が見つけた lint の穴を直した:
+
+- `{{ }}` は実行時が束縛するところだけを束縛として読む。属性値・HTML のコメント・文書の `<head>` の中は束縛ではない。`<head>` の `{{ }}` とコメントの束縛は `wcs/template-syntax` の warning（決して束縛されない）。ページの状態が `$behavior: { enableMustache: false }` を宣言していれば `{{ }}` について何も言わない。`<title>` / `<textarea>` の中では、そこで束縛されないコメントの形を勧めない。コメントの束縛ごとの info をやめた。
+- `wcs/state-absent`（info）: 束縛はあるが `<wcs-state>` の無いファイル（CMS の部分テンプレート）。パスは検査されていなかった。
+- `wcs/link-router-missing`（warning）: `<wcs-router>` の無いページの `<wcs-link to="/…">`（リンクは投げて自分を隠す）。
+- getter やキーの JSDoc の添字の型（`Record<string, T>`・`{ [key: string]: T }`・`Object<string, T>`）は、stateSchema と同じく下のパスを開く。
+
 ## 2.14.2 — 2026-11-08
 
 `@wcstack/state` 4.19.0 から作り直した（npm の `@wcstack/lint` 4.19.0・`@wcstack/typescript` 4.19.0 と同じ判定）。4.19.0 は state の検査を変えていない（変わったのは `@wcstack/signals`）ので、規則は 2.14.1 と同じ。4.19.0 に固定したページに `wcs/lint-version-behind` を出さないための版。
