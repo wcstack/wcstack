@@ -41,6 +41,24 @@ const STYLE_TEXT = /* css */ `
   font-weight: 700;
   cursor: pointer;
 }
+/* Failures since the panel started observing (or since 🗑): a red count on the badge's corner.
+   With none the badge stays as it always was. */
+.badge.has-failures { border-color: #c0563f; }
+.badge-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+.badge-count[hidden] { display: none; }
 .panel {
   position: fixed;
   display: flex;
@@ -94,6 +112,10 @@ header select, header button {
   cursor: pointer;
 }
 header button[aria-pressed="true"] { background: #2b5d8f; }
+/* The failure count, which also toggles the timeline to failures only. Dim with none, red with some. */
+header > button.failures { opacity: .7; }
+header > button.failures.has-failures { opacity: 1; background: #6a3326; color: #ffb3a0; border-color: #a0503a; }
+header > button.failures[aria-pressed="true"] { box-shadow: inset 0 0 0 1px #ffb3a0; }
 .panes { display: flex; flex: 1; min-height: 0; }
 .pane { flex: 1; min-width: 0; overflow: auto; padding: 6px 8px; border-right: 1px solid #1d3a5c; }
 .pane:last-child { border-right: none; }
@@ -199,6 +221,13 @@ export class WcsDevtools extends HTMLElement {
   private _paneElements: Partial<Record<PaneName, HTMLElement>> = {};
   /** Wiring ペインの表示モード（配線一覧 / カバレッジ突合）。 */
   private _wiringView: "wiring" | "coverage" = "wiring";
+  /** Timeline ペインを失敗の行（isFailureKind）だけに絞っているか。 */
+  private _failuresOnly: boolean = false;
+  /** バッジ右上の失敗の数（無ければ hidden）。 */
+  private _badgeCount: HTMLElement | null = null;
+  /** ヘッダーの失敗の数（押すと失敗だけの表示に切り替わる）。 */
+  private _failuresButton: HTMLButtonElement | null = null;
+  private _timelineHeading: HTMLElement | null = null;
   private _highlightLayer: HTMLElement | null = null;
   private _dirtyPanes: Set<PaneName> = new Set();
   private _renderScheduled: boolean = false;
@@ -300,9 +329,14 @@ export class WcsDevtools extends HTMLElement {
     badge.className = "badge";
     badge.title = "wcstack DevTools";
     badge.textContent = "WCS";
+    const badgeCount = document.createElement("span");
+    badgeCount.className = "badge-count";
+    badgeCount.hidden = true;
+    badge.append(badgeCount);
     badge.addEventListener("click", () => this.toggle());
     shadow.append(badge);
     this._badge = badge;
+    this._badgeCount = badgeCount;
 
     const panel = document.createElement("div");
     panel.className = "panel dock-bottom";
@@ -313,6 +347,18 @@ export class WcsDevtools extends HTMLElement {
     title.className = "title";
     title.textContent = "wcstack devtools";
     header.append(title);
+
+    // 失敗の数。tools の外に置くのは、右ドック（420px）で tools が横スクロールに縮んでも
+    // 見えているため。押すと Timeline が失敗の行だけになる（もう一度押すと戻る）
+    const failuresButton = this._headerButton(header, "0 failures", "show only failures in the timeline");
+    failuresButton.classList.add("failures");
+    failuresButton.dataset["role"] = "failures";
+    failuresButton.addEventListener("click", () => {
+      this._failuresOnly = !this._failuresOnly;
+      failuresButton.setAttribute("aria-pressed", String(this._failuresOnly));
+      this._markDirty("timeline");
+    });
+    this._failuresButton = failuresButton;
 
     // 中間のグループ（ツリー選択・pick・⏸・🗑）。幅が足りないときはここが縮んで横に
     // スクロールし、dock と × はヘッダーの右端に残る
@@ -389,6 +435,9 @@ export class WcsDevtools extends HTMLElement {
       pane.append(h3, body);
       panes.append(pane);
       this._paneElements[name] = body;
+      if (name === "timeline") {
+        this._timelineHeading = h3;
+      }
     }
     // 押している間に State ペインを描き直すと、押した行が消えてクリックが成立しない
     // （値が毎フレーム変わるページ）。離すまで待つ
@@ -546,6 +595,8 @@ export class WcsDevtools extends HTMLElement {
       this._renderWiringPane();
     }
     if (dirty.has("timeline")) {
+      // 数はパネルが閉じていても描く — 閉じたバッジに出すのが目的
+      this._renderFailureCount();
       this._renderTimelinePane();
     }
   }
@@ -1103,7 +1154,20 @@ export class WcsDevtools extends HTMLElement {
     const type = document.createElement("span");
     type.className = "badge-tag";
     type.textContent = entry.bindingType;
-    row.append(type, document.createTextNode(" "), prop, arrow, path);
+    row.append(type, document.createTextNode(" "));
+    // ランタイムが「解決しない」と報告したパスなら印を付ける（ledger-repair: pick が
+    // `textContent ← rows.*.amountLabl` を印なしで並べ、配線が死んでいると読めなかった）。
+    // 行は折り返さず狭いペインでは右が切れるので、型バッジのすぐ後ろに置く
+    const unresolved = this._core!.getUnresolvedReport(entry);
+    if (unresolved !== null) {
+      const mark = document.createElement("span");
+      mark.className = "badge-tag warn";
+      mark.textContent = "unresolved";
+      mark.title = `"${unresolved.path}" does not resolve on the state: "${unresolved.missingSegment}" is not declared`
+        + ` (reported by the runtime for a ${unresolved.source}). Updates to this path are dropped.`;
+      row.append(mark, document.createTextNode(" "));
+    }
+    row.append(prop, arrow, path);
     row.addEventListener("click", () => {
       const binding = entry.bindingRef.deref();
       if (binding !== undefined) {
@@ -1132,21 +1196,45 @@ export class WcsDevtools extends HTMLElement {
     return row;
   }
 
+  /**
+   * 失敗の数をバッジとヘッダーに描く（ledger-repair: 72 行の timeline に埋もれた 2 行の失敗が
+   * 「失敗は出ない」と読まれた）。数が 0 ならバッジは従来どおりの見た目のまま。
+   */
+  private _renderFailureCount(): void {
+    const count = this._core!.failureCount;
+    const label = `${count} failure${count === 1 ? "" : "s"}`;
+    const badge = this._badge!;
+    const badgeCount = this._badgeCount!;
+    badgeCount.hidden = count === 0;
+    badgeCount.textContent = count === 0 ? "" : count > 99 ? "99+" : String(count);
+    badge.classList.toggle("has-failures", count > 0);
+    badge.title = count === 0 ? "wcstack DevTools" : `wcstack DevTools — ${label}`;
+    badge.setAttribute("aria-label", badge.title);
+    const button = this._failuresButton!;
+    button.textContent = count === 0 ? label : `⚠ ${label}`;
+    button.classList.toggle("has-failures", count > 0);
+  }
+
   private _renderTimelinePane(): void {
     const core = this._core!;
     const body = this._paneElements["timeline"]!;
-    const timeline = core.getTimeline();
-    const start = Math.max(0, timeline.length - TIMELINE_RENDER_LIMIT);
+    const failuresOnly = this._failuresOnly;
+    // 失敗だけの表示は失敗の ring buffer から描く（timeline から押し出された失敗も残っている）
+    const entries = failuresOnly ? core.getFailures() : core.getTimeline();
+    const start = Math.max(0, entries.length - TIMELINE_RENDER_LIMIT);
+    // 描かない分。失敗は failureCount が buffer から落ちた分も数えているので、そこから引く
+    const earlier = failuresOnly ? core.failureCount - (entries.length - start) : start;
     const rows: HTMLElement[] = [];
-    if (start > 0) {
-      rows.push(this._emptyRow(`…(${start} earlier entries)`));
+    if (earlier > 0) {
+      rows.push(this._emptyRow(`…(${earlier} earlier ${failuresOnly ? "failures" : "entries"})`));
     }
-    for (let index = start; index < timeline.length; index++) {
-      rows.push(this._timelineRow(timeline[index]));
+    for (let index = start; index < entries.length; index++) {
+      rows.push(this._timelineRow(entries[index]));
     }
     if (rows.length === 0) {
-      rows.push(this._emptyRow("no activity yet"));
+      rows.push(this._emptyRow(failuresOnly ? "no failures recorded" : "no activity yet"));
     }
+    this._timelineHeading!.textContent = failuresOnly ? "Timeline — failures only" : "Timeline";
     body.replaceChildren(...rows);
     body.scrollTop = body.scrollHeight;
   }

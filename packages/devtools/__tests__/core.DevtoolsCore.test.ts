@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DevtoolsCore } from '../src/core/DevtoolsCore';
+import { DevtoolsCore, isFailureKind } from '../src/core/DevtoolsCore';
 import { getOrCreateHookRegistry } from '../src/protocol/registry';
 import {
   DEVTOOLS_HOOK_GLOBAL,
@@ -412,6 +412,210 @@ describe('DevtoolsCore', () => {
 
       core.clearTimeline();
       expect(core.getTimeline()).toHaveLength(0);
+    });
+  });
+
+  describe('失敗の数と失敗の行（ledger-repair V1: 失敗が write / batch に埋もれた）', () => {
+    function emitWrite(source: IFakeSource, path: string): void {
+      source.emit({ type: 'state:write', absoluteAddress: addressOf('main', path), value: 1, oldValue: undefined, hasOldValue: false });
+    }
+
+    function emitApplyError(source: IFakeSource, path: string): void {
+      source.emit({ type: 'state:binding-apply-error', path, bindingType: 'for', error: new Error('[wcs/getter-write]') });
+    }
+
+    it('isFailureKindはランタイムが握って続行する種別だけを失敗とすること', () => {
+      for (const kind of [
+        'watch-error', 'watch-chain-limit', 'render-chain-limit', 'path-unresolved',
+        'binding-apply-error', 'propagation-hop-limit', 'contract-drift',
+      ] as const) {
+        expect(isFailureKind(kind), kind).toBe(true);
+      }
+      for (const kind of [
+        'write', 'batch', 'command', 'event', 'element-registered', 'element-unregistered',
+        'propagation-suppressed', 'propagation-coalesced',
+      ] as const) {
+        expect(isFailureKind(kind), kind).toBe(false);
+      }
+    });
+
+    it('失敗の行を数えてgetFailuresに積み、writeやbatch・購読者0の空撃ちは数えないこと', () => {
+      const { core, source } = setupConnected();
+      emitWrite(source, 'month');
+      source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'month')]) });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 0 });
+      emitApplyError(source, 'rows');
+      source.emit({ type: 'state:watch-error', phase: 'handler', path: 'total', error: new Error('boom') });
+      source.emit({ type: 'state:path-unresolved', source: 'binding', path: 'user.nmae', missingSegment: 'nmae' });
+      source.emit({ type: 'state:watch-chain-limit', maxDepth: 32, paths: ['a'] });
+      source.emit({ type: 'state:render-chain-limit', maxDepth: 100, paths: ['b'] });
+      source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf('main', 'count'), transactionId: 1, hop: 16 });
+      source.emit({ type: 'contract:drift', reason: 'missing-member', tag: 'wcs-fetch', member: 'data' });
+
+      expect(core.failureCount).toBe(7);
+      expect(core.getFailures().map((entry) => entry.kind)).toEqual([
+        'binding-apply-error', 'watch-error', 'path-unresolved', 'watch-chain-limit',
+        'render-chain-limit', 'propagation-hop-limit', 'contract-drift',
+      ]);
+      // 失敗の行は timeline の行と同じもの（seq で並びを合わせられる）
+      expect(core.getFailures()[0]).toBe(core.getTimeline()[3]);
+      expect(core.getTimeline()).toHaveLength(10);
+    });
+
+    it('timelineからwriteの流れで押し出された失敗もgetFailuresに残り、失敗の容量を超えた分はfailureCountだけが数えること', () => {
+      const registry = getOrCreateHookRegistry();
+      const source = createFakeSource('state:test');
+      registry.register(source);
+      const core = new DevtoolsCore({ timelineCapacity: 3 });
+      core.connect();
+
+      emitApplyError(source, 'rows');
+      for (const path of ['a', 'b', 'c', 'd', 'e']) {
+        emitWrite(source, path);
+      }
+      expect(core.getTimeline().map((entry) => entry.label)).toEqual(['c', 'd', 'e']);
+      expect(core.getFailures().map((entry) => entry.label)).toEqual(['rows']);
+      expect(core.failureCount).toBe(1);
+
+      for (const path of ['f1', 'f2', 'f3', 'f4']) {
+        emitApplyError(source, path);
+      }
+      expect(core.getFailures().map((entry) => entry.label)).toEqual(['f2', 'f3', 'f4']);
+      expect(core.failureCount).toBe(5);
+    });
+
+    it('一時停止中も失敗は数えて残し（timelineには記録しない）、変化を通知すること', () => {
+      const { core, source } = setupConnected();
+      const kinds: string[] = [];
+      core.onChange((kind) => kinds.push(kind));
+      core.paused = true;
+      emitWrite(source, 'month');
+      emitApplyError(source, 'rows');
+      expect(core.getTimeline()).toHaveLength(0);
+      expect(core.getFailures().map((entry) => entry.label)).toEqual(['rows']);
+      expect(core.failureCount).toBe(1);
+      expect(kinds).toEqual(['timeline']);
+    });
+
+    it('clearTimelineで失敗の行と数もクリアされ、disconnectでは（timelineと同じく）残ること', () => {
+      const { core, source } = setupConnected();
+      emitApplyError(source, 'rows');
+      core.disconnect();
+      expect(core.failureCount).toBe(1);
+      expect(core.getFailures()).toHaveLength(1);
+      core.clearTimeline();
+      expect(core.failureCount).toBe(0);
+      expect(core.getFailures()).toHaveLength(0);
+      expect(core.getTimeline()).toHaveLength(0);
+    });
+  });
+
+  describe('解決しないパスの台帳（ledger-repair V2: pick の行に印が無かった）', () => {
+    function addressIn(stateElement: unknown, path: string): IAbsoluteAddressLike {
+      return { absolutePathInfo: { stateElement, pathInfo: { path } }, listIndex: { index: 0, indexes: [0] } };
+    }
+
+    function unresolvedOf(path: string, missingSegment: string, stateElement?: unknown): DevtoolsEventLike {
+      // 4.0 のランタイムは stateElement を載せる（文書化された payload には無い）
+      return { type: 'state:path-unresolved', source: 'binding', path, missingSegment, ...(stateElement === undefined ? {} : { stateElement }) } as DevtoolsEventLike;
+    }
+
+    it('報告されたままのパス（ワイルドカード形）で配線に突き合わせ、Wiringの変化を通知すること', () => {
+      const element = {};
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressIn(element, 'rows.*.amountLabl'), binding: bindingOf('main', 'rows.*.amountLabl') });
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressIn(element, 'rows.*.memo'), binding: bindingOf('main', 'rows.*.memo') });
+      const [typo] = core.getWiringForPath('rows.*.amountLabl');
+      const [fine] = core.getWiringForPath('rows.*.memo');
+      expect(core.getUnresolvedReport(typo)).toBeNull();
+
+      const kinds: string[] = [];
+      core.onChange((kind) => kinds.push(kind));
+      source.emit(unresolvedOf('rows.*.amountLabl', 'amountLabl', element));
+      expect(kinds).toContain('wiring');
+      expect(core.getUnresolvedReport(typo)).toMatchObject({
+        sourceId: 'state:test', source: 'binding', path: 'rows.*.amountLabl', missingSegment: 'amountLabl',
+      });
+      expect(core.getUnresolvedReport(fine)).toBeNull();
+    });
+
+    it('別のsourceが報告した同名パスは当てないこと', () => {
+      const { core, source, registry } = setupConnected();
+      const other = createFakeSource('state:other');
+      registry.register(other);
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'user.nmae'), binding: bindingOf('main', 'user.nmae') });
+      other.emit(unresolvedOf('user.nmae', 'nmae'));
+      const [entry] = core.getWiringForPath('user.nmae');
+      expect(core.getUnresolvedReport(entry)).toBeNull();
+      source.emit(unresolvedOf('user.nmae', 'nmae'));
+      expect(core.getUnresolvedReport(entry)).toMatchObject({ sourceId: 'state:test', missingSegment: 'nmae' });
+    });
+
+    it('報告と配線の両方にツリーの識別があればツリーも合わせ、片側に無ければ同じsourceの同名パスすべてに当てること', () => {
+      const elementA = {};
+      const elementB = {};
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressIn(elementA, 'rows.*.x'), binding: bindingOf('a', 'rows.*.x') });
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressIn(elementB, 'rows.*.x'), binding: bindingOf('b', 'rows.*.x') });
+      // 識別を持たない配線（旧 payload — stateElement がオブジェクトでない）
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('legacy', 'rows.*.x'), binding: bindingOf('c', 'rows.*.x') });
+      const [inA, inB, legacy] = core.getWiringForPath('rows.*.x');
+
+      source.emit(unresolvedOf('rows.*.x', 'x', elementA));
+      expect(core.getUnresolvedReport(inA)).not.toBeNull();
+      expect(core.getUnresolvedReport(inB)).toBeNull();
+      expect(core.getUnresolvedReport(legacy)).not.toBeNull();
+
+      // 識別の無い報告（3.x の payload）はどのツリーの配線にも当たる
+      source.emit(unresolvedOf('rows.*.x', 'x'));
+      expect(core.getUnresolvedReport(inB)).toMatchObject({ missingSegment: 'x' });
+    });
+
+    it('一時停止中も台帳に積み、clearTimelineでは消えず（ランタイムは二度報告しない）、disconnectで消えること', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'user.nmae'), binding: bindingOf('main', 'user.nmae') });
+      const [entry] = core.getWiringForPath('user.nmae');
+      core.paused = true;
+      source.emit(unresolvedOf('user.nmae', 'nmae'));
+      expect(core.getTimeline()).toHaveLength(0);
+      expect(core.getUnresolvedReport(entry)).not.toBeNull();
+      core.clearTimeline();
+      expect(core.getUnresolvedReport(entry)).not.toBeNull();
+      core.disconnect();
+      expect(core.getUnresolvedReport(entry)).toBeNull();
+    });
+
+    it('GC済みツリーの報告は同じパスの次の報告のときに落とされ、当たらないこと', () => {
+      const originalWeakRef = globalThis.WeakRef;
+      const dead = new Set<object>();
+      class FakeWeakRef<T extends object> {
+        private _target: T;
+        constructor(target: T) {
+          this._target = target;
+        }
+        deref(): T | undefined {
+          return dead.has(this._target) ? undefined : this._target;
+        }
+      }
+      vi.stubGlobal('WeakRef', FakeWeakRef);
+      try {
+        const elementA = {};
+        const elementB = {};
+        const elementC = {};
+        const { core, source } = setupConnected();
+        source.emit({ type: 'state:binding-added', absoluteAddress: addressIn(elementC, 'rows.*.x'), binding: bindingOf('c', 'rows.*.x') });
+        const [inC] = core.getWiringForPath('rows.*.x');
+        source.emit(unresolvedOf('rows.*.x', 'x', elementA));
+        dead.add(elementA);
+        source.emit(unresolvedOf('rows.*.x', 'x', elementB));
+        const records = (core as unknown as { _unresolved: Map<string, unknown[]> })._unresolved.get('rows.*.x')!;
+        expect(records).toHaveLength(1);
+        // 生きているツリー C の配線には、A（GC 済み）の報告も B の報告も当たらない
+        expect(core.getUnresolvedReport(inC)).toBeNull();
+      } finally {
+        vi.stubGlobal('WeakRef', originalWeakRef);
+        vi.unstubAllGlobals();
+      }
     });
   });
 
