@@ -7,10 +7,9 @@
  *   row, but between logging in and the month page that was 2 rows of 72, among `write` and `batch`;
  * - the ⌖ pick view listed `textContent ← rows.*.amountLabl` with no mark.
  *
- * The runtime reports a row field that does not resolve only when it can tell without evaluating a getter:
- * a list a getter returns (family-ledger's `rows`) stays silent (protocol §4.3.2), so the typo here is in a
- * list held as data. For a getter's rows built with `map`, the lint reads the callback's literal and reports
- * the field (`wcs/binding-path-missing`).
+ * Up to 4.20 the runtime did not look into the rows of a list a getter returns (family-ledger's `rows`);
+ * @wcstack/state 4.21 does. This test runs the committed dist, which stays 4.20 until the release rebuilds it,
+ * so the typo here is in a list held as data.
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { WcsDevtools } from "../src/shell/WcsDevtools";
