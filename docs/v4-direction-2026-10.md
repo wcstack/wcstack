@@ -1,7 +1,7 @@
 # 4.x の指針: 黙って壊れない（2026-10）
 
 - **日付**: 2026-10-17（4.2.0 の公開の日）
-- **ステータス**: 採択（2026-10-17、著者。§5 の 3 点）。2026-10-25 に §3.2 の 2 巡目と、§4 の 2 巡目のペース・core の予算を足した（著者。§5.6 の 5 点）。2026-11-08 に §3.2 の 3 巡目を足した（著者。§5.15）。同日、3 巡目の 1 本目 community-hall から決めた（著者。§5.16）
+- **ステータス**: 採択（2026-10-17、著者。§5 の 3 点）。2026-10-25 に §3.2 の 2 巡目と、§4 の 2 巡目のペース・core の予算を足した（著者。§5.6 の 5 点）。2026-11-08 に §3.2 の 3 巡目を足した（著者。§5.15）。同日、3 巡目の 1 本目 community-hall から決めた（著者。§5.16）。2026-11-10 に 2 本目 ledger-repair から決めた（著者。§5.17）
 - **前提の数値**: 2026-10-17 のスナップショット。次の minor の前に §1 を見直す。
 - **関連**: [project-strategy-2026-07.md](./project-strategy-2026-07.md)（目的関数は工芸）、[seam-apps.ja.md](./seam-apps.ja.md)（継ぎ目アプリの方法と記録）、[state-engine-rewrite/v4-remaining.ja.md](./state-engine-rewrite/v4-remaining.ja.md)（4.0 までの記録）、[mistake-catalogue.ja.md](./mistake-catalogue.ja.md)（§3.1 の目録）
 
@@ -69,7 +69,7 @@
 2 巡目の 5 本を終えても、通っていないものが残った。13 本の継ぎ目アプリのどれも使っていないタグが 18（`<wcs-infinite-scroll>`・`<wcs-intersect>`・`<wcs-resize>`・`<wcs-defined>`・`<wcs-devtools>` と、画面とセンサーの 13）、どれも使っていない道具（`wcs-tsc`・`wcs-schema`）、4.18・4.19 で変えた signals の DOM の層（For の遅延、`selector`、外したリスナー、`delegateEvents`）。そして 13 本はどれも、ページ全体を wcstack が持っていた。2 巡目と同じく、1・2 巡目が通っていない軸だけから選ぶ。上から順に:
 
 1. **自分のものでないページ** — 2026-11-08 に community-hall として走らせた（§5.16、4.20）。サーバーが描くサイトに、htmx や Turbo と同居するアイランド。state の README は、binder プロトコルで渡された中身だけを束縛すると言い、htmx も Turbo も渡さない。ほかの持ち主が差し替える DOM、ホストの履歴と `<wcs-router>` / `<wcs-link>`、htmx や Turbo の履歴のキャッシュが戻す束縛済みの DOM、同じアイランドを 2 つ、ホストのテンプレートの `{{ }}`、別の origin のページに埋め込むウィジェットを通る。「既存のページに部品として置ける」は wcstack の売りだが、そこを通ったアプリはまだ無い。
-2. **壊れたアプリを直す作者** — 作者の軸。作る代わりに直す: 目録の誤り（黙るものと知らせるもの）を仕込んだ動くアプリを渡し、作者はコンソール・lint・`<wcs-devtools>`・文書だけで直す。4.x の「知らせる」が直し方まで導くか（場所を指しているか、文面から次の手が分かるか）を正面から測る。
+2. **壊れたアプリを直す作者** — 2026-11-10 に ledger-repair として走らせた（§5.17、4.21）。作者の軸。作る代わりに直す: 目録の誤り（黙るものと知らせるもの）を仕込んだ動くアプリを渡し、作者はコンソール・lint・`<wcs-devtools>`・文書だけで直す。4.x の「知らせる」が直し方まで導くか（場所を指しているか、文面から次の手が分かるか）を正面から測る。
 3. **入力の重い業務フォーム** — 申込のウィザード（日本語）。IME の変換の途中 × 双方向の束縛、フィルタ付きの双方向とキャレット・取り消し、ブラウザの自動入力、入力の行の並べ替え（目録の未確認の候補「束ねていない DOM の状態が元の位置に残る」）、Form-Associated Custom Elements、別のステップの欄を指す 422。
 4. **大きなリストとスクロール** — 1 万件の一覧と無限スクロール。`<wcs-infinite-scroll>`・`<wcs-intersect>`・`<wcs-resize>`、詳細から戻ったときの位置、絞り込みと読み込み中のページの競合、目録の未確認の候補（`<wcs-intersect>` の端ごとの `page++`、委譲されるイベントと `stopPropagation()`）。signals で書けば 4.18・4.19 の DOM の層を通る。
 5. **画面とセンサーの API** — 未使用の 13 タグ、iOS の DeviceOrientation の許可の流れ、全画面 × 向きの固定の順序、CI に無い WebKit（これまでの既知の制限で何度も「Safari は試していない」）。端末の代役が要り、使う人も少ないので最後（2 巡目の audio / midi と同じ理由）。
@@ -263,6 +263,31 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 5. **数の表示の族は `undefined` / `null` を素通しする（4.20）。** `toFixed`・`round`・`floor`・`ceil`・`percent`・`locale`・`currency`。§5.5 で日付の族を素通しにした（4.7）のと同じ理由: 後から届く値は普通で、`total|locale` は新しく開くたびに失敗した。formats add-on の中で、core は増えない。比べた案: `locale` と `currency` だけ、throw のまま文面で `coalesce` を勧める。
 6. **案内と binder の位置づけ** — [islands.md](./islands.md)（+ ja）を足し（htmx・Turbo・別のサイトに置くウィジェットと scoped registry）、state の README で binder を著者向けの API として書き（「Inserting markup yourself」）、skill に参照を足す。比べた案: state の README の 1 節だけ。
 7. **直すだけの欠陥はこの minor で全部直す** — volume の争いを始めるときに決める、`#43` の文面（解決できない import は `blob:` の基底を言う）、lint の 6 件（`enableMustache: false` に従う、状態の無いファイルを報告する、JSDoc の `Record<string, T>` を開く、コメントの束縛ごとの info をやめる、glob を展開する、ルーターの無いページの `<wcs-link>`）。比べた案: 実行時の 2 件だけにして lint は次の minor。
+
+### 5.17 ledger-repair から決めたこと（2026-11-10、著者）
+
+3 巡目の 2 本目（[seam-apps.ja.md](./seam-apps.ja.md) の「ledger-repair」）。6 つの問いを推奨の案に決めた。
+
+1. **ガードのモジュールの最上位で storage / cookie を読むのは lint の error にする（4.21、`wcs/session-read-at-module-top`）。** 対象は `localStorage` / `sessionStorage` / `document.cookie`。ガードは移動のたびに走るが、そのモジュールは 1 回しか評価されない。同じ読みが state のモジュールの最上位にあれば warning にする（意図した種もありうるため）。
+   - 仕込んだ 10 件のうち、コンソール・lint・DevTools のどれも何も言わなかった唯一の誤り。ほかの 5 件を隠した。
+   - 比べた案: どこでも warning（`--errors-only` に隠れる）、文書だけ（router の README と skill には既にある）。
+2. **`wcs/submit-without-prevent` と `wcs/tag-package-missing` を error に上げる（4.21）。skill の合格の線は「`--errors-only` が 0 で終わり、warning はすべて直すか説明する」にする。**
+   - 2 つとも、報告されるところでは必ず欠陥になる（再読み込み、または欄を載せた GET。定義されない要素）。warning のままでは、`--errors-only` がそれを隠した。
+   - `wcs/binding-path-missing` は warning のまま（読めない state では誤報が出る）。
+   - 比べた案: skill の線だけ変える、重大度だけ上げる。
+3. **getter のリストの行を、実行時の diagnostics が見る（4.21、core 0 B）。lint は行のフィールドに「もしかして」を付ける。** 空のリストは、行が届いたら検査し直す。比べた案: lint の「もしかして」だけ、このまま（lint は既に報告する）。
+4. **`$eventTokens` に宣言したのに、どの `eventToken.` 束縛も出さないトークンは lint の warning にする（4.21、`wcs/event-token-unbound`）。** `wcs/command-token-unbound` の逆。
+   - `status` の `$watch` そのものは文書のまま。スピナーのために `status` を見るのは正しい書き方だから。
+   - 比べた案: これに加えて、`<wcs-fetch>` の `status` の `$watch` に応答のイベントを指す info を出す。文書だけ。
+5. **DevTools は 3 つとも直す（4.21）。**
+   - 調べると、getter が投げた `for:` は timeline に `binding-apply-error` として届いていた。ただ、ログインから月のページまでの 72 行の中の 2 行だった。そのため、直すのは「届かない」ではなく「目立たない」になった。
+   - 直したこと: 失敗の数をバッジとヘッダーに出す。失敗だけの表示を足す。失敗を `write` / `batch` とは別に残す。pick に `unresolved` の印を付ける。README の「closed world」を open の shadow root と書き直し、テストからの読み方を書く。
+   - pick の印は、getter のリストの行には 3 の実行時の検査を通って届く。
+   - 比べた案: 失敗と README だけで印は後、README だけ。
+6. **直し方が 1 つずつ決まっているものは、この minor で全部直す。**
+   - lint: オブジェクトのキーへの代入を「配列の添字」と呼ばない。その場で変えたリストの行に誤報を出さない。
+   - 例の不具合: レシートの上げ直し、オフラインで月が消える、CSV の文面。e2e の検査付き。
+   - 比べた案: lint だけ直し、例の不具合は後。
 
 ## 6. やらないこと
 
