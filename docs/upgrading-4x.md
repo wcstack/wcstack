@@ -381,7 +381,20 @@ No workaround became unnecessary.
 
 Workarounds became unnecessary: a state module exported as a factory and built in an inline module (with an import map entry for the factory) so that each page or instance got a fresh state; no volumes on a page htmx swaps; `|coalesce(0)` in front of `locale` where the value can be absent; a generated `stateSchema` written only so that a getter's `Record<string, T>` paths stayed quiet; a script that listed the files for `wcs-validate` because npm scripts on Windows pass a pattern through.
 
-## Still needed on 4.20.0
+### 4.21.0
+
+2026-11-10 — [CHANGELOG](../CHANGELOG.md#4210--2026-11-10)
+
+- `@wcstack/lint`: `wcs/submit-without-prevent` and `wcs/tag-package-missing` are errors. A page that passed `wcs-validate --errors-only` with one of them now fails it.
+- `@wcstack/lint`: `wcs/session-read-at-module-top` is new. A `localStorage` / `sessionStorage` / `document.cookie` read at the top level of a `<wcs-guard-handler>` module is an error. The same read at the top level of a state module is a warning, and that includes a seed read from storage on purpose: bind the key with `<wcs-storage>`, or read the value in the method that uses it.
+- `@wcstack/lint`: `wcs/event-token-unbound` (warning) is new. It reports a name in `$eventTokens` that no `eventToken.` binding emits.
+- `@wcstack/lint`: the rows of a list changed in place are no longer reported field by field as missing.
+- `@wcstack/state` console: `[wcs/binding-path-missing]` can name a row field of a list a getter returns (beside a near name). It can also name a path under a list that started empty, once that list has rows.
+- `@wcstack/devtools`: the closed badge shows a red count when the runtime logged failures. The header has a button that shows only the failures, and the Wiring pane marks a path the runtime reported as unresolved.
+
+Workarounds became unnecessary: a second `wcs-validate` run without `--errors-only`, made only to see a form that submits or a tag whose package is not loaded (both are errors now).
+
+## Still needed on 4.21.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).

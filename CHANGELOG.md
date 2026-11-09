@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.21.0] — 2026-11-10
+
+A minor from the `ledger-repair` seam app, the second app of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2. A maintainer who did not write `family-ledger` fixed a copy of it that had ten catalogued mistakes put in. They used only the console, the lint, `<wcs-devtools>` and the documents ([docs/seam-apps.md](./docs/seam-apps.md)). They fixed all ten, and found two real defects in the example itself. The author's decisions are in §5.17. They cover a guard's session read that nothing reported, a lint pass line that hid real defects as warnings, a runtime check that skipped a getter list's rows, and DevTools failures that did not stand out. `@wcstack/state`, `@wcstack/lint`, `@wcstack/typescript` and `@wcstack/devtools` changed; every other package is 4.20.0 with a new version.
 
 ### Upgrading
 
