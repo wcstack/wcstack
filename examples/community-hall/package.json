@@ -1,0 +1,25 @@
+{
+  "name": "wcstack-community-hall",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: wcstack islands on a page it does not own — a community hall's CMS site with htmx 2 (boosted navigation, a live search, fragments), and a booking widget on a partner inn's Turbo site that runs its own wcstack 4.17.0 (a scoped registry). Inserted markup handed to the binder and released, history caches turned off, one root per swapped body.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run",
+    "lint": "wcs-validate --errors-only templates/*.html inn/*.html",
+    "lint:rendered": "node scripts/lint-rendered.mjs --strict"
+  },
+  "dependencies": {
+    "@hotwired/turbo": "8.0.23",
+    "htmx.org": "2.0.11",
+    "state-4.17.0": "npm:@wcstack/state@4.17.0"
+  },
+  "devDependencies": {
+    "@wcstack/lint": "^4.20.0",
+    "@wcstack/server": "^4.20.0",
+    "@wcstack/state": "^4.20.0",
+    "@wcstack/testing": "^4.20.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^4.1.12"
+  }
+}

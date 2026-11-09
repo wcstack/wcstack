@@ -28,15 +28,15 @@ A root written in the server's layout once and loaded with `src=` is fine since 
 
 ```js
 const binder = () => globalThis[Symbol.for("wcstack.binder")];
-const handed = new WeakSet();
+const REGIONS = "#results, #booking";   // the regions the page's htmx swaps into
 
 // htmx: htmx:load for each element a swap inserted; htmx:beforeCleanupElement for each it removes
 document.addEventListener("htmx:load", (e) => {
-  handed.add(e.detail.elt);
-  binder()?.bind(e.detail.elt);
+  if (e.detail.elt.parentElement?.closest(REGIONS)) binder()?.bind(e.detail.elt);
 });
 document.addEventListener("htmx:beforeCleanupElement", (e) => {
-  if (handed.has(e.detail.elt)) binder()?.release?.(e.detail.elt);
+  // a region's own children — what the server rendered there first too, which the page walk bound
+  if (e.detail.elt.parentElement?.matches(REGIONS)) binder()?.release?.(e.detail.elt);
 });
 
 // Turbo frames: the frame element stays and its children are replaced
@@ -50,7 +50,7 @@ document.addEventListener("turbo:frame-render", (e) => {
 
 - **The new nodes, not their container.** An element the page walk visited is left alone when it is handed over again, with everything in it: handing over `#results` after a swap into it binds nothing.
 - **A `for:` / `if:` template at the top of a fragment** is not rendered when handed over (`#204`): its rows would sit beside it, out of the inserter's reach. Put it inside an element.
-- **`release` is for good.** It unregisters the subtree's bindings and disposes its `for:` / `if:` views (since 4.20, binder protocol version 2, the `release` add-on — in `@wcstack/state` and `/auto`). Without it, a page that replaces its results for an hour keeps every set it showed, and each change writes into all of them. Released nodes are not bound again. Do not release what comes back (a panel you hide and show).
+- **`release` is for good, and takes whatever is bound under the node** — what you handed over, and what the page walk bound there first (the server's first results). It unregisters the subtree's bindings and disposes its `for:` / `if:` views (since 4.20, binder protocol version 2, the `release` add-on — in `@wcstack/state` and `/auto`). Without it, a page that replaces its results for an hour keeps every set it showed, and each change writes into all of them. Released nodes are not bound again. Do not release what comes back (a panel you hide and show).
 - **Before `@wcstack/state` has loaded** the binder is `undefined`; markup inserted before then is bound by the first walk.
 
 The rules are in the state README ([Inserting markup yourself](../packages/state/README.md#inserting-markup-yourself)) and the protocol in [binder-protocol-design.md](./binder-protocol-design.md) §10.

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/state` README and [docs/islands.md](./docs/islands.md): **the htmx example released only the markup it had handed over**, so what the server rendered first in a region — bound by the page walk, not handed over — stayed bound after htmx threw it away. It now releases a swapped region's own children on `htmx:beforeCleanupElement`, and the README says that `release` takes whatever is bound under the node. Found while landing the `community-hall` seam app in `examples/` ([docs/seam-apps.md](./docs/seam-apps.md)).
+
 ## [4.20.0] — 2026-11-09
 
 A minor from the `community-hall` seam app, the first of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: wcstack islands on a page wcstack does not own — a community hall's CMS site with htmx 2, and a booking widget on a partner inn's Turbo site that runs wcstack 4.17 for its own contact form ([docs/seam-apps.md](./docs/seam-apps.md)). The author's decisions are in §5.16; the new guide is [docs/islands.md](./docs/islands.md). `@wcstack/state`, `@wcstack/lint` and `@wcstack/typescript` changed, and `@wcstack/router` carries the binder protocol's new type; every other package is 4.19.0 with a new version.

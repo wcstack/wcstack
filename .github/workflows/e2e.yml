@@ -126,6 +126,12 @@ jobs:
       - name: Install the homeroom seam app's server dependency and its 4.2.0 packages
         working-directory: examples/homeroom
         run: npm ci --omit=dev
+      # examples/community-hall serves htmx, Turbo and the partner inn's wcstack 4.17.0 (an npm alias) from its own
+      # node_modules; under WCS_LOCAL=1 the hall's and the widget's wcstack is packages/*/dist, so its spec needs no CDN.
+      # The devDependencies are its Vitest suite's and its lint's.
+      - name: Install the community-hall seam app's htmx, Turbo and the inn's 4.17.0
+        working-directory: examples/community-hall
+        run: npm ci --omit=dev
       - run: npm ci
       # firefox: the "firefox" project runs prod-booking's checks where browsers differ (import map
       # integrity, Trusted Types) — e2e/playwright.config.ts

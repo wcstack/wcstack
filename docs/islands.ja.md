@@ -28,15 +28,15 @@ wcstack の文書のほとんどは、ページが wcstack のものだと仮定
 
 ```js
 const binder = () => globalThis[Symbol.for("wcstack.binder")];
-const handed = new WeakSet();
+const REGIONS = "#results, #booking";   // ページの htmx が入れ替える領域
 
 // htmx: htmx:load は入れ替えが入れた要素ごとに、htmx:beforeCleanupElement は外す要素ごとに起きる
 document.addEventListener("htmx:load", (e) => {
-  handed.add(e.detail.elt);
-  binder()?.bind(e.detail.elt);
+  if (e.detail.elt.parentElement?.closest(REGIONS)) binder()?.bind(e.detail.elt);
 });
 document.addEventListener("htmx:beforeCleanupElement", (e) => {
-  if (handed.has(e.detail.elt)) binder()?.release?.(e.detail.elt);
+  // 領域の直下の子 — サーバーが最初に描いた（ページの走査が束縛した）ものも
+  if (e.detail.elt.parentElement?.matches(REGIONS)) binder()?.release?.(e.detail.elt);
 });
 
 // Turbo のフレーム: フレームの要素は残り、子が入れ替わる
@@ -50,7 +50,7 @@ document.addEventListener("turbo:frame-render", (e) => {
 
 - **入れ物ではなく新しいノードを。** ページの走査が歩いた要素は、渡し直されても中身ごとそのままです: `#results` へ入れ替えた後に `#results` を渡しても何も束縛されません。
 - **断片の最上位にある `for:` / `if:` のテンプレート**は、渡しても描かれません（`#204`）: その行はテンプレートの横に並び、入れた側の手が届かないためです。要素で包んでください。
-- **`release` は二度と戻らないもの向けです。** 部分木の束縛の登録を外し、`for:` / `if:` の view を片付けます（4.20 から。binder プロトコルの版 2、`release` add-on —— `@wcstack/state` と `/auto` に入っています）。これが無いと、1 時間結果を入れ替えたページは出したすべての結果を持ち続け、変更のたびにそのすべてへ書き込みます。手放したノードは束縛し直されません。戻すもの（隠してまた見せるパネル）は手放さないでください。
+- **`release` は二度と戻らないもの向けで、ノードの下に束縛されているものをすべて手放します** —— 渡したものも、ページの走査が最初に束縛したもの（サーバーが最初に描いた結果）も。部分木の束縛の登録を外し、`for:` / `if:` の view を片付けます（4.20 から。binder プロトコルの版 2、`release` add-on —— `@wcstack/state` と `/auto` に入っています）。これが無いと、1 時間結果を入れ替えたページは出したすべての結果を持ち続け、変更のたびにそのすべてへ書き込みます。手放したノードは束縛し直されません。戻すもの（隠してまた見せるパネル）は手放さないでください。
 - **`@wcstack/state` を読み込む前**は binder は `undefined` です。それより前に入ったマークアップは最初の走査が束縛します。
 
 規則は state の README（[Inserting markup yourself](../packages/state/README.ja.md#マークアップを自分で差し込む)）に、プロトコルは [binder-protocol-design.md](./binder-protocol-design.md) §10 にあります。

@@ -1,0 +1,13 @@
+<li class="card" data-event-id="{{id}}">
+  <p class="card-meta"><span class="tag">{{category}}</span> <time datetime="{{date}}">{{dateLabel}}</time></p>
+  <h3 class="card-title"><a href="/events/{{id}}">{{title}}</a></h3>
+  <p class="card-venue">{{venue}}</p>
+  <p class="card-foot">
+    <span class="seats" data-wcs="class.soldout: soldOut.e{{id}}">
+      <span data-wcs="hidden: soldOut.e{{id}}" {{soldOutHidden}}>残り <b data-wcs="textContent: seats.e{{id}}">{{remaining}}</b> 席</span>
+      <span data-wcs="hidden: hasSeats.e{{id}}" {{seatsHidden}}>満席</span>
+    </span>
+    <button type="button" class="star" aria-label="マイリスト" aria-pressed="false"
+      data-wcs="onclick: toggleStar; textContent: starIcon.e{{id}}; attr.aria-pressed: starPressed.e{{id}}">☆</button>
+  </p>
+</li>

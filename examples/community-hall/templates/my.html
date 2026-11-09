@@ -1,0 +1,25 @@
+<h1>マイリスト</h1>
+<p class="lead">☆を付けたイベントです。このコンピューターに保存され、ほかのタブにもすぐ反映されます。</p>
+
+<wcs-fetch data-wcs="url: myUrl; value: myEvents; loading: myLoading; error: myError"></wcs-fetch>
+
+<p class="empty" data-wcs="hidden: myEmpty|not" hidden>まだ登録されたイベントはありません。<a href="/events">イベント一覧</a>で☆を押すと登録できます。</p>
+<p class="status" data-wcs="hidden: myShowLoading|not" hidden>読み込み中…</p>
+<p class="form-error" data-wcs="hidden: myShowError|not" hidden>マイリストのイベントを読み込めませんでした。時間をおいて再読み込みしてください。</p>
+
+<ul class="my-list" id="my-list">
+  <template data-wcs="for: myRows">
+    <li class="my-item">
+      <p class="card-meta"><span class="tag" data-wcs="textContent: .category"></span> <span data-wcs="textContent: .dateLabel"></span></p>
+      <h2 class="card-title"><a data-wcs="attr.href: .href; textContent: .title"></a></h2>
+      <p class="card-venue" data-wcs="textContent: .venue"></p>
+      <p class="card-foot">
+        <span class="seats" data-wcs="class.soldout: .soldOut">
+          <span data-wcs="hidden: .soldOut">残り <b data-wcs="textContent: .seat"></b> 席</span>
+          <span data-wcs="hidden: .soldOut|not">満席</span>
+        </span>
+        <button type="button" class="remove" data-wcs="onclick: removeStar">マイリストから外す</button>
+      </p>
+    </li>
+  </template>
+</ul>

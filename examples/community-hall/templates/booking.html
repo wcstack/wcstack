@@ -1,0 +1,103 @@
+<!-- The booking fragment (/events/{{id}}/booking). Its bindings read `booking.*` of the event page's state.
+     Everything is inside one element: a for:/if: template at the top of handed-over content is not rendered. -->
+<div class="booking-body" id="booking-body">
+  <p class="soldout-banner" role="alert" data-wcs="hidden: bookingSoldOut|not" {{seatsHidden}}>
+    このイベントは満席になりました。キャンセルが出た場合はこのページに残席が表示されます。
+  </p>
+
+  <template data-wcs="if: booking.done">
+    <div class="booking-done" role="alert">
+      <h3>予約を受け付けました</h3>
+      <p>予約番号 <strong class="booking-id" data-wcs="textContent: booking.result.id"></strong></p>
+      <p>お支払い合計 <strong data-wcs="textContent: booking.result.total|locale"></strong>円（当日、受付でお支払いください）</p>
+      <p>確認のメールをお送りしました。予約番号は当日受付でお伝えください。</p>
+      <p><button type="button" data-wcs="onclick: bookingAgain">続けて別の予約をする</button></p>
+    </div>
+  </template>
+  <template data-wcs="else:">
+    <form class="booking-form" id="booking-form" novalidate hx-boost="false"
+      data-leave-message="入力中の予約内容は送信されていません。このページを離れますか？"
+      data-wcs="onsubmit#prevent: bookingSubmit; attr.data-dirty: booking.dirtyAttr">
+      <!-- hx-boost="false" is a guard: inside this else: branch htmx never processes the form (wcstack renders it from a
+           <template> after htmx has processed the fragment), but if the form is moved out of the branch, the boosted
+           body would make htmx post it itself (friction-log F10). -->
+      <p class="booking-intro">チケットの枚数を選び、参加される方全員のお名前をご記入ください。各券種6枚までお申し込みいただけます。</p>
+
+      <fieldset class="tickets">
+        <legend>チケット</legend>
+        <p class="ticket-row">
+          <label for="t-adult">大人（{{priceAdult}}）</label>
+          <select id="t-adult" data-wcs="value: booking.adultCount">
+            <option value="0">0枚</option><option value="1">1枚</option><option value="2">2枚</option><option value="3">3枚</option><option value="4">4枚</option><option value="5">5枚</option><option value="6">6枚</option>
+          </select>
+        </p>
+        <p class="ticket-row">
+          <label for="t-child">子ども（{{priceChild}}・小学生以下）</label>
+          <select id="t-child" data-wcs="value: booking.childCount">
+            <option value="0">0枚</option><option value="1">1枚</option><option value="2">2枚</option><option value="3">3枚</option><option value="4">4枚</option><option value="5">5枚</option><option value="6">6枚</option>
+          </select>
+        </p>
+        <p class="ticket-row">
+          <label for="t-senior">シニア（{{priceSenior}}・65歳以上）</label>
+          <select id="t-senior" data-wcs="value: booking.seniorCount">
+            <option value="0">0枚</option><option value="1">1枚</option><option value="2">2枚</option><option value="3">3枚</option><option value="4">4枚</option><option value="5">5枚</option><option value="6">6枚</option>
+          </select>
+        </p>
+        <p class="field-error" data-wcs="textContent: booking.errors.tickets"></p>
+        <p class="total">合計 <strong id="booking-total"><!--@@: booking.total|locale-->円</strong>（<!--@@: booking.count-->枚）</p>
+      </fieldset>
+
+      <fieldset class="attendees">
+        <legend>参加される方のお名前</legend>
+        <p class="hint" data-wcs="hidden: booking.hasTickets">枚数を選ぶと、ここにお名前の欄が表示されます。</p>
+        <p class="field-error" data-wcs="textContent: booking.errors.attendees"></p>
+        <ol class="attendee-list">
+          <template data-wcs="for: booking.attendees">
+            <li class="attendee">
+              <label data-wcs="attr.for: .inputId">参加者 <!--@@: .number-->（<span data-wcs="hidden: .notAdult">大人</span><span data-wcs="hidden: .notChild">子ども</span><span data-wcs="hidden: .notSenior">シニア</span>）</label>
+              <input type="text" class="attendee-name" autocomplete="off"
+                data-wcs="attr.id: .inputId; value: .name; attr.aria-invalid: .invalid; attr.aria-describedby: .errorId">
+              <button type="button" class="remove" data-wcs="onclick: bookingRemoveAttendee">この券を外す</button>
+              <p class="field-error" data-wcs="attr.id: .errorId; textContent: .error"></p>
+            </li>
+          </template>
+        </ol>
+      </fieldset>
+
+      <fieldset class="contact">
+        <legend>代表者の連絡先</legend>
+        <p>
+          <label for="b-name">お名前</label>
+          <input id="b-name" type="text" autocomplete="name" aria-describedby="b-name-error"
+            data-wcs="value: booking.form.name; attr.aria-invalid: booking.nameInvalid">
+          <span class="field-error" id="b-name-error" data-wcs="textContent: booking.errors.name"></span>
+        </p>
+        <p>
+          <label for="b-phone">電話番号</label>
+          <input id="b-phone" type="tel" autocomplete="tel" aria-describedby="b-phone-error"
+            data-wcs="value: booking.form.phone; attr.aria-invalid: booking.phoneInvalid">
+          <span class="field-error" id="b-phone-error" data-wcs="textContent: booking.errors.phone"></span>
+        </p>
+        <p>
+          <label for="b-email">メールアドレス</label>
+          <input id="b-email" type="email" autocomplete="email" aria-describedby="b-email-error"
+            data-wcs="value: booking.form.email; attr.aria-invalid: booking.emailInvalid">
+          <span class="field-error" id="b-email-error" data-wcs="textContent: booking.errors.email"></span>
+        </p>
+      </fieldset>
+
+      <div class="form-messages" role="alert">
+        <p class="form-error" data-wcs="hidden: booking.soldOutAll|not" hidden>申し訳ありません。お申し込みの間にこのイベントは満席になりました。</p>
+        <p class="form-error" data-wcs="hidden: booking.soldOutSome|not" hidden>申し訳ありません。残りの席が <!--@@: booking.remainingLeft--> 席になりました。枚数を減らしてお申し込みください。</p>
+        <p class="form-error" data-wcs="hidden: booking.failedOffline|not" hidden>通信できませんでした。ネットワークの接続を確かめて、もう一度お試しください。入力した内容はそのまま残っています。</p>
+        <p class="form-error" data-wcs="hidden: booking.failedServer|not" hidden>予約を受け付けられませんでした（エラー <!--@@: booking.failCode-->）。しばらくしてからもう一度お試しください。</p>
+      </div>
+
+      <p class="actions">
+        <button type="submit" class="primary" data-wcs="disabled: bookingBlocked">
+          <span data-wcs="hidden: booking.sending">予約する</span><span data-wcs="hidden: booking.notSending" hidden>送信中…</span>
+        </button>
+      </p>
+    </form>
+  </template>
+</div>

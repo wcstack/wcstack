@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}}</title>
+  <link rel="stylesheet" href="/inn.css">
+  <script type="module" src="/vendor/turbo.js"></script>
+  <!-- the inn's own wcstack, for its contact form -->
+  <script type="module" src="https://esm.run/@wcstack/state@4.17.0/auto"></script>
+</head>
+<body>
+  <header class="inn-header">
+    <p class="inn-name"><a href="/">旅館みどり荘</a></p>
+    <nav aria-label="メニュー">
+      <a href="/" aria-current="{{navTop}}">トップ</a>
+      <a href="/stay" aria-current="{{navStay}}">ご宿泊プラン</a>
+      <a href="/events" aria-current="{{navEvents}}">周辺のイベント</a>
+    </nav>
+  </header>
+  <main id="main">
+{{{content}}}
+  </main>
+
+  <footer class="inn-footer">
+    <h2>お問い合わせ</h2>
+    <wcs-state>
+      <script type="module">
+        export default {
+          // the inn's CMS writes {{ }} too: none of it is a binding
+          $behavior: { enableMustache: false },
+          name: "",
+          message: "",
+          sent: false,
+          get canSend() { return this.name.trim() !== "" && this.message.trim() !== ""; },
+          get cannotSend() { return !this.canSend; },
+          get notSent() { return !this.sent; },
+          send() { if (this.canSend) { this.sent = true; } },
+          reset() { this.name = ""; this.message = ""; this.sent = false; },
+        };
+      </script>
+    </wcs-state>
+    <form id="contact" data-turbo="false" data-wcs="onsubmit#prevent: send">
+      <p><label>お名前 <input id="contact-name" data-wcs="value: name"></label></p>
+      <p><label>ご用件 <textarea id="contact-message" data-wcs="value: message"></textarea></label></p>
+      <p><button type="submit" id="contact-send" data-wcs="disabled: cannotSend">送信</button></p>
+      <p id="contact-done" data-wcs="hidden: notSent" hidden>お問い合わせを受け付けました（<span data-wcs="textContent: name"></span> 様）。 <button type="button" id="contact-reset" data-wcs="onclick: reset">新しいお問い合わせ</button></p>
+    </form>
+    <p>旅館みどり荘 みどり市温泉町2-3 電話 0277-11-2222</p>
+  </footer>
+</body>
+</html>
