@@ -319,5 +319,5 @@ D6 は「同期。挿入直後に初期値が入っていないと 1 フレー�
 
 **state の実装**: `@wcstack/state/features/release`（full の入口に入る）。部分木の中のノードの root 級の束縛を外し、`for:` / `if:` の view を片付ける（行が消えるときと同じ `dispose`）。イベントのハンドラはノードが持ち、`command.` の購読は要素を弱く持つので、ノードと一緒に消える。add-on は `<wcs-state>` の定義より先に入れば自分がスロットの binder になり、後から入れば（分割の features）この写しの binder に `release` を足して版を 2 にする（別の写しの binder には触れない）。core のバイトは増えない。
 
-**呼び方の例（htmx）**: 渡した最上位の要素だけを覚え、`htmx:beforeCleanupElement` でその要素だけを手放す（このイベントは捨てる部分木のすべての要素で起きるので、全部に呼ぶと無駄が大きい）。state README「Inserting markup yourself」と [islands.md](./islands.md)。
+**呼び方の例（htmx）**: `htmx:beforeCleanupElement` で、入れ替える領域の直下の子だけを手放す — 渡したものも、サーバーが最初に描いた（ページの走査が束縛した）ものも（このイベントは捨てる部分木のすべての要素で起きるので、全部に呼ぶと無駄が大きい）。渡した要素だけを覚える形では、最初に描いた中身が残る（community-hall の取り込みで見つけた）。state README「Inserting markup yourself」と [islands.md](./islands.md)。
 

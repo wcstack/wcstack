@@ -952,21 +952,21 @@ Markup another library puts into a bound page — htmx's swaps, a Turbo frame, y
 
 ```js
 // htmx: htmx:load fires for each element a swap inserted; htmx:beforeCleanupElement for each it removes
+const REGIONS = "#results, #booking";   // the regions the page's htmx swaps into
 const binder = () => globalThis[Symbol.for("wcstack.binder")];
-const handed = new WeakSet();
 document.addEventListener("htmx:load", (e) => {
-  handed.add(e.detail.elt);
-  binder()?.bind(e.detail.elt);
+  if (e.detail.elt.parentElement?.closest(REGIONS)) binder()?.bind(e.detail.elt);
 });
 document.addEventListener("htmx:beforeCleanupElement", (e) => {
-  if (handed.has(e.detail.elt)) binder()?.release?.(e.detail.elt);
+  // a region's own children — what the server rendered there first too, which the page walk bound
+  if (e.detail.elt.parentElement?.matches(REGIONS)) binder()?.release?.(e.detail.elt);
 });
 ```
 
 - **Hand over the new nodes, not their container.** An element the page walk already visited is left alone when it is handed over again, and so is everything in it, the children inserted since included: `bind(document.querySelector("#results"))` after a swap into `#results` binds nothing. Hand over each inserted element (htmx's `htmx:load` names each one).
 - **A `for:` / `if:` template at the top of what you hand over** is rendered only with `bind(node, { range: true })`, when you carry its rows in and out with it ([Structural templates in inserted content](#structural-templates-in-inserted-content)); otherwise put it inside an element.
 - **The binder is there once `@wcstack/state` has loaded** (`/auto`, or `bootstrapState()`); before that the slot is `undefined`. What is inserted before then, and still in the page, is bound by the first walk.
-- **Let go of what you throw away for good.** The bindings of a handed-over subtree live as long as the root's state: a page that replaces its search results for an hour kept every set it ever showed, and each change wrote into all of them. Since 4.20, `release(subtree)` (binder protocol version 2; the `release` add-on, in `@wcstack/state` and `/auto` — a `/core` page installs `@wcstack/state/features/release`) unregisters them and disposes the subtree's `for:` / `if:` views. Call it before or after the subtree leaves the page. Released nodes are not bound again: hand over new markup. Do not release what you put back later (a panel you hide and show again) — only the inserter knows that content is gone for good, which is why `@wcstack/router` never calls it.
+- **Let go of what you throw away for good.** The bindings of a handed-over subtree live as long as the root's state: a page that replaces its search results for an hour kept every set it ever showed, and each change wrote into all of them. Since 4.20, `release(subtree)` (binder protocol version 2; the `release` add-on, in `@wcstack/state` and `/auto` — a `/core` page installs `@wcstack/state/features/release`) unregisters them and disposes the subtree's `for:` / `if:` views. Call it before or after the subtree leaves the page, and for what the page walk bound in a region as well (the server's first content there) — release takes whatever is bound under the node, handed over or not. Released nodes are not bound again: hand over new markup. Do not release what you put back later (a panel you hide and show again) — only the inserter knows that content is gone for good, which is why `@wcstack/router` never calls it.
 - **A copy of a bound page is not markup.** A history cache that restores a page as it was drawn — htmx's history (`hx-history`), Turbo's snapshot cache — brings back the rows and texts state rendered, with no `<template>` left to render from and no comment binding left to update: the page looks right and never changes. Turn that cache off for those pages (`hx-history="false"` on `<body>`; `<meta name="turbo-cache-control" content="no-cache">`), so that Back loads the page from the server. Since 4.20 the `diagnostics` add-on warns when a root binds such a copy (`[wcs/rendered-copy]`).
 - **Another library's attributes inside a `for:` / `if:` template** are cloned with its rows, after that library processed the page: htmx does not see an `hx-get` in a row unless `htmx.process()` is called on it.
 

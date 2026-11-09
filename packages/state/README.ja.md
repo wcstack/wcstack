@@ -943,21 +943,21 @@ this.items = await (await fetch("/api/items")).json();
 
 ```js
 // htmx: htmx:load は入れ替えが入れた要素ごとに、htmx:beforeCleanupElement は外す要素ごとに起きる
+const REGIONS = "#results, #booking";   // ページの htmx が入れ替える領域
 const binder = () => globalThis[Symbol.for("wcstack.binder")];
-const handed = new WeakSet();
 document.addEventListener("htmx:load", (e) => {
-  handed.add(e.detail.elt);
-  binder()?.bind(e.detail.elt);
+  if (e.detail.elt.parentElement?.closest(REGIONS)) binder()?.bind(e.detail.elt);
 });
 document.addEventListener("htmx:beforeCleanupElement", (e) => {
-  if (handed.has(e.detail.elt)) binder()?.release?.(e.detail.elt);
+  // 領域の直下の子 — サーバーが最初に描いた（ページの走査が束縛した）ものも
+  if (e.detail.elt.parentElement?.matches(REGIONS)) binder()?.release?.(e.detail.elt);
 });
 ```
 
 - **入れ物ではなく、新しいノードを渡します。** ページの走査が一度歩いた要素は、渡し直されても、その中身ごと —— あとから入った子も含めて —— そのままです: `#results` への入れ替えの後に `bind(document.querySelector("#results"))` としても何も束縛されません。入れた要素を 1 つずつ渡してください（htmx の `htmx:load` が 1 つずつ教えます）。
 - **渡すものの最上位にある `for:` / `if:` のテンプレート**は、その行を一緒に出し入れする場合に `bind(node, { range: true })` で渡したときだけ描かれます（[挿入された内容の中の構造テンプレート](#挿入された内容の中の構造テンプレート)）。そうでなければ要素で包んでください。
 - **binder は `@wcstack/state` を読み込んだ時点で現れます**（`/auto`、または `bootstrapState()`）。それまでスロットは `undefined` です。それより前に入り、そのときもページにあるものは、最初の走査が束縛します。
-- **捨てるものは手放します。** 渡した部分木の束縛は、ルートの状態が続く限り残ります: 検索結果を 1 時間入れ替え続けたページは、それまでに出したすべての結果を持ち続け、変更のたびにそのすべてへ書き込んでいました。4.20 から、`release(subtree)`（binder プロトコルの版 2。`release` add-on —— `@wcstack/state` と `/auto` に入っています。`/core` のページは `@wcstack/state/features/release` を入れます）が、それらの登録を外し、部分木の `for:` / `if:` の view を片付けます。部分木がページを出る前でも後でも呼べます。手放したノードは束縛し直されません: 新しいマークアップを渡してください。あとで戻すもの（隠してまた見せるパネル）は手放さないでください —— 中身がもう戻らないと知っているのは入れた側だけで、`@wcstack/router` が決して呼ばないのはそのためです。
+- **捨てるものは手放します。** 渡した部分木の束縛は、ルートの状態が続く限り残ります: 検索結果を 1 時間入れ替え続けたページは、それまでに出したすべての結果を持ち続け、変更のたびにそのすべてへ書き込んでいました。4.20 から、`release(subtree)`（binder プロトコルの版 2。`release` add-on —— `@wcstack/state` と `/auto` に入っています。`/core` のページは `@wcstack/state/features/release` を入れます）が、それらの登録を外し、部分木の `for:` / `if:` の view を片付けます。部分木がページを出る前でも後でも呼べ、領域の中でページの走査が束縛したもの（サーバーが最初に描いた中身）にも使えます — release はノードの下に束縛されているものを、渡したかどうかに関係なく手放します。手放したノードは束縛し直されません: 新しいマークアップを渡してください。あとで戻すもの（隠してまた見せるパネル）は手放さないでください —— 中身がもう戻らないと知っているのは入れた側だけで、`@wcstack/router` が決して呼ばないのはそのためです。
 - **束縛済みのページの写しはマークアップではありません。** 描いたままのページを戻す履歴のキャッシュ —— htmx の履歴（`hx-history`）、Turbo のスナップショットのキャッシュ —— は、状態が描いた行と文字を戻しますが、描き直す元の `<template>` も、更新するコメントの束縛も残っていません: 見た目は正しく、二度と変わりません。そのページではキャッシュを切り（`<body>` に `hx-history="false"`、`<meta name="turbo-cache-control" content="no-cache">`）、戻るでサーバーからページを読み込ませてください。4.20 から、`diagnostics` add-on は、ルートがそのような写しを束縛するときに警告します（`[wcs/rendered-copy]`）。
 - **`for:` / `if:` のテンプレートの中の、別のライブラリの属性**は、そのライブラリがページを処理した後で行と一緒に複製されます: 行の中の `hx-get` は、その行に `htmx.process()` を呼ばない限り htmx に見えません。
 
