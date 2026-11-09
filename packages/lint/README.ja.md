@@ -101,7 +101,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 ## ページの wcstack のスクリプトと lint の版
 
-4.11 から、2 つの検査がページの読み込む wcstack のスクリプトを見ます。4.20 から 3 つ目が加わります。4.21（未リリース）から `wcs/tag-package-missing` は error なので、`--errors-only` でも落ちます（4.20 までは warning で、`--errors-only` に隠れていました）。残りの 2 つは warning なので、`--strict` では落ち、`--errors-only` では落ちません。
+4.11 から、2 つの検査がページの読み込む wcstack のスクリプトを見ます。4.20 から 3 つ目が加わります。4.21 から `wcs/tag-package-missing` は error なので、`--errors-only` でも落ちます（4.20 までは warning で、`--errors-only` に隠れていました）。残りの 2 つは warning なので、`--strict` では落ち、`--errors-only` では落ちません。
 
 - **`wcs/tag-package-missing`** — wcstack を自分で読み込むページが、あるパッケージの `wcs-*` のタグ（`<wcs-upload>` やそのヘルパー `<wcs-upload-header>`、`<wcs-state>`・`<wcs-router>` など）を書くのに、そのパッケージのスクリプトを読み込んでいない。要素は定義されず、束縛は待ち続けて何も起きず、コンソールにも何も出ません。パッケージごとに 1 回、最初のタグに、読み込む `/auto` を挙げて報告します。読み込んだと数えるのは、`<script src>`・import map の項目・インラインのスクリプトの import か文字列が `@wcstack/<pkg>`（版・CDN・ローカルのパスを問わない）か一括バンドル `wcstack`（state・router・fetch・storage・autoloader）を名指すものです。ローカルのスクリプト（`./app.js`）は、それが import する相対のモジュールとともに読み、名指すものを数えます。wcstack を自分で読み込まないページ（断片・バンドラのページ）、autoloader がいて `@components/` の import map が覆うタグ、読めないローカルのスクリプトがあるページでは報告しません。
 - **`wcs/link-router-missing`**（4.20 から） — router（か一括バンドル `wcstack`）を読み込むのに `<wcs-router>` の無いページの `<wcs-link to="/…">`。リンクは接続した時点で `[@wcstack/router] wcs-link is not connected to a router.` を投げ、隠れたまま（`display: none`）になります。router の無いページ — サーバーが描き、アイランドを置いたページ — では `<a href>` と書くか、`<wcs-router>` を置いてください。ページに 1 回、最初のそうしたリンクに報告します。見るのは `wcs/tag-package-missing` と同じページ（wcstack を自分で読み込むページ）だけです: 断片 — ルートの中身・router のページが取り込むレイアウトのファイル — は wcstack のスクリプトを読み込まないので報告せず、HTML コメントの外のどこかで `wcs-router` を名指すページ（`<template>` の中の `<wcs-router>`・それを作るスクリプトも）、router が無くても描かれる URL やクエリ（`?page=2`）の `to` も報告しません。
@@ -109,7 +109,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 ## ページを直す保守担当に言うこと
 
-4.21（未リリース）から、継ぎ目アプリ ledger-repair — 目録の誤りを 10 件入れた家計簿を、外の保守担当がコンソール・この lint・DevTools のオーバーレイ・文書で直した — から:
+4.21 から、継ぎ目アプリ ledger-repair — 目録の誤りを 10 件入れた家計簿を、外の保守担当がコンソール・この lint・DevTools のオーバーレイ・文書で直した — から:
 
 - **`wcs/submit-without-prevent` と `wcs/tag-package-missing` は error です。** 報告するところでは必ず不具合です — フォームも自分を送る（router があれば GET がパスワードを URL に載せる）、要素がけっして定義されない — が、warning だったので `--errors-only` に隠れていました。`wcs/binding-path-missing` は warning のままです: `stateSchema` が無いと、値が外から届くこともあるためです。
 - **`wcs/session-read-at-module-top`** — `<wcs-guard-handler>` のモジュール（error）や `<wcs-state>` のモジュール（インライン・`src=`。warning）のトップレベルでの `localStorage` / `sessionStorage` / `document.cookie` の読み。router はガードのモジュールを 1 回だけ評価し、export した関数を遷移のたびに走らせるので、関数の外でセッションを読むガードは、ページを読み込んだ時点のセッションを持ち続けます: ログインの後も、守られたページはすべて /login へ戻り、何も知らせませんでした。関数の中で読んでください。関数の中（そこから呼ぶ補助関数・getter・メソッド）の読みは報告しません。

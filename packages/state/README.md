@@ -3162,9 +3162,9 @@ The check **under-approximates**: it stays silent for anything it cannot decide 
 
 - A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
 - An empty object under a key (`fieldErrors: {}`, filled later with `this.fieldErrors = { date: "…" }`) — the same shape, seeded `{}`. Since 4.10; up to 4.9 each binding below it was reported, and its "updates … will be silently dropped" was not so: replacing the object updates them. The lint reads those assignments since 4.9
-- Row fields of a list that is empty (the row shape is unknown) — since 4.21 (not released yet) they are checked once the list gets rows; up to 4.20 a list that started empty (rows a fetch brings later) was never checked
+- Row fields of a list that is empty (the row shape is unknown) — since 4.21 they are checked once the list gets rows; up to 4.20 a list that started empty (rows a fetch brings later) was never checked
 - A row field no row has, unless a row has a near name (a likely typo, `.nmae` beside `name`) — rows are data, and an optional field (a `pending` the page puts on its own rows) is absent from the others. Since 4.4; the first row lacking a field another row has does not warn either (4.3)
-- Sub-properties of an intermediate getter's return value — except the rows of a getter that returns a list (`get rows()` with `for: rows`): since 4.21 (not released yet) a row field is checked against the rows the getter returns, as a data list's (a near name only). Up to 4.20 a typo there (`.amountLabl`) was silent
+- Sub-properties of an intermediate getter's return value — except the rows of a getter that returns a list (`get rows()` with `for: rows`): since 4.21 a row field is checked against the rows the getter returns, as a data list's (a near name only). Up to 4.20 a typo there (`.amountLabl`) was silent
 - Paths under the mount path of a volume that is still loading — they are checked once it settles
 - Reserved `$` namespaces (`$command.*` and friends)
 - Keys under an object an element writes — the router's `searchParams: query` has the URL's keys, so `query.next` is there only when the URL has it. Since 4.10; up to 4.9 such a binding was reported as "silently dropped"

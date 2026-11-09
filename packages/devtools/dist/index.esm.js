@@ -1,4 +1,4 @@
-var pkg = {"name":"@wcstack/devtools","version":"4.20.0"};
+var pkg = {"name":"@wcstack/devtools","version":"4.21.0"};
 
 /**
  * protocol/types.ts
@@ -206,13 +206,35 @@ function formatArgs(args) {
  * - registry への addListener / 解除（connect / disconnect）
  * - source 管理と roster（state 要素一覧）の維持
  * - 配線台帳（binding-added/removed イベントから構築。binding は WeakRef 保持）
- * - タイムライン ring buffer（既定 500 件 FIFO）
+ * - タイムライン ring buffer（既定 500 件 FIFO）と、失敗の行だけの ring buffer（isFailureKind）
+ * - 解決しないと報告されたパスの台帳（配線の行の印 — getUnresolvedReport）
  * - 予約 prefix `wcs-devtools` の自己除外（protocol §5）
  *
  * 台帳はすべて devtools 側に置く（protocol 原則 2）。disconnect で
  * sources / roster / wiring をクリアし、残留参照を持たない。
  */
 const DEFAULT_TIMELINE_CAPACITY = 500;
+/**
+ * 失敗の種別。どれもランタイムが console に出すだけで続行する種類 — 握った throw（watch / binding の
+ * 適用）、打ち切った連鎖、解決しないパス、実物とずれた契約。ledger-repair（継ぎ目アプリ）では、ログイン
+ * から月のページまでの 72 行の中に `binding-apply-error` が 2 行あり、write / batch に埋もれて
+ * 「失敗は出ない」と読まれた。そこで shell はこれを数えてバッジとヘッダーに出し、timeline を失敗だけに
+ * 絞れるようにする。購読者 0 の command / event（空撃ち）は warn 表示のままで数えない — 誰も聞いて
+ * いない event は意図どおりのことが多く、種別でもない（subscriberCount の性質）。
+ */
+const FAILURE_KINDS = new Set([
+    "watch-error",
+    "watch-chain-limit",
+    "render-chain-limit",
+    "path-unresolved",
+    "binding-apply-error",
+    "propagation-hop-limit",
+    "contract-drift",
+]);
+/** timeline のこの種別が失敗か（バッジの数・失敗だけの表示の対象）。 */
+function isFailureKind(kind) {
+    return FAILURE_KINDS.has(kind);
+}
 /** 台帳キーの区切り文字（state 名・パスに現れ得ない NUL）。
  *  エスケープ表記でなく生成式にしているのは、ツーリングがソース中の
  *  `エスケープ列` リテラルを生バイトへ壊す事故が実際に起きたため。 */
@@ -280,6 +302,16 @@ class DevtoolsCore {
     _wiringByPathKey = new Map();
     _wiringEntryByBinding = new WeakMap();
     _timeline = [];
+    /**
+     * 失敗の行（isFailureKind）だけの ring buffer（容量は timeline と同じ）。timeline からは write /
+     * batch の流れで押し出される（毎フレーム書くページなら数秒で）が、失敗は失敗にしか押し出されない。
+     * ⏸ の間も記録する — 止めるのは活動の記録で、失敗を黙らせることではない（カバレッジの実測と同じ）。
+     */
+    _failures = [];
+    /** 観測開始（または 🗑）以降の失敗の数。_failures から押し出された分も数える。 */
+    _failureCount = 0;
+    /** 解決しないと報告されたパス（パス → 報告の列）。配線の行の印に使う。 */
+    _unresolved = new Map();
     _seq = 0;
     _paused = false;
     _changeListeners = new Set();
@@ -350,6 +382,7 @@ class DevtoolsCore {
         this._watchFiredStats.clear();
         this._tokenEmitStats.clear();
         this._everAttachedKeys.clear();
+        this._unresolved.clear();
         this._notify("sources");
         this._notify("roster");
         this._notify("wiring");
@@ -385,9 +418,46 @@ class DevtoolsCore {
     getTimeline() {
         return this._timeline;
     }
+    /** 失敗の行（新しいものから timeline の容量まで。write / batch には押し出されない）。 */
+    getFailures() {
+        return this._failures;
+    }
+    /** 観測開始（または clearTimeline）以降の失敗の数。getFailures() から押し出された分も含む。 */
+    get failureCount() {
+        return this._failureCount;
+    }
+    /** timeline と失敗の行をクリアする（解決しないパスの台帳は残す — IUnresolvedPath を参照）。 */
     clearTimeline() {
         this._timeline = [];
+        this._failures = [];
+        this._failureCount = 0;
         this._notify("timeline");
+    }
+    /**
+     * 配線 1 行のパスが「解決しない」と報告されていれば、その報告（無ければ null）。突き合わせは
+     * 報告されたままのパス（ワイルドカード形 `rows.*.amountLabl` — 配線の path と同じ形）と、報告した
+     * source。報告と配線の両方がツリーの識別を持つときはツリーも合わせる（複数ツリーの同名パスを
+     * 混ぜない — getWiringForPath と同じ流儀）。
+     *
+     * ランタイムの検査は控えめで（getter が返したリストの行・空のリスト・null の親は黙る —
+     * protocol §4.3.2）、ここに無いことは配線が正しいことを意味しない。
+     */
+    getUnresolvedReport(entry) {
+        const records = this._unresolved.get(pathKeyOf(entry.path));
+        if (records === undefined) {
+            return null;
+        }
+        const tree = entry.stateElementRef?.deref();
+        for (const record of records) {
+            if (record.sourceId !== entry.sourceId) {
+                continue;
+            }
+            if (record.stateElementRef !== null && tree !== undefined && record.stateElementRef.deref() !== tree) {
+                continue;
+            }
+            return record;
+        }
+        return null;
     }
     /**
      * 指定パスに束縛された配線（生存している binding のみ）。
@@ -701,19 +771,45 @@ class DevtoolsCore {
         return alive;
     }
     _appendTimeline(entry) {
-        if (this._paused) {
+        const failure = isFailureKind(entry.kind);
+        // ⏸ が止めるのは活動の記録。失敗は止めない（_failures の注記）
+        if (this._paused && !failure) {
             return;
         }
-        this._timeline.push({
+        const full = {
             ...entry,
             seq: this._seq++,
             time: performance.now(),
-        });
-        const overflow = this._timeline.length - this._timelineCapacity;
-        if (overflow > 0) {
-            this._timeline.splice(0, overflow);
+        };
+        if (failure) {
+            this._failureCount++;
+            this._pushBounded(this._failures, full);
+        }
+        if (!this._paused) {
+            this._pushBounded(this._timeline, full);
         }
         this._notify("timeline");
+    }
+    _pushBounded(buffer, entry) {
+        buffer.push(entry);
+        const overflow = buffer.length - this._timelineCapacity;
+        if (overflow > 0) {
+            buffer.splice(0, overflow);
+        }
+    }
+    _recordUnresolved(sourceId, event) {
+        const key = pathKeyOf(event.path);
+        // GC 済みツリーの報告はここで落とす（部品を作っては捨てるページで同じパスの報告が溜まらない）
+        const records = (this._unresolved.get(key) ?? []).filter((record) => record.stateElementRef === null || record.stateElementRef.deref() !== undefined);
+        const element = event.stateElement;
+        records.push({
+            sourceId,
+            source: event.source,
+            path: event.path,
+            missingSegment: event.missingSegment,
+            stateElementRef: typeof element === "object" && element !== null ? new WeakRef(element) : null,
+        });
+        this._unresolved.set(key, records);
     }
     _labelOf(address) {
         const indexes = address.listIndex?.indexes;
@@ -906,6 +1002,10 @@ class DevtoolsCore {
             case "state:path-unresolved": {
                 // ランタイムは warn で続行する（既存ページを止めないため）。lint を
                 // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
+                // timeline の行とは別に台帳へ積み、Wiring ペイン（pick）の行に印を付ける
+                // （ledger-repair: pick が `textContent ← rows.*.amountLabl` を印なしで並べた）。
+                this._recordUnresolved(sourceId, event);
+                this._notify("wiring");
                 this._appendTimeline({
                     sourceId,
                     kind: "path-unresolved",
@@ -1108,6 +1208,24 @@ const STYLE_TEXT = /* css */ `
   font-weight: 700;
   cursor: pointer;
 }
+/* Failures since the panel started observing (or since 🗑): a red count on the badge's corner.
+   With none the badge stays as it always was. */
+.badge.has-failures { border-color: #c0563f; }
+.badge-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+.badge-count[hidden] { display: none; }
 .panel {
   position: fixed;
   display: flex;
@@ -1161,6 +1279,10 @@ header select, header button {
   cursor: pointer;
 }
 header button[aria-pressed="true"] { background: #2b5d8f; }
+/* The failure count, which also toggles the timeline to failures only. Dim with none, red with some. */
+header > button.failures { opacity: .7; }
+header > button.failures.has-failures { opacity: 1; background: #6a3326; color: #ffb3a0; border-color: #a0503a; }
+header > button.failures[aria-pressed="true"] { box-shadow: inset 0 0 0 1px #ffb3a0; }
 .panes { display: flex; flex: 1; min-height: 0; }
 .pane { flex: 1; min-width: 0; overflow: auto; padding: 6px 8px; border-right: 1px solid #1d3a5c; }
 .pane:last-child { border-right: none; }
@@ -1254,6 +1376,13 @@ class WcsDevtools extends HTMLElement {
     _paneElements = {};
     /** Wiring ペインの表示モード（配線一覧 / カバレッジ突合）。 */
     _wiringView = "wiring";
+    /** Timeline ペインを失敗の行（isFailureKind）だけに絞っているか。 */
+    _failuresOnly = false;
+    /** バッジ右上の失敗の数（無ければ hidden）。 */
+    _badgeCount = null;
+    /** ヘッダーの失敗の数（押すと失敗だけの表示に切り替わる）。 */
+    _failuresButton = null;
+    _timelineHeading = null;
     _highlightLayer = null;
     _dirtyPanes = new Set();
     _renderScheduled = false;
@@ -1353,9 +1482,14 @@ class WcsDevtools extends HTMLElement {
         badge.className = "badge";
         badge.title = "wcstack DevTools";
         badge.textContent = "WCS";
+        const badgeCount = document.createElement("span");
+        badgeCount.className = "badge-count";
+        badgeCount.hidden = true;
+        badge.append(badgeCount);
         badge.addEventListener("click", () => this.toggle());
         shadow.append(badge);
         this._badge = badge;
+        this._badgeCount = badgeCount;
         const panel = document.createElement("div");
         panel.className = "panel dock-bottom";
         panel.hidden = true;
@@ -1364,6 +1498,17 @@ class WcsDevtools extends HTMLElement {
         title.className = "title";
         title.textContent = "wcstack devtools";
         header.append(title);
+        // 失敗の数。tools の外に置くのは、右ドック（420px）で tools が横スクロールに縮んでも
+        // 見えているため。押すと Timeline が失敗の行だけになる（もう一度押すと戻る）
+        const failuresButton = this._headerButton(header, "0 failures", "show only failures in the timeline");
+        failuresButton.classList.add("failures");
+        failuresButton.dataset["role"] = "failures";
+        failuresButton.addEventListener("click", () => {
+            this._failuresOnly = !this._failuresOnly;
+            failuresButton.setAttribute("aria-pressed", String(this._failuresOnly));
+            this._markDirty("timeline");
+        });
+        this._failuresButton = failuresButton;
         // 中間のグループ（ツリー選択・pick・⏸・🗑）。幅が足りないときはここが縮んで横に
         // スクロールし、dock と × はヘッダーの右端に残る
         const tools = document.createElement("div");
@@ -1432,6 +1577,9 @@ class WcsDevtools extends HTMLElement {
             pane.append(h3, body);
             panes.append(pane);
             this._paneElements[name] = body;
+            if (name === "timeline") {
+                this._timelineHeading = h3;
+            }
         }
         // 押している間に State ペインを描き直すと、押した行が消えてクリックが成立しない
         // （値が毎フレーム変わるページ）。離すまで待つ
@@ -1574,6 +1722,8 @@ class WcsDevtools extends HTMLElement {
             this._renderWiringPane();
         }
         if (dirty.has("timeline")) {
+            // 数はパネルが閉じていても描く — 閉じたバッジに出すのが目的
+            this._renderFailureCount();
             this._renderTimelinePane();
         }
     }
@@ -2078,7 +2228,20 @@ class WcsDevtools extends HTMLElement {
         const type = document.createElement("span");
         type.className = "badge-tag";
         type.textContent = entry.bindingType;
-        row.append(type, document.createTextNode(" "), prop, arrow, path);
+        row.append(type, document.createTextNode(" "));
+        // ランタイムが「解決しない」と報告したパスなら印を付ける（ledger-repair: pick が
+        // `textContent ← rows.*.amountLabl` を印なしで並べ、配線が死んでいると読めなかった）。
+        // 行は折り返さず狭いペインでは右が切れるので、型バッジのすぐ後ろに置く
+        const unresolved = this._core.getUnresolvedReport(entry);
+        if (unresolved !== null) {
+            const mark = document.createElement("span");
+            mark.className = "badge-tag warn";
+            mark.textContent = "unresolved";
+            mark.title = `"${unresolved.path}" does not resolve on the state: "${unresolved.missingSegment}" is not declared`
+                + ` (reported by the runtime for a ${unresolved.source}). Updates to this path are dropped.`;
+            row.append(mark, document.createTextNode(" "));
+        }
+        row.append(prop, arrow, path);
         row.addEventListener("click", () => {
             const binding = entry.bindingRef.deref();
             if (binding !== undefined) {
@@ -2105,21 +2268,44 @@ class WcsDevtools extends HTMLElement {
         });
         return row;
     }
+    /**
+     * 失敗の数をバッジとヘッダーに描く（ledger-repair: 72 行の timeline に埋もれた 2 行の失敗が
+     * 「失敗は出ない」と読まれた）。数が 0 ならバッジは従来どおりの見た目のまま。
+     */
+    _renderFailureCount() {
+        const count = this._core.failureCount;
+        const label = `${count} failure${count === 1 ? "" : "s"}`;
+        const badge = this._badge;
+        const badgeCount = this._badgeCount;
+        badgeCount.hidden = count === 0;
+        badgeCount.textContent = count === 0 ? "" : count > 99 ? "99+" : String(count);
+        badge.classList.toggle("has-failures", count > 0);
+        badge.title = count === 0 ? "wcstack DevTools" : `wcstack DevTools — ${label}`;
+        badge.setAttribute("aria-label", badge.title);
+        const button = this._failuresButton;
+        button.textContent = count === 0 ? label : `⚠ ${label}`;
+        button.classList.toggle("has-failures", count > 0);
+    }
     _renderTimelinePane() {
         const core = this._core;
         const body = this._paneElements["timeline"];
-        const timeline = core.getTimeline();
-        const start = Math.max(0, timeline.length - TIMELINE_RENDER_LIMIT);
+        const failuresOnly = this._failuresOnly;
+        // 失敗だけの表示は失敗の ring buffer から描く（timeline から押し出された失敗も残っている）
+        const entries = failuresOnly ? core.getFailures() : core.getTimeline();
+        const start = Math.max(0, entries.length - TIMELINE_RENDER_LIMIT);
+        // 描かない分。失敗は failureCount が buffer から落ちた分も数えているので、そこから引く
+        const earlier = failuresOnly ? core.failureCount - (entries.length - start) : start;
         const rows = [];
-        if (start > 0) {
-            rows.push(this._emptyRow(`…(${start} earlier entries)`));
+        if (earlier > 0) {
+            rows.push(this._emptyRow(`…(${earlier} earlier ${failuresOnly ? "failures" : "entries"})`));
         }
-        for (let index = start; index < timeline.length; index++) {
-            rows.push(this._timelineRow(timeline[index]));
+        for (let index = start; index < entries.length; index++) {
+            rows.push(this._timelineRow(entries[index]));
         }
         if (rows.length === 0) {
-            rows.push(this._emptyRow("no activity yet"));
+            rows.push(this._emptyRow(failuresOnly ? "no failures recorded" : "no activity yet"));
         }
+        this._timelineHeading.textContent = failuresOnly ? "Timeline — failures only" : "Timeline";
         body.replaceChildren(...rows);
         body.scrollTop = body.scrollHeight;
     }
@@ -2319,5 +2505,5 @@ function bootstrapDevtools() {
     }
 }
 
-export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
+export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, isFailureKind, scanDeclaredBindings };
 //# sourceMappingURL=index.esm.js.map

@@ -29,7 +29,7 @@ command/event-token emissions.
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 ```
 
-Open the panel with the floating **WCS** badge or **Alt+Shift+D**. Since 4.21 (not released yet),
+Open the panel with the floating **WCS** badge or **Alt+Shift+D**. Since 4.21,
 the badge carries a red count when something failed on the page (see [Failures](#failures)).
 
 The auto entry defines `<wcs-devtools>` and appends one to `<body>` if the page
@@ -45,12 +45,12 @@ yourself:
 | Pane | What it shows |
 |---|---|
 | **State** | Every root state tree (one per root node, labelled by its root — v2 has no name dimension): top-level keys, expandable arrays/objects, computed getters. Click a value to edit it inline — the write goes through the normal reactive pipeline (set trap → update batch → DOM), so the page reacts exactly as if application code had written it. Click a **path** to highlight the DOM nodes bound to it. Below the tree, **Overlays** lists the mount records and **Keyed selection** the `$eq` / `$eqPath` / `$eqIndex` subscriptions per path — rows, keys, list watchers and the last value — with a `tracked` badge when the path is a getter, so every getter reading it re-evaluates (`@wcstack/state` 3.0+). While the panel is open, the pane is read again after every update batch (at most once per frame, and also while the timeline is paused); it holds still while an inline edit has focus or a pointer is pressed in it, then catches up. |
-| **Wiring** | The live binding ledger: `property ← path` rows per binding, with type badges (`text` / `prop` / `for` / …). Use **⌖ pick** to click a page element and see only its bindings. Rows highlight their bound nodes on click. Since 4.21 (not released yet), a row whose path the runtime reported as not resolving (`state:path-unresolved`, matched by the path as reported — `rows.*.amountLabl` — and the runtime that reported it) carries an **`unresolved`** badge; its tooltip names the segment that is not declared. The runtime's check stays silent where it cannot tell (a sub-property of a getter's value other than the rows of a list, a `null` parent; up to `@wcstack/state` 4.20 also a row of a list a getter returns and a list that is still empty — 4.21 checks those), so a row without the badge is not proof that its path resolves — `npx @wcstack/lint` reads those. The **coverage** toggle compares what the state declares with what has happened since the panel started observing: each `$watch` key (`fired` ×n / `never`), each command and event token (`emitted` ×n / `never` / `emitted-unheard` — every emit had zero subscribers) and each declared binding (`attached` / `never-attached`). With `@wcstack/state` 3.x, a wildcard row watch whose list has no `for` binding and no `$listKeys` declaration shows `prerequisite-missing` instead of `never` (3.x list writes do not reach such a watch); 4.0 row watches need neither, so a 4.0 page never shows it. |
-| **Timeline** | A ring buffer (default 500) of `write` (with old value when available), `batch` (deduplicated update addresses per drain), `command` / `event` token emissions (with argument summaries and subscriber counts — **zero-subscriber emissions get a warning badge**, catching wired-before-`whenDefined` races), state element registration, and the [failures](#failures) the runtime isolated or cut off (warning badges). ⏸ pauses, 🗑 clears. Since 4.21 (not released yet), the **failures** button in the header shows only the failures. |
+| **Wiring** | The live binding ledger: `property ← path` rows per binding, with type badges (`text` / `prop` / `for` / …). Use **⌖ pick** to click a page element and see only its bindings. Rows highlight their bound nodes on click. Since 4.21, a row whose path the runtime reported as not resolving (`state:path-unresolved`, matched by the path as reported — `rows.*.amountLabl` — and the runtime that reported it) carries an **`unresolved`** badge; its tooltip names the segment that is not declared. The runtime's check stays silent where it cannot tell (a sub-property of a getter's value other than the rows of a list, a `null` parent; up to `@wcstack/state` 4.20 also a row of a list a getter returns and a list that is still empty — 4.21 checks those), so a row without the badge is not proof that its path resolves — `npx @wcstack/lint` reads those. The **coverage** toggle compares what the state declares with what has happened since the panel started observing: each `$watch` key (`fired` ×n / `never`), each command and event token (`emitted` ×n / `never` / `emitted-unheard` — every emit had zero subscribers) and each declared binding (`attached` / `never-attached`). With `@wcstack/state` 3.x, a wildcard row watch whose list has no `for` binding and no `$listKeys` declaration shows `prerequisite-missing` instead of `never` (3.x list writes do not reach such a watch); 4.0 row watches need neither, so a 4.0 page never shows it. |
+| **Timeline** | A ring buffer (default 500) of `write` (with old value when available), `batch` (deduplicated update addresses per drain), `command` / `event` token emissions (with argument summaries and subscriber counts — **zero-subscriber emissions get a warning badge**, catching wired-before-`whenDefined` races), state element registration, and the [failures](#failures) the runtime isolated or cut off (warning badges). ⏸ pauses, 🗑 clears. Since 4.21, the **failures** button in the header shows only the failures. |
 
 ## Failures
 
-Since 4.21 (not released yet). A failure is something the runtime only logs to the
+Since 4.21. A failure is something the runtime only logs to the
 console and then carries on from, so the page keeps running as if nothing happened:
 
 | Timeline kind | What happened |
@@ -89,8 +89,8 @@ devtools.shadowRoot.querySelector('button[data-role="failures"]').textContent; /
 
 // the element's DevtoolsCore (null while disconnected) answers without the DOM
 devtools.core.getTimeline();   // every row: { kind, label, detail, … }
-devtools.core.failureCount;    // since 4.21 (not released yet)
-devtools.core.getFailures();   // since 4.21 (not released yet): the failure rows only
+devtools.core.failureCount;    // since 4.21
+devtools.core.getFailures();   // since 4.21: the failure rows only
 ```
 
 ## Attributes
@@ -144,7 +144,7 @@ core.getCoverageReport(); // declared × observed (the coverage view)
 core.getTimeline();    // ring buffer snapshot
 ```
 
-Since 4.21 (not released yet): `core.failureCount` and `core.getFailures()` (see
+Since 4.21: `core.failureCount` and `core.getFailures()` (see
 [Failures](#failures)), `isFailureKind(kind)` (the kinds counted as failures), and
 `core.getUnresolvedReport(wiringEntry)` (the `state:path-unresolved` report that
 matches a wiring row, or `null`).

@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/tilt","version":"4.20.0"};
+var pkg = {"name":"@wcstack/tilt","version":"4.21.0"};
 
 /**
  * tiltCapabilities.ts

@@ -304,7 +304,8 @@ interface IDevtoolsHookRegistryLike {
  * - registry への addListener / 解除（connect / disconnect）
  * - source 管理と roster（state 要素一覧）の維持
  * - 配線台帳（binding-added/removed イベントから構築。binding は WeakRef 保持）
- * - タイムライン ring buffer（既定 500 件 FIFO）
+ * - タイムライン ring buffer（既定 500 件 FIFO）と、失敗の行だけの ring buffer（isFailureKind）
+ * - 解決しないと報告されたパスの台帳（配線の行の印 — getUnresolvedReport）
  * - 予約 prefix `wcs-devtools` の自己除外（protocol §5）
  *
  * 台帳はすべて devtools 側に置く（protocol 原則 2）。disconnect で
@@ -312,6 +313,8 @@ interface IDevtoolsHookRegistryLike {
  */
 
 type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "render-chain-limit" | "path-unresolved" | "binding-apply-error" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
+/** timeline のこの種別が失敗か（バッジの数・失敗だけの表示の対象）。 */
+declare function isFailureKind(kind: TimelineKind): boolean;
 interface ITimelineEntry {
     readonly seq: number;
     readonly time: number;
@@ -320,6 +323,19 @@ interface ITimelineEntry {
     readonly label: string;
     readonly detail: string;
     readonly subscriberCount: number | null;
+}
+/**
+ * ランタイムが「解決しない」と報告したパス（`state:path-unresolved`）。配線の行に印を付けるための
+ * 台帳の 1 件 — timeline の行と違い、⏸ でも記録し 🗑 でも消さない（ランタイムは (state 要素, パス)
+ * ごとに 1 回しか報告しないので、消すと二度と戻らない）。
+ */
+interface IUnresolvedPath {
+    readonly sourceId: string;
+    /** 報告した面（`binding` / `watch` / `postUpdate` / `getter`、3.x の `scan`。未知の値もそのまま） */
+    readonly source: string;
+    /** 報告されたままのパス（ワイルドカード形 — `rows.*.amountLabl`） */
+    readonly path: string;
+    readonly missingSegment: string;
 }
 interface IRosterEntry {
     readonly sourceId: string;
@@ -381,6 +397,16 @@ declare class DevtoolsCore {
     private _wiringByPathKey;
     private _wiringEntryByBinding;
     private _timeline;
+    /**
+     * 失敗の行（isFailureKind）だけの ring buffer（容量は timeline と同じ）。timeline からは write /
+     * batch の流れで押し出される（毎フレーム書くページなら数秒で）が、失敗は失敗にしか押し出されない。
+     * ⏸ の間も記録する — 止めるのは活動の記録で、失敗を黙らせることではない（カバレッジの実測と同じ）。
+     */
+    private _failures;
+    /** 観測開始（または 🗑）以降の失敗の数。_failures から押し出された分も数える。 */
+    private _failureCount;
+    /** 解決しないと報告されたパス（パス → 報告の列）。配線の行の印に使う。 */
+    private _unresolved;
     private _seq;
     private _paused;
     private _changeListeners;
@@ -414,7 +440,22 @@ declare class DevtoolsCore {
     /** 全 source の state 要素一覧を pull で取り直す */
     refreshRoster(): void;
     getTimeline(): readonly ITimelineEntry[];
+    /** 失敗の行（新しいものから timeline の容量まで。write / batch には押し出されない）。 */
+    getFailures(): readonly ITimelineEntry[];
+    /** 観測開始（または clearTimeline）以降の失敗の数。getFailures() から押し出された分も含む。 */
+    get failureCount(): number;
+    /** timeline と失敗の行をクリアする（解決しないパスの台帳は残す — IUnresolvedPath を参照）。 */
     clearTimeline(): void;
+    /**
+     * 配線 1 行のパスが「解決しない」と報告されていれば、その報告（無ければ null）。突き合わせは
+     * 報告されたままのパス（ワイルドカード形 `rows.*.amountLabl` — 配線の path と同じ形）と、報告した
+     * source。報告と配線の両方がツリーの識別を持つときはツリーも合わせる（複数ツリーの同名パスを
+     * 混ぜない — getWiringForPath と同じ流儀）。
+     *
+     * ランタイムの検査は控えめで（getter が返したリストの行・空のリスト・null の親は黙る —
+     * protocol §4.3.2）、ここに無いことは配線が正しいことを意味しない。
+     */
+    getUnresolvedReport(entry: IWiringEntry): IUnresolvedPath | null;
     /**
      * 指定パスに束縛された配線（生存している binding のみ）。
      * stateElement を渡すとそのツリーの配線だけに絞る（v2 は名前次元が無いため、
@@ -478,6 +519,8 @@ declare class DevtoolsCore {
     private _measuredFor;
     private _collectAlive;
     private _appendTimeline;
+    private _pushBounded;
+    private _recordUnresolved;
     private _labelOf;
     private _ingest;
 }
@@ -507,6 +550,13 @@ declare class WcsDevtools extends HTMLElement {
     private _paneElements;
     /** Wiring ペインの表示モード（配線一覧 / カバレッジ突合）。 */
     private _wiringView;
+    /** Timeline ペインを失敗の行（isFailureKind）だけに絞っているか。 */
+    private _failuresOnly;
+    /** バッジ右上の失敗の数（無ければ hidden）。 */
+    private _badgeCount;
+    /** ヘッダーの失敗の数（押すと失敗だけの表示に切り替わる）。 */
+    private _failuresButton;
+    private _timelineHeading;
     private _highlightLayer;
     private _dirtyPanes;
     private _renderScheduled;
@@ -590,6 +640,11 @@ declare class WcsDevtools extends HTMLElement {
     private _scanRootOf;
     private _wiringRow;
     private _declaredRow;
+    /**
+     * 失敗の数をバッジとヘッダーに描く（ledger-repair: 72 行の timeline に埋もれた 2 行の失敗が
+     * 「失敗は出ない」と読まれた）。数が 0 ならバッジは従来どおりの見た目のまま。
+     */
+    private _renderFailureCount;
     private _renderTimelinePane;
     private _timelineRow;
     private _emptyRow;
@@ -669,5 +724,5 @@ declare global {
     }
 }
 
-export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
-export type { CoreChangeKind, CoreChangeListener, DevtoolsEventLike, DevtoolsSinkLike, IAbsoluteAddressLike, IAbsolutePathInfoLike, IBindingLike, IDeclaredBinding, IDeclaredBindingLike, IDeclaredFilterLike, IDevtoolsCoreOptions, IDevtoolsHookRegistryLike, IDevtoolsListenerLike, IDevtoolsSourceLike, IKeyedSubscriptionSummaryLike, IListIndexLike, IMountOverlaySummaryLike, IPathInfoLike, IRosterEntry, IStateElementSummaryLike, ITimelineEntry, IWiringEntry, TimelineKind };
+export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, isFailureKind, scanDeclaredBindings };
+export type { CoreChangeKind, CoreChangeListener, DevtoolsEventLike, DevtoolsSinkLike, IAbsoluteAddressLike, IAbsolutePathInfoLike, IBindingLike, IDeclaredBinding, IDeclaredBindingLike, IDeclaredFilterLike, IDevtoolsCoreOptions, IDevtoolsHookRegistryLike, IDevtoolsListenerLike, IDevtoolsSourceLike, IKeyedSubscriptionSummaryLike, IListIndexLike, IMountOverlaySummaryLike, IPathInfoLike, IRosterEntry, IStateElementSummaryLike, ITimelineEntry, IUnresolvedPath, IWiringEntry, TimelineKind };

@@ -223,6 +223,11 @@ var WcsDiagnosticCode = {
   // `command.<method>:` 束縛にも結ばれていない。emit は誰にも届かず、ランタイムは何も言わない（7GUIs の評価）。warning
   // （ページの外 — 別ファイルのルートのテンプレート — で束ねる形は見えない）。
   CommandTokenUnbound: "wcs/command-token-unbound",
+  // `$eventTokens` に宣言したのに、ドキュメントのどの `eventToken.<member>: <name>` 束縛も出さないトークン（command-token-unbound
+  // の逆）。どの要素も発火させないので `$on` のハンドラは走らず、ランタイムは何も言わない（継ぎ目アプリ ledger-repair — 束縛と
+  // ハンドラを外して `deleteFetch.status` を見た）。warning。ファイルから読むレイアウト（`<wcs-layout src>`）や、state の
+  // モジュールのほかに `eventToken.` の束縛を書くスクリプトがあるページは、見えない束縛が出しうるので黙る。root の state だけ。
+  EventTokenUnbound: "wcs/event-token-unbound",
   // state が宣言していないトップレベルのキーへの書き込み（`this.selectedID = …` と `selectedId`）。新しいキーができる
   // だけで、宣言したキーの束縛は変わらない。ランタイムは何も言わない。近い名前（打ち間違い）があるときだけ、warning。
   WritePathMissing: "wcs/write-path-missing",
@@ -360,8 +365,15 @@ var WcsDiagnosticCode = {
   DelegatedCurrentTarget: "wcs/delegated-current-target",
   // `<form data-wcs="onsubmit: login">` の `#prevent` 忘れ（ハンドラも preventDefault を呼ばない）。ブラウザが
   // フォームも送る — ページが読み直されるか、router があれば GET が欄（パスワードも）を URL と履歴に載せる
-  // （docs/seam-apps.md、router-auth）。warning（action 付きのフォームと、読めないハンドラでは黙る）。
+  // （docs/seam-apps.md、router-auth）。error（4.21 から — 4.20 までは warning で、`--errors-only` に隠れた: 継ぎ目アプリ
+  // ledger-repair）。action 付きのフォームと、読めないハンドラでは黙る。
   SubmitWithoutPrevent: "wcs/submit-without-prevent",
+  // `localStorage` / `sessionStorage` / `document.cookie` を、1 回しか評価されないモジュールのトップレベル（関数の外）で読む。
+  // `<wcs-guard-handler>` のモジュールは 1 回だけ評価され、export した関数が遷移のたびに走る（router の README）ので、ガードは
+  // 読み込みの時点のセッションで決め続ける — ログインしても守られたページはすべて /login へ戻され、何も言わない（継ぎ目アプリ
+  // ledger-repair）。ガードは error、`<wcs-state>` のモジュール（インライン・`src=`）は warning（state は読み込みの時点の値を
+  // 持ち続ける — 意図した種もありうる）。関数の中（export した関数・そこから呼ぶ補助関数・getter・メソッド）の読みは黙る。
+  SessionReadAtModuleTop: "wcs/session-read-at-module-top",
   // 4.0 で外れた API の旧名（`this.$trackDependency` → `$dependOn`、`$untrackDependency` → `$untracked`）。
   // ランタイムは読んだ時点で同じ code（#1701）で throw するので error。3.x（3.2〜3.3）では「動くが 4.0 で
   // 外れる」info だった。フィルタの旧名（`uc` など）は 4.0 のランタイムと同じく `wcs/filter-unknown` で、
@@ -432,7 +444,8 @@ var WcsDiagnosticCode = {
   // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その
   // パッケージのスクリプトを読み込んでいない。要素は定義されず、束縛は待ち続け、コンソールにも何も出ない（継ぎ目アプリ
   // homeroom — 保存が「送信中 0%」で止まった）。パッケージごとに 1 回、最初のタグに。読めないローカルのスクリプトがある
-  // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。warning。
+  // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。error
+  // （4.21 から — 4.20 までは warning で、`--errors-only` に隠れた: 継ぎ目アプリ ledger-repair）。
   TagPackageMissing: "wcs/tag-package-missing",
   // `<wcs-router>` の無いページの、内部のパス（`to="/…"`）へ飛ぶ `<wcs-link>`。リンクは接続で
   // `[@wcstack/router] wcs-link is not connected to a router.` を投げ、ホストは `display: none` のまま `<a>` を作らない
@@ -2543,7 +2556,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.20.0";
+var version = "4.21.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -2568,7 +2581,72 @@ var STRUCTURAL_DIRECTIVES = [...STRUCTURAL_BINDING_TYPE_SET2].map((name) => ({
   ...STRUCTURAL_DIRECTIVE_INFO[name]
 }));
 
+// src/service/indexPath.ts
+var INDEX_SEGMENT = /^\d/;
+function isIndexSegment(segment) {
+  return INDEX_SEGMENT.test(segment);
+}
+function hasIndexSegment(path) {
+  return path.split(".").some((segment) => INDEX_SEGMENT.test(segment));
+}
+function toWildcardForm(path) {
+  if (!hasIndexSegment(path)) return path;
+  return path.split(".").map((segment) => INDEX_SEGMENT.test(segment) ? "*" : segment).join(".");
+}
+function candidateKeyOf(path, has) {
+  return has(path) ? path : toWildcardForm(path);
+}
+var UNSAFE_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype"]);
+function hasUnsafeSegment(path) {
+  return path.split(".").some((segment) => UNSAFE_SEGMENTS.has(segment));
+}
+var { maxDepth } = getWcsManifest().syntax.indexParam;
+var MAX_INDEX_PARAM3 = maxDepth;
+var INDEX_PARAM = new RegExp(`^\\$[1-9]\\d{0,${String(maxDepth).length - 1}}$`);
+function classifyIndexParam(path) {
+  if (!/^\$\d+$/.test(path)) return null;
+  if (!INDEX_PARAM.test(path)) return { kind: "notIndex" };
+  const n = Number(path.slice(1));
+  return n <= MAX_INDEX_PARAM3 ? { kind: "index", n } : { kind: "range", n };
+}
+function isOutOfRangeIndexRead(name) {
+  if (name.length < 2 || name.charCodeAt(0) !== 36) return false;
+  const c = name.charCodeAt(1);
+  if (c < 48 || c > 57) return false;
+  return !INDEX_PARAM.test(name) || Number(name.slice(1)) > MAX_INDEX_PARAM3;
+}
+
 // src/service/suggestion.ts
+function pathTree(candidates) {
+  const tree = /* @__PURE__ */ new Map();
+  for (const c of candidates) {
+    let parent = "";
+    for (const segment of c.path.split(".")) {
+      let names2 = tree.get(parent);
+      if (names2 === void 0) tree.set(parent, names2 = /* @__PURE__ */ new Set());
+      names2.add(segment);
+      parent = parent === "" ? segment : `${parent}.${segment}`;
+    }
+  }
+  return tree;
+}
+function missingSegment(path, tree) {
+  let parent = "";
+  for (const segment of (hasIndexSegment(path) ? toWildcardForm(path) : path).split(".")) {
+    const names2 = tree.get(parent);
+    if (names2?.has(segment)) {
+      parent = parent === "" ? segment : `${parent}.${segment}`;
+      continue;
+    }
+    return { segment, parent, names: [...names2 ?? []].filter((name) => name !== "*" && !name.startsWith("$")) };
+  }
+  return null;
+}
+function rowFieldSuggestion(path, candidates, msgs) {
+  const missing = missingSegment(path, pathTree(candidates));
+  if (missing === null || !missing.parent.split(".").includes("*")) return "";
+  return suggestion(missing.segment, missing.names, msgs);
+}
 function suggestion(input, candidates, msgs) {
   let best = null;
   let bestDistance = 3;
@@ -9027,7 +9105,29 @@ function analyzeStatePaths(scriptContent, location) {
   }
   collectRowShapesFromAssignments(scriptContent, paths);
   collectGetterResultShapes(scriptContent, root.start, topLevelProps, effectiveDescriptors, paths);
+  markRowsChangedInPlace(scriptContent, paths);
   return paths;
+}
+var ROWS_IN_PLACE_CALL = /\bthis\s*(?:\?\.|\.)\s*([\w$]+)\s*\??\.\s*(?:push|unshift|splice|fill)\s*\(|\bthis\s*(?:\?\.)?\s*\[\s*(["'])([^"']*)\2\s*\]\s*\??\.\s*(?:push|unshift|splice|fill)\s*\(/dg;
+var ROWS_IN_PLACE_ASSIGN = /\bthis\s*(?:\?\.|\.)\s*([\w$]+)\s*(?:\?\.)?\s*\[(?!\s*["'])[^[\]]+\]\s*=(?!=)/dg;
+function markRowsChangedInPlace(scriptContent, paths) {
+  if (!/\b(?:push|unshift|splice|fill)\s*\(|\]\s*=(?!=)/.test(scriptContent)) return;
+  const masked = maskCommentsAndStrings(scriptContent);
+  const changed = /* @__PURE__ */ new Set();
+  ROWS_IN_PLACE_CALL.lastIndex = 0;
+  let m;
+  while ((m = ROWS_IN_PLACE_CALL.exec(masked)) !== null) {
+    if (m[1] !== void 0) changed.add(m[1]);
+    else if (m.indices?.[3] !== void 0) changed.add(scriptContent.slice(m.indices[3][0], m.indices[3][1]));
+  }
+  ROWS_IN_PLACE_ASSIGN.lastIndex = 0;
+  while ((m = ROWS_IN_PLACE_ASSIGN.exec(masked)) !== null) changed.add(m[1]);
+  for (const list of changed) {
+    const rows = paths.find((p) => p.path === `${list}.*` && p.kind === "list");
+    if (rows === void 0 || rows.openKeys === true) continue;
+    const fields = paths.some((p) => p.path.startsWith(`${list}.*.`) && (p.kind === "data" || p.kind === "list"));
+    if (!fields) rows.openKeys = true;
+  }
 }
 function specFromRecursionValue(prop) {
   if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value)) return null;
@@ -10520,41 +10620,6 @@ function withHint(candidate, typeHint) {
   return typeHint === void 0 ? candidate : { ...candidate, typeHint };
 }
 
-// src/service/indexPath.ts
-var INDEX_SEGMENT = /^\d/;
-function isIndexSegment(segment) {
-  return INDEX_SEGMENT.test(segment);
-}
-function hasIndexSegment(path) {
-  return path.split(".").some((segment) => INDEX_SEGMENT.test(segment));
-}
-function toWildcardForm(path) {
-  if (!hasIndexSegment(path)) return path;
-  return path.split(".").map((segment) => INDEX_SEGMENT.test(segment) ? "*" : segment).join(".");
-}
-function candidateKeyOf(path, has) {
-  return has(path) ? path : toWildcardForm(path);
-}
-var UNSAFE_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype"]);
-function hasUnsafeSegment(path) {
-  return path.split(".").some((segment) => UNSAFE_SEGMENTS.has(segment));
-}
-var { maxDepth } = getWcsManifest().syntax.indexParam;
-var MAX_INDEX_PARAM3 = maxDepth;
-var INDEX_PARAM = new RegExp(`^\\$[1-9]\\d{0,${String(maxDepth).length - 1}}$`);
-function classifyIndexParam(path) {
-  if (!/^\$\d+$/.test(path)) return null;
-  if (!INDEX_PARAM.test(path)) return { kind: "notIndex" };
-  const n = Number(path.slice(1));
-  return n <= MAX_INDEX_PARAM3 ? { kind: "index", n } : { kind: "range", n };
-}
-function isOutOfRangeIndexRead(name) {
-  if (name.length < 2 || name.charCodeAt(0) !== 36) return false;
-  const c = name.charCodeAt(1);
-  if (c < 48 || c > 57) return false;
-  return !INDEX_PARAM.test(name) || Number(name.slice(1)) > MAX_INDEX_PARAM3;
-}
-
 // src/service/statePathResolver.ts
 function isUnresolvedPath(path, scopes) {
   if (scopes.opaquePaths.length > 0) {
@@ -11834,6 +11899,10 @@ var ja = {
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
+  guardReadsAtModuleTop: (r) => `\u30AC\u30FC\u30C9\u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u3001export \u3059\u308B\u95A2\u6570\u306E\u5916\uFF08\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\uFF09\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u3067 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001\u30AC\u30FC\u30C9\u306F\u305D\u306E\u3068\u304D\u8AAD\u3093\u3060\u5024\u3092\u6301\u3061\u7D9A\u3051\u3001\u9077\u79FB\u306E\u305F\u3073\u306B\u305D\u306E\u5024\u3067\u6C7A\u3081\u307E\u3059\uFF08\u30ED\u30B0\u30A4\u30F3\u3057\u305F\u5F8C\u3082\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u7121\u3044\u307E\u307E\uFF09\u3002\u9077\u79FB\u306E\u305F\u3073\u306B\u8D70\u308B\u3001export \u3057\u305F\u95A2\u6570\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  stateReadsAtModuleTop: (r) => `state \u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F <wcs-state> \u3054\u3068\u306B 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001state \u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u306E\u6642\u70B9\u306E\u5024\u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u5F8C\u3067\u5909\u308F\u308B\u30C8\u30FC\u30AF\u30F3\u3084\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u898B\u3048\u307E\u305B\u3093\uFF09\u3002\u5024\u3092 state \u306B\u7F6E\u304F\uFF08<wcs-storage> \u306B\u675F\u306D\u308B\uFF09\u304B\u3001\u4F7F\u3046\u30E1\u30BD\u30C3\u30C9\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  eventTokenUnbound: (t, handler) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 $eventTokens \u306B\u5BA3\u8A00\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u51FA\u3059 eventToken.<\u30E1\u30F3\u30D0\u30FC>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3069\u306E\u8981\u7D20\u3082\u767A\u706B\u3055\u305B\u306A\u3044\u306E\u3067\u3001${handler ? "$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F\u4E00\u5EA6\u3082\u8D70\u308A\u307E\u305B\u3093" : "\u3053\u306E\u30C8\u30FC\u30AF\u30F3\u306F\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093"}\u3002\u767A\u706B\u3055\u305B\u308B\u8981\u7D20\u306B\u675F\u306D\u308B\uFF08eventToken.<\u30E1\u30F3\u30D0\u30FC>: ${t} \u2014 <\u30E1\u30F3\u30D0\u30FC> \u306F\u305D\u306E\u8981\u7D20\u306E wcBindable \u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF09\u304B\u3001$eventTokens \u304B\u3089\u5916\u3057\u3066\u304F\u3060\u3055\u3044`,
+  objectKeyAssign: (t, acc, sp) => `"${t}" \u306E\u30AD\u30FC\u306B\u305D\u306E\u5834\u3067\u4EE3\u5165\u3057\u3066\u3044\u307E\u3059\u3002state \u306F\u3053\u306E\u66F8\u304D\u8FBC\u307F\u3092\u898B\u306A\u3044\u306E\u3067\u3001\u305D\u308C\u3092\u8AAD\u3080\u675F\u7E1B\u30FBgetter\u30FB$watch \u306F\u5909\u308F\u3089\u305A\u3001\u4F55\u3082\u63CF\u304D\u76F4\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4EE3\u5165\u3059\u308B\uFF08${acc} = { ...${acc}, [key]: value }\uFF09\u304B\u3001\u30C9\u30C3\u30C8\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08this["${sp}"] = \u2026\uFF09`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u304C\u3001<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001getter \u306F\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
@@ -12062,6 +12131,10 @@ var en = {
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
+  guardReadsAtModuleTop: (r) => `The guard's module reads ${r} at its top level, outside the function it exports. The module is evaluated once, when the page loads, so the guard keeps the value it read then and decides every navigation with it (after a login, the session is still not there). Read it inside the exported function, which runs on every navigation`,
+  stateReadsAtModuleTop: (r) => `The state's module reads ${r} at its top level. The module is evaluated once per <wcs-state>, so the state keeps the value it read when the page loaded (a token or a session that changes later is not seen). Keep the value in state (bind it with <wcs-storage>), or read it inside the method that uses it`,
+  eventTokenUnbound: (t, handler) => `The event token "${t}" is declared in $eventTokens, but no eventToken.<member>: ${t} binding in this document emits it: no element fires it, so ${handler ? "its $on handler never runs" : "it never fires"}. Bind it on the element whose event should fire it (eventToken.<member>: ${t}, with <member> a wcBindable property of that element), or remove it from $eventTokens`,
+  objectKeyAssign: (t, acc, sp) => `This assigns a key of "${t}" in place. The state does not see the write, so no binding, getter or $watch that reads it changes, and nothing is rendered again. Assign a new object (${acc} = { ...${acc}, [key]: value }), or write the dot path this["${sp}"] = \u2026`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) => `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
@@ -12638,7 +12711,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
             start: bindingStart + leadingSpace,
             end: bindingStart + leadingSpace + propNoMod.length,
             message: msgs.submitWithoutPrevent(handler),
-            severity: "warning"
+            severity: "error"
           });
         }
         if (DELEGATED_EVENTS.has(eventName) && !modifiers.includes(DIRECT_MODIFIER) && attr.tagName !== void 0 && !(attr.tagName.includes("-") && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName)) && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler) && getCurrentTargetHandlers().has(handler)) {
@@ -12760,11 +12833,12 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
+              const near = verdict.code === WcsDiagnosticCode.BindingPathMissing || verdict.code === WcsDiagnosticCode.PathNonexistent ? rowFieldSuggestion(checkPath, scopedPaths, msgs) : "";
               diagnostics.push({
                 code: verdict.code,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `${verdict.message}${pathTrimmed.startsWith(".") ? msgs.expansionSuffix(checkPath) : ""}`,
+                message: `${verdict.message}${pathTrimmed.startsWith(".") ? msgs.expansionSuffix(checkPath) : ""}${near}`,
                 severity: verdict.severity
               });
             } else if (writesBack(attr, propNoMod, parsed.property)) {
@@ -13471,6 +13545,7 @@ function findDestructiveCalls(script, baseOffset, msgs, out) {
   }
 }
 function findIndexAssigns(script, baseOffset, msgs, out) {
+  let paths = null;
   for (const pattern of [DOT_INDEX_ASSIGN, BRACKET_INDEX_ASSIGN, PRE_DOT_INDEX, PRE_BRACKET_INDEX]) {
     for (const match of execAllMasked(pattern, script)) {
       const [root, chain] = match.groups;
@@ -13478,16 +13553,29 @@ function findIndexAssigns(script, baseOffset, msgs, out) {
       if (isApiRoot(root)) continue;
       const suggestedPath = root + chainToDotted(chain);
       const start = baseOffset + match.index;
+      const last = LAST_SUB.exec(chain);
+      const target = root + chainToDotted(last === null ? chain : chain.slice(0, last.index));
+      const numeric2 = last !== null && /^\s*\d+\s*$/.test(last[1]);
+      const kind = containerKind(target, paths ??= analyzeStatePaths(script));
       out.push({
         code: WcsDiagnosticCode.ArrayIndexAssign,
         start,
         end: start + match.length,
-        message: msgs.arrayIndexAssign(suggestedPath),
+        message: kind === "array" || kind === "unknown" && numeric2 ? msgs.arrayIndexAssign(suggestedPath) : msgs.objectKeyAssign(target, toAccessor(target), suggestedPath),
         severity: "error",
         statePath: suggestedPath
       });
     }
   }
+}
+var LAST_SUB = /(?:\?\.)?\s*\[([^[\]]+)\]\s*$/;
+function containerKind(target, paths) {
+  const path = target.split(".").map((s) => /^<.*>$/.test(s) || /^\d+$/.test(s) ? "*" : s).join(".");
+  if (paths.some((p) => p.path === `${path}.*`)) return "array";
+  const hints = (paths.find((p) => p.path === path)?.typeHint ?? "").split("|");
+  if (hints.includes("array")) return "array";
+  if (hints.includes("object") || paths.some((p) => p.path.startsWith(`${path}.`))) return "object";
+  return "unknown";
 }
 
 // src/service/templateSyntax.ts
@@ -13662,6 +13750,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
   const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
+  const nearRowField = (code, path) => code === WcsDiagnosticCode.BindingPathMissing || code === WcsDiagnosticCode.PathNonexistent ? rowFieldSuggestion(path, defaultPaths, msgs) : "";
   const mustaches = findAllMustacheSyntax(html);
   const comments = findAllCommentBindings(html);
   for (const item of [...mustaches, ...comments]) {
@@ -13774,7 +13863,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
               code: verdict.code,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: verdict.message + msgs.expansionSuffix(expandedPath),
+              message: verdict.message + msgs.expansionSuffix(expandedPath) + nearRowField(verdict.code, expandedPath),
               severity: verdict.severity
             });
           }
@@ -13786,7 +13875,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
             code: verdict.code,
             start: item.exprStart,
             end: item.exprStart + pathPart.length,
-            message: verdict.message,
+            message: verdict.message + nearRowField(verdict.code, pathPart),
             severity: verdict.severity
           });
         }
@@ -16349,7 +16438,7 @@ function validatePackageLoads(html, locale2, fileReader) {
       code: WcsDiagnosticCode.TagPackageMissing,
       start: at2.start,
       end: at2.end,
-      severity: "warning",
+      severity: "error",
       tag: at2.tags[0],
       message: msgs.tagPackageMissing(at2.tags, `@wcstack/${pkg}`, `https://esm.run/@wcstack/${pkg}${version3 === null ? "" : `@${version3}`}/auto`)
     });
@@ -16631,10 +16720,10 @@ var NO_MOUNTS = /* @__PURE__ */ new Set();
 function assignVolumes(elements, html) {
   const chainOf = createTemplateChain(html);
   const innermost = (chain) => chain.length > 0 ? chain[chain.length - 1] : -1;
-  const treeOf2 = (root) => innermost(chainOf(root.tagStart));
+  const treeOf = (root) => innermost(chainOf(root.tagStart));
   const rootTrees = /* @__PURE__ */ new Set();
   for (const element2 of elements) {
-    if (element2.mountPath === null && !element2.bindComponent) rootTrees.add(treeOf2(element2));
+    if (element2.mountPath === null && !element2.bindComponent) rootTrees.add(treeOf(element2));
   }
   const volumes = /* @__PURE__ */ new Map();
   for (const element2 of elements) {
@@ -16651,7 +16740,7 @@ function assignVolumes(elements, html) {
     if (list === void 0) volumes.set(tree, [element2]);
     else list.push(element2);
   }
-  return { treeOf: treeOf2, volumes };
+  return { treeOf, volumes };
 }
 function validateEntry(entry, pathSet, paths, scopes, msgs) {
   const { key } = entry;
@@ -18447,13 +18536,17 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
   if (blocks.length === 0) return [];
   const msgs = getMessages(locale2);
   const out = [];
+  let hidden = null;
   let receivers = null;
   let markupEmits = null;
+  let eventEmits = null;
   const bindings = () => {
     if (receivers !== null) return;
     receivers = /* @__PURE__ */ new Set();
     markupEmits = /* @__PURE__ */ new Map();
+    eventEmits = /* @__PURE__ */ new Set();
     for (const o of buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName }).occurrences) {
+      if (o.kind === "eventToken") eventEmits.add(o.path);
       if (!o.path.startsWith("$command.")) continue;
       const name = o.path.slice("$command.".length);
       const prop = o.propName ?? "";
@@ -18499,6 +18592,23 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
         });
       }
     }
+    const events = paths.filter((p) => p.kind === "eventToken").map((p) => p.path);
+    if (block.mountPath === null && events.length > 0) {
+      bindings();
+      const unbound = events.filter((name) => !eventEmits.has(name));
+      if (unbound.length > 0 && !(hidden ??= hidesEmitters(html, blocks))) {
+        const handlers = new Set(analyzeOnHandlerSources(block.content).map((h) => h.name));
+        for (const at2 of declaredNames(block.content, unbound)) {
+          out.push({
+            code: WcsDiagnosticCode.EventTokenUnbound,
+            start: block.contentStart + at2.start,
+            end: block.contentStart + at2.end,
+            message: msgs.eventTokenUnbound(at2.name, handlers.has(at2.name)),
+            severity: "warning"
+          });
+        }
+      }
+    }
     const keys = [...new Set(paths.map((p) => p.path.split(".")[0]).filter((key) => key !== "" && !key.startsWith("$")))];
     const reported = /* @__PURE__ */ new Set();
     for (const pattern of [THIS_WRITE, PRE_THIS_WRITE]) {
@@ -18522,6 +18632,33 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
     }
   }
   return out;
+}
+function declaredNames(script, names2) {
+  const decl = findTopLevelDeclaration(script, "$eventTokens");
+  if (decl === null || decl.value === void 0 || decl.valueStart === void 0 || literalKind(decl.value) !== "array") return [];
+  const out = [];
+  for (const element2 of arrayElements(blankComments(decl.value))) {
+    if (literalKind(element2.text) !== "string") continue;
+    const name = element2.text.slice(1, -1);
+    if (!names2.includes(name) || out.some((o) => o.name === name)) continue;
+    const start = decl.valueStart + element2.start + 1;
+    out.push({ name, start, end: start + name.length });
+  }
+  return out;
+}
+var LAYOUT_SRC = /<wcs-layout\b(?:"[^"]*"|'[^']*'|[^>"'])*?\ssrc\s*=/i;
+var SCRIPT = /(<script\b(?:"[^"]*"|'[^']*'|[^>"'])*>)([\s\S]*?)<\/script\s*>/gi;
+function hidesEmitters(html, blocks) {
+  const text3 = html.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
+  if (LAYOUT_SRC.test(text3)) return true;
+  SCRIPT.lastIndex = 0;
+  let m;
+  while ((m = SCRIPT.exec(text3)) !== null) {
+    const contentStart = m.index + m[1].length;
+    if (blocks.some((b) => b.contentStart === contentStart)) continue;
+    if (m[2].includes("eventToken.")) return true;
+  }
+  return false;
 }
 
 // src/service/scriptReadValidator.ts
@@ -18574,7 +18711,7 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
         if (read.indexed !== void 0 && !read.indexed.every((list) => isList(prefix + list, candidates, candidateSet))) continue;
         if (pathExistsInCandidates(path, candidates, candidateSet)) continue;
         if (applicationSchema !== void 0 ? resolveIndexedSchemaPath(applicationSchema, path).kind !== "nonexistent" : isUnresolvedPath(path, index.scopes)) continue;
-        const near = nearName(path, tree ??= treeOf(candidates));
+        const near = missingSegment(path, tree ??= pathTree(candidates));
         if (near === null) continue;
         const said = suggestion(near.segment, near.names, msgs);
         if (said === "") continue;
@@ -18600,31 +18737,6 @@ function isList(path, candidates, candidateSet) {
 var THIS_PART = /^this\s*(?:\?\.\s*|\.\s*)(?:[A-Za-z_$][\w$]*)|^this\s*(?:\?\.)?\s*\[\s*(["'`])[^"'`]*\1\s*\]/;
 function statePart(text3) {
   return THIS_PART.exec(text3)?.[0].length ?? text3.length;
-}
-function treeOf(candidates) {
-  const tree = /* @__PURE__ */ new Map();
-  for (const c of candidates) {
-    let parent = "";
-    for (const segment of c.path.split(".")) {
-      let names2 = tree.get(parent);
-      if (names2 === void 0) tree.set(parent, names2 = /* @__PURE__ */ new Set());
-      names2.add(segment);
-      parent = parent === "" ? segment : `${parent}.${segment}`;
-    }
-  }
-  return tree;
-}
-function nearName(path, tree) {
-  let parent = "";
-  for (const segment of (hasIndexSegment(path) ? toWildcardForm(path) : path).split(".")) {
-    const names2 = tree.get(parent);
-    if (names2?.has(segment)) {
-      parent = parent === "" ? segment : `${parent}.${segment}`;
-      continue;
-    }
-    return { segment, names: [...names2 ?? []].filter((name) => name !== "*" && !name.startsWith("$")) };
-  }
-  return null;
 }
 
 // src/service/scriptWriteValidator.ts
@@ -18821,6 +18933,112 @@ function unobservedSetters(state, msgs, at2) {
     if ([...writes].some((w) => [...reads].some((r) => overlaps(w, r)))) continue;
     const listed = [...writes].map((w) => `"${w}"`).join(", ");
     out.push({ code: WcsDiagnosticCode.SetterUnobserved, ...at2(setter.callable.start, setter.callable.end), message: msgs.setterUnobserved(name, listed), severity: "warning" });
+  }
+  return out;
+}
+
+// src/service/moduleTopReadValidator.ts
+var GUARD_TAG = "wcs-guard-handler";
+var STORAGES = /* @__PURE__ */ new Set(["localStorage", "sessionStorage"]);
+var GLOBALS = /* @__PURE__ */ new Set(["window", "globalThis", "self"]);
+var STORAGE_WRITES = /* @__PURE__ */ new Set(["setItem", "removeItem", "clear"]);
+function validateModuleTopReads(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  const check = (blocks, guard) => {
+    for (const block of blocks) {
+      for (const read of findTopLevelReads(block.content)) {
+        out.push({
+          code: WcsDiagnosticCode.SessionReadAtModuleTop,
+          start: block.contentStart + read.start,
+          end: block.contentStart + read.end,
+          message: guard ? msgs.guardReadsAtModuleTop(read.text) : msgs.stateReadsAtModuleTop(read.text),
+          severity: guard ? "error" : "warning"
+        });
+      }
+    }
+  };
+  if (html.includes(GUARD_TAG)) check(parseWcsScriptBlocks(html, GUARD_TAG), true);
+  check(parseLoadedScriptBlocks(html, stateTagName), false);
+  return out;
+}
+function findTopLevelReads(source) {
+  if (!/localStorage|sessionStorage|cookie/.test(source)) return [];
+  let program;
+  try {
+    program = parse3(source, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true });
+  } catch {
+    return [];
+  }
+  const out = [];
+  const visit2 = (node, assigned) => {
+    switch (node.type) {
+      // run when called (a getter, a setter and a method are function expressions under their property)
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+      case "ClassDeclaration":
+      case "ClassExpression":
+        return;
+      case "AssignmentExpression":
+        visit2(node.left, node.operator === "=");
+        visit2(node.right, false);
+        return;
+      case "CallExpression": {
+        const callee = node.callee;
+        if (callee.type === "FunctionExpression" || callee.type === "ArrowFunctionExpression") {
+          visit2(callee.body, false);
+          for (const arg of node.arguments) visit2(arg, false);
+          return;
+        }
+        break;
+      }
+      case "MemberExpression": {
+        const read = readOf(node, assigned, source);
+        if (read !== null) {
+          out.push(read);
+          return;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    for (const child of children(node)) visit2(child, false);
+  };
+  visit2(program, false);
+  return out;
+}
+function readOf(node, assigned, source) {
+  const object = node.object;
+  const prop = propertyName(node);
+  if (isGlobal(object, STORAGES)) {
+    if (assigned || prop !== null && STORAGE_WRITES.has(prop)) return null;
+    return { start: node.start, end: node.end, text: source.slice(node.start, node.end) };
+  }
+  if (prop === "cookie" && !assigned && isGlobal(object, /* @__PURE__ */ new Set(["document"]))) {
+    return { start: node.start, end: node.end, text: source.slice(node.start, node.end) };
+  }
+  return null;
+}
+function isGlobal(node, names2) {
+  if (node.type === "Identifier") return names2.has(node.name);
+  if (node.type !== "MemberExpression" || node.computed) return false;
+  const object = node.object;
+  return object.type === "Identifier" && GLOBALS.has(object.name) && node.property.type === "Identifier" && names2.has(node.property.name);
+}
+function propertyName(node) {
+  if (!node.computed) return node.property.type === "Identifier" ? node.property.name : null;
+  return node.property.type === "Literal" && typeof node.property.value === "string" ? node.property.value : null;
+}
+function children(node) {
+  const out = [];
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const v of value) if (v !== null && typeof v === "object" && typeof v.type === "string") out.push(v);
+    } else if (value !== null && typeof value === "object" && typeof value.type === "string") {
+      out.push(value);
+    }
   }
   return out;
 }
@@ -19418,6 +19636,7 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));
   out.push(...validateScriptWrites(text3, stateTagName, locale2));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
+  out.push(...validateModuleTopReads(text3, stateTagName, locale2));
   out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));
   out.push(...validateRecursion(text3, stateTagName, locale2));

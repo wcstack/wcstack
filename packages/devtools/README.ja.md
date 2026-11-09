@@ -27,7 +27,7 @@
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 ```
 
-フローティングの **WCS** バッジ、または **Alt+Shift+D** でパネルが開く。4.21（未リリース）から、
+フローティングの **WCS** バッジ、または **Alt+Shift+D** でパネルが開く。4.21 から、
 ページで何かが失敗していると、バッジに赤い数が付く（[失敗](#失敗)を参照）。
 
 auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<body>` 末尾に
@@ -42,12 +42,12 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 | ペイン | 内容 |
 |---|---|
 | **State** | 各ルート state ツリー（root node ごとに 1 本・ラベルはルート由来 — v2 に名前次元は無い）のトップレベルキー、配列/オブジェクトの展開、computed getter。値クリックでインライン編集 — 書き込みは通常のリアクティブパイプライン（set トラップ → 更新バッチ → DOM）を通るため、アプリコードが書いたのと同じようにページが反応する。**パス**クリックで束縛ノードをハイライト。ツリーの下には、マウント記録の **Overlays** と、`$eq` / `$eqPath` / `$eqIndex` の購読を path ごとに数えた **Keyed selection**（行・鍵・リスト単位の監視の数と最後の値）が出る。path が getter で、読む getter が全部再評価される形には `tracked` バッジが付く（`@wcstack/state` 3.0 以降）。パネルを開いている間は、更新バッチのたびにペインを読み直す（多くて 1 フレームに 1 回。タイムラインの一時停止中も読み直す）。インライン編集の入力欄にフォーカスがある間と、ペインの中でポインタを押している間は描き直しを待ち、終わってから追いつく。 |
-| **Wiring** | ライブ binding 台帳: binding ごとの `property ← path` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。4.21（未リリース）から、ランタイムが「解決しない」と報告したパス（`state:path-unresolved`。報告されたままのパス — `rows.*.amountLabl` — と、報告したランタイムで突き合わせる）の行には **`unresolved`** バッジが付き、ツールチップに宣言されていないセグメントが出る。ランタイムの検査は分からないところ（リストの行以外の getter の値のサブプロパティ・`null` の親。`@wcstack/state` 4.20 までは getter が返すリストの行と、まだ空のリストも — 4.21 はそれも検査する）では黙るので、バッジの無い行のパスが解決するとは限らない — そこは `npx @wcstack/lint` が読む。**coverage** の切り替えは、state が宣言したものと、パネルが観測を始めてから起きたことを突き合わせる: `$watch` のキーごと（`fired` ×n / `never`）、command・event トークンごと（`emitted` ×n / `never` / `emitted-unheard` — どの発火も購読者ゼロ）、宣言したバインディングごと（`attached` / `never-attached`）。`@wcstack/state` 3.x では、リストに `for` のバインドも `$listKeys` の宣言も無いワイルドカードの行 watch は、`never` ではなく `prerequisite-missing` と出る（3.x ではリストへの書き込みがその watch に届かない）。4.0 の行 watch はどちらも要らないので、4.0 のページでは出ない。 |
-| **Timeline** | ring buffer（既定 500 件）: `write`（旧値が取れた場合は併記）、`batch`（drain ごとの dedup 済み更新アドレス）、`command` / `event` トークン発火（引数要約 + 購読者数 — **購読者ゼロの空撃ちには警告バッジ**。whenDefined 前配線レースの検出に効く）、state 要素の登録/解除、ランタイムが隔離した・打ち切った[失敗](#失敗)（警告バッジ）。⏸ で一時停止、🗑 でクリア。4.21（未リリース）から、ヘッダーの **failures** ボタンで失敗だけを表示できる。 |
+| **Wiring** | ライブ binding 台帳: binding ごとの `property ← path` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。4.21 から、ランタイムが「解決しない」と報告したパス（`state:path-unresolved`。報告されたままのパス — `rows.*.amountLabl` — と、報告したランタイムで突き合わせる）の行には **`unresolved`** バッジが付き、ツールチップに宣言されていないセグメントが出る。ランタイムの検査は分からないところ（リストの行以外の getter の値のサブプロパティ・`null` の親。`@wcstack/state` 4.20 までは getter が返すリストの行と、まだ空のリストも — 4.21 はそれも検査する）では黙るので、バッジの無い行のパスが解決するとは限らない — そこは `npx @wcstack/lint` が読む。**coverage** の切り替えは、state が宣言したものと、パネルが観測を始めてから起きたことを突き合わせる: `$watch` のキーごと（`fired` ×n / `never`）、command・event トークンごと（`emitted` ×n / `never` / `emitted-unheard` — どの発火も購読者ゼロ）、宣言したバインディングごと（`attached` / `never-attached`）。`@wcstack/state` 3.x では、リストに `for` のバインドも `$listKeys` の宣言も無いワイルドカードの行 watch は、`never` ではなく `prerequisite-missing` と出る（3.x ではリストへの書き込みがその watch に届かない）。4.0 の行 watch はどちらも要らないので、4.0 のページでは出ない。 |
+| **Timeline** | ring buffer（既定 500 件）: `write`（旧値が取れた場合は併記）、`batch`（drain ごとの dedup 済み更新アドレス）、`command` / `event` トークン発火（引数要約 + 購読者数 — **購読者ゼロの空撃ちには警告バッジ**。whenDefined 前配線レースの検出に効く）、state 要素の登録/解除、ランタイムが隔離した・打ち切った[失敗](#失敗)（警告バッジ）。⏸ で一時停止、🗑 でクリア。4.21 から、ヘッダーの **failures** ボタンで失敗だけを表示できる。 |
 
 ## 失敗
 
-4.21（未リリース）から。失敗とは、ランタイムが console に出すだけで続行するもの —
+4.21 から。失敗とは、ランタイムが console に出すだけで続行するもの —
 ページは何事も無かったように動き続ける:
 
 | Timeline の種別 | 起きたこと |
@@ -85,8 +85,8 @@ devtools.shadowRoot.querySelector('button[data-role="failures"]').textContent; /
 
 // 要素の DevtoolsCore（切断中は null）なら DOM を介さずに引ける
 devtools.core.getTimeline();   // すべての行: { kind, label, detail, … }
-devtools.core.failureCount;    // 4.21（未リリース）から
-devtools.core.getFailures();   // 4.21（未リリース）から: 失敗の行だけ
+devtools.core.failureCount;    // 4.21 から
+devtools.core.getFailures();   // 4.21 から: 失敗の行だけ
 ```
 
 ## 属性
@@ -139,7 +139,7 @@ core.getCoverageReport(); // 宣言 × 実測（coverage ビュー）
 core.getTimeline();    // ring buffer スナップショット
 ```
 
-4.21（未リリース）から: `core.failureCount` と `core.getFailures()`（[失敗](#失敗)を
+4.21 から: `core.failureCount` と `core.getFailures()`（[失敗](#失敗)を
 参照）、`isFailureKind(kind)`（失敗に数える種別か）、`core.getUnresolvedReport(wiringEntry)`
 （配線の行に当たる `state:path-unresolved` の報告、無ければ `null`）。
 
