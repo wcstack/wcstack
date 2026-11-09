@@ -85,6 +85,14 @@ export interface WcsMessageCatalog {
   getterReadsLocation(read: string): string;
   /** `<form>` の `onsubmit:` に `#prevent` が無く、ハンドラも preventDefault を呼ばない。 */
   submitWithoutPrevent(handler: string): string;
+  /** `<wcs-guard-handler>` のモジュールのトップレベル（export する関数の外）での `localStorage` / `sessionStorage` / `document.cookie` の読み。 */
+  guardReadsAtModuleTop(read: string): string;
+  /** `<wcs-state>` のモジュールのトップレベルでの同じ読み（state は読み込みの時点の値を持ち続ける）。 */
+  stateReadsAtModuleTop(read: string): string;
+  /** `$eventTokens` に宣言したのに、どの `eventToken.<member>:` 束縛も出さないトークン。`hasHandler`: `$on` にハンドラがある。 */
+  eventTokenUnbound(token: string, hasHandler: boolean): string;
+  /** 配列と分からない値の、添字の形（`this.errors[id] = …`）でのキーへの代入。`accessor` は `this.errors` の形。 */
+  objectKeyAssign(target: string, accessor: string, suggestedPath: string): string;
   /** getter の中の現在時刻（`Date.now()` / 引数の無い `new Date()` / `performance.now()`）。キャッシュされ、最初の値のまま。 */
   getterReadsClock(read: string): string;
   /** `$renderedCallback` が state に無いパスを判定に使っている（`paths` に現れないので、その分岐は走らない）。近い名前があるときだけ。 */
@@ -429,6 +437,14 @@ const ja: WcsMessageCatalog = {
     `"${p}" は setter の無い getter ですが、${prop}: は読者の入力を書き戻すので、入力のたびに書き込みが失敗します（"${p}" is a getter without a setter）。setter を足す（set "${p}"(v) { … }）か、#ro で一方向にしてください（${prop}#ro: ${p}）`,
   submitWithoutPrevent: (h) =>
     `onsubmit に #prevent が無く、"${h}" も preventDefault を呼びません。ブラウザはフォームも送るので、ページが読み直されるか、router があれば GET が欄の値（パスワードも）を URL と履歴に載せます。onsubmit#prevent: ${h} と書くか、ハンドラで event.preventDefault() を呼んでください`,
+  guardReadsAtModuleTop: (r) =>
+    `ガードのモジュールが、export する関数の外（トップレベル）で ${r} を読んでいます。モジュールはページの読み込みで 1 回だけ評価されるので、ガードはそのとき読んだ値を持ち続け、遷移のたびにその値で決めます（ログインした後もセッションが無いまま）。遷移のたびに走る、export した関数の中で読んでください`,
+  stateReadsAtModuleTop: (r) =>
+    `state のモジュールがトップレベルで ${r} を読んでいます。モジュールは <wcs-state> ごとに 1 回だけ評価されるので、state はページの読み込みの時点の値を持ち続けます（後で変わるトークンやセッションは見えません）。値を state に置く（<wcs-storage> に束ねる）か、使うメソッドの中で読んでください`,
+  eventTokenUnbound: (t, handler) =>
+    `イベントトークン "${t}" を $eventTokens に宣言していますが、このドキュメントにそれを出す eventToken.<メンバー>: ${t} の束縛がありません。どの要素も発火させないので、${handler ? '$on のハンドラは一度も走りません' : 'このトークンは一度も発火しません'}。発火させる要素に束ねる（eventToken.<メンバー>: ${t} — <メンバー> はその要素の wcBindable のプロパティ）か、$eventTokens から外してください`,
+  objectKeyAssign: (t, acc, sp) =>
+    `"${t}" のキーにその場で代入しています。state はこの書き込みを見ないので、それを読む束縛・getter・$watch は変わらず、何も描き直されません。新しいオブジェクトを代入する（${acc} = { ...${acc}, [key]: value }）か、ドットパスで書いてください（this["${sp}"] = …）`,
   getterUntrackedRead: (root, sp) =>
     `ここで追跡されるのは "${root}" だけです。"${sp}" が変わってもこの getter は再評価されません（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) =>
@@ -746,6 +762,14 @@ const en: WcsMessageCatalog = {
     `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { … }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) =>
     `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
+  guardReadsAtModuleTop: (r) =>
+    `The guard's module reads ${r} at its top level, outside the function it exports. The module is evaluated once, when the page loads, so the guard keeps the value it read then and decides every navigation with it (after a login, the session is still not there). Read it inside the exported function, which runs on every navigation`,
+  stateReadsAtModuleTop: (r) =>
+    `The state's module reads ${r} at its top level. The module is evaluated once per <wcs-state>, so the state keeps the value it read when the page loaded (a token or a session that changes later is not seen). Keep the value in state (bind it with <wcs-storage>), or read it inside the method that uses it`,
+  eventTokenUnbound: (t, handler) =>
+    `The event token "${t}" is declared in $eventTokens, but no eventToken.<member>: ${t} binding in this document emits it: no element fires it, so ${handler ? 'its $on handler never runs' : 'it never fires'}. Bind it on the element whose event should fire it (eventToken.<member>: ${t}, with <member> a wcBindable property of that element), or remove it from $eventTokens`,
+  objectKeyAssign: (t, acc, sp) =>
+    `This assigns a key of "${t}" in place. The state does not see the write, so no binding, getter or $watch that reads it changes, and nothing is rendered again. Assign a new object (${acc} = { ...${acc}, [key]: value }), or write the dot path this["${sp}"] = …`,
   getterUntrackedRead: (root, sp) =>
     `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) =>

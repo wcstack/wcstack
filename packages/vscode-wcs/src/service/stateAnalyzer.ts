@@ -211,7 +211,43 @@ export function analyzeStatePaths(scriptContent: string, location?: ModuleLocati
   // 行の形が揃った後に走らせる — 写す元のリストの行が、上の代入式から分かることもあるため。
   collectGetterResultShapes(scriptContent, root.start, topLevelProps, effectiveDescriptors, paths);
 
+  // A list whose rows nothing above could read, which the script changes in place (`this.rows.splice(0, n, ...rows)`,
+  // `push(row)`, `this.rows[i] = row` — wcs/array-mutation / wcs/array-index-assign report those): its rows are open,
+  // as under a key whose value is unread. Reporting each row field missing gave false lines of the same code as a
+  // real typo, which taught the ledger-repair seam app's maintainer to ignore that code.
+  markRowsChangedInPlace(scriptContent, paths);
+
   return paths;
+}
+
+/** `this.<key>` / `this["<path>"]` followed by a method that puts rows into the array in place. */
+const ROWS_IN_PLACE_CALL = /\bthis\s*(?:\?\.|\.)\s*([\w$]+)\s*\??\.\s*(?:push|unshift|splice|fill)\s*\(|\bthis\s*(?:\?\.)?\s*\[\s*(["'])([^"']*)\2\s*\]\s*\??\.\s*(?:push|unshift|splice|fill)\s*\(/dg;
+/** `this.<key>[i] = …` (an element assigned in place; not `==`). */
+const ROWS_IN_PLACE_ASSIGN = /\bthis\s*(?:\?\.|\.)\s*([\w$]+)\s*(?:\?\.)?\s*\[(?!\s*["'])[^[\]]+\]\s*=(?!=)/dg;
+
+/**
+ * Marks the rows of a list (`<list>.*`) open (`openKeys`) when the analyzer read no field of them — no row literal, no
+ * JSDoc type: only getters under the rows (`get "rows.*.label"()`) — and the script puts rows into the array in place.
+ * Those rows have a shape the analyzer cannot see, so nothing under them is reported missing.
+ */
+function markRowsChangedInPlace(scriptContent: string, paths: PathCandidate[]): void {
+  if (!/\b(?:push|unshift|splice|fill)\s*\(|\]\s*=(?!=)/.test(scriptContent)) return;
+  const masked = maskCommentsAndStrings(scriptContent);
+  const changed = new Set<string>();
+  ROWS_IN_PLACE_CALL.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = ROWS_IN_PLACE_CALL.exec(masked)) !== null) {
+    if (m[1] !== undefined) changed.add(m[1]);
+    else if (m.indices?.[3] !== undefined) changed.add(scriptContent.slice(m.indices[3][0], m.indices[3][1]));
+  }
+  ROWS_IN_PLACE_ASSIGN.lastIndex = 0;
+  while ((m = ROWS_IN_PLACE_ASSIGN.exec(masked)) !== null) changed.add(m[1]);
+  for (const list of changed) {
+    const rows = paths.find(p => p.path === `${list}.*` && p.kind === 'list');
+    if (rows === undefined || rows.openKeys === true) continue;
+    const fields = paths.some(p => p.path.startsWith(`${list}.*.`) && (p.kind === 'data' || p.kind === 'list'));
+    if (!fields) rows.openKeys = true;
+  }
 }
 
 /**

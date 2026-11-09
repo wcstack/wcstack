@@ -13,7 +13,7 @@ import { createTemplateTester, extractAttribute, findStartTagRegions, type WcsSt
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { nativeCommandsOf, STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
-import { suggestion } from './suggestion.js';
+import { rowFieldSuggestion, suggestion } from './suggestion.js';
 import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathIndex, isUnresolvedPath, readStateScript, type FileReader } from './statePathResolver.js';
 import {
@@ -316,6 +316,8 @@ export function validateBindings(
         // reloads, or with the router a GET puts the fields (a password too) in the URL and the history
         // (docs/seam-apps.md, router-auth). Silent when the handler calls preventDefault, when it is not a method the
         // page declares (it cannot be read), and on a form with an `action` (a native submission may be meant).
+        // Always a bug where it speaks, so an error (since 4.21; a warning up to 4.20 — the ledger-repair seam app:
+        // `--errors-only` hid it, and the password went into the URL).
         if (eventName === 'submit' && attr.tagName === 'form' && !modifiers.includes('prevent')
           && getPreventDefaultHandlers().get(handler) === false
           && !/\saction\s*=/i.test(openTagBefore(html, attr.valueStart))) {
@@ -324,7 +326,7 @@ export function validateBindings(
             start: bindingStart + leadingSpace,
             end: bindingStart + leadingSpace + propNoMod.length,
             message: msgs.submitWithoutPrevent(handler),
-            severity: 'warning',
+            severity: 'error',
           });
         }
         if (DELEGATED_EVENTS.has(eventName)
@@ -487,11 +489,15 @@ export function validateBindings(
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
+              // a row field the rows lack, near one they have: name it, as the runtime does for a data list's row
+              const near = verdict.code === WcsDiagnosticCode.BindingPathMissing || verdict.code === WcsDiagnosticCode.PathNonexistent
+                ? rowFieldSuggestion(checkPath, scopedPaths, msgs)
+                : '';
               diagnostics.push({
                 code: verdict.code,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `${verdict.message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
+                message: `${verdict.message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}${near}`,
                 severity: verdict.severity,
               });
             } else if (writesBack(attr, propNoMod, parsed.property)) {

@@ -59,9 +59,9 @@ ${STATE}
 <wcs-fetch url="/api/list"></wcs-fetch>
 </body></html>`;
 
-  it('パッケージごとに 1 回、最初のタグの名前の上に warning を出し、読み込む /auto を言うこと（homeroom）', () => {
+  it('パッケージごとに 1 回、最初のタグの名前の上に error を出し、読み込む /auto を言うこと（homeroom。4.20 までは warning）', () => {
     const found = missing(HOMEROOM);
-    expect(found.map((d) => [d.severity, HOMEROOM.slice(d.start, d.end), d.tag])).toEqual([['warning', 'wcs-upload', 'wcs-upload']]);
+    expect(found.map((d) => [d.severity, HOMEROOM.slice(d.start, d.end), d.tag])).toEqual([['error', 'wcs-upload', 'wcs-upload']]);
     expect(found[0].message).toBe('<wcs-upload>, <wcs-upload-header> are tags of @wcstack/upload, and this page loads no script of @wcstack/upload: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>');
     expect(missing(HOMEROOM, undefined, 'ja')[0].message).toBe('<wcs-upload>・<wcs-upload-header> は @wcstack/upload のタグですが、このページは @wcstack/upload のスクリプトを読み込んでいません。要素は定義されないので、その束縛は待ち続けて何も起きず、コンソールにも何も出ません — <script type="module" src="https://esm.run/@wcstack/upload/auto"></script> で読み込んでください');
   });
@@ -220,14 +220,15 @@ ${STATE}
     expect(files.requested).toEqual(['js/app.js', 'js/lib/up.js']);
   });
 
-  it('validateDocument と CLI: warning なので --strict では落ち、--errors-only では落ちないこと', () => {
+  it('validateDocument と CLI: 4.21 から error なので --errors-only でも落ちること（ledger-repair — warning は --errors-only に隠れた）', () => {
     expect(validateDocument(HOMEROOM, { locale: 'en' }).filter((d) => d.code === WcsDiagnosticCode.TagPackageMissing)).toHaveLength(1);
     const strict = runValidation([{ source: 'homeroom.html', text: HOMEROOM, kind: 'html' }], { strict: true, locale: 'en' });
     expect(strict.exitCode).toBe(1);
     expect(strict.lines.filter((l) => l.includes('wcs/tag-package-missing')).map((l) => l.replace(/ <wcs-upload>.*$/, '')))
-      .toEqual(['homeroom.html:6:2 warning wcs/tag-package-missing']);
+      .toEqual(['homeroom.html:6:2 error wcs/tag-package-missing']);
     const errorsOnly = runValidation([{ source: 'homeroom.html', text: HOMEROOM, kind: 'html' }], { errorsOnly: true, locale: 'en' });
-    expect(errorsOnly.exitCode).toBe(0);
+    expect(errorsOnly.exitCode).toBe(1);
+    expect(errorsOnly.lines.some((l) => l.startsWith('homeroom.html:6:2 error wcs/tag-package-missing'))).toBe(true);
   });
 });
 

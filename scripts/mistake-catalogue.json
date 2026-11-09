@@ -23,10 +23,10 @@
       "id": "array-index-assign",
       "lint": [{ "code": "wcs/array-index-assign", "severity": "error" }],
       "runtime": "silent", "harm": "stale",
-      "mistake": { "en": "Assigns an array element by index: `this.items[0] = x`.", "ja": "添字で配列の要素に代入する: `this.items[0] = x`。" },
-      "effect": { "en": "The row keeps showing the old element until a new array is assigned.", "ja": "新しい配列を代入するまで、行は古い要素を表示し続ける。" },
+      "mistake": { "en": "Assigns an array element by index: `this.items[0] = x` — or an object's key the same way: `this.errors[id] = x`.", "ja": "添字で配列の要素に代入する: `this.items[0] = x` — または同じ形でオブジェクトのキーに: `this.errors[id] = x`。" },
+      "effect": { "en": "The row keeps showing the old element until a new array is assigned; for an object's key, no binding, getter or `$watch` that reads it changes.", "ja": "新しい配列を代入するまで、行は古い要素を表示し続ける。オブジェクトのキーなら、それを読む束縛・getter・`$watch` は変わらない。" },
       "disposition": "runtime-report",
-      "note": { "en": "The same comparison of rows with the array, in the diagnostics add-on.", "ja": "diagnostics の後付けで、同じく行と配列を突き合わせる。" }
+      "note": { "en": "The same comparison of rows with the array, in the diagnostics add-on. Since 4.21 the lint words a target it does not know to be an array as an object's key (assign a new object, or write the dot path), where up to 4.20 it said \"an array index\" for `budgetErrors: {}` too (the ledger-repair seam app).", "ja": "diagnostics の後付けで、同じく行と配列を突き合わせる。4.21 から lint は、配列と分からない先をオブジェクトのキーとして言う（新しいオブジェクトを代入するか、ドットパスで書く）。4.20 までは `budgetErrors: {}` にも「配列の添字」と言っていた（継ぎ目アプリ ledger-repair）。" }
     },
     {
       "id": "getter-untracked-object-read",
@@ -530,12 +530,12 @@
     },
     {
       "id": "submit-without-prevent",
-      "lint": [{ "code": "wcs/submit-without-prevent", "severity": "warning" }],
+      "lint": [{ "code": "wcs/submit-without-prevent", "severity": "error" }],
       "runtime": "silent", "harm": "security",
       "mistake": { "en": "Binds `onsubmit:` on a `<form>` without `#prevent`, and the handler does not call `preventDefault`.", "ja": "`<form>` の `onsubmit:` を `#prevent` なしで束ね、ハンドラも `preventDefault` を呼ばない。" },
       "effect": { "en": "The handler runs, then the browser submits the form: the page reloads, or with the router a GET puts the fields, a password too, in the URL and the history.", "ja": "ハンドラが走った後、ブラウザがフォームを送る。ページが読み直されるか、router があれば GET が欄 — パスワードも — を URL と履歴に載せる。" },
       "disposition": ["runtime-report", "design-out"], "breaking": true,
-      "note": { "en": "4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (536 B of room), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default.", "ja": "4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（残り 536 B）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。" }
+      "note": { "en": "4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (536 B of room), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default. The lint's finding is an error since 4.21: as a warning up to 4.20, `--errors-only` hid it from the ledger-repair seam app's maintainer.", "ja": "4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（残り 536 B）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。lint の指摘は 4.21 から error: 4.20 までの warning は、継ぎ目アプリ ledger-repair の保守担当から `--errors-only` に隠れた。" }
     },
     {
       "id": "devtools-after-state",
@@ -740,6 +740,15 @@
       "effect": { "en": "The emit reaches no subscriber and returns nothing; `$on` never fires. The diagnostics add-on warns once per token.", "ja": "emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。diagnostics の後付けがトークンごとに 1 回警告する。" },
       "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/command-token-unbound]" }],
       "note": { "en": "The lint reports a token emitted (in the script or by `on*:`) that no `command.` binding in the document receives; the runtime warns on any emit that reaches no subscriber, once per token — a token emitted to a hidden branch on purpose too (the author's decision, docs/v4-direction-2026-10.md §5.2).", "ja": "lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。実行時は、購読者に届かないすべての emit にトークンごとに 1 回警告する — 隠れた枝へわざと emit するトークンにも（著者の決定、docs/v4-direction-2026-10.md §5.2）。" }
+    },
+    {
+      "id": "event-token-unbound",
+      "lint": [{ "code": "wcs/event-token-unbound", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Declares a name in `$eventTokens` that no `eventToken.<member>:` binding emits — its binding removed or never written (the page waits on a `$watch` of the element's output instead).", "ja": "どの `eventToken.<メンバー>:` 束縛も出さない名前を `$eventTokens` に宣言する — 束縛を外した、または書いていない（代わりに要素の出力への `$watch` を待つ）。" },
+      "effect": { "en": "Nothing fires the token, so its `$on` handler never runs, and nothing says so (DevTools lists the token as never fired). The ledger-repair seam app kept `deleteDone` after removing its `eventToken.value:` binding and watched `deleteFetch.status`: the second `DELETE` answered `204` fired nothing.", "ja": "トークンを発火させるものが無いので `$on` のハンドラは走らず、何も知らせない（DevTools はトークンを一度も発火しないものとして並べる）。継ぎ目アプリ ledger-repair は `eventToken.value:` の束縛を外した後も `deleteDone` を残し、`deleteFetch.status` を watch した: `204` を返した 2 回目の `DELETE` は何も発火しなかった。" },
+      "disposition": "static-only",
+      "note": { "en": "Since 4.21 the lint reports such a name (the mirror of `wcs/command-token-unbound`), on the page's root states, and stays quiet where a binding it does not see can emit one: a layout loaded with `src`, a script that writes `eventToken.` bindings. The runtime cannot tell a token that a route not shown yet will bind from one nothing binds.", "ja": "4.21 から lint はそうした名前を報告する（`wcs/command-token-unbound` の逆）。対象はページの root の state で、見えない束縛が出しうるページ — `src` で読むレイアウト、`eventToken.` の束縛を書くスクリプト — では黙る。まだ表示していないルートが束ねるトークンと、何も束ねないトークンは、実行時には区別できない。" }
     },
     {
       "id": "infinite-scroll-target",
@@ -993,11 +1002,12 @@
     },
     {
       "id": "session-read-at-module-top",
+      "lint": [{ "code": "wcs/session-read-at-module-top", "severity": "varies" }],
       "runtime": "silent", "harm": "broken",
       "mistake": { "en": "Reads the session or the token once, at the top level of a guard's or the state's module.", "ja": "セッションやトークンを、ガードや state のモジュールのトップレベルで 1 回だけ読む。" },
       "effect": { "en": "A module is evaluated once: the guard decides with the session there was at load (none, before the login), and the state keeps sending the first token — the shift-desk variant sent 1,428 requests answered 401 in 4 seconds. Only the browser's own 401 lines show it.", "ja": "モジュールは 1 回しか評価されない: ガードは読み込みの時点のセッション（ログイン前なら無し）で決め、state は最初のトークンを送り続ける — shift-desk の変種は 4 秒で 401 の要求を 1,428 回送った。見えるのはブラウザ自身の 401 の行だけ。" },
-      "disposition": "lint-rule",
-      "note": { "en": "The router README says to read the session inside the handler, and the skill's failure matrix lists it. A top-level `localStorage` / `sessionStorage` / `document.cookie` read in a guard's or the state's inline module is visible to a lint rule.", "ja": "router の README はハンドラの中で読むと言い、スキルの失敗の一覧にもある。ガードや state のインラインのモジュールのトップレベルでの `localStorage` / `sessionStorage` / `document.cookie` の読みは、lint の規則に見える。" }
+      "disposition": "static-only",
+      "note": { "en": "The router README says to read the session inside the handler, and the skill's failure matrix lists it. Since 4.21 the lint reports a `localStorage` / `sessionStorage` / `document.cookie` read at the top level of a guard's module (an error — the ledger-repair seam app's guard bounced every guarded page back to /login after the login) or of a state's module, inline or `src=` (a warning: a key seeded from storage on purpose is possible). The runtime cannot see what a module read when it was evaluated.", "ja": "router の README はハンドラの中で読むと言い、スキルの失敗の一覧にもある。4.21 から lint は、ガードのモジュール（error — 継ぎ目アプリ ledger-repair のガードはログインの後も守られたページをすべて /login へ戻した）や state のモジュール（インライン・`src=`。warning — 保存した値を意図して種にすることもある）のトップレベルでの `localStorage` / `sessionStorage` / `document.cookie` の読みを報告する。モジュールが評価のときに読んだものは、実行時には見えない。" }
     },
     {
       "id": "wake-resync-in-connected-callback",
@@ -1075,7 +1085,7 @@
       "mistake": { "en": "Tells that a request finished from a `$watch` on `<wcs-fetch>`'s `status` (or `value`).", "ja": "リクエストが終わったことを、`<wcs-fetch>` の `status`（や `value`）への `$watch` で知る。" },
       "effect": { "en": "Both are state outputs: the same value written again fires nothing. The first `DELETE` answered `204` moved the page on; the second did not, and the form stayed on the deleted entry.", "ja": "どちらも state の出力で、同じ値をもう一度書いても何も発火しない。`204` を返した 1 回目の `DELETE` ではページが進んだが、2 回目は進まず、フォームは消した記録のままだった。" },
       "disposition": "docs-only",
-      "note": { "en": "The fetch README (4.9 docs): take the response event (`eventToken.value` + `$on`, for every response) or `loading` going back to `false`.", "ja": "fetch の README（4.9 の文書）: 応答のイベント（`eventToken.value` ＋ `$on`、応答ごと）か、`loading` が `false` に戻るのを受ける。" }
+      "note": { "en": "The fetch README (4.9 docs): take the response event (`eventToken.value` + `$on`, for every response) or `loading` going back to `false`. Since 4.21 the lint sees what such a watch leaves behind when it replaces the response event: a name `$eventTokens` still declares that no binding emits (`wcs/event-token-unbound`, its own entry — the ledger-repair seam app). A page that never declared the token is not seen, so this stays with the documents.", "ja": "fetch の README（4.9 の文書）: 応答のイベント（`eventToken.value` ＋ `$on`、応答ごと）か、`loading` が `false` に戻るのを受ける。4.21 から lint は、そうした watch が応答のイベントに置き換わったときに残すもの — `$eventTokens` に宣言したまま、どの束縛も出さない名前（`wcs/event-token-unbound`、別の項目 — 継ぎ目アプリ ledger-repair）— を見る。トークンを宣言しなかったページは見えないので、この項目は文書のまま。" }
     },
     {
       "id": "fetch-value-as-current-item",
@@ -1161,10 +1171,10 @@
     },
     {
       "id": "tag-package-missing",
-      "lint": [{ "code": "wcs/tag-package-missing", "severity": "warning" }],
+      "lint": [{ "code": "wcs/tag-package-missing", "severity": "error" }],
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes a `wcs-*` tag of a package the page never loads (`<wcs-upload>` without `@wcstack/upload/auto`).", "ja": "ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。" },
-      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\". Since 4.11 the lint names the package to load (on a page that loads wcstack itself), and the diagnostics add-on warns 5 s after the page is ready (`[wcs/element-undefined]`).", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。" },
+      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\". Since 4.11 the lint names the package to load (on a page that loads wcstack itself) — an error since 4.21, which `--errors-only` no longer hides (the ledger-repair seam app) — and the diagnostics add-on warns 5 s after the page is ready (`[wcs/element-undefined]`).", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで — 4.21 から error で、`--errors-only` に隠れない: 継ぎ目アプリ ledger-repair）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。" },
       "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/element-undefined]" }]
     },
     {

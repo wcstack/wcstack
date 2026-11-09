@@ -201,14 +201,14 @@ function validateFeaturesAttributes(html: string, stateTagName: string, msgs: Wc
 
 // ------------------------------------------------------------------ literals
 
-type LiteralKind = 'string' | 'number' | 'boolean' | 'null' | 'undefined' | 'object' | 'array' | 'function' | 'unknown';
+export type LiteralKind = 'string' | 'number' | 'boolean' | 'null' | 'undefined' | 'object' | 'array' | 'function' | 'unknown';
 
 /**
  * 値テキストが**全体として**どのリテラルか。式・識別子参照・呼び出しは 'unknown'（断定しない）。
  * 文字列の中身はマスク済みの鏡像で見る（中の `,` や括弧で誤らない）。テンプレートリテラルは
  * 埋め込み（`${`）が無いときだけ文字列とみなす。コメントは先に空白へ潰す（文字列の隣にブロックコメントがあっても文字列）。
  */
-function literalKind(value: string): LiteralKind {
+export function literalKind(value: string): LiteralKind {
   const text = blankComments(value).trim();
   const scan = maskCommentsAndStrings(text).trim();
   if (/^(["'])[^"']*\1$/.test(scan)) return 'string';
@@ -239,7 +239,7 @@ function isWholeBracket(scan: string, open: string, close: string): boolean {
 }
 
 /** 配列リテラル（`[ … ]`）のトップレベルの要素と、値テキストの中での開始位置（前後の空白を除いた形）。 */
-function arrayElements(value: string): { text: string; start: number }[] {
+export function arrayElements(value: string): { text: string; start: number }[] {
   const scan = maskCommentsAndStrings(value);
   const open = scan.indexOf('[');
   const close = scan.lastIndexOf(']');

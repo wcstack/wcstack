@@ -22,6 +22,11 @@
  * 「気づかないまま出荷される」ことのほうが CI を落とすより高くつく。
  * 検出漏れ（エイリアス経由の変異、§6）は残るが、それは偽陰性であって偽陽性ではない。
  *
+ * 添字の形の代入の先が配列と分からないとき（`budgetErrors: {}` の `this.budgetErrors[id] = …` — オブジェクトのキー）は、
+ * 同じ code のまま、オブジェクトのキーへの代入として言う（4.21 から。4.20 までは「配列の添字」と言った — 継ぎ目アプリ
+ * ledger-repair）。配列と分かる（行の候補 `<path>.*`・`[]` の種・JSDoc の配列型）か、分からなくても添字が数値の
+ * リテラル（`this.items[0] = …`）なら、従来どおり配列の添字として言う。
+ *
  * 境界: チェーンにドットアクセスを含む代入（this.items[0].name = x）は
  * wcs/nested-assign の担当であり、ここでは発火しない（相補・二重報告なし）。
  * quoted キー（this.obj["key"]）と添字内のネスト bracket は対象外（設計 doc §6）。
@@ -30,6 +35,7 @@
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
+import { analyzeStatePaths, type PathCandidate } from './stateAnalyzer.js';
 import {
   ASSIGN_TAIL,
   BRACKETS_ONLY,
@@ -116,6 +122,8 @@ function findDestructiveCalls(script: string, baseOffset: number, msgs: WcsMessa
 
 /** インデックス代入・複合代入・インクリメント/デクリメント（wcs/array-index-assign）の検出。 */
 function findIndexAssigns(script: string, baseOffset: number, msgs: WcsMessageCatalog, out: WcsDiagnostic[]): void {
+  // the state's shape, read once: is what is indexed a list?
+  let paths: PathCandidate[] | null = null;
   for (const pattern of [DOT_INDEX_ASSIGN, BRACKET_INDEX_ASSIGN, PRE_DOT_INDEX, PRE_BRACKET_INDEX]) {
     for (const match of execAllMasked(pattern, script)) {
       const [root, chain] = match.groups;
@@ -123,14 +131,38 @@ function findIndexAssigns(script: string, baseOffset: number, msgs: WcsMessageCa
       if (isApiRoot(root)) continue;
       const suggestedPath = root + chainToDotted(chain);
       const start = baseOffset + match.index;
+      // what is indexed: the chain without its last subscript (`this.budgetErrors[id]` → budgetErrors)
+      const last = LAST_SUB.exec(chain);
+      const target = root + chainToDotted(last === null ? chain : chain.slice(0, last.index));
+      const numeric = last !== null && /^\s*\d+\s*$/.test(last[1]);
+      const kind = containerKind(target, (paths ??= analyzeStatePaths(script)));
       out.push({
         code: WcsDiagnosticCode.ArrayIndexAssign,
         start,
         end: start + match.length,
-        message: msgs.arrayIndexAssign(suggestedPath),
+        message: kind === 'array' || (kind === 'unknown' && numeric)
+          ? msgs.arrayIndexAssign(suggestedPath)
+          : msgs.objectKeyAssign(target, toAccessor(target), suggestedPath),
         severity: 'error',
         statePath: suggestedPath,
       });
     }
   }
+}
+
+/** The last subscript of a chain (its inner text in group 1). */
+const LAST_SUB = /(?:\?\.)?\s*\[([^[\]]+)\]\s*$/;
+
+/**
+ * Whether the value at `target` (a dotted path; `<expr>` and numeric segments are indexes) is known to be a list (rows
+ * `<path>.*`, a `[]` seed, a JSDoc array type), known to be an object (an object seed, a JSDoc object type, keys read
+ * under it), or unknown.
+ */
+function containerKind(target: string, paths: readonly PathCandidate[]): 'array' | 'object' | 'unknown' {
+  const path = target.split('.').map((s) => (/^<.*>$/.test(s) || /^\d+$/.test(s) ? '*' : s)).join('.');
+  if (paths.some((p) => p.path === `${path}.*`)) return 'array';
+  const hints = (paths.find((p) => p.path === path)?.typeHint ?? '').split('|');
+  if (hints.includes('array')) return 'array';
+  if (hints.includes('object') || paths.some((p) => p.path.startsWith(`${path}.`))) return 'object';
+  return 'unknown';
 }

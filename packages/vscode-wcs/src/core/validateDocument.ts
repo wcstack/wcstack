@@ -32,6 +32,7 @@ import { validateSemantics } from "../service/semanticValidator.js";
 import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import { validateScriptReads } from "../service/scriptReadValidator.js";
 import { validateScriptWrites } from "../service/scriptWriteValidator.js";
+import { validateModuleTopReads } from "../service/moduleTopReadValidator.js";
 import { validateStateAbsent, validateStateSources } from "../service/stateSourceValidator.js";
 import { isMustacheDisabled } from "../service/stateBehavior.js";
 import { findAllMustacheSyntax } from "../service/templateSyntax.js";
@@ -158,6 +159,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // write each other, a setter whose writes its getter does not read (docs/script-write-checks.md)
   out.push(...validateScriptWrites(text, stateTagName, locale));
   out.push(...validateArrayMutations(text, stateTagName, locale));
+  // a session read at the top level of a module evaluated once: a guard's (error), a state's (warning)
+  out.push(...validateModuleTopReads(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
   out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));
   // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）

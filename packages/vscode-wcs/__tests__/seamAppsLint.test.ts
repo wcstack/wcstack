@@ -30,11 +30,11 @@ describe('wcs/submit-without-prevent — onsubmit の #prevent 忘れ', () => {
   stop(e) { e.preventDefault(); this.username = "x"; },
   ${extra}`) + form;
 
-  it('#prevent も preventDefault も無いハンドラを <form> の onsubmit に束ねると warning', () => {
+  it('#prevent も preventDefault も無いハンドラを <form> の onsubmit に束ねると error（4.21 から。4.20 までは warning）', () => {
     const html = page(`<form data-wcs="onsubmit: login"><input name="password"></form>`);
     const found = ofCode(validate(html), WcsDiagnosticCode.SubmitWithoutPrevent);
     expect(found).toHaveLength(1);
-    expect(found[0].severity).toBe('warning');
+    expect(found[0].severity).toBe('error');
     expect(textOf(html, found[0])).toBe('onsubmit');
     expect(found[0].message).toContain('onsubmit#prevent: login');
   });

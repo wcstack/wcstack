@@ -304,8 +304,9 @@ writeFileSync(frameworkHtml, `<!doctype html>\n<div id="root"></div>\n<script ty
 writeFileSync(frameworkTsx, `export const App = () => <wcs-storage key="cart"></wcs-storage>;\n`);
 
 // From the homeroom seam app (since 4.11). A key seeded with a spread of a module constant is read (only the typo is
-// reported); a page that writes <wcs-upload> without loading @wcstack/upload gets wcs/tag-package-missing; a page that
-// pins a newer minor than this lint gets wcs/lint-version-behind. Both are warnings: --strict fails, --errors-only not.
+// reported); a page that writes <wcs-upload> without loading @wcstack/upload gets wcs/tag-package-missing — an error
+// since 4.21 (the ledger-repair seam app: as a warning, --errors-only hid it), so --errors-only fails on it too; a page
+// that pins a newer minor than this lint gets wcs/lint-version-behind, a warning: --strict fails, --errors-only not.
 const spreadSeedHtml = join(workDir, "spread-seed.html");
 writeFileSync(spreadSeedHtml, `<!doctype html>
 <wcs-state><script type="module">
@@ -320,6 +321,16 @@ writeFileSync(tagPackageHtml, `<!doctype html>
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <wcs-state><script type="module">export default { url: "/api/notes" };</script></wcs-state>
 <wcs-upload data-wcs="url: url"><wcs-upload-header name="X-Token" value="t"></wcs-upload-header></wcs-upload>
+`);
+// From the ledger-repair seam app (since 4.21): a guard that reads the session at its module's top level keeps the value
+// from page load — an error (wcs/session-read-at-module-top), so --errors-only fails on it.
+const guardTopHtml = join(workDir, "guard-top.html");
+writeFileSync(guardTopHtml, `<!doctype html><base href="/">
+<script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+<wcs-router><template><wcs-route path="/" guard="/login"><wcs-guard-handler><script type="module">
+const session = localStorage.getItem("session");
+export default function () { return session !== null; }
+</script></wcs-guard-handler></wcs-route></template></wcs-router>
 `);
 // the lint's version is the engine's (released in lockstep): a page pinning the next minor
 const [lintMajor, lintMinor] = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version.split(".").map(Number);
@@ -515,19 +526,19 @@ check("a key seeded with a spread of a module constant → only the typo is repo
   stdout: [/:7:25 warning wcs\/binding-path-missing Path "draft\.titel"/, "0 error(s), 1 warning(s), 0 info"],
 });
 
-check("a tag whose package the page never loads → warning wcs/tag-package-missing once for the package, exit 0", ["--lang=en", tagPackageHtml], {
-  exit: 0,
-  stdout: [/:4:2 warning wcs\/tag-package-missing <wcs-upload>, <wcs-upload-header> are tags of @wcstack\/upload/, /src="https:\/\/esm\.run\/@wcstack\/upload\/auto"/, "0 error(s), 1 warning(s), 0 info"],
-});
-
-check("wcs/tag-package-missing is a warning: --strict exit 1, --errors-only exit 0", ["--lang=en", "--strict", tagPackageHtml], {
+check("a tag whose package the page never loads → error wcs/tag-package-missing once for the package, exit 1", ["--lang=en", tagPackageHtml], {
   exit: 1,
-  stdout: ["0 error(s), 1 warning(s), 0 info (strict)"],
+  stdout: [/:4:2 error wcs\/tag-package-missing <wcs-upload>, <wcs-upload-header> are tags of @wcstack\/upload/, /src="https:\/\/esm\.run\/@wcstack\/upload\/auto"/, "1 error(s), 0 warning(s), 0 info"],
 });
 
-check("wcs/tag-package-missing hidden by --errors-only, exit 0", ["--lang=en", "--errors-only", tagPackageHtml], {
-  exit: 0,
-  stdout: ["0 error(s), 1 warning(s)"],
+check("wcs/tag-package-missing is an error (since 4.21): --errors-only shows it and exits 1", ["--lang=en", "--errors-only", tagPackageHtml], {
+  exit: 1,
+  stdout: [/:4:2 error wcs\/tag-package-missing /, "1 error(s), 0 warning(s)"],
+});
+
+check("a guard reading localStorage at its module's top level → error wcs/session-read-at-module-top, --errors-only exit 1", ["--lang=en", "--errors-only", guardTopHtml], {
+  exit: 1,
+  stdout: [/:4:17 error wcs\/session-read-at-module-top The guard's module reads localStorage\.getItem at its top level/, "1 error(s), 0 warning(s)"],
 });
 
 check(`a page pinning a newer minor than the lint (@wcstack/state@${nextMinor}) → warning wcs/lint-version-behind, exit 0; --strict exit 1`, ["--lang=en", versionHtml], {

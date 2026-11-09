@@ -2,7 +2,8 @@
  * packageLoadValidator.ts — the wcstack packages a page loads, against the tags it writes and the lint it is checked
  * with. From the `homeroom` seam app (an app written on 4.2.0 and upgraded to 4.10.1):
  *
- * - TagPackageMissing (`wcs/tag-package-missing`, warning): a `wcs-*` tag of a wcstack package (`<wcs-upload>`) on a
+ * - TagPackageMissing (`wcs/tag-package-missing`, error since 4.21 — a warning up to 4.20, which `--errors-only` hid from
+ *   the ledger-repair seam app's maintainer): a `wcs-*` tag of a wcstack package (`<wcs-upload>`) on a
  *   page that loads wcstack itself but no script of that package. The element is never defined, its bindings wait,
  *   and nothing in the console says so (homeroom's Save hung at "送信中 0%"). Reported once per package, at its first
  *   tag, naming the package's `/auto`. The tags of one package count together (`<wcs-upload-header>` is
@@ -170,7 +171,7 @@ export function validatePackageLoads(html: string, locale?: string, fileReader?:
   for (const [pkg, at] of byPackage) {
     out.push({
       code: WcsDiagnosticCode.TagPackageMissing,
-      start: at.start, end: at.end, severity: 'warning',
+      start: at.start, end: at.end, severity: 'error',
       tag: at.tags[0],
       message: msgs.tagPackageMissing(at.tags, `@wcstack/${pkg}`, `https://esm.run/@wcstack/${pkg}${version === null ? '' : `@${version}`}/auto`),
     });
