@@ -68,15 +68,34 @@ function wildcardForm(engine: Engine, q: Pattern): Pattern | undefined {
     ? q : engine.patterns.peek(parsePath(q.path).pattern);
 }
 
+/** The list `under` last found with no row to look into (a path under it is checked again when it has rows). */
+let emptyList: Pattern | null = null;
+/** The lists whose rows the paths under them wait for, by engine. */
+const awaitingRows = new WeakMap<Engine, Set<Pattern>>();
+
 /**
  * The segment of `p` that certainly does not exist, with the names that do at its level; null
  * when the path exists or it cannot be told without evaluating a getter (a getter on the way, a
- * null or primitive on the way, a list with no row to look into).
+ * null or primitive on the way, a list with no row to look into — `emptyList` then names it).
  */
 function missing(engine: Engine, p: Pattern): { seg: string; names: string[]; row: boolean } | null {
   const chain: Pattern[] = [];
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
   const named = (q: Pattern | null): Pattern | null | undefined => (q === null ? null : wildcardForm(engine, q));
+  // The rows of a list a getter returns are there to look into, as a data list's are: its value now, when it is
+  // the first getter on the path, data alone leads to it and no getter is declared under it (`for: rows` over
+  // `get rows()` and `.amountLabl` — docs/seam-apps.md, ledger-repair)
+  const g = chain.findIndex((q) => named(q)?.getter != null);
+  if (g >= 0 && chain[g + 1]?.last === "*" && !chain.some((q, k) => (k < g && q.last === "*") || (k > g && named(q)?.getter != null))) {
+    let rows: unknown;
+    try {
+      rows = engine.readUntracked(named(chain[g])!, null);
+    } catch {
+      // (the getter's failure is its binding's, reported already)
+      return null;
+    }
+    return under(engine, chain, g + 1, rows, named);
+  }
   // a getter anywhere on the path answers it — also one declared deeper than a segment the data
   // lacks (\`get "box.label"()\` with no \`box\` key: it renders and updates — docs/seam-apps.md)
   if (chain.some((q) => named(q)?.getter != null)) return null;
@@ -89,6 +108,7 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
     const q = chain[k];
     if (v === null || typeof v !== "object") return null;
     if (q.last === "*") {
+      if (Array.isArray(v) && v.length === 0) emptyList = q.parent;
       if (!Array.isArray(v) || v.length === 0) return null;
       // a row field is declared when any row has it — an optional one (`pending` on the rows a page
       // added itself) is not missing because the first row lacks it (docs/seam-apps.md, ssr-news)
@@ -149,8 +169,18 @@ function check(engine: Engine): void {
   for (const [p, kind] of todo) {
     if (done.has(p)) continue;
     done.add(p);
+    emptyList = null;
     const m = missing(engine, p);
-    if (m === null) continue;
+    if (m === null) {
+      // a list with no row yet (a fetch on its way): checked again when it has rows (rowsArrived)
+      if (emptyList !== null) {
+        done.delete(p);
+        let w = awaitingRows.get(engine);
+        if (w === undefined) awaitingRows.set(engine, (w = new Set()));
+        w.add(emptyList);
+      }
+      continue;
+    }
     // under an object an element wrote (`searchParams: query` — the router's query has the URL's keys): its
     // shape is the element's, and a key it lacks now may come with the next write (docs/seam-apps.md, city-library)
     const wrote = byElement.get(engine);
@@ -188,6 +218,11 @@ function check(engine: Engine): void {
     hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": source, "path": p.path, "missingSegment": m.seg });
     console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}"${kind === READ ? ` read by the getter "${readers.get(p)!.path}"` : ""} does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} ${kind === POST ? "The call updates nothing." : kind === READ ? "The getter reads undefined." : "Updates to this path will be silently dropped."}${LINT_HINT}`);
   }
+}
+
+/** A list a path waits on has rows now (listSynced): the paths under it are checked again. */
+function rowsArrived(engine: Engine, l: StateList): void {
+  if (l.rows.length > 0 && awaitingRows.get(engine)?.delete(l.pattern)) schedule(engine);
 }
 
 function schedule(engine: Engine): void {
@@ -889,7 +924,7 @@ export const diagnostics: Feature = {
     hooks.written = chain(chain(chain(hooks.written, written), elementWrote), setterWrote);
     hooks.drained = chain(chain(hooks.drained, drained), setterDrained);
     hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeSetter);
-    hooks.listSynced = chain(hooks.listSynced, listValue);
+    hooks.listSynced = chain(chain(hooks.listSynced, listValue), rowsArrived);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
     watchInputs();
   },
