@@ -280,7 +280,9 @@ export default {
       date: e.date, categoryName: cats[e.categoryId] ?? e.categoryId, memo: e.memo, amount: e.amount, by: e.createdBy?.name ?? "",
     })));
     try {
-      await Promise.all(this.$command.copyCsv.emit(csv));
+      // (an emit no <wcs-clipboard> took returns no promise: nothing was copied)
+      const results = await Promise.all(this.$command.copyCsv.emit(csv));
+      if (results.length === 0) throw new Error("クリップボードが使えません");
       this.csvMessage = `${shown.length}件をCSVとしてコピーしました`;
     } catch (err) {
       this.csvMessage = "コピーできませんでした: " + (err?.message ?? err);
@@ -320,9 +322,10 @@ export default {
     this.fieldErrors = noErrors();
   },
   initForm(ctx) {
-    if (this.keepDraft === ctx) { // came back after logging in again: what was typed stays
+    if (this.keepDraft === ctx) { // came back after logging in again, or redirected to the entry just saved: what was typed stays
       this.keepDraft = "";
       this.expiring = false;
+      this.hasReceiptFile = !!receiptFile; // a receipt still to send (kept after its upload failed) makes 保存 send it
       return;
     }
     this.keepDraft = "";
@@ -404,12 +407,22 @@ export default {
     if (e.status === 413) failure = "領収書のサイズが 5MB を超えています。";
     else if (e.status === 415) failure = "領収書は JPEG / PNG / WebP の画像だけ使えます。";
     else failure = "領収書を保存できませんでした（" + describeError(e) + "）。";
-    // the entry itself is saved; stay (on its edit page) so the receipt can be tried again
-    receiptFile = null;
-    this.hasReceiptFile = false;
-    this.receiptName = "";
-    if (this.isEdit) { this.loadForm({ ...entry, receiptUrl: this["serverEntry.receiptUrl"] }); this.receiptError = failure; }
-    else { this.receiptError = failure; this.saveMessage = "記録は保存しました。領収書だけ保存できませんでした。"; this.forceEdit(entry); }
+    // the entry itself is saved; stay (on its edit page) so the receipt can be tried again. A refused file (413 / 415)
+    // is dropped; after another failure (a 500, a dropped connection) the chosen file is kept, so 保存 sends it again —
+    // the file input still shows it, and choosing the same file again fires no change event
+    if (e.status === 413 || e.status === 415) { receiptFile = null; this.receiptName = ""; }
+    if (this.isEdit) {
+      this.loadForm({ ...entry, receiptUrl: this["serverEntry.receiptUrl"] });
+      this.receiptError = failure;
+      this.hasReceiptFile = !!receiptFile;
+    } else {
+      // not yet marked: a form with a file to send is dirty, and the leave confirm would ask before this redirect.
+      // initForm marks the kept file once the edit page has opened
+      this.hasReceiptFile = false;
+      this.receiptError = failure;
+      this.saveMessage = "記録は保存しました。領収書だけ保存できませんでした。";
+      this.forceEdit(entry);
+    }
   },
   forceEdit(entry) {
     this.keepDraft = "edit:" + entry.id; // the form is already what the server has; do not reset it
@@ -446,6 +459,9 @@ export default {
     liveEvent(state, ev) {
       const m = ev.detail;
       if (!m || !m.data) return;
+      // offline, a refetch can only fail, and a failed fetch resets its value to null (the month would vanish);
+      // the `offline` watch catches up once the connection is back
+      if (state.offline) return;
       if (m.event === "budget-updated") {
         if ((state.isMonth || state.isBudgets) && m.data.month === state.month) state.$command.refreshBudgets.emit();
       } else if (m.event === "entry-created" || m.event === "entry-updated" || m.event === "entry-deleted") {

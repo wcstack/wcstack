@@ -564,6 +564,27 @@ async function bannerGone(banner: Locator): Promise<void> {
   await expect(banner).toBeHidden();
 }
 
+test("領収書の上げ直し: サーバーの 500 の後は、選んだ写真を持ったまま保存し直せる（ledger-repair の保守担当が見つけた）", async ({ page }) => {
+  const log = watchConsole(page);
+  await loginTo(page, "/entries/new?month=2026-10");
+  await fillEntry(page, { date: "2026-10-26", amount: "660", categoryId: "daily", memo: "上げ直す領収書" });
+  await page.locator("input[name=receipt]").setInputFiles({ name: "ok.png", mimeType: "image/png", buffer: PNG });
+  // the first upload answers 500 (a server's hiccup); the next goes through
+  let uploads = 0;
+  await page.route(/\/api\/entries\/\d+\/receipt/, (route) => (uploads++ === 0 ? route.fulfill({ status: 500, contentType: "application/json", body: "{}" }) : route.fallback()));
+  await saveButton(page).click();
+  await expect(page).toHaveURL(/\/entries\/\d+\/edit$/);
+  await expect(page.locator("form p.error")).toHaveText("記録は保存しました。領収書だけ保存できませんでした。");
+  // saved again without choosing the photo again: it goes up this time (up to 4.20 it was dropped after any failure,
+  // and the entry was saved without it)
+  await saveButton(page).click();
+  await expect(page).toHaveURL(`${APP}/months/2026-10`);
+  await expect(row(page, "上げ直す領収書").locator("img.thumb")).toBeVisible();
+  expect(uploads).toBe(2);
+  expect(log.problems).toEqual([]);
+  expect(onlyProvoked(log, status(500))).toEqual([]);
+});
+
 test("オフラインではバナーが出て保存できず、つながると月が追いつく", async ({ page, context }) => {
   const log = watchConsole(page);
   await loginTo(page, "/months/2026-10");
@@ -585,6 +606,9 @@ test("オフラインではバナーが出て保存できず、つながると�
   await api("/api/entries", { method: "POST", body: { date: "2026-10-30", amount: 777, categoryId: "other", memo: "オフライン中", clientId: "offline-1" } });
   await page.waitForTimeout(1500);
   await expect(row(page, "オフライン中")).toHaveCount(0);
+  // the month stays on screen meanwhile: the live event's refetch would fail offline and empty it (the ledger-repair
+  // seam app's maintainer found it — docs/seam-apps.md)
+  await expect(row(page, "焼肉")).toBeVisible();
   await context.setOffline(false);
   await expect(row(page, "オフライン中")).toBeVisible({ timeout: 15_000 });
   await bannerGone(page.locator(".banner.offline"));
