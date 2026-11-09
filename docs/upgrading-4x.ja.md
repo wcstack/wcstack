@@ -381,7 +381,20 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: ページやインスタンスごとに新しい状態にするため、状態のモジュールを factory として export し、inline のモジュールで作る（factory のモジュールを import map に載せる）。htmx が入れ替えるページで volume を使わない。値が無いことのある `locale` の前の `|coalesce(0)`。getter の `Record<string, T>` のパスを黙らせるためだけに生成した `stateSchema`。Windows の npm の scripts がパターンをそのまま渡すので、`wcs-validate` に渡すファイルを並べるスクリプト。
 
-## 4.20.0 でもまだ要るもの
+### 4.21.0
+
+2026-11-10 — [CHANGELOG](../CHANGELOG.md#4210--2026-11-10)
+
+- `@wcstack/lint`: `wcs/submit-without-prevent` と `wcs/tag-package-missing` は error になった。どちらかがあっても `wcs-validate --errors-only` を通っていたページは、今は落ちる。
+- `@wcstack/lint`: `wcs/session-read-at-module-top` が新しい規則。`<wcs-guard-handler>` のモジュールの最上位で `localStorage` / `sessionStorage` / `document.cookie` を読むと error になる。state のモジュールの最上位なら warning で、わざと保存値から初期値を読む形にも出る: そのキーは `<wcs-storage>` で結ぶか、値を使うメソッドの中で読む。
+- `@wcstack/lint`: `wcs/event-token-unbound`（warning）が新しい規則。`$eventTokens` の名前のうち、どの `eventToken.` 束縛も出さないものを報告する。
+- `@wcstack/lint`: その場で変えたリストの行は、フィールドごとに「無い」と報告しなくなった。
+- `@wcstack/state` のコンソール: `[wcs/binding-path-missing]` は、getter が返すリストの行のフィールドを言うことがある（近い名前があるとき）。空で始まったリストの下のパスも、行が届いた後なら言うことがある。
+- `@wcstack/devtools`: ランタイムが失敗を記録すると、閉じたバッジに赤い数が出る。ヘッダーには失敗だけを出すボタンがあり、Wiring のペインは、ランタイムが解決しないと報告したパスに印を付ける。
+
+要らなくなった回避策: 送信するフォームや、パッケージを読み込んでいないタグを見るためだけに、`--errors-only` を付けずに `wcs-validate` をもう 1 回走らせること（どちらも今は error）。
+
+## 4.21.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
