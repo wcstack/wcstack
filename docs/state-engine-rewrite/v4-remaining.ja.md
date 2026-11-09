@@ -1734,8 +1734,8 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: PR #62（merge commit 8c3b92d）で `references/islands.md`（ページを持たないとき — 入れ替わる body の中のルート、差し込みを binder に渡す・捨てるときに `release()`、履歴のキャッシュを切る、テンプレートの外の `hx-*`、scoped registry のウィジェット）、`<wcs-link>` をルーターのページに限る、失敗の表に 3 行、lint の新しい規則、数の filter と `src` の要素ごとの評価、刻印と固定 URL。注釈付きタグ `v4.20.0`。
   - LP（wcstack.github.io 250c3be）: リリースの表示、v4.20.0 の一文（日英、islands の案内へのリンク）、固定版、ステップ 16 の integrity（`sri.json`、`sha384-B34hyk…`）、大きさを約 79 KB に（81,187 B）、llms。ローカル 7/7、本番 8/9（app/ の 404 は設計どおり）。
 - 残り:
-  - 拡張 2.15.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.15.0`。
-  - community-hall を examples/ に取り込み、e2e の spec を付ける（回避策を外して確かめる）。
+  - ~~拡張 2.15.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.15.0`。~~ → 2026-11-10、著者が公開。Marketplace の vspackage の SHA-256 が手元の vsix と一致（`fa5d908b…`）、注釈付きタグ `vscode-wcs-v2.15.0`（97e5388b）。
+  - ~~community-hall を examples/ に取り込み、e2e の spec を付ける（回避策を外して確かめる）。~~ → #655（b3c203ee）。取り込みの spec が、案内の htmx の例が渡したものだけを手放し、サーバーが最初に描いた中身を残す欠陥を捕まえた（README・islands・skill #63 で直した。CHANGELOG [Unreleased]）。
   - `bootstrapXxx(config, registry)` の第 2 引数は 50 本の README のうち 5 本にだけある（案内には書いた）。
   - 古いルートが歩いた入れ物の中の領域に新しいルートを置くと、その入れ物を飛ばす（走査の印が全エンジンに共通）。community-hall は当たらなかった。
   - 3 巡目の 2 本目「壊れたアプリを直す作者」。入れ子の作者の claude.ai のログインが 2026-11-12〜15 に切れる（`claude auth login`）。
