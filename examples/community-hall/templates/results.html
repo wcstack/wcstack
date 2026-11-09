@@ -1,0 +1,6 @@
+{{#each oob}}<p id="result-status" hx-swap-oob="innerHTML">{{total}}件のイベントが見つかりました</p>{{/each}}
+<ul class="cards" id="cards">
+  {{#each events}}{{> card}}{{/each}}
+</ul>
+{{#each empty}}<p class="empty">条件に合うイベントはありません。条件を変えてお試しください。</p>{{/each}}
+{{> more-button}}

@@ -1,0 +1,3 @@
+.lint-rendered/
+node_modules/
+test-results/

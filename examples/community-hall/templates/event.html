@@ -1,0 +1,32 @@
+<article class="event" data-event-id="{{id}}">
+  <p class="card-meta"><span class="tag">{{category}}</span> <a href="/events">イベント一覧へ戻る</a></p>
+  <h1>{{title}}</h1>
+  <p class="event-status">
+    <span class="seats big" data-wcs="class.soldout: soldOut.e{{id}}">
+      <span data-wcs="hidden: soldOut.e{{id}}" {{soldOutHidden}}>残り <b id="event-seats" data-wcs="textContent: seats.e{{id}}">{{remaining}}</b> 席</span>
+      <span data-wcs="hidden: hasSeats.e{{id}}" {{seatsHidden}}>満席</span>
+    </span>
+    <button type="button" class="star big" aria-label="マイリスト" aria-pressed="false"
+      data-wcs="onclick: toggleStar; textContent: starIcon.e{{id}}; attr.aria-pressed: starPressed.e{{id}}">☆</button>
+  </p>
+  <dl class="event-facts">
+    <dt>日時</dt><dd><time datetime="{{date}}">{{dateLabel}}</time></dd>
+    <dt>会場</dt><dd>{{venue}}</dd>
+    <dt>定員</dt><dd>{{capacity}}名</dd>
+    <dt>料金</dt><dd>大人 {{priceAdult}} ／ 子ども {{priceChild}} ／ シニア {{priceSenior}}</dd>
+  </dl>
+  <p class="event-summary">{{summary}}</p>
+</article>
+
+<!-- 予約 island: its state (booking.*) is the page's; only its markup comes in the fragment below. -->
+
+<section id="booking" class="booking" aria-labelledby="booking-h">
+  <h2 id="booking-h">予約</h2>
+  <div id="booking-slot" data-error-box="#booking-load-error" hx-get="/events/{{id}}/booking" hx-trigger="revealed, retry" hx-swap="innerHTML">
+    <p class="loading">予約フォームを読み込んでいます…</p>
+  </div>
+  <div class="load-error" id="booking-load-error" role="alert" hidden>
+    <p>予約フォームを読み込めませんでした。通信状態を確かめて、もう一度お試しください。</p>
+    <button type="button" data-retry="#booking-slot">もう一度読み込む</button>
+  </div>
+</section>

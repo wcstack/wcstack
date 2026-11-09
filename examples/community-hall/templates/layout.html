@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{pageTitle}} | みどり市民会館</title>
+  <link rel="stylesheet" href="/css/hall.css">
+  <script src="/vendor/htmx.min.js"></script>
+  <script src="/js/hall.js"></script>
+  <!-- wcstack: every I/O package before state (state goes last) -->
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<!-- hx-history="false": htmx's history snapshot would store the DOM wcstack already rendered (its <template>s replaced
+     by rows, its comment bindings by text), and a page restored from it can never be bound again ([wcs/rendered-copy]).
+     With it htmx asks the server for the page on Back / Forward (HX-History-Restore-Request) — docs/islands.md. -->
+<body hx-boost="true" hx-history="false">
+  <a class="skip-link" href="#main">本文へスキップ</a>
+
+  <!-- The islands' state: one root per document, every island under its own key. What the CMS knows about this page
+       (seats, the URL's filters, the event) is handed over in page-seed. -->
+  <script type="application/json" id="page-seed">{{{pageSeed}}}</script>
+  <!-- Every boosted navigation creates this root again; since 4.20 each one evaluates /js/site.js anew, so the next
+       event's booking form starts empty. -->
+  <wcs-state src="/js/site.js"></wcs-state>
+  <wcs-storage key="midori-hall:mylist" data-wcs="value#init=element: mylist"></wcs-storage>
+  <wcs-sse url="/api/seats/stream" events="seats" auto-reconnect reconnect-interval="2000"
+    data-wcs="message: seatMsg; connected: streamConnected"></wcs-sse>
+
+  <header class="site-header">
+    <p class="site-name"><a href="/">みどり市民会館</a></p>
+    <nav aria-label="メイン">
+      <ul>
+        <li><a href="/" aria-current="{{navHome}}">ホーム</a></li>
+        <li><a href="/events" aria-current="{{navEvents}}">イベント</a></li>
+        <li><a href="/my" aria-current="{{navMy}}">マイリスト <span class="badge" id="mylist-count" aria-label="登録数" data-wcs="textContent: starCountLabel"></span></a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main" tabindex="-1">
+{{{content}}}
+  </main>
+
+  <footer class="site-footer">
+    <p>みどり市民会館 〒376-0000 みどり市中央1-1 ／ 電話 0277-00-0000 ／ 休館日: 月曜日</p>
+  </footer>
+</body>
+</html>

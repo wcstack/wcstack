@@ -1,0 +1,13 @@
+/* 旅館みどり荘's own stylesheet — written for its own pages, not for anyone's widget */
+body { margin: 0; font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; background: #f6efe3; color: #3b2a1a; }
+.inn-header { background: #5a3a22; color: #f6efe3; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+.inn-header a { color: #f6efe3; margin-left: 16px; }
+.inn-name { margin: 0; font-size: 22px; }
+main { max-width: 960px; margin: 0 auto; padding: 24px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.inn-footer { background: #eadcc6; padding: 16px 24px; }
+/* the rules that would wreck an embedded form */
+button { background: #c0392b; color: #fff; border: 3px double #fff; border-radius: 0; text-transform: uppercase; padding: 10px 30px; font-size: 20px; letter-spacing: .3em; }
+input, textarea, select { border: 0; border-bottom: 2px dotted #5a3a22; background: transparent; font-size: 22px; width: 100%; }
+[hidden] { display: block !important; opacity: .35; }
+label { display: block; font-weight: bold; }

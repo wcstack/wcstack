@@ -1,0 +1,78 @@
+<!-- 予約ウィジェット (partner sites). Rendered by the CMS per event and placed in the widget's shadow root by
+     /widget/midori-booking.js. Since 4.20 each <wcs-state src> evaluates its module: two widgets for one event on a
+     page get two states. -->
+<link rel="stylesheet" href="{{hallOrigin}}/widget/widget.css">
+<wcs-state src="{{hallOrigin}}/widget/widget-state.js?event={{id}}"></wcs-state>
+<wcs-sse url="{{hallOrigin}}/api/seats/stream" events="seats" auto-reconnect reconnect-interval="3000"
+  data-wcs="message: seatMsg; connected: streamConnected"></wcs-sse>
+
+<section class="w" aria-label="みどり市民会館 イベント予約">
+  <p class="w-org">みどり市民会館のイベント</p>
+  <h2 class="w-title"><a href="{{hallOrigin}}/events/{{id}}" target="_blank" rel="noopener">{{title}}</a></h2>
+  <p class="w-meta">{{dateLabel}} ／ {{venue}}</p>
+  <p class="w-prices">大人 {{priceAdult}} ・ 子ども {{priceChild}} ・ シニア {{priceSenior}}</p>
+
+  <p class="w-status" data-wcs="hidden: loading|not">空席を確認しています…</p>
+  <div class="w-status w-error" data-wcs="hidden: loadFailed|not" hidden>
+    <p>みどり市民会館につながりません。しばらくしてからもう一度お試しください。</p>
+    <button type="button" data-wcs="onclick: retryLoad">もう一度試す</button>
+  </div>
+
+  <div class="w-body" data-wcs="hidden: ready|not" hidden>
+    <p class="w-seats" data-wcs="class.soldout: soldOut">
+      <span data-wcs="hidden: soldOut">残り <b class="w-remaining" data-wcs="textContent: remaining"></b> 席</span>
+      <span data-wcs="hidden: hasSeats">満席</span>
+    </p>
+    <p class="w-err" data-wcs="hidden: streamLost|not" hidden>会館との接続が切れています。空席数は最新ではない可能性があります（再接続しています）。</p>
+
+    <template data-wcs="if: done">
+      <div class="w-done" role="alert">
+        <p><strong>予約を受け付けました。</strong></p>
+        <p>予約番号 <b class="w-booking-id" data-wcs="textContent: result.id"></b>（合計 <!--@@: result.total|locale-->円・当日受付でお支払いください）</p>
+        <p><button type="button" data-wcs="onclick: again">続けて予約する</button></p>
+      </div>
+    </template>
+    <template data-wcs="else:">
+      <form class="w-form" novalidate data-wcs="onsubmit#prevent: submit">
+        <fieldset>
+          <legend>枚数</legend>
+          <label>大人 <select class="w-adult" data-wcs="value: adultCount"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></label>
+          <label>子ども <select class="w-child" data-wcs="value: childCount"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></label>
+          <label>シニア <select class="w-senior" data-wcs="value: seniorCount"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></label>
+          <p class="w-total">合計 <!--@@: total|locale-->円</p>
+          <p class="w-err" data-wcs="textContent: errors.tickets"></p>
+        </fieldset>
+        <fieldset data-wcs="hidden: hasTickets|not" hidden>
+          <legend>参加される方のお名前</legend>
+          <p class="w-err" data-wcs="textContent: errors.attendees"></p>
+          <template data-wcs="for: attendees">
+            <p class="w-attendee">
+              <label data-wcs="attr.for: .inputId">参加者 <!--@@: .number-->（<span data-wcs="hidden: .notAdult">大人</span><span data-wcs="hidden: .notChild">子ども</span><span data-wcs="hidden: .notSenior">シニア</span>）</label>
+              <input type="text" class="w-attendee-name" data-wcs="attr.id: .inputId; value: .name; attr.aria-invalid: .invalid">
+              <button type="button" class="w-remove" data-wcs="onclick: removeAttendee">外す</button>
+              <span class="w-err" data-wcs="textContent: .error"></span>
+            </p>
+          </template>
+        </fieldset>
+        <fieldset>
+          <legend>代表者</legend>
+          <label>お名前 <input type="text" class="w-name" autocomplete="name" data-wcs="value: form.name; attr.aria-invalid: nameInvalid"></label>
+          <span class="w-err" data-wcs="textContent: errors.name"></span>
+          <label>電話番号 <input type="tel" class="w-phone" autocomplete="tel" data-wcs="value: form.phone; attr.aria-invalid: phoneInvalid"></label>
+          <span class="w-err" data-wcs="textContent: errors.phone"></span>
+          <label>メール <input type="email" class="w-email" autocomplete="email" data-wcs="value: form.email; attr.aria-invalid: emailInvalid"></label>
+          <span class="w-err" data-wcs="textContent: errors.email"></span>
+        </fieldset>
+        <div role="alert">
+          <p class="w-err" data-wcs="hidden: soldOutAll|not" hidden>申し訳ありません。満席になりました。</p>
+          <p class="w-err" data-wcs="hidden: soldOutSome|not" hidden>残りが <!--@@: remainingLeft--> 席になりました。枚数を減らしてください。</p>
+          <p class="w-err" data-wcs="hidden: failedOffline|not" hidden>通信できませんでした。接続を確かめて、もう一度お試しください。</p>
+          <p class="w-err" data-wcs="hidden: failedServer|not" hidden>予約を受け付けられませんでした（エラー <!--@@: failCode-->）。</p>
+        </div>
+        <button type="submit" class="w-submit" data-wcs="disabled: blocked">
+          <span data-wcs="hidden: sending">予約する</span><span data-wcs="hidden: notSending" hidden>送信中…</span>
+        </button>
+      </form>
+    </template>
+  </div>
+</section>

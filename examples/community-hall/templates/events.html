@@ -1,0 +1,62 @@
+<h1>イベント一覧</h1>
+
+<!-- 絞り込み island (filter.* in the page's state, seeded from the URL). The inputs below are the ones htmx sends, so a
+     filtered list is in the URL and comes back on reload, Back and Forward. -->
+
+<div class="events-island" data-error-box="#search-error">
+<form id="search" class="search" action="/events" method="get"
+  hx-get="/events/results" hx-target="#results" hx-push-url="true" hx-sync="this:replace"
+  hx-trigger="change from:.filter-input, submit" hx-indicator="#search-busy"
+  data-wcs="attr.data-invalid: filterInvalidAttr">
+  <p class="search-box">
+    <label for="q">キーワード</label>
+    <input id="q" type="search" name="q" value="{{q}}" autocomplete="off"
+      hx-get="/events/results" hx-trigger="input changed delay:300ms, search" hx-target="#results"
+      hx-push-url="true" hx-include="closest form" hx-sync="closest form:replace" hx-indicator="#search-busy">
+    <button type="submit">検索</button>
+    <span id="search-busy" class="busy" aria-hidden="true">検索中…</span>
+  </p>
+
+  <details class="filters" id="filters">
+    <summary>絞り込み<span data-wcs="hidden: filterNone" {{hidNone}}>（<!--@@: filterCount-->）</span></summary>
+    <fieldset class="chips">
+      <legend>カテゴリ</legend>
+      <label class="chip"><input class="filter-input" type="radio" name="cat" value="" {{catAll}} data-wcs="radio: filter.cat"> すべて</label>
+      {{#each catOptions}}<label class="chip"><input class="filter-input" type="radio" name="cat" value="{{value}}" {{checked}} data-wcs="radio: filter.cat"> {{value}}</label>
+      {{/each}}
+    </fieldset>
+    <fieldset class="dates">
+      <legend>開催日</legend>
+      <label>から <input class="filter-input" type="date" name="from" value="{{from}}" data-wcs="value: filter.from"></label>
+      <label>まで <input class="filter-input" type="date" name="to" value="{{to}}" data-wcs="value: filter.to"></label>
+      <p class="field-error" role="alert"><span data-wcs="hidden: filterInvalid|not" hidden>終了日は開始日より後の日付にしてください。</span></p>
+    </fieldset>
+    <p>
+      <label><input class="filter-input" type="checkbox" name="available" value="1" {{availableChecked}} data-wcs="checked: filter.available"> 空席ありのみ</label>
+    </p>
+    <p>
+      <label for="sort">並び順</label>
+      <select class="filter-input" id="sort" name="sort" data-wcs="value: filter.sort">
+        <option value="date" {{sortDate}}>開催日順</option>
+        <option value="title" {{sortTitle}}>タイトル順</option>
+      </select>
+    </p>
+    <p><a href="/events">条件をすべてクリア</a></p>
+  </details>
+
+  <p class="filter-summary" data-wcs="hidden: filterNone" {{hidNone}}>
+    絞り込み:
+    <span data-wcs="textContent: filter.cat">{{cat}}</span>
+    <span data-wcs="hidden: filterHasDates|not" {{hidDates}}><!--@@: filter.from--> 〜 <!--@@: filter.to--></span>
+    <span data-wcs="hidden: filter.available|not" {{hidAvail}}>空席ありのみ</span>
+    <span data-wcs="hidden: filterSortTitle|not" {{hidSort}}>タイトル順</span>
+  </p>
+</form>
+
+<p id="search-error" class="form-error" role="alert" hidden>検索結果を読み込めませんでした。通信状態を確かめて、もう一度お試しください。</p>
+<p id="result-status" class="result-status" role="status">{{total}}件のイベントが見つかりました</p>
+
+<div id="results">
+{{> results}}
+</div>
+</div>

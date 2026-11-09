@@ -1,0 +1,17 @@
+<h1>みどり市民会館</h1>
+<p class="lead">音楽・講座・子ども向けのイベントや展示を開催しています。☆でマイリストに登録できます。</p>
+
+<section aria-labelledby="upcoming-h">
+  <h2 id="upcoming-h">近日開催のイベント</h2>
+  <ul class="cards">
+    {{#each events}}{{> card}}{{/each}}
+  </ul>
+  <p><a href="/events">イベントをすべて見る</a></p>
+</section>
+
+<section aria-labelledby="news-h">
+  <h2 id="news-h">お知らせ</h2>
+  <ul class="news">
+    {{#each news}}<li><time datetime="{{date}}">{{date}}</time> {{title}}</li>{{/each}}
+  </ul>
+</section>

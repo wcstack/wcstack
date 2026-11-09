@@ -1,0 +1,22 @@
+/* The widget's own styles, inside its shadow root: the partner's stylesheet does not reach in, and these do not leak out. */
+:host { display: block; max-width: 34rem; font: 15px/1.6 system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; color: #1d2320; }
+[hidden] { display: none !important; }
+.w { border: 1px solid #c8d3cc; border-radius: 10px; padding: 14px 18px; background: #fff; }
+.w-org { margin: 0; font-size: 12px; color: #1f6f43; font-weight: 700; letter-spacing: .05em; }
+.w-title { margin: 2px 0; font-size: 18px; }
+.w-title a { color: inherit; }
+.w-meta, .w-prices { margin: 0; color: #5b6660; font-size: 13px; }
+.w-seats { font-weight: 700; margin: 8px 0; }
+.w-seats.soldout { color: #b3261e; }
+fieldset { border: 1px solid #e1e7e3; border-radius: 6px; margin: 0 0 10px; padding: 8px 12px; }
+legend { font-weight: 700; font-size: 13px; padding: 0 4px; }
+label { display: inline-flex; gap: 4px; align-items: center; margin: 2px 10px 2px 0; }
+input, select, button { font: inherit; color: inherit; background: #fff; border: 1px solid #b9c5be; border-radius: 4px; padding: 3px 6px; margin: 0; box-shadow: none; text-transform: none; }
+button { cursor: pointer; }
+.w-submit { background: #1f6f43; border-color: #1f6f43; color: #fff; padding: 6px 18px; }
+.w-submit:disabled { background: #9db3a6; border-color: #9db3a6; cursor: not-allowed; }
+.w-attendee { margin: 4px 0; }
+.w-err { color: #b3261e; font-size: 13px; display: block; margin: 0; }
+.w-err:empty { display: none; }
+.w-done { background: #e7f3ec; border-radius: 6px; padding: 8px 12px; }
+.w-error { color: #b3261e; }
