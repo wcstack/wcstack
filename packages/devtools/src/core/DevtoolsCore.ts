@@ -6,7 +6,8 @@
  * - registry への addListener / 解除（connect / disconnect）
  * - source 管理と roster（state 要素一覧）の維持
  * - 配線台帳（binding-added/removed イベントから構築。binding は WeakRef 保持）
- * - タイムライン ring buffer（既定 500 件 FIFO）
+ * - タイムライン ring buffer（既定 500 件 FIFO）と、失敗の行だけの ring buffer（isFailureKind）
+ * - 解決しないと報告されたパスの台帳（配線の行の印 — getUnresolvedReport）
  * - 予約 prefix `wcs-devtools` の自己除外（protocol §5）
  *
  * 台帳はすべて devtools 側に置く（protocol 原則 2）。disconnect で
@@ -45,6 +46,29 @@ export type TimelineKind =
   | "propagation-hop-limit"
   | "contract-drift";
 
+/**
+ * 失敗の種別。どれもランタイムが console に出すだけで続行する種類 — 握った throw（watch / binding の
+ * 適用）、打ち切った連鎖、解決しないパス、実物とずれた契約。ledger-repair（継ぎ目アプリ）では、ログイン
+ * から月のページまでの 72 行の中に `binding-apply-error` が 2 行あり、write / batch に埋もれて
+ * 「失敗は出ない」と読まれた。そこで shell はこれを数えてバッジとヘッダーに出し、timeline を失敗だけに
+ * 絞れるようにする。購読者 0 の command / event（空撃ち）は warn 表示のままで数えない — 誰も聞いて
+ * いない event は意図どおりのことが多く、種別でもない（subscriberCount の性質）。
+ */
+const FAILURE_KINDS: ReadonlySet<TimelineKind> = new Set<TimelineKind>([
+  "watch-error",
+  "watch-chain-limit",
+  "render-chain-limit",
+  "path-unresolved",
+  "binding-apply-error",
+  "propagation-hop-limit",
+  "contract-drift",
+]);
+
+/** timeline のこの種別が失敗か（バッジの数・失敗だけの表示の対象）。 */
+export function isFailureKind(kind: TimelineKind): boolean {
+  return FAILURE_KINDS.has(kind);
+}
+
 export interface ITimelineEntry {
   readonly seq: number;
   readonly time: number;
@@ -53,6 +77,29 @@ export interface ITimelineEntry {
   readonly label: string;
   readonly detail: string;
   readonly subscriberCount: number | null;
+}
+
+/**
+ * ランタイムが「解決しない」と報告したパス（`state:path-unresolved`）。配線の行に印を付けるための
+ * 台帳の 1 件 — timeline の行と違い、⏸ でも記録し 🗑 でも消さない（ランタイムは (state 要素, パス)
+ * ごとに 1 回しか報告しないので、消すと二度と戻らない）。
+ */
+export interface IUnresolvedPath {
+  readonly sourceId: string;
+  /** 報告した面（`binding` / `watch` / `postUpdate` / `getter`、3.x の `scan`。未知の値もそのまま） */
+  readonly source: string;
+  /** 報告されたままのパス（ワイルドカード形 — `rows.*.amountLabl`） */
+  readonly path: string;
+  readonly missingSegment: string;
+}
+
+interface IUnresolvedRecord extends IUnresolvedPath {
+  /**
+   * 報告したツリーの state 要素。4.0 のランタイムは add-on が気づいたイベントすべてに `stateElement`
+   * を載せるが、文書化された payload（と 3.5.4 で凍結した型の突き合わせ）には無いので、型には足さず
+   * あれば読む。無ければ null — 同じ source の同名パスの配線すべてに当てる（欠測を欠落にしない）。
+   */
+  readonly stateElementRef: WeakRef<object> | null;
 }
 
 export interface IRosterEntry {
@@ -212,6 +259,16 @@ export class DevtoolsCore {
   private _wiringByPathKey: Map<string, Set<IWiringEntry>> = new Map();
   private _wiringEntryByBinding: WeakMap<IBindingLike, IWiringEntry> = new WeakMap();
   private _timeline: ITimelineEntry[] = [];
+  /**
+   * 失敗の行（isFailureKind）だけの ring buffer（容量は timeline と同じ）。timeline からは write /
+   * batch の流れで押し出される（毎フレーム書くページなら数秒で）が、失敗は失敗にしか押し出されない。
+   * ⏸ の間も記録する — 止めるのは活動の記録で、失敗を黙らせることではない（カバレッジの実測と同じ）。
+   */
+  private _failures: ITimelineEntry[] = [];
+  /** 観測開始（または 🗑）以降の失敗の数。_failures から押し出された分も数える。 */
+  private _failureCount: number = 0;
+  /** 解決しないと報告されたパス（パス → 報告の列）。配線の行の印に使う。 */
+  private _unresolved: Map<string, IUnresolvedRecord[]> = new Map();
   private _seq: number = 0;
   private _paused: boolean = false;
   private _changeListeners: Set<CoreChangeListener> = new Set();
@@ -288,6 +345,7 @@ export class DevtoolsCore {
     this._watchFiredStats.clear();
     this._tokenEmitStats.clear();
     this._everAttachedKeys.clear();
+    this._unresolved.clear();
     this._notify("sources");
     this._notify("roster");
     this._notify("wiring");
@@ -330,9 +388,49 @@ export class DevtoolsCore {
     return this._timeline;
   }
 
+  /** 失敗の行（新しいものから timeline の容量まで。write / batch には押し出されない）。 */
+  getFailures(): readonly ITimelineEntry[] {
+    return this._failures;
+  }
+
+  /** 観測開始（または clearTimeline）以降の失敗の数。getFailures() から押し出された分も含む。 */
+  get failureCount(): number {
+    return this._failureCount;
+  }
+
+  /** timeline と失敗の行をクリアする（解決しないパスの台帳は残す — IUnresolvedPath を参照）。 */
   clearTimeline(): void {
     this._timeline = [];
+    this._failures = [];
+    this._failureCount = 0;
     this._notify("timeline");
+  }
+
+  /**
+   * 配線 1 行のパスが「解決しない」と報告されていれば、その報告（無ければ null）。突き合わせは
+   * 報告されたままのパス（ワイルドカード形 `rows.*.amountLabl` — 配線の path と同じ形）と、報告した
+   * source。報告と配線の両方がツリーの識別を持つときはツリーも合わせる（複数ツリーの同名パスを
+   * 混ぜない — getWiringForPath と同じ流儀）。
+   *
+   * ランタイムの検査は控えめで（getter が返したリストの行・空のリスト・null の親は黙る —
+   * protocol §4.3.2）、ここに無いことは配線が正しいことを意味しない。
+   */
+  getUnresolvedReport(entry: IWiringEntry): IUnresolvedPath | null {
+    const records = this._unresolved.get(pathKeyOf(entry.path));
+    if (records === undefined) {
+      return null;
+    }
+    const tree = entry.stateElementRef?.deref();
+    for (const record of records) {
+      if (record.sourceId !== entry.sourceId) {
+        continue;
+      }
+      if (record.stateElementRef !== null && tree !== undefined && record.stateElementRef.deref() !== tree) {
+        continue;
+      }
+      return record;
+    }
+    return null;
   }
 
   /**
@@ -673,19 +771,51 @@ export class DevtoolsCore {
   }
 
   private _appendTimeline(entry: Omit<ITimelineEntry, "seq" | "time">): void {
-    if (this._paused) {
+    const failure = isFailureKind(entry.kind);
+    // ⏸ が止めるのは活動の記録。失敗は止めない（_failures の注記）
+    if (this._paused && !failure) {
       return;
     }
-    this._timeline.push({
+    const full: ITimelineEntry = {
       ...entry,
       seq: this._seq++,
       time: performance.now(),
-    });
-    const overflow = this._timeline.length - this._timelineCapacity;
-    if (overflow > 0) {
-      this._timeline.splice(0, overflow);
+    };
+    if (failure) {
+      this._failureCount++;
+      this._pushBounded(this._failures, full);
+    }
+    if (!this._paused) {
+      this._pushBounded(this._timeline, full);
     }
     this._notify("timeline");
+  }
+
+  private _pushBounded(buffer: ITimelineEntry[], entry: ITimelineEntry): void {
+    buffer.push(entry);
+    const overflow = buffer.length - this._timelineCapacity;
+    if (overflow > 0) {
+      buffer.splice(0, overflow);
+    }
+  }
+
+  private _recordUnresolved(
+    sourceId: string,
+    event: Extract<DevtoolsEventLike, { type: "state:path-unresolved" }>,
+  ): void {
+    const key = pathKeyOf(event.path);
+    // GC 済みツリーの報告はここで落とす（部品を作っては捨てるページで同じパスの報告が溜まらない）
+    const records = (this._unresolved.get(key) ?? []).filter((record) =>
+      record.stateElementRef === null || record.stateElementRef.deref() !== undefined);
+    const element = (event as { readonly stateElement?: unknown }).stateElement;
+    records.push({
+      sourceId,
+      source: event.source,
+      path: event.path,
+      missingSegment: event.missingSegment,
+      stateElementRef: typeof element === "object" && element !== null ? new WeakRef(element) : null,
+    });
+    this._unresolved.set(key, records);
   }
 
   private _labelOf(address: IAbsoluteAddressLike): string {
@@ -881,6 +1011,10 @@ export class DevtoolsCore {
       case "state:path-unresolved": {
         // ランタイムは warn で続行する（既存ページを止めないため）。lint を
         // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
+        // timeline の行とは別に台帳へ積み、Wiring ペイン（pick）の行に印を付ける
+        // （ledger-repair: pick が `textContent ← rows.*.amountLabl` を印なしで並べた）。
+        this._recordUnresolved(sourceId, event);
+        this._notify("wiring");
         this._appendTimeline({
           sourceId,
           kind: "path-unresolved",

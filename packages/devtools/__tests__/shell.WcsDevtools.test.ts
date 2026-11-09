@@ -194,6 +194,16 @@ describe('WcsDevtools shell', () => {
       expect(devtools.core!.connected).toBe(true);
     });
 
+    it('shadowRootはopenで、ページのスクリプト（テスト）から読めること（ledger-repair V3: README の closed world を閉じた shadow と読まれた）', () => {
+      mount();
+      const found = document.querySelector('wcs-devtools')!;
+      expect(found.shadowRoot).not.toBeNull();
+      expect(found.shadowRoot!.mode).toBe('open');
+      expect(found.shadowRoot!.querySelector('button[data-role="failures"]')!.textContent).toBe('0 failures');
+      // ページの DOM には何も足さない（自分の要素だけ）
+      expect(document.body.children).toHaveLength(1);
+    });
+
     it('rAF経由でも描画されること', async () => {
       mount();
       devtools.setAttribute('open', '');
@@ -683,22 +693,23 @@ describe('WcsDevtools shell', () => {
   // レイアウトは happy-dom では測れないので、ここでは構造と、縮む／縮まないの指定を固定する
   // （実ブラウザの幅は e2e/tests/state-devtools-playground.spec.ts）。
   describe('ヘッダーの幅', () => {
-    it('中間の操作はtoolsにまとまって縮み、dockと×はその外で縮まないこと', () => {
+    it('中間の操作はtoolsにまとまって縮み、失敗の数・dock・×はその外で縮まないこと', () => {
       mount();
       const header = shadowOf(devtools).querySelector<HTMLElement>('header')!;
       const tools = header.querySelector<HTMLElement>(':scope > .tools')!;
       expect([...tools.children].map((el) => (el as HTMLElement).dataset['role'] ?? el.localName))
         .toEqual(['select', 'pick', 'pause', 'clear']);
+      // 失敗の数は右ドック（420px）でも見えているよう tools の外に置く
       expect([...header.children].map((el) => (el as HTMLElement).dataset['role'] ?? el.className))
-        .toEqual(['title', 'tools', 'dock', 'close']);
+        .toEqual(['title', 'failures', 'tools', 'dock', 'close']);
 
       const style = (el: Element) => getComputedStyle(el);
       // title と tools は 0 まで縮める。tools は足りなければ横にスクロールする
       expect(style(header.querySelector('.title')!).minWidth).toMatch(/^0(px)?$/);
       expect(style(tools).minWidth).toMatch(/^0(px)?$/);
       expect(style(tools).overflowX).toBe('auto');
-      // dock と × は縮まず、折り返さない
-      for (const role of ['dock', 'close']) {
+      // 失敗の数・dock・× は縮まず、折り返さない
+      for (const role of ['failures', 'dock', 'close']) {
         expect(style(headerButton(devtools, role)).flexShrink).toBe('0');
         expect(style(headerButton(devtools, role)).whiteSpace).toBe('nowrap');
       }
@@ -967,6 +978,38 @@ describe('WcsDevtools shell', () => {
       expect(paneBody(devtools, 'wiring').textContent).toContain('context: #text');
     });
 
+    it('解決しないと報告されたパスの配線に印を付け、ツールチップに足りないセグメントを出すこと（ledger-repair V2）', () => {
+      const element = {};
+      const row = document.createElement('li');
+      const amount = document.createElement('span');
+      const memo = document.createElement('span');
+      row.append(amount, memo);
+      document.body.append(row);
+      mount();
+      const rowAddress = (path: string): IAbsoluteAddressLike =>
+        ({ absolutePathInfo: { stateElement: element, pathInfo: { path } }, listIndex: { index: 0, indexes: [0] } });
+      source.emit({ type: 'state:binding-added', absoluteAddress: rowAddress('rows.*.amountLabl'), binding: bindingOf('main', 'rows.*.amountLabl', amount) });
+      source.emit({ type: 'state:binding-added', absoluteAddress: rowAddress('rows.*.memo'), binding: bindingOf('main', 'rows.*.memo', memo) });
+      headerButton(devtools, 'pick').click();
+      row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'wiring').textContent).toContain('context: <li> — 2 live bindings');
+      expect(paneBody(devtools, 'wiring').querySelector('.badge-tag.warn')).toBeNull();
+
+      // 診断の add-on の報告（4.0 は stateElement を載せる）が来たら、pick の表示のまま描き直して印を付ける
+      source.emit({ type: 'state:path-unresolved', source: 'binding', path: 'rows.*.amountLabl', missingSegment: 'amountLabl', stateElement: element } as DevtoolsEventLike);
+      devtools.__flushRenderForTest();
+      const rows = [...paneBody(devtools, 'wiring').querySelectorAll<HTMLElement>('.wiring-row')];
+      const typo = rows.find((r) => r.textContent!.includes('rows.*.amountLabl'))!;
+      const fine = rows.find((r) => r.textContent!.includes('rows.*.memo'))!;
+      const mark = typo.querySelector<HTMLElement>('.badge-tag.warn')!;
+      expect(mark.textContent).toBe('unresolved');
+      expect(mark.title).toContain('"rows.*.amountLabl" does not resolve on the state');
+      expect(mark.title).toContain('"amountLabl" is not declared');
+      expect(mark.title).toContain('for a binding');
+      expect(fine.querySelector('.badge-tag.warn')).toBeNull();
+    });
+
     it('パス文脈選択中にrosterが消えても安全なこと', () => {
       mount();
       devtools.__flushRenderForTest();
@@ -1136,6 +1179,132 @@ describe('WcsDevtools shell', () => {
       expect(devtools.core).not.toBeNull();
       emitWrite('x');
       expect(devtools.core!.getTimeline()).toHaveLength(1);
+    });
+  });
+
+  describe('失敗の数と失敗だけの表示（ledger-repair V1: 72 行の timeline に 2 行の失敗が埋もれた）', () => {
+    function emitNoise(count: number): void {
+      for (let index = 0; index < count; index++) {
+        source.emit({ type: 'state:write', absoluteAddress: addressOf('main', `p${index}`), value: index, oldValue: undefined, hasOldValue: false });
+        source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', `p${index}`)]) });
+      }
+    }
+
+    function emitApplyError(path: string): void {
+      source.emit({ type: 'state:binding-apply-error', path, bindingType: 'for', error: new Error('[wcs/getter-write] boom') });
+    }
+
+    function badgeOf(): HTMLElement {
+      return shadowOf(devtools).querySelector<HTMLElement>('.badge')!;
+    }
+
+    function timelineKinds(): string[] {
+      return [...paneBody(devtools, 'timeline').querySelectorAll<HTMLElement>('.timeline-row .kind')].map((el) => el.textContent!);
+    }
+
+    it('失敗が無ければバッジは従来どおりの見た目で、失敗が来ると閉じたバッジの右上に数を出すこと', () => {
+      mount();
+      emitNoise(3);
+      devtools.__flushRenderForTest();
+      const badge = badgeOf();
+      const count = badge.querySelector<HTMLElement>('.badge-count')!;
+      expect(count.hidden).toBe(true);
+      expect(badge.textContent).toBe('WCS');
+      expect(badge.classList.contains('has-failures')).toBe(false);
+      expect(badge.title).toBe('wcstack DevTools');
+
+      emitApplyError('rows');
+      emitNoise(30);
+      emitApplyError('budgetRows');
+      devtools.__flushRenderForTest();
+      expect(devtools.open).toBe(false);
+      expect(count.hidden).toBe(false);
+      expect(count.textContent).toBe('2');
+      expect(badge.classList.contains('has-failures')).toBe(true);
+      expect(badge.title).toBe('wcstack DevTools — 2 failures');
+      expect(badge.getAttribute('aria-label')).toBe('wcstack DevTools — 2 failures');
+    });
+
+    it('100件からはバッジに99+と出し、ヘッダーには数そのものを出すこと', () => {
+      mount();
+      for (let index = 0; index < 100; index++) {
+        emitApplyError(`p${index}`);
+      }
+      devtools.__flushRenderForTest();
+      expect(badgeOf().querySelector('.badge-count')!.textContent).toBe('99+');
+      expect(headerButton(devtools, 'failures').textContent).toBe('⚠ 100 failures');
+    });
+
+    it('ヘッダーに失敗の数を出し、押すとTimelineが失敗の行だけになり、もう一度押すと戻ること', () => {
+      mount({ attrs: { open: '' } });
+      const failures = headerButton(devtools, 'failures');
+      expect(failures.textContent).toBe('0 failures');
+      expect(failures.classList.contains('has-failures')).toBe(false);
+
+      emitNoise(2);
+      emitApplyError('rows');
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'orphan', args: [], subscriberCount: 0 });
+      emitNoise(2);
+      devtools.__flushRenderForTest();
+      expect(failures.textContent).toBe('⚠ 1 failure');
+      expect(failures.classList.contains('has-failures')).toBe(true);
+      expect(timelineKinds()).toHaveLength(10);
+
+      failures.click();
+      expect(failures.getAttribute('aria-pressed')).toBe('true');
+      devtools.__flushRenderForTest();
+      // 空撃ちは warn 表示のままだが失敗には数えないので、絞り込みにも出ない
+      expect(timelineKinds()).toEqual(['binding-apply-error']);
+      expect(paneBody(devtools, 'timeline').textContent).toContain('for: Error: [wcs/getter-write] boom');
+      expect(shadowOf(devtools).querySelector('.pane-timeline h3')!.textContent).toBe('Timeline — failures only');
+
+      failures.click();
+      expect(failures.getAttribute('aria-pressed')).toBe('false');
+      devtools.__flushRenderForTest();
+      expect(timelineKinds()).toHaveLength(10);
+      expect(shadowOf(devtools).querySelector('.pane-timeline h3')!.textContent).toBe('Timeline');
+    });
+
+    it('失敗が無いときに絞り込むと空メッセージになること', () => {
+      mount({ attrs: { open: '' } });
+      emitNoise(2);
+      headerButton(devtools, 'failures').click();
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'timeline').textContent).toBe('no failures recorded');
+    });
+
+    it('失敗だけの表示はtimelineから押し出された失敗も描き、容量から落ちた分を省略行で数えること', () => {
+      mount({ attrs: { open: '', buffer: '3' } });
+      emitApplyError('rows');
+      emitNoise(3);
+      headerButton(devtools, 'failures').click();
+      devtools.__flushRenderForTest();
+      expect(devtools.core!.getTimeline().some((entry) => entry.kind === 'binding-apply-error')).toBe(false);
+      expect(timelineKinds()).toEqual(['binding-apply-error']);
+
+      for (const path of ['a', 'b', 'c', 'd']) {
+        emitApplyError(path);
+      }
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'timeline').textContent).toContain('…(2 earlier failures)');
+      expect(timelineKinds()).toHaveLength(3);
+      expect(headerButton(devtools, 'failures').textContent).toBe('⚠ 5 failures');
+    });
+
+    it('⏸の間の失敗も数えてバッジに出し、🗑で数が0に戻ってバッジが元の見た目になること', () => {
+      mount();
+      headerButton(devtools, 'pause').click();
+      emitNoise(2);
+      emitApplyError('rows');
+      devtools.__flushRenderForTest();
+      expect(devtools.core!.getTimeline()).toHaveLength(0);
+      expect(badgeOf().querySelector('.badge-count')!.textContent).toBe('1');
+
+      headerButton(devtools, 'clear').click();
+      devtools.__flushRenderForTest();
+      expect(badgeOf().querySelector<HTMLElement>('.badge-count')!.hidden).toBe(true);
+      expect(badgeOf().classList.contains('has-failures')).toBe(false);
+      expect(headerButton(devtools, 'failures').textContent).toBe('0 failures');
     });
   });
 

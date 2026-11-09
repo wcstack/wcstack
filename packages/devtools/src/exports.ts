@@ -1,10 +1,10 @@
 export { bootstrapDevtools } from "./bootstrapDevtools.js";
 export { WcsDevtools } from "./shell/WcsDevtools.js";
 export {
-  DevtoolsCore,
+  DevtoolsCore, isFailureKind,
 } from "./core/DevtoolsCore.js";
 export type {
-  ITimelineEntry, IRosterEntry, IWiringEntry,
+  ITimelineEntry, IRosterEntry, IWiringEntry, IUnresolvedPath,
   TimelineKind, CoreChangeKind, CoreChangeListener, IDevtoolsCoreOptions,
 } from "./core/DevtoolsCore.js";
 export { formatValue, formatArgs } from "./core/formatValue.js";
