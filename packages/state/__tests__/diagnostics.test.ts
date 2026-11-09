@@ -818,3 +818,44 @@ describe("後から入った構造のテンプレート（wcs/inserted-unbound �
     }
   });
 });
+
+// docs/seam-apps.md、ledger-repair — getter が返すリストの行の誤字（データのリストでは言っていた）
+describe("getter のリストの行と、後から行が届くリスト（wcs/binding-path-missing — ledger-repair）", () => {
+  // (a factory, not a spread: `{ ...o }` would evaluate the getter and keep its value as data)
+  const rowsState = (items: object[] = [{ amount: 1, amountLabel: "1円" }, { amount: 2, amountLabel: "2円" }], extra: object = {}) =>
+    Object.defineProperties({ items }, {
+      rows: { get(this: any) { return this.items.map((e: any) => ({ id: e.amount, amountLabel: e.amountLabel })); }, enumerable: true },
+      ...Object.getOwnPropertyDescriptors(extra),
+    });
+
+  it("getter が返すリストの行のフィールドの誤字を、データのリストと同じく近い名前付きで警告する", async () => {
+    const got = await warnings(() => page(`<ul><template data-wcs="for: rows"><li data-wcs="textContent: .amountLabl"></li></template></ul>`, rowsState()));
+    expect(got).toEqual([expect.stringContaining(`Bound path "rows.*.amountLabl" does not resolve on the state tree: "amountLabl" is not declared. Did you mean "amountLabel"?`)]);
+  });
+
+  it("近い名前の無い任意のフィールド、行の getter の下、投げる getter のリストでは黙る", async () => {
+    const got = await warnings(async () => {
+      await page(`<ul><template data-wcs="for: rows"><li data-wcs="textContent: .pending"></li></template></ul>`, rowsState());
+      await page(`<ul><template data-wcs="for: rows"><li data-wcs="textContent: .label.text"></li></template></ul>`, rowsState(undefined, { get "rows.*.label"() { return null; } }));
+      await page(`<ul><template data-wcs="for: boom"><li data-wcs="textContent: .amountLabl"></li></template></ul>`, { get boom() { throw new Error("boom"); } });
+    });
+    expect(got.filter((w) => w.includes("binding-path-missing"))).toEqual([]);
+  });
+
+  it("最初は空で後から行が届くリスト（fetch の後）は、行が届いてから確かめる — getter のリストも、データのリストも", async () => {
+    const got = await warnings(async () => {
+      const a = await page(`<ul><template data-wcs="for: rows"><li data-wcs="textContent: .amountLabl"></li></template></ul>`, rowsState([]));
+      const b = await page(`<ul><template data-wcs="for: items"><li data-wcs="textContent: .nmae"></li></template></ul>`, { items: [] });
+      await flush();
+      a.el.createState("writable", (s: any) => { s.items = [{ amount: 3, amountLabel: "3円" }]; });
+      b.el.createState("writable", (s: any) => { s.items = [{ name: "a" }]; });
+      await flush();
+      await flush();
+    });
+    expect(got).toHaveLength(2);
+    expect(got).toEqual(expect.arrayContaining([
+      expect.stringContaining(`"rows.*.amountLabl" does not resolve on the state tree: "amountLabl" is not declared. Did you mean "amountLabel"?`),
+      expect.stringContaining(`"items.*.nmae" does not resolve on the state tree: "nmae" is not declared. Did you mean "name"?`),
+    ]));
+  });
+});
