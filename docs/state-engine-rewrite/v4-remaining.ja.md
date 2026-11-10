@@ -1745,3 +1745,41 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 次の有界全列挙のスイート（リストの調停の等価性、`transition-runner` の「ちょうど 1 回」）は未決。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.21.0 の公開（2026-11-10）
+
+- **中身**: minor。3 巡目の継ぎ目アプリの 2 本目、ledger-repair（[v4-direction-2026-10.md](../v4-direction-2026-10.md) §3.2・§5.17、[seam-apps.ja.md](../seam-apps.ja.md)）。
+  - 仕立て: 目録の誤りを 10 件仕込んだ `family-ledger` を、書いていない保守担当に、利用者の報告 8 件と一緒に渡した。作者が使えたのはコンソール・lint・`<wcs-devtools>`・文書だけ。
+  - 結果: 10 件とも直し、もとの例の本物の不具合も 2 件見つけた。主張はどれも 4.20.0 の dist で再現してから分類し、著者が 6 つの問いを推奨どおりに決めた。
+  - #657（examples）: レシートの上げ直しで写真が落ちていたのを直した。最初の直しは、編集ページへのページ自身の移動に離れるときの確認を出させてしまったので、それも直した。オフラインで月が消えるのと、CSV の文面も直した。e2e は 15 件。
+  - #658（state）: diagnostics が getter のリストの行を見るようにした。空のリストは、行が届いたら検査し直す（core 0 B、diagnostics +147 B）。
+  - #659（lint、worktree のエージェント）: 新しい規則 `wcs/session-read-at-module-top`（ガードのモジュールでは error、state のモジュールでは warning）と `wcs/event-token-unbound`。`wcs/submit-without-prevent` と `wcs/tag-package-missing` を error に上げた。行のフィールドに「もしかして」を付けた。その場で変えたリストの行に誤報を出さないようにした。`wcs/array-index-assign` の文面を直した。目録に `event-token-unbound` を足した。
+  - #660（devtools、worktree のエージェント）: 失敗を数え、失敗だけを表示できるようにし、`unresolved` の印を付けた。README は open の shadow root と書いた。調べると、失敗は timeline に届いていた（72 行の中の 2 行）ので、「目立たない」を直した。
+  - #661: 記録。
+- **準備**: PR #662（merge commit 40701553）。
+  - CHANGELOG を `[4.21.0] — 2026-11-10` として締め、要約を足した。
+  - docs/upgrading-4x.md（日英）に 4.21.0 の節を足し、要らなくなった回避策を 1 つ書いた。固定版 18 か所を動かした。
+- **main で `minor`（run 42715218842）**: 成功した。版を上げたコミット 1fdad451、タグ `v4.21.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約を足した）。
+  - 検証の 1 回目では、`@wcstack/signals` と `wcstack` が registry にまだ見えなかった（47/49、4.14.0 と同じ）。待ってから確かめ直した結果: npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 23/23・文書の固定 URL 8/8。
+- **公開後の作業**:
+  - PR #663（merge commit 16179e86）: サイズの基準値を 4.21.0 の dist で取り直した。`core.min.js` 20,441 B（変わらず、残り 39 B）、diagnostics 12,287 B、分割の core 24,753 B、`index.esm.js` 57,849 B、`auto.min.js` 54,531 B。slack は付けていなかった。結合の基準値は変わらず。あわせて CLAUDE.md / AGENTS.md を更新し、拡張を 2.16.0 にした。
+  - 拡張 2.16.0: 16179e86 から worktree で作った。試験 1,523 件、890 ファイル、SHA-256 `f9f8b44d63679b9bd648f8357106636ca2cb6ba6c5815d6dc476e3cee1d9304f`。CLI で確かめた: 4.21.0 に固定したページは 0 件、4.22.0 は警告、最上位で読むガードは `wcs/session-read-at-module-top` の error。公開は著者。
+  - wcstack-skill: PR #64（merge commit 6923269）。
+    - 合格の線を「`--errors-only` が 0、かつ warning はすべて直すか説明する」にした（§5・CI の形・失敗の表の前置きをそろえた）。
+    - lint の 4.21 の規則、失敗の表のガードと `status` の watch の行に lint の code を足した。
+    - 実行時の getter のリストの行の検査、DevTools のこと、刻印と固定 URL。
+    - 注釈付きタグ `v4.21.0`。
+  - LP（wcstack.github.io d5c118e）: リリースの表示、v4.21.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-6sF7IW…`、81,338 B ＝約 79 KB）、llms。ローカルの検査 7/7。
+- **残り**:
+  - 拡張 2.16.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.16.0`。
+  - hook protocol の文書（docs/devtools-hook-protocol.md）に、4.0 が `state:path-unresolved` に載せる `stateElement` が無い。
+  - 二人の予算は後勝ち（ledger-repair の U5、記録だけ）。
+  - 3 巡目の 3 本目「入力の重い業務フォーム」。入れ子の作者の claude.ai のログインが 2026-11-12〜15 に切れる（`claude auth login`）。
+  - 4.20.0 から持ち越したもの:
+    - `bootstrapXxx(config, registry)` は 50 本の README のうち 5 本にだけ。
+    - 古いルートが歩いた入れ物を、新しいルートが飛ばす。
+    - midi の Permissions-Policy が `denied` と読める。
+    - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID へ移す。
+    - 次の有界全列挙のスイート。
+    - content mapper（#523・#524）。
+    - 長期サポート版（保留）。npm の `next` は 4.0.0 のまま。
