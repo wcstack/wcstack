@@ -1771,7 +1771,7 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
     - 注釈付きタグ `v4.21.0`。
   - LP（wcstack.github.io d5c118e）: リリースの表示、v4.21.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-6sF7IW…`、81,338 B ＝約 79 KB）、llms。ローカルの検査 7/7。
 - **残り**:
-  - 拡張 2.16.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.16.0`。
+  - ~~拡張 2.16.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.16.0`。~~ → 2026-11-11、著者が公開した。Marketplace の vspackage の SHA-256 は手元の vsix と一致した（`f9f8b44d…`）。注釈付きタグ `vscode-wcs-v2.16.0` を 16179e86 に付けた。
   - hook protocol の文書（docs/devtools-hook-protocol.md）に、4.0 が `state:path-unresolved` に載せる `stateElement` が無い。
   - 二人の予算は後勝ち（ledger-repair の U5、記録だけ）。
   - 3 巡目の 3 本目「入力の重い業務フォーム」。入れ子の作者の claude.ai のログインが 2026-11-12〜15 に切れる（`claude auth login`）。
