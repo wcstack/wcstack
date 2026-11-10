@@ -231,13 +231,13 @@ interface IDeclaredBindingInfo {
   `state:update-batch` は「そのバッチに何が載ったか」の観測であり、watch ハンドラや restart の
   副作用が乗る前の生の集合を報告すべきだから。優先度を省略しても既定 0 で同じ結果になるが、
   それは偶然なので `define.ts` の定数で意図として固定してある。
-- イベント: `state:render-chain-limit`（additive・#338）payload = `{ maxDepth, paths }`。
+- イベント: `state:render-chain-limit`（additive・#338）payload = `{ maxDepth, paths }`（4.0 は `stateElement` を足す、§4.3.2）。
   **binding の適用中**に起きた書き込み（行の要素の初期同期・`$renderedCallback` の書き込み）の
   連鎖が `MAX_RENDER_CHAIN_DEPTH`（100）を超えたときに 1 回。そのバッチの binding は適用せず、値は
   巻き戻さない（`propagation:hop-limit` と同じ姿勢）。`paths` はそのバッチのパス（重複を畳む）。
   `$watch` / `$scan` の書き込みは連鎖を引き継ぐので、それらを挟む循環もこの上限で止まる（#353）。
   報告は連鎖ごとに 1 回 —— 打ち切ったバッチのリスナーが連鎖を引き継いでも、続くバッチは流さずに適用しない。
-  4.0 のエンジン（`packages/state-next`）は、1 回の drain が `MAX_DRAIN_PASSES`（32）回のパスで落ち着かない
+  4.0 のエンジン（`packages/state`）は、1 回の drain が `MAX_DRAIN_PASSES`（32）回のパスで落ち着かない
   とき（binding が値を設定すると同期に書き戻す要素など）にも、同じイベントを `maxDepth: 32` で、これも
   連鎖ごとに 1 回送る。4.0 の `paths` は、捨てた仕事（次に適用するはずだった binding と一覧）のパス（重複を畳む）。
 
@@ -248,11 +248,11 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
 つまり `console.error` を見ていない限り失敗が表に出ない。ここが唯一の可視化点になる。
 
 - イベント: `state:watch-error`
-  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }`。
+  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }`（4.0 は `stateElement` を足す、§4.3.2）。
   `phase` は throw 元 —— `prime` は接続時の初回評価、`evaluate` は `cur` の解決（watch した
   getter の強制評価）、`handler` はハンドラ本体。getter の失敗とハンドラの失敗は直し方が
   違うので畳まない。
-- イベント: `state:watch-chain-limit` payload = `{ maxDepth, paths }`。watch 起点の書き込み
+- イベント: `state:watch-chain-limit` payload = `{ maxDepth, paths }`（4.0 は `stateElement` を足す、§4.3.2）。watch 起点の書き込み
   連鎖が深さ上限で打ち切られたときに 1 回。値と binding 適用は巻き戻さない
   （`propagation:hop-limit` と同じ姿勢）。`$streams` の restart も 1 段に数えるので、restart を
   挟む連鎖（args で互いを読む stream どうしを含む）は、有効な `$watch` が無くても流れる。
@@ -285,16 +285,28 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
 binding**。どちらもランタイムは報告して続行する ＝ ここに出ないとコンソール以外に現れない。
 
 - Event: `state:path-unresolved`（v1 追補・additive）、
-  payload = `{ source: "binding" | "watch", path, missingSegment }`。バインド確立時
+  payload = `{ source: "binding" | "watch", path, missingSegment, stateElement? }`。バインド確立時
   （または `$watch` 宣言時）に「このパスは解決しない」と確定したとき、(state 要素, パス) ごとに
   1 回だけ流れる。4.x は `source: "postUpdate"`（`$postUpdate` のパス、4.4）と `source: "getter"`（getter が
-  読んだパスで、近い名前があるもの、4.4）を足す。受け手は知らない source をそのまま表示する。判定は**過小近似** — getter の戻り値の先・空リスト・null 親・mapped な
-  `bind-component` の子はすべて沈黙するので、**イベントが無いことは正しさの証明にならない**
-  （[pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)）。
+  読んだパスで、近い名前があるもの、4.4）を足す。受け手は知らない source をそのまま表示する。判定は**過小近似**: getter の戻り値の先・null 親・mapped な
+  `bind-component` の子は沈黙する。4.20 までは、getter が返すリストの行と空のリストの行も沈黙した。
+  4.21 からは、ランタイムが getter のリストの行を検査し（データのリストと同じく、近い名前があるときだけ言う）、
+  空のリストの下のパスはリストに行が届いた時点で検査し直す。なので、**イベントが無いことは正しさの証明にならない**
+  （3.x は [pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)、
+  4.x は [diagnostics.ts](../packages/state/src/features/diagnostics.ts)）。
+  `stateElement`（4.0 追補・additive/optional）は、そのパスを持つ binding や `$watch` のツリー（state 要素）。
+  受け手は、報告されたままのパスとツリーで、報告を配線の行と突き合わせる（`@wcstack/devtools` 4.21 の
+  `unresolved` の印がそうする）。3.x の payload にはこのフィールドが無いので、パスと、報告したランタイム（登録された source）だけで突き合わせる。
 - Event: `state:binding-apply-error`（v1 追補・additive）、
   payload = `{ path, bindingType, error }`。binding 1 本の適用が throw したときに流れる。
   ランタイムは失敗を隔離してバッチの残り・`$updatedCallback`・drain リスナーを守る —
   `state:watch-error` と同じ姿勢であり、存在理由も同じ（見えない隔離は「失敗が無かった」と区別できない）。
+- **4.0 の `stateElement`。** 4.0 のランタイムは、エンジンと add-on が気づいて送るイベントのすべてに `stateElement` を載せる:
+  `state:watch-fired`・`state:watch-error`・`state:watch-chain-limit`・`state:render-chain-limit`・
+  `state:path-unresolved`。どちらもこれらのイベントを、出どころのエンジンと一緒に source に渡し、
+  source がそのエンジンの要素を足す。payload は消費者が付いている間だけ組み立てる
+  （[devtools.ts](../packages/state/src/devtools/devtools.ts)）。`state:binding-apply-error` には載らない。
+  `state:watch-fired` と同じく additive/optional で、受け手はあれば読み、無いイベントは全ツリーの分として残す。
 
 ### 4.4 binding 台帳の増減
 

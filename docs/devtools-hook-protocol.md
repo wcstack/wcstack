@@ -238,14 +238,14 @@ The files changed and the firing points. All go through §2's `sink` and conform
   `state:update-batch` observes *what landed in this batch*, so it should report the raw set before
   watch handlers and restarts add their side effects. Omitting the priority would default to 0 and
   give the same result, but that would be a coincidence; the constant in `define.ts` pins the intent.
-- Event: `state:render-chain-limit` (additive, #338), payload = `{ maxDepth, paths }`, emitted once
+- Event: `state:render-chain-limit` (additive, #338), payload = `{ maxDepth, paths }` (4.0 adds `stateElement`, §4.3.2), emitted once
   when a chain of writes made *while applying bindings* (a row element's initial sync, a
   `$renderedCallback` write) exceeds `MAX_RENDER_CHAIN_DEPTH` (100). That batch's bindings are not applied;
   values are not rolled back (same stance as `propagation:hop-limit`). `paths` are the batch's paths,
   deduplicated. Writes from `$watch` / `$scan` carry the chain over, so a cycle that goes through them
   is stopped by this limit too (#353). It is emitted once per chain: when the listeners of the batch
   that was cut off still hand the chain on, the batches that follow are not applied and not reported.
-  The 4.0 engine (`packages/state-next`) also sends it, with `maxDepth: 32`, when one drain does not
+  The 4.0 engine (`packages/state`) also sends it, with `maxDepth: 32`, when one drain does not
   settle within `MAX_DRAIN_PASSES` (32) passes (an element that writes back synchronously when a
   binding sets it), once per chain as well. In 4.0, `paths` lists the paths of the work that was
   dropped (the bindings and lists that would have been applied next), deduplicated.
@@ -258,11 +258,11 @@ That means a failure never surfaces unless someone is watching the console. Thes
 place it becomes visible.
 
 - Event: `state:watch-error`,
-  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }`.
+  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }` (4.0 adds `stateElement`, §4.3.2).
   `phase` says where it threw — `prime` is the evaluation at connect, `evaluate` is resolving `cur`
   (forcing a watched getter), `handler` is the handler body. A getter failure and a handler failure
   are fixed differently, so they are not collapsed into one.
-- Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }`, emitted once when a watch-rooted
+- Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }` (4.0 adds `stateElement`, §4.3.2), emitted once when a watch-rooted
   write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
   `propagation:hop-limit`). `$streams` restarts count as links too, so a chain through restarts
   (including streams whose `args` read each other) is reported even when no `$watch` is active.
@@ -296,17 +296,32 @@ binding that throws while applying. Both are now reported and the runtime contin
 console is the only other place they appear.
 
 - Event: `state:path-unresolved` (v1 addendum, additive),
-  payload = `{ source: "binding" | "watch", path, missingSegment }`, emitted once per
+  payload = `{ source: "binding" | "watch", path, missingSegment, stateElement? }`, emitted once per
   (state element, path) when binding establishment (or a `$watch` declaration) proves the path cannot
   resolve. 4.x adds `source: "postUpdate"` (a `$postUpdate` path, 4.4) and `source: "getter"` (a path a getter
-  read, beside a near name, 4.4); a consumer shows an unknown source as it is. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
-  a mapped `bind-component` child all stay silent — so absence of this event is not proof of
-  correctness ([pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)).
+  read, beside a near name, 4.4); a consumer shows an unknown source as it is. The check **under-approximates**: a getter's return value, a `null` parent and a mapped
+  `bind-component` child stay silent. Up to 4.20 the rows of a list a getter returns and the rows of an
+  empty list did too. Since 4.21 the runtime checks a getter list's rows (a field reported only beside a
+  near name, as for a data list), and checks a path under an empty list again once the list has rows.
+  So the absence of this event is not proof of correctness
+  ([pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts) in 3.x,
+  [diagnostics.ts](../packages/state/src/features/diagnostics.ts) in 4.x).
+  `stateElement` (4.0 addendum, additive/optional) is the tree (the state element) whose binding or
+  `$watch` has the path. A consumer matches a report to a wiring row by the path as reported and the
+  tree; `@wcstack/devtools` 4.21 does this for its `unresolved` mark. A 3.x payload lacks the field, so
+  a consumer matches it by the path and the runtime that reported it (the registered source) alone.
 - Event: `state:binding-apply-error` (v1 addendum, additive),
   payload = `{ path, bindingType, error }`, emitted when applying one binding throws. The
   runtime isolates the failure so the rest of the batch, `$updatedCallback` and the drain listeners
   still run — same stance as `state:watch-error`, and same reason for existing: an isolated failure
   that nobody can see is indistinguishable from no failure.
+- **`stateElement` in 4.0.** The 4.0 runtime puts `stateElement` on every event the engine and its add-ons notice:
+  `state:watch-fired`, `state:watch-error`, `state:watch-chain-limit`, `state:render-chain-limit` and
+  `state:path-unresolved`. They hand these events to the source with the engine they came
+  from, and the source adds the engine's element, building the payload only while a consumer is
+  attached ([devtools.ts](../packages/state/src/devtools/devtools.ts)). `state:binding-apply-error`
+  does not carry it. The field is additive and optional, as for `state:watch-fired`: a consumer reads it
+  when it is there, and keeps an event without it for every tree.
 
 ### 4.4 Growth and shrinkage of the binding ledger
 
