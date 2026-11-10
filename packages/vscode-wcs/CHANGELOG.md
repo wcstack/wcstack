@@ -2,6 +2,17 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.16.0 — 2026-11-11
+
+`@wcstack/state` 4.21.0 から作った（npm の `@wcstack/lint` 4.21.0・`@wcstack/typescript` 4.21.0 と同じ判定）。継ぎ目アプリ ledger-repair（目録の誤りを仕込んだ家計簿を、書いていない保守担当が直す）が見つけた lint の穴を直した:
+
+- `wcs/session-read-at-module-top`（新規）: `<wcs-guard-handler>` のモジュールの最上位で `localStorage` / `sessionStorage` / `document.cookie` を読むと error。モジュールは 1 回しか評価されないので、ガードはページを開いたときのセッションで毎回の移動を決めていた。state のモジュールの最上位なら warning。
+- `wcs/event-token-unbound`（新規、warning）: `$eventTokens` に宣言したのに、どの `eventToken.<member>:` 束縛も出さない名前。その `$on` のハンドラーは走らない。
+- `wcs/submit-without-prevent` と `wcs/tag-package-missing` を error に上げた。どちらも報告されるところでは必ず欠陥で、warning のままでは `--errors-only` が隠した。
+- 行のフィールドの打ち間違いに、いちばん近いフィールドを添える（`Did you mean "amountLabel"?`）。
+- その場で変えたリスト（`splice`・`push`・`this.rows[i] =`）の行は、形が読めないときにフィールドごとに「無い」と報告しない。本物の打ち間違いと同じ code の誤報だった。
+- オブジェクトのキーへの代入の `wcs/array-index-assign` は、「配列の添字」ではなくキーへの代入と言う。
+
 ## 2.15.0 — 2026-11-09
 
 `@wcstack/state` 4.20.0 から作った（npm の `@wcstack/lint` 4.20.0・`@wcstack/typescript` 4.20.0 と同じ判定）。継ぎ目アプリ community-hall（htmx の CMS のサイトの上の wcstack のアイランド）が見つけた lint の穴を直した:
