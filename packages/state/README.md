@@ -885,7 +885,7 @@ Notes:
 
 #### Dot Shorthand
 
-Inside a `for` loop, paths starting with `.` are expanded relative to the loop's array path (since 4.22 (not released yet), script has the same expansion — [paths relative to the row](#paths-relative-to-the-row-thisname)):
+Inside a `for` loop, paths starting with `.` are expanded relative to the loop's array path (since 4.22, script has the same expansion — [paths relative to the row](#paths-relative-to-the-row-thisname)):
 
 | Shorthand | Expanded to | Description |
 |---|---|---|
@@ -1231,7 +1231,7 @@ Two-way binding works with path setters — editing the input calls the setter, 
 
 ### Paths relative to the row (`this[".name"]`)
 
-Since 4.22 (not released yet), in script that is evaluated for a row, a path that starts with `.` is relative to **that row**. It is the same expansion as the [dot shorthand](#dot-shorthand) inside a `for:` template:
+Since 4.22, in script that is evaluated for a row, a path that starts with `.` is relative to **that row**. It is the same expansion as the [dot shorthand](#dot-shorthand) inside a `for:` template:
 
 ```javascript
 export default {
@@ -1267,7 +1267,7 @@ Where there is no row — a top-level getter or setter, `$connectedCallback`, a 
 
 ### One accessor for several paths
 
-Since 4.22 (not released yet), an accessor key that **lists paths separated by commas** declares the same getter / setter for each of them. Write the body with [paths relative to the row](#paths-relative-to-the-row-thisname) — the one body then works at the rows of every list:
+Since 4.22, an accessor key that **lists paths separated by commas** declares the same getter / setter for each of them. Write the body with [paths relative to the row](#paths-relative-to-the-row-thisname) — the one body then works at the rows of every list:
 
 ```javascript
 export default {
@@ -1314,7 +1314,7 @@ The rules:
 | `get "a.*.b"()` | Single wildcard | `get "users.*.fullName"()` |
 | `get "a.*.b.*.c"()` | Multiple wildcards | `get "categories.*.items.*.label"()` |
 | `set "a.*.b"(v)` | Wildcard setter | `set "users.*.fullName"(v)` |
-| `get "a.*.x,b.*.x"()` | Since 4.22 (not released yet): one accessor for several paths (separated by commas alone) | `get "users.*.fullName,employees.*.fullName"()` |
+| `get "a.*.x,b.*.x"()` | Since 4.22: one accessor for several paths (separated by commas alone) | `get "users.*.fullName,employees.*.fullName"()` |
 
 ### How It Works
 
@@ -3255,14 +3255,14 @@ Anything that follows mechanically from the path string is reported at runtime a
 | Diagnostic | What it checks | Fix |
 |---|---|---|
 | `wcs/index-arity` | `$resolve(path, indexes)` and `$update(path, indexes, fn)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
-| `wcs/wildcard-rank` | In markup, the path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting (`#1401`), a `.` path needs an enclosing `for` (`#1402`), and each `*` is the row of the `for` around it at that level — not a row of another list (`{{ b.*.y }}` inside `for: a`, `#1403`). Since 4.22 (not released yet), a script's relative path (`this[".name"]`) read or written where there is no row is `#1402` too — the lint reports one in an accessor that is not a row's (no `*` in its key) as an error | Add a `for`, or read the other list's row in a getter with `$resolve(path, indexes)`. In script, write the full path or make it a row accessor |
+| `wcs/wildcard-rank` | In markup, the path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting (`#1401`), a `.` path needs an enclosing `for` (`#1402`), and each `*` is the row of the `for` around it at that level — not a row of another list (`{{ b.*.y }}` inside `for: a`, `#1403`). Since 4.22, a script's relative path (`this[".name"]`) read or written where there is no row is `#1402` too — the lint reports one in an accessor that is not a row's (no `*` in its key) as an error | Add a `for`, or read the other list's row in a getter with `$resolve(path, indexes)`. In script, write the full path or make it a row accessor |
 | `wcs/getter-cycle` | Path getters must not form a dependency cycle: the evaluation reached a getter occurrence it is already evaluating | Break the cycle |
 | `wcs/getter-write` | Since 4.17: a getter only reads. A write while one is evaluated — an assignment, `$setAll`, `$update`, a `$resolve` with a value, in the getter or a method it calls — throws `#8` naming the path and the getter (up to 4.16 it named neither) | Write it from a method, a setter or a `$watch` handler, or compute the value in a getter of its own |
 | `wcs/path-readonly` | A write of a getter without a setter, from a two-way binding or a script (`this.total = 0`), throws `#2`. Since 4.17 its message carries the code and the fix | Add a setter that writes what the getter reads, or write those values; bind a two-way binding one way with `#ro` |
 | `wcs/setter-cycle` | Since 4.17: a setter that writes its own path, or setters that write each other, call each other until the stack overflows (a `RangeError` that names nothing). The `diagnostics` add-on throws naming them at 64 setter calls deep | Store the value under a data path the getter reads (`_count`), not under the setter's own path |
 | `wcs/setter-unobserved` | Since 4.17, a warning: a setter wrote something, none of which its getter reads. The getter keeps its value, and a two-way input bound to it goes back to it on the next render. Once per setter; a setter that writes nothing (one that ignores `null`) is not reported | Write what the getter reads, or read in the getter what the setter writes |
-| `wcs/accessor-list-syntax` | Since 4.22 (not released yet): a key that declares one accessor for several paths (`get "users.*.full,employees.*.full"()`) has a space or an empty entry. The core takes what is between the commas as it is, so it declares a path nothing reads. The `diagnostics` add-on fails the initialization | Separate the paths with commas alone |
-| `wcs/accessor-list-path` | Since 4.22 (not released yet): the body of an accessor declared for several lists reads or writes the rows of one of them by a full path (`this["users.*.first"]`). At the rows of the other lists that path has no row: a read gives `undefined`, a write throws `#3`. The `diagnostics` add-on warns once per accessor when the state is declared (it reads `this[...]` with a literal path only) | Write the path relative to the row (`this[".first"]`) |
+| `wcs/accessor-list-syntax` | Since 4.22: a key that declares one accessor for several paths (`get "users.*.full,employees.*.full"()`) has a space or an empty entry. The core takes what is between the commas as it is, so it declares a path nothing reads. The `diagnostics` add-on fails the initialization | Separate the paths with commas alone |
+| `wcs/accessor-list-path` | Since 4.22: the body of an accessor declared for several lists reads or writes the rows of one of them by a full path (`this["users.*.first"]`). At the rows of the other lists that path has no row: a read gives `undefined`, a write throws `#3`. The `diagnostics` add-on warns once per accessor when the state is declared (it reads `this[...]` with a literal path only) | Write the path relative to the row (`this[".first"]`) |
 | `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no occurrence visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
 | `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
 | `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$update` / `$postUpdate` / `$dependOn`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |

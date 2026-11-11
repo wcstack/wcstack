@@ -69,7 +69,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/broadcast","version":"4.21.0"};
+var pkg = {"name":"@wcstack/broadcast","version":"4.22.0"};
 
 /**
  * broadcastCapabilities.ts

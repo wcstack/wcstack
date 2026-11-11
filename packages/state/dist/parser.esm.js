@@ -439,7 +439,7 @@ var SENTENCES = {
   [1301 /* EventTokenUndeclared */]: (name) => `eventToken "${name}" is not declared in $eventTokens.`,
   [1302 /* CommandTokenUndeclared */]: (name) => `"$command.${name}" is not declared in $commandTokens.`,
   [1401 /* WildcardNoLoop */]: (p, depth, n = 0) => `"${p}" needs ${depth} enclosing loop level(s); the scope provides ${n}.`,
-  [1402 /* WildcardRelative */]: (p) => `"${p}" is relative: it needs an enclosing "for" template`,
+  [1402 /* WildcardRelative */]: (p) => `"${p}" is relative: it needs an enclosing "for" template (in script, a row: a row accessor, or a method called from a row)`,
   [1403 /* WildcardOtherList */]: (p, over, loop) => `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}".`,
   [1501 /* SpreadNoBindable */]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,
   [1601 /* DeclarationRemoved */]: (old, name) => `${old} was removed: write ${name}.`,

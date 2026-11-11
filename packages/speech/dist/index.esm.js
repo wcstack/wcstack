@@ -74,7 +74,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/speech","version":"4.21.0"};
+var pkg = {"name":"@wcstack/speech","version":"4.22.0"};
 
 /**
  * speechCapabilities.ts

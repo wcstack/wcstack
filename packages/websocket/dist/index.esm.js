@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/websocket","version":"4.21.0"};
+var pkg = {"name":"@wcstack/websocket","version":"4.22.0"};
 
 /**
  * websocketCapabilities.ts

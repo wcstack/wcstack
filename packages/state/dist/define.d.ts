@@ -220,6 +220,7 @@ interface WcsStateApi {
     readonly $9: number;
     readonly [key: `${string}.**.${string}`]: any;
     readonly [key: `${string}.**`]: any;
+    [key: `.${string}`]: any;
 }
 /**
  * state定義オブジェクト内の `this` の型。
@@ -227,6 +228,7 @@ interface WcsStateApi {
  * - `T` のプロパティに型付きでアクセス可能（直接キー）
  * - `WcsPathAccessor<T>` によるネストされたドットパスの型付きアクセス
  * - `WcsStateApi` のメソッド ($getAll, $postUpdate 等) にアクセス可能
+ * - `WcsListedAccessors<T>` によるカンマ列挙のアクセサ（`"a.*.x,b.*.x"`）の各パス
  * - 動的パス (`this[\`items.${i}.name\`]`) は型チェック対象外（キャストが必要）
  *
  * @example
@@ -242,7 +244,16 @@ interface WcsStateApi {
  * });
  * ```
  */
-type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
+/** @internal `"a.*.x,b.*.x"` → `"a.*.x" | "b.*.x"` */
+type WcsListedPaths<K extends string> = K extends `${infer Head},${infer Rest}` ? Head | WcsListedPaths<Rest> : K;
+/**
+ * 1 つのアクセサを複数のパスに宣言したキー（`get "users.*.fullname,employees.*.fullname"()`、4.22）の
+ * 各パス。どれもそのアクセサの型を持つ。
+ */
+type WcsListedAccessors<T> = {
+    [K in keyof T & `${string},${string}` as WcsListedPaths<K>]: T[K];
+};
+type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & WcsListedAccessors<T>;
 /**
  * `<wcs-state>` 用の型付き状態オブジェクトを定義する。
  *

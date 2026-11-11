@@ -129,6 +129,14 @@ var WcsDiagnosticCode = {
   // 元の値を返し、双方向の入力はそこへ戻る — 何も知らせない（4.17 から diagnostics の後付けが警告する）。setter・getter
   // の読み書きを追えない（`this[key]`・`fn(this)`・知らないメソッド）なら黙る。warning。
   SetterUnobserved: "wcs/setter-unobserved",
+  // 1 つのアクセサを複数のパスに宣言するキー（`get "users.*.full,employees.*.full"()`、4.22）の書き方の誤り:
+  // カンマの前後の空白・空の項目・再帰のキー（`**`）。ランタイムはカンマで分けた間をそのままパスにするので、
+  // 空白入りのパスは誰も読まないパスになる（diagnostics の後付けは同じコードで初期化を失敗させる）。error。
+  AccessorListSyntax: "wcs/accessor-list-syntax",
+  // 複数のリストに宣言したアクセサの本体が、そのうち 1 つのリストの行を絶対パス（`this["users.*.first"]`）で
+  // 読み書きしている。ほかのリストの行ではそのパスに行が無く、読みは undefined、書きは例外になる。本体は
+  // 行からの相対パス（`this[".first"]`）で書く（diagnostics の後付けは同じコードで警告する）。error。
+  AccessorListPath: "wcs/accessor-list-path",
   // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
   // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
@@ -1551,7 +1559,7 @@ var SENTENCES = {
   [
     1402
     /* WildcardRelative */
-  ]: (p) => `"${p}" is relative: it needs an enclosing "for" template`,
+  ]: (p) => `"${p}" is relative: it needs an enclosing "for" template (in script, a row: a row accessor, or a method called from a row)`,
   [
     1403
     /* WildcardOtherList */
@@ -2871,7 +2879,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.21.0";
+var version = "4.22.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -9613,6 +9621,13 @@ function analyzeDeclarationSpans(scriptContent) {
   }
   return out;
 }
+function accessorRow(callable) {
+  if (callable.kind !== "getter") return null;
+  const segments = callable.name.split(".");
+  let last = -1;
+  for (let i = 0; i < segments.length; i++) if (segments[i] === "*" || segments[i] === "**") last = i;
+  return last < 0 ? null : segments.slice(0, last + 1).join(".");
+}
 function analyzeCallableBodies(scriptContent) {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
@@ -9627,7 +9642,8 @@ function analyzeCallableBodies(scriptContent) {
       end: root.start + prop.nameEnd,
       body: prop.value ?? "",
       bodyStart: root.start + (prop.valueStart ?? 0),
-      accessor: prop.accessor
+      accessor: prop.accessor,
+      ...prop.listed !== void 0 ? { listed: { ...prop.listed, start: root.start + prop.listed.start, end: root.start + prop.listed.end } } : {}
     });
   }
   return out;
@@ -10551,6 +10567,19 @@ function inferJsonTypeHint(value) {
   if (typeof value === "object") return "object";
   return void 0;
 }
+function listedPaths(key, keyStart) {
+  const out = [];
+  let at2 = 0;
+  for (const part of key.split(",")) {
+    const name = part.trim();
+    if (name !== "") {
+      const start = keyStart + at2 + (part.length - part.trimStart().length);
+      out.push({ name, start, end: start + name.length });
+    }
+    at2 += part.length + 1;
+  }
+  return out;
+}
 function locateDefaultExportObject(script) {
   const scan = maskCommentsAndStrings(script);
   const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
@@ -10627,16 +10656,20 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
       const accessor = match[0].startsWith("set") ? "set" : "get";
       const returnsText = accessor === "get" ? readJsDocReturnsBefore(objectContent, match.index) : void 0;
       const declaredType = returnsText === void 0 ? null : parseJsDocType(returnsText);
-      props.push({
-        name: accessorName,
+      const entry = {
         kind: "getter",
         accessor,
         value: body,
         valueStart: bodyStart,
-        nameStart: nameSpan[0],
-        nameEnd: nameSpan[1],
         ...declaredType !== null ? { declaredType } : {}
-      });
+      };
+      const paths = accessorName.includes(",") ? listedPaths(accessorName, nameSpan[0]) : [];
+      if (paths.length > 0) {
+        const listed = { paths: paths.map((p) => p.name), key: accessorName, start: nameSpan[0], end: nameSpan[1] };
+        for (const p of paths) props.push({ name: p.name, ...entry, nameStart: p.start, nameEnd: p.end, listed });
+        continue;
+      }
+      props.push({ name: accessorName, ...entry, nameStart: nameSpan[0], nameEnd: nameSpan[1] });
       continue;
     }
     const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
@@ -11462,7 +11495,20 @@ function collectGetterReads(body, options = {}) {
   } finally {
     collecting = {};
   }
-  return out;
+  const row = options.row;
+  return row == null ? out : out.map((read) => atRow(read, row));
+}
+var underRow = (path, row) => path === "." ? row : row + path;
+var ROW_APIS = /* @__PURE__ */ new Set(["$getAll", "$dependOn"]);
+function atRow(read, row) {
+  if (!read.path.startsWith(".") || read.api !== void 0 && !ROW_APIS.has(read.api)) return read;
+  return {
+    ...read,
+    path: underRow(read.path, row),
+    chain: read.chain === null ? null : [underRow(read.chain[0], row), ...read.chain.slice(1)],
+    ...read.indexed !== void 0 ? { indexed: read.indexed.map((list) => underRow(list, row)) } : {},
+    relative: read.path
+  };
 }
 function unwrapWrapper(program) {
   if (program.type !== "Program" || program.body.length !== 1) return null;
@@ -11726,6 +11772,7 @@ function visitCall(node, scope, out) {
             form: TRACK_APIS.has(api) ? "track" : "api",
             callee: false,
             written: false,
+            api,
             ...scope.nested ? { nested: true } : {},
             start: node.start - PREFIX.length,
             end: node.end - PREFIX.length
@@ -11744,6 +11791,7 @@ function visitCall(node, scope, out) {
             form: "api-write",
             callee: false,
             written: false,
+            api,
             ...scope.nested ? { nested: true } : {},
             start: first.start - PREFIX.length,
             end: first.end - PREFIX.length
@@ -12205,6 +12253,11 @@ var ja = {
   setterCycleSelf: (p) => `"${p}" \u306E setter \u304C\u81EA\u5206\u306E\u30D1\u30B9 "${p}" \u306B\u66F8\u3044\u3066\u3044\u307E\u3059\u3002setter \u306E\u30D1\u30B9\u306F\u30A2\u30AF\u30BB\u30B5\u305D\u306E\u3082\u306E\u306A\u306E\u3067\u3001\u66F8\u3051\u3070 setter \u304C\u307E\u305F\u547C\u3070\u308C\u3001\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u308B\u307E\u3067\u7D9A\u304D\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\uFF08_${p.split(".").pop()} \u306A\u3069\uFF09\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
   setterCycle: (cycle) => `setter \u304C\u4E92\u3044\u306B\u66F8\u304D\u5408\u3063\u3066\u3044\u307E\u3059: ${cycle}\u3002\u6761\u4EF6\u3067\u6B62\u307E\u3089\u306A\u3051\u308C\u3070\u3001\u4E92\u3044\u3092\u547C\u3073\u7D9A\u3051\u3066\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
   setterUnobserved: (p, w) => `"${p}" \u306E setter \u306F ${w} \u3092\u66F8\u304D\u307E\u3059\u304C\u3001getter "${p}" \u306F\u305D\u306E\u3069\u308C\u3082\u8AAD\u307F\u307E\u305B\u3093\u3002\u66F8\u3044\u305F\u5F8C\u3082 getter \u306F\u5143\u306E\u5024\u3092\u8FD4\u3057\u3001"${p}" \u306B\u675F\u306D\u305F\u53CC\u65B9\u5411\u306E\u5165\u529B\u306F\u305D\u3053\u3078\u623B\u308A\u307E\u3059\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F\u304B\u3001setter \u304C\u66F8\u304F\u5024\u3092 getter \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  relativePathOf: (r, a) => `\uFF08\u30A2\u30AF\u30BB\u30B5 "${a}" \u306E\u4E2D\u306E "${r}"\uFF09`,
+  relativeNoRow: (r, a) => `"${r}" \u306F\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u3059\u304C\u3001\u30A2\u30AF\u30BB\u30B5 "${a}" \u306F\u30EA\u30B9\u30C8\u306E\u884C\u306E\u3082\u306E\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u30AD\u30FC\u306B "*" \u304C\u3042\u308A\u307E\u305B\u3093\uFF09\u3002\u884C\u304C\u7121\u3044\u306E\u3067\u3001\u8A55\u4FA1\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#1402\uFF09\u3002\u30D5\u30EB\u30D1\u30B9\u3067\u66F8\u304F\u304B\u3001\u884C\u306E\u30A2\u30AF\u30BB\u30B5\uFF08get "<\u30EA\u30B9\u30C8>.*.<\u540D\u524D>"()\uFF09\u306B\u3057\u3066\u304F\u3060\u3055\u3044`,
+  relativeApiPath: (r, api) => `"${r}" \u306F\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u3059\u304C\u3001${api} \u306F\u884C\u3092\u6DFB\u5B57\u306E\u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\u3001\u547C\u3070\u308C\u305F\u884C\u304B\u3089\u306F\u53D6\u308A\u307E\u305B\u3093\u3002\u76F8\u5BFE\u30D1\u30B9\u306F\u3053\u3053\u3067\u306F\u5C55\u958B\u3055\u308C\u305A\u3001\u547C\u3073\u51FA\u3057\u306F\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u30D5\u30EB\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08"<\u30EA\u30B9\u30C8>.*${r === "." ? "" : r}"\uFF09`,
+  accessorListSyntax: (k, why) => `\u30A2\u30AF\u30BB\u30B5\u306E\u30AD\u30FC "${k}" \u306F\u8907\u6570\u306E\u30D1\u30B9\u306E\u4E26\u3073\u3067\u3059\u304C\u3001${why === "space" ? "\u30AB\u30F3\u30DE\u306E\u524D\u5F8C\u306B\u7A7A\u767D\u304C\u3042\u308A\u307E\u3059" : why === "empty" ? "\u7A7A\u306E\u9805\u76EE\u304C\u3042\u308A\u307E\u3059" : '\u518D\u5E30\u306E\u30D1\u30B9\uFF08"**"\uFF09\u306F\u4E26\u3079\u3089\u308C\u307E\u305B\u3093'}\u3002\u30D1\u30B9\u306F\u30AB\u30F3\u30DE\u3060\u3051\u3067\u533A\u5207\u308A\u307E\u3059\uFF08get "users.*.fullname,employees.*.fullname"()\uFF09${why === "recursive" ? "" : "\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30AB\u30F3\u30DE\u306E\u9593\u3092\u305D\u306E\u307E\u307E\u30D1\u30B9\u306B\u3059\u308B\u306E\u3067\u3001\u3053\u306E\u307E\u307E\u3067\u306F\u8AB0\u3082\u8AAD\u307E\u306A\u3044\u30D1\u30B9\u304C\u5BA3\u8A00\u3055\u308C\u307E\u3059"}`,
+  accessorListPath: (p, list, other, rel) => `"${p}" \u306F "${list}" \u306E\u884C\u306E\u30D1\u30B9\u3067\u3059\u304C\u3001\u3053\u306E\u30A2\u30AF\u30BB\u30B5\u306F "${other}" \u306B\u3082\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u305D\u3061\u3089\u306E\u884C\u3067\u306F\u3053\u306E\u30D1\u30B9\u306B\u884C\u304C\u7121\u304F\u3001\u8AAD\u307F\u306F undefined\u3001\u66F8\u304D\u306F\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: this["${rel}"]`,
   nestedWritePathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u66F8\u304D\u8FBC\u307F\u306F\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30D1\u30B9\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
   readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -12437,6 +12490,11 @@ var en = {
   setterCycleSelf: (p) => `The setter of "${p}" writes its own path "${p}". A setter's path is the accessor itself: writing it calls the setter again, until the stack overflows. Store the value under a data path the getter reads (such as _${p.split(".").pop()})`,
   setterCycle: (cycle) => `Setters write each other: ${cycle}. Unless a condition stops them, they call each other until the stack overflows. Store the values under data paths the getters read`,
   setterUnobserved: (p, w) => `The setter of "${p}" writes ${w}, none of which the getter "${p}" reads. After a write the getter returns its old value, and a two-way input bound to "${p}" goes back to it. Write what the getter reads, or read what the setter writes in the getter`,
+  relativePathOf: (r, a) => ` ("${r}" in the accessor "${a}")`,
+  relativeNoRow: (r, a) => `"${r}" is relative to a row, but the accessor "${a}" is not one of a list's rows (its key has no "*"). With no row it throws each time it is evaluated (#1402). Write the full path, or make it a row accessor (get "<list>.*.<name>"())`,
+  relativeApiPath: (r, api) => `"${r}" is relative to a row, but ${api} takes its rows from its indexes argument, not from the row it is called at. A relative path is not expanded there, and the call throws. Write the full path ("<list>.*${r === "." ? "" : r}")`,
+  accessorListSyntax: (k, why) => `The accessor key "${k}" lists several paths, but ${why === "space" ? "has a space beside a comma" : why === "empty" ? "has an empty entry" : 'a recursive path ("**") cannot be listed'}. Separate the paths with "," alone (get "users.*.fullname,employees.*.fullname"())${why === "recursive" ? "" : ": the runtime takes what is between the commas as it is, so this declares a path nothing reads"}`,
+  accessorListPath: (p, list, other, rel) => `"${p}" is a path of the rows of "${list}", and this accessor is also declared for "${other}": at its rows that path has no row, so a read gives undefined and a write throws. Write it relative to the row: this["${rel}"]`,
   nestedWritePathMissing: (p) => `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
@@ -16034,7 +16092,7 @@ function collectGetterReadsByName(html, stateTagName) {
     const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
     for (const callable of analyzeCallableBodies(block.content)) {
       if (callable.kind !== "getter" || callable.accessor === "set") continue;
-      const reads = collectGetterReads(callable.body) ?? [];
+      const reads = collectGetterReads(callable.body, { row: accessorRow(callable) }) ?? [];
       out.set(prefix + callable.name, reads.map((r) => prefix + r.path));
     }
   }
@@ -18079,6 +18137,7 @@ function validateIndexArity(script, scriptStart, locale2) {
     if (parsed.args.length < 2) continue;
     const path = literalString2(parsed.args[0]);
     if (path === null) continue;
+    if (path.startsWith(".")) continue;
     if (hasRecursionWildcard(path)) continue;
     const actual = literalArrayLength(parsed.args[1]);
     if (actual === null) continue;
@@ -18107,7 +18166,7 @@ function validateGetterCycles(script, scriptStart, locale2) {
   for (const getter of getters) {
     if (getter.accessor === "set") continue;
     const targets = /* @__PURE__ */ new Set();
-    for (const read of collectGetterReads(getter.body) ?? []) {
+    for (const read of collectGetterReads(getter.body, { row: accessorRow(getter) }) ?? []) {
       if (declared.has(read.path)) targets.add(read.path);
     }
     edges.set(getter.name, [...targets]);
@@ -18825,8 +18884,9 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
         });
       }
     }
+    const saidInListed = /* @__PURE__ */ new Set();
     for (const callable of analyzeCallableBodies(block.content)) {
-      for (const read of collectGetterReads(callable.body, { templates: true, writes: true }) ?? []) {
+      for (const read of collectGetterReads(callable.body, { templates: true, writes: true, row: accessorRow(callable) }) ?? []) {
         const write = read.written || read.form === "write" || read.form === "api-write";
         if (write && read.form !== "api-write" && !read.path.includes(".")) continue;
         if (read.path.split(".").some((s) => s === "" || s.startsWith("$")) || hasRecursionWildcard(read.path)) continue;
@@ -18839,12 +18899,17 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
         const said = suggestion(near.segment, near.names, msgs);
         if (said === "") continue;
         const at2 = block.contentStart + callable.bodyStart;
+        if (callable.listed !== void 0) {
+          const place = `${write}:${at2 + read.start}`;
+          if (saidInListed.has(place)) continue;
+          saidInListed.add(place);
+        }
         const member = read.form === "member" || read.form === "write";
         out.push({
           code: write ? WcsDiagnosticCode.WritePathMissing : WcsDiagnosticCode.ReadPathMissing,
           start: at2 + read.start,
           end: member ? at2 + read.start + statePart(callable.body.slice(read.start, read.end)) : at2 + read.end,
-          message: (write ? msgs.nestedWritePathMissing(read.path) : msgs.readPathMissing(read.path, !read.path.includes("."))) + said,
+          message: (write ? msgs.nestedWritePathMissing(read.path) : msgs.readPathMissing(read.path, !read.path.includes("."))) + (read.relative === void 0 ? "" : msgs.relativePathOf(read.relative, callable.name)) + said,
           // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent` (a write stays a
           // warning, as the top-level one: a key the state adds on purpose is not a mistake)
           severity: !write && applicationSchema !== void 0 ? "error" : "warning"
@@ -18868,7 +18933,7 @@ function isWrite(read) {
   return read.form === "write" || read.form === "api-write" || read.written && read.form !== "opaque";
 }
 function bodyOf(callable) {
-  const found = collectGetterReads(callable.body, OPTIONS);
+  const found = collectGetterReads(callable.body, { ...OPTIONS, row: accessorRow(callable) });
   if (found === null) return { callable, writes: [], reads: [], calls: [], opaque: true };
   const writes = [];
   const reads = [];
@@ -18876,7 +18941,7 @@ function bodyOf(callable) {
   let opaque2 = false;
   for (const read of found) {
     const at2 = { start: callable.bodyStart + read.start, end: callable.bodyStart + read.end, nested: read.nested === true };
-    if (read.form === "opaque") {
+    if (read.form === "opaque" || read.path.startsWith(".")) {
       opaque2 = true;
       continue;
     }
@@ -18980,6 +19045,8 @@ function validateScriptWrites(html, stateTagName = "wcs-state", locale2) {
 function getterWrites(state, msgs, at2) {
   const out = [];
   for (const [name, getter] of state.getters) {
+    const listed = getter.callable.listed;
+    if (listed !== void 0 && listed.paths[0] !== name) continue;
     for (const w of getter.writes) {
       if (w.state !== true || w.nested) continue;
       out.push({ code: WcsDiagnosticCode.GetterWrite, ...at2(w.start, w.end), message: msgs.getterWrite(w.path, name), severity: "error" });
@@ -18999,9 +19066,12 @@ function readonlyWrites(state, msgs, at2) {
   if (readonly.size === 0) return [];
   const out = [];
   for (const body of [...state.methods.values(), ...state.setters.values()]) {
+    const listed = body.callable.listed;
+    const again = listed !== void 0 && listed.paths[0] !== body.callable.name;
     for (const w of body.writes) {
       const path = toWildcardForm(w.path);
       if (w.state !== true || hasRecursionWildcard(path) || !readonly.has(path)) continue;
+      if (again && out.some((d) => d.start === at2(w.start, w.end).start)) continue;
       out.push({ code: WcsDiagnosticCode.PathReadonly, ...at2(w.start, w.end), message: msgs.pathReadonlyWrite(path), severity: "error" });
     }
   }
@@ -19058,6 +19128,84 @@ function unobservedSetters(state, msgs, at2) {
     out.push({ code: WcsDiagnosticCode.SetterUnobserved, ...at2(setter.callable.start, setter.callable.end), message: msgs.setterUnobserved(name, listed), severity: "warning" });
   }
   return out;
+}
+
+// src/service/accessorListValidator.ts
+var OPTIONS2 = { templates: true, writes: true, resolveWrites: true, untracked: true };
+var INDEXED_APIS = /* @__PURE__ */ new Set(["$resolve", "$setAll", "$update"]);
+function rowOfPath(path) {
+  const at2 = path.lastIndexOf("*");
+  return at2 < 0 ? null : path.slice(0, at2 + 1);
+}
+function hasRow(row, needed) {
+  return row !== null && (row === needed || row.startsWith(`${needed}.`));
+}
+function validateAccessorLists(html, stateTagName = "wcs-state", locale2) {
+  const blocks = parseLoadedScriptBlocks(html, stateTagName).filter((block) => hasDefaultExportObject(block.content));
+  if (blocks.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const block of blocks) {
+    const at2 = (start, end) => ({ start: block.contentStart + start, end: block.contentStart + end });
+    const keys = /* @__PURE__ */ new Set();
+    for (const callable of analyzeCallableBodies(block.content)) {
+      const listed = callable.listed;
+      if (listed !== void 0 && !keys.has(listed.start)) {
+        keys.add(listed.start);
+        const why = listSyntax(listed.key, listed.paths);
+        if (why !== null) {
+          out.push({
+            code: WcsDiagnosticCode.AccessorListSyntax,
+            ...at2(listed.start, listed.end),
+            message: msgs.accessorListSyntax(listed.key, why),
+            severity: "error"
+          });
+        }
+      }
+      if (listed !== void 0 && listed.paths[0] !== callable.name) continue;
+      const reads = collectGetterReads(callable.body, OPTIONS2);
+      if (reads === null) continue;
+      const rows = (listed?.paths ?? [callable.name]).map((name) => accessorRow({ name, kind: callable.kind }));
+      for (const read of reads) {
+        if (read.form === "opaque") continue;
+        const place = at2(callable.bodyStart + read.start, callable.bodyStart + read.end);
+        if (read.path.startsWith(".") && read.api !== void 0 && INDEXED_APIS.has(read.api)) {
+          out.push({ code: WcsDiagnosticCode.WildcardRank, ...place, message: msgs.relativeApiPath(read.path, read.api), severity: "error" });
+          continue;
+        }
+        if (callable.kind !== "getter" || read.nested === true) continue;
+        if (read.path.startsWith(".")) {
+          if (rows.every((row) => row === null)) {
+            out.push({ code: WcsDiagnosticCode.WildcardRank, ...place, message: msgs.relativeNoRow(read.path, describe(callable)), severity: "error" });
+          }
+          continue;
+        }
+        if (listed === void 0 || read.form === "api" || read.form === "api-write" || read.form === "track") continue;
+        if (hasRecursionWildcard(read.path)) continue;
+        const needed = rowOfPath(read.path);
+        if (needed === null) continue;
+        const home = rows.findIndex((row) => hasRow(row, needed));
+        const away = rows.findIndex((row) => !hasRow(row, needed));
+        if (home < 0 || away < 0) continue;
+        const rest = read.path.slice(rows[home].length);
+        out.push({
+          code: WcsDiagnosticCode.AccessorListPath,
+          ...place,
+          message: msgs.accessorListPath(read.path, needed.slice(0, -2), listed.paths[away], rest === "" ? "." : rest),
+          severity: "error"
+        });
+      }
+    }
+  }
+  return out;
+}
+function listSyntax(key, paths) {
+  if (/\s/.test(key)) return "space";
+  if (key.split(",").some((part) => part === "")) return "empty";
+  return paths.some(hasRecursionWildcard) ? "recursive" : null;
+}
+function describe(callable) {
+  return callable.listed?.key ?? callable.name;
 }
 
 // src/service/moduleTopReadValidator.ts
@@ -19420,6 +19568,7 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));
   out.push(...validateScriptWrites(text3, stateTagName, locale2));
+  out.push(...validateAccessorLists(text3, stateTagName, locale2));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
   out.push(...validateModuleTopReads(text3, stateTagName, locale2));
   out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader));
