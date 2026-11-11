@@ -30,7 +30,7 @@ import { findAllBindAttributes, writesBack } from './bindingValidator.js';
 import { parseBindTextWithPositions } from '../core/parser/positionalParser.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
-import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
+import { accessorRow, analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { suggestion } from './suggestion.js';
 import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findInPlaceChanges, findLocationRead, findOwnThis, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import type { WatchHandlerSource } from './stateAnalyzer.js';
@@ -266,6 +266,9 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
     if (parsed.args.length < 2) continue;
     const path = literalString(parsed.args[0]);
     if (path === null) continue;
+    // 行からの相対パス（`.lines.*.amount`、4.22）は、囲むアクセサの行の `*` を足した本数になる。ここでは
+    // どの本体の中かを見ていないので、数えない。
+    if (path.startsWith('.')) continue;
     // `**` は固定本数の `*` ではない（深さの族を表す）。添字の本数はここでは決まらず、
     // 形の判定は recursionValidator が `wcs/recursion-getall-form` /
     // `wcs/recursion-setall-form` として担う（ランタイムも `**` を先に分岐する）。
@@ -332,7 +335,8 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
   for (const getter of getters) {
     if (getter.accessor === 'set') continue;
     const targets = new Set<string>();
-    for (const read of collectGetterReads(getter.body) ?? []) {
+    // (a path relative to the row is the getter's own list's: `this[".total"]` in `get "items.*.label"()`)
+    for (const read of collectGetterReads(getter.body, { row: accessorRow(getter) }) ?? []) {
       if (declared.has(read.path)) targets.add(read.path);
     }
     edges.set(getter.name, [...targets]);

@@ -477,6 +477,41 @@
       "note": { "en": "Both sides stay silent on a setter that writes nothing (one that ignores `null`); the lint also where either side reads or writes what it cannot follow (`this[key]`, `fn(this)`).", "ja": "どちらも、何も書かない setter（`null` を捨てるもの）には黙る。lint は、どちらかが追えないもの（`this[key]`・`fn(this)`）を読み書きするときも黙る。" }
     },
     {
+      "id": "accessor-list-syntax",
+      "lint": [{ "code": "wcs/accessor-list-syntax", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Puts a space or an empty entry in a key that declares one accessor for several paths: `get \"users.*.fullname, employees.*.fullname\"()`.", "ja": "1 つのアクセサを複数のパスに宣言するキーに、空白や空の項目を書く: `get \"users.*.fullname, employees.*.fullname\"()`。" },
+      "effect": { "en": "The core takes what is between the commas as it is, so the path with the space is one nothing reads and the second list's rows have no such accessor. Since 4.22 the diagnostics add-on refuses the state with `[wcs/accessor-list-syntax]`; a `/core` page without it declares the unread path without a word.", "ja": "core はカンマの間をそのままパスにするので、空白入りのパスは誰も読まないパスになり、2 つ目のリストの行にはそのアクセサが無い。4.22 から diagnostics の後付けが `[wcs/accessor-list-syntax]` で state を拒む。後付けの無い `/core` のページは、誰も読まないパスを黙って宣言する。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/accessor-list-syntax]" }],
+      "note": { "en": "The lint also reports a recursive path (`**`) in such a key, which the recursion add-on refuses with `[wcs/recursion-anchor]`.", "ja": "lint は、そのキーの中の再帰のパス（`**`）も報告する。実行時は recursion の後付けが `[wcs/recursion-anchor]` で拒む。" }
+    },
+    {
+      "id": "accessor-list-path",
+      "lint": [{ "code": "wcs/accessor-list-path", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Names one list's rows by a full path in an accessor declared for several lists: `this[\"users.*.first\"]` in `get \"users.*.full,employees.*.full\"()`.", "ja": "複数のリストに宣言したアクセサの本体で、そのうち 1 つのリストの行を絶対パスで書く: `get \"users.*.full,employees.*.full\"()` の中の `this[\"users.*.first\"]`。" },
+      "effect": { "en": "At the rows of the other lists that path has no row: a read gives undefined and a write throws, and only those lists show it. Since 4.22 the diagnostics add-on warns `[wcs/accessor-list-path]` once per accessor when the state is declared, naming the relative path to write (`this[\".first\"]`).", "ja": "ほかのリストの行ではそのパスに行が無く、読みは undefined、書きは例外になる — そのリストにだけ現れる。4.22 から diagnostics の後付けが、state の宣言時にアクセサごとに 1 回 `[wcs/accessor-list-path]` を警告し、書くべき相対パス（`this[\".first\"]`）を言う。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/accessor-list-path]" }],
+      "note": { "en": "Both read `this[...]` with a literal path only: `$getAll(\"users.*.first\", [])` names its rows itself, and a path built at run time is not followed.", "ja": "どちらも、リテラルのパスの `this[...]` だけを読む。`$getAll(\"users.*.first\", [])` は行を自分で指し、実行時に組み立てたパスは追わない。" }
+    },
+    {
+      "id": "relative-path-no-row",
+      "lint": [{ "code": "wcs/wildcard-rank", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Reads or writes a path relative to the row (`this[\".name\"]`) in an accessor that is not one of a list's rows: `get first() { return this[\".first\"] }`.", "ja": "リストの行のものでないアクセサの中で、行からの相対パス（`this[\".name\"]`）を読み書きする: `get first() { return this[\".first\"] }`。" },
+      "effect": { "en": "There is no row to be relative to: `#1402` each time the accessor is evaluated, so every binding that reads it fails. The lint reports an error here (the accessor's key says whether it has a row).", "ja": "基準になる行が無い。アクセサの評価のたびに `#1402` になり、それを読む束縛はすべて失敗する。lint はここでは error を出す（行があるかはアクセサのキーで決まる）。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "in script, a row" }],
+      "note": { "en": "The lint does not check a relative path in a method: its row is the caller's (a handler in a `for:` row, a `$setAll` mapper). Called with no row, it throws `#1402` as well.", "ja": "lint はメソッドの中の相対パスを検査しない。行は呼び出し側（`for:` の行のハンドラ、`$setAll` の mapper）で決まる。行の無いところで呼べば、同じく `#1402` になる。" }
+    },
+    {
+      "id": "relative-path-indexed-api",
+      "lint": [{ "code": "wcs/wildcard-rank", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Hands a path relative to the row to `$resolve`, `$setAll` or `$update`: `this.$update(\".count\", [i], (n) => n + 1)`.", "ja": "行からの相対パスを `$resolve`・`$setAll`・`$update` に渡す: `this.$update(\".count\", [i], (n) => n + 1)`。" },
+      "effect": { "en": "They are told their rows by `indexes` and expand no relative path, so the call throws: `#901` from `$resolve` and `$update` (the path as written has no `*` for the index), `#301` from `$setAll` (the key `\"\"`). Neither sentence names the relative path; the lint does.", "ja": "行は `indexes` で指すので相対パスは展開されず、呼び出しは例外になる: `$resolve` と `$update` は `#901`（書かれたままのパスには添字に対応する `*` が無い）、`$setAll` は `#301`（キー `\"\"`）。どちらの文面も相対パスとは言わない。lint は言う。" },
+      "evidence": [{ "file": "packages/state/src/engine.ts", "text": "this.checkArity(\"$update\", path, p, indexes, true)" }]
+    },
+    {
       "id": "wildcard-rank",
       "lint": [{ "code": "wcs/wildcard-rank", "severity": "warning" }],
       "runtime": "same", "harm": "broken",

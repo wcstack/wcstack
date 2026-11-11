@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+Two script syntaxes for `@wcstack/state`, decided by the author on 2026-11-12 after a prototype measured them against the core's size limit: a path relative to the row in script, and one accessor declared for several paths. Both cost 36 B of the core, which is now 20,477 B of its 20,480 B limit.
+
+### Upgrading
+
+- `@wcstack/state`: a key of a state that starts with `.` read through `this` (`this[".x"]`) is now a path relative to the row. It read `undefined` without a word before (a key `""` at the root has no use), so no working page changes.
+- `@wcstack/state`: an accessor key that contains a comma (`get "a,b"()`) now declares an accessor for each path between the commas. Such a key declared an accessor nothing could read before.
+- `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/accessor-list-syntax]` fails the initialization of a state whose accessor key lists paths with a space or an empty entry, and `[wcs/accessor-list-path]` is a new warning. The sentence of `#1402` also says what a script needs.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: two new rules, both errors — `wcs/accessor-list-syntax` and `wcs/accessor-list-path`. `wcs/wildcard-rank` is an error for a relative path in an accessor that is not a row's (it stays a warning in markup).
+
+### Added
+
+- `@wcstack/state`: **paths relative to the row in script.** In code evaluated for a row, `this[".name"]` is the path under that row's element, as `.name` is in a `for:` template: `this["users.*.name"]` inside `get "users.*.fullName"()`. `this["."]` is the element itself.
+  - The row is the innermost one the code runs at: a row accessor's (up to the last `*` of its key), a method called from a row (a handler in a `for:` row, a `$setAll` mapper, `$update`'s function), a recursive getter's node.
+  - It is taken where the indexes come from the loop context: `this[...]` reads and writes, `$getAll`, `$eq`, `$dependOn`, `$postUpdate`. Once expanded it is the full path, with its dependencies and cache. `$resolve`, `$setAll` and `$update` are told their rows by `indexes` and take no relative path.
+  - With no row it throws `[wcs/wildcard-rank]` (`#1402`).
+  - The expansion is kept per list, so a relative read costs about 10 % more than the full path in a getter's evaluation (263 → 288 ns for a getter with two reads); without that it was twice the time.
+- `@wcstack/state`: **one accessor for several paths.** `get "users.*.fullName,employees.*.fullName"()` declares the getter (and a `set` with the same key, the setter) for each listed path. With relative paths in its body, one body serves the rows of every list — also those of a filtered copy (`get "users.*.fullName,shown.*.fullName"()` beside `get shown()`), whose rows had none of the source list's accessors.
+  - The separator is the comma alone: the core takes what is between the commas as it is.
+  - Each path has its own cache and dependencies. In a volume every listed path is declared under the mount path; a mounted component exports each listed path that has no `*`.
+- `@wcstack/state` (the diagnostics add-on): `[wcs/accessor-list-syntax]` refuses a state whose accessor key lists paths with a space or an empty entry. `[wcs/accessor-list-path]` warns once per accessor declared for several lists whose body names the rows of one of them by a full path (`this["users.*.first"]`), with the relative path to write.
+- `@wcstack/state` types: `defineState`'s `this` takes a relative path as `any`, and each path of a comma-listed key with the accessor's type.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension:
+  - A relative path in a row accessor is read as the path under the row. The rules that read script paths check it as written out: `wcs/read-path-missing`, `wcs/write-path-missing`, `wcs/getter-write`, `wcs/path-readonly`, `wcs/setter-cycle`, `wcs/setter-unobserved`, `wcs/getter-cycle`. A relative path in a method is not checked (its row is the caller's).
+  - Each path of a comma-listed accessor key is a declared path, with its own place in the key for hover, go to definition and references. A relative path in its body is checked at each listed list.
+  - `wcs/accessor-list-syntax` (error): a space beside a comma, an empty entry, or a recursive path (`**`) in such a key.
+  - `wcs/accessor-list-path` (error): a full path of one list's rows in the body of an accessor declared for several lists.
+  - `wcs/wildcard-rank` (error): a relative path in an accessor whose key has no `*`, and one handed to `$resolve`, `$setAll` or `$update` in any body.
+  - `wcs/index-arity` does not count the `*` of a relative path (the row's are added to it).
+
+### Changed
+
+- `@wcstack/state` (the diagnostics add-on): the sentence of `#1402` names the script case — `".name" is relative: it needs an enclosing "for" template (in script, a row: a row accessor, or a method called from a row)`.
+
 ## [4.21.0] — 2026-11-10
 
 A minor from the `ledger-repair` seam app, the second app of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2. A maintainer who did not write `family-ledger` fixed a copy of it that had ten catalogued mistakes put in. They used only the console, the lint, `<wcs-devtools>` and the documents ([docs/seam-apps.md](./docs/seam-apps.md)). They fixed all ten, and found two real defects in the example itself. The author's decisions are in §5.17. They cover a guard's session read that nothing reported, a lint pass line that hid real defects as warnings, a runtime check that skipped a getter list's rows, and DevTools failures that did not stand out. `@wcstack/state`, `@wcstack/lint`, `@wcstack/typescript` and `@wcstack/devtools` changed; every other package is 4.20.0 with a new version.

@@ -53,6 +53,8 @@ export class Pattern {
   dead = false;
   /** Its accessor is the engine's own for an index path (Engine.markupAccessor), not the author's or an add-on's. */
   markup = false;
+  /** On a list pattern: the relative paths read or written at its rows (`.name`, `.`), expanded (engine.ts, expandPath). */
+  declare relative?: Map<string, string>;
   /** Scratch of Engine.prune: the evaluation that read it. */
   mark = 0;
 

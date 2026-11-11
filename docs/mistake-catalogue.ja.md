@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 12 |
-| 実行時 | 76 |
+| 実行時 | 80 |
 | lint だけ — 条件付きの沈黙 | 28 |
 | 文書だけ — 沈黙 | 47 |
 | 数えない lint の code | 20 |
@@ -184,6 +184,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | アクセサペアの setter で、その getter が読まないものを書く: `get celsius() { return (this.f - 32) * 5 / 9 }` の横の `set celsius(v) { this.c = v }`。 | 同じ code: 書いた後も getter は元の値を返し、束ねた双方向の入力は次の描画でそこへ戻る — 何も知らせない。4.17 から diagnostics の後付けが、何かを書いたのに、何かを読んだ getter がそのどれも読まない setter ごとに 1 回 `[wcs/setter-unobserved]` を警告する。 どちらも、何も書かない setter（`null` を捨てるもの）には黙る。lint は、どちらかが追えないもの（`this[key]`・`fn(this)`）を読み書きするときも黙る。 | `wcs/setter-unobserved` (warning) |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | カスタム要素の入力に、値の後で `undefined` を渡す: リセット、`undefined` を返す getter、そのキーの無いオブジェクトで置き換えた親（キーができる前に保存した値、値の欠けたリンク）。 | code なし: 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字、リンクが別の値を言う間も前の音色のエコー — を持ち続ける。4.17 から diagnostics の後付けが束縛ごとに 1 回 `[wcs/input-undefined]` と警告し、要素が持ち続ける値を言う。消すには `null` を書く。 継ぎ目アプリ music-room が 2 度当たった（値の欠けた音色のリンク、キーができる前に保存した音色）。ネイティブ要素のプロパティ（`<input>` の `value:`）と、ページの自作要素の宣言の無いプロパティも同じく値を保つが、まだ知らせない。 | — |
+| 複数のリストに宣言したアクセサの本体で、そのうち 1 つのリストの行を絶対パスで書く: `get "users.*.full,employees.*.full"()` の中の `this["users.*.first"]`。 | 同じ code: ほかのリストの行ではそのパスに行が無く、読みは undefined、書きは例外になる — そのリストにだけ現れる。4.22 から diagnostics の後付けが、state の宣言時にアクセサごとに 1 回 `[wcs/accessor-list-path]` を警告し、書くべき相対パス（`this[".first"]`）を言う。 どちらも、リテラルのパスの `this[...]` だけを読む。`$getAll("users.*.first", [])` は行を自分で指し、実行時に組み立てたパスは追わない。 | `wcs/accessor-list-path` (error) |
+| 1 つのアクセサを複数のパスに宣言するキーに、空白や空の項目を書く: `get "users.*.fullname, employees.*.fullname"()`。 | 同じ code: core はカンマの間をそのままパスにするので、空白入りのパスは誰も読まないパスになり、2 つ目のリストの行にはそのアクセサが無い。4.22 から diagnostics の後付けが `[wcs/accessor-list-syntax]` で state を拒む。後付けの無い `/core` のページは、誰も読まないパスを黙って宣言する。 lint は、そのキーの中の再帰のパス（`**`）も報告する。実行時は recursion の後付けが `[wcs/recursion-anchor]` で拒む。 | `wcs/accessor-list-syntax` (error) |
 | audio のタグの構造の属性を state に束ねる — select で動かす `<wcs-voice data-wcs="poly: polyphony">`、`attr.out:` — か、audio のタグを `if:` / `for:` の下に置く。 | code なし: 変わるたびにグラフを組み直し、鳴っている音をすべて切る。鍵は押された表示のまま。4.17 から `<wcs-audio>` が `[wcs/audio-voices-cut]` で 1 回警告し、タグと属性と切った声の数を言う。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 何も鳴っていなければ言わない。構造の宣言そのものは誤りではない。audio のタグへの `out:` の束縛は `[wcs/tag-member-unknown]` で失敗する。 | — |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
 | `<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。 | code なし: 読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。 | `wcs/bind-component-source` (error) |
@@ -224,6 +226,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `**` のパスの `$setAll` に、途中までの添字・mapper・spread を渡す。 | 同じ code: `[wcs/recursion-setall-form]` を throw する（添字を省くと `#9`）。 | `wcs/recursion-setall-form` (error) |
 | `**` を通した `$setAll` で、ノード・子の一覧・その length に書く。 | 同じ code: `[wcs/recursion-structural-write]` を throw する。 | `wcs/recursion-structural-write` (error) |
 | `**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。 | 同じ code: `#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗する。 | `wcs/recursion-unsupported` (error) |
+| 行からの相対パスを `$resolve`・`$setAll`・`$update` に渡す: `this.$update(".count", [i], (n) => n + 1)`。 | code なし: 行は `indexes` で指すので相対パスは展開されず、呼び出しは例外になる: `$resolve` と `$update` は `#901`（書かれたままのパスには添字に対応する `*` が無い）、`$setAll` は `#301`（キー `""`）。どちらの文面も相対パスとは言わない。lint は言う。 | `wcs/wildcard-rank` (error) |
+| リストの行のものでないアクセサの中で、行からの相対パス（`this[".name"]`）を読み書きする: `get first() { return this[".first"] }`。 | 同じ code: 基準になる行が無い。アクセサの評価のたびに `#1402` になり、それを読む束縛はすべて失敗する。lint はここでは error を出す（行があるかはアクセサのキーで決まる）。 lint はメソッドの中の相対パスを検査しない。行は呼び出し側（`for:` の行のハンドラ、`$setAll` の mapper）で決まる。行の無いところで呼べば、同じく `#1402` になる。 | `wcs/wildcard-rank` (error) |
 | `$scan` を宣言する（4.0 で外れた）。 | code なし: diagnostics の後付けが読み込みで `#1`（`$scan was removed`）を throw する。それの無い `/core` ではキーは無視される。 | `wcs/scan-declaration-invalid` (varies) |
 | setter の無い getter にスクリプトから書く: `this.total = 0`、`$setAll("items.*.subtotal", [], 0)`。 | 同じ code: 書き込みが走るたびに `[wcs/path-readonly] "total" is a getter without a setter` を投げ（code は 4.17 から）、メソッドのその後は行われない。 lint は 4.17 からメソッドと setter の書き込みを読む（docs/script-write-checks.ja.md）。双方向の束縛だけを見ていた。getter が読む値を書く setter を足すか、その値を書く。 | `wcs/path-readonly` (error) |
 | 文書に 2 つ目の root の `<wcs-state>` を置く。 | code なし: 後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ — 文書の順に関わらないので、ページの `src=` やインラインの state の後に置いた `json=` の state がルートを取り、ページはそれでバインドされる。4.9 から、diagnostics の後付けが両方を名指しする。 | `wcs/second-root` (error) |

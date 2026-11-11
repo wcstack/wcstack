@@ -32,6 +32,7 @@ import { validateSemantics } from "../service/semanticValidator.js";
 import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import { validateScriptReads } from "../service/scriptReadValidator.js";
 import { validateScriptWrites } from "../service/scriptWriteValidator.js";
+import { validateAccessorLists } from "../service/accessorListValidator.js";
 import { validateModuleTopReads } from "../service/moduleTopReadValidator.js";
 import { validateStateAbsent, validateStateSources } from "../service/stateSourceValidator.js";
 import { isMustacheDisabled } from "../service/stateBehavior.js";
@@ -158,6 +159,9 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // what its getters, setters and methods write: a getter that writes, a getter without a setter written, setters that
   // write each other, a setter whose writes its getter does not read (docs/script-write-checks.md)
   out.push(...validateScriptWrites(text, stateTagName, locale));
+  // 4.22's script syntaxes: a malformed key listing several accessor paths, a full path of one list's rows in an
+  // accessor declared for several, a path relative to the row where there is none
+  out.push(...validateAccessorLists(text, stateTagName, locale));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   // a session read at the top level of a module evaluated once: a guard's (error), a state's (warning)
   out.push(...validateModuleTopReads(text, stateTagName, locale));

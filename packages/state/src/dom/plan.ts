@@ -1,4 +1,4 @@
-import { INDEX_PARAM, isThenable, type Engine } from "../engine";
+import { INDEX_PARAM, expandPath, isThenable, type Engine } from "../engine";
 import type { StateRow } from "../list";
 import { UNSET, type Pattern } from "../pattern";
 import { config } from "../config";
@@ -15,13 +15,6 @@ import { report } from "../parser/raiseError";
 
 /** The binding attribute (`bindAttributeName`, default data-wcs). */
 export const bindAttr = (): string => config.bindAttributeName;
-
-/** `.label` / `.` inside a `for: data` template → `data.*.label` / `data.*`. */
-export function expandPath(path: string, list: Pattern | null): string {
-  if (path.charCodeAt(0) !== 46 /* . */) return path;
-  if (list === null) raise(M.WildcardRelative, [path]);
-  return path === "." ? `${list.path}.*` : `${list.path}.*${path}`;
-}
 
 function blank(): Spec {
   return {

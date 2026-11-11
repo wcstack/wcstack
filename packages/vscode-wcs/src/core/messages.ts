@@ -137,6 +137,16 @@ export interface WcsMessageCatalog {
   setterCycle(cycle: string): string;
   /** A setter writes `writes`, none of which its getter reads. */
   setterUnobserved(path: string, writes: string): string;
+  /** Appended to a path message: the path was written relative to the row (`relative`) in the accessor `accessor`. */
+  relativePathOf(relative: string, accessor: string): string;
+  /** A relative path in an accessor that is not a row's (its key has no `*`). */
+  relativeNoRow(relative: string, accessor: string): string;
+  /** A relative path handed to an API that takes its rows from `indexes` (`$resolve`, `$setAll`, `$update`). */
+  relativeApiPath(relative: string, api: string): string;
+  /** A key listing several accessor paths is malformed (`why`: a space, an empty entry, a recursive path). */
+  accessorListSyntax(key: string, why: 'space' | 'empty' | 'recursive'): string;
+  /** An accessor declared for several lists names the rows of one of them (`path`) by its full path. */
+  accessorListPath(path: string, list: string, other: string, relative: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -418,6 +428,15 @@ const ja: WcsMessageCatalog = {
     `setter が互いに書き合っています: ${cycle}。条件で止まらなければ、互いを呼び続けてスタックが溢れます。値は getter が読むデータのパスに置いてください`,
   setterUnobserved: (p, w) =>
     `"${p}" の setter は ${w} を書きますが、getter "${p}" はそのどれも読みません。書いた後も getter は元の値を返し、"${p}" に束ねた双方向の入力はそこへ戻ります。getter が読む値を書くか、setter が書く値を getter で読んでください`,
+  relativePathOf: (r, a) => `（アクセサ "${a}" の中の "${r}"）`,
+  relativeNoRow: (r, a) =>
+    `"${r}" は行からの相対パスですが、アクセサ "${a}" はリストの行のものではありません（キーに "*" がありません）。行が無いので、評価のたびに例外になります（#1402）。フルパスで書くか、行のアクセサ（get "<リスト>.*.<名前>"()）にしてください`,
+  relativeApiPath: (r, api) =>
+    `"${r}" は行からの相対パスですが、${api} は行を添字の引数で受け取り、呼ばれた行からは取りません。相対パスはここでは展開されず、呼び出しは例外になります。フルパスで書いてください（"<リスト>.*${r === '.' ? '' : r}"）`,
+  accessorListSyntax: (k, why) =>
+    `アクセサのキー "${k}" は複数のパスの並びですが、${why === 'space' ? 'カンマの前後に空白があります' : why === 'empty' ? '空の項目があります' : '再帰のパス（"**"）は並べられません'}。パスはカンマだけで区切ります（get "users.*.fullname,employees.*.fullname"()）${why === 'recursive' ? '' : '。ランタイムはカンマの間をそのままパスにするので、このままでは誰も読まないパスが宣言されます'}`,
+  accessorListPath: (p, list, other, rel) =>
+    `"${p}" は "${list}" の行のパスですが、このアクセサは "${other}" にも宣言されています。そちらの行ではこのパスに行が無く、読みは undefined、書きは例外になります。行からの相対パスで書いてください: this["${rel}"]`,
   nestedWritePathMissing: (p) =>
     `パス "${p}" は状態定義に存在しません。書き込みはオブジェクトに新しいキーを作るだけで、宣言したパスの束縛には届きません`,
   readPathMissing: (p, top) => top
@@ -743,6 +762,15 @@ const en: WcsMessageCatalog = {
     `Setters write each other: ${cycle}. Unless a condition stops them, they call each other until the stack overflows. Store the values under data paths the getters read`,
   setterUnobserved: (p, w) =>
     `The setter of "${p}" writes ${w}, none of which the getter "${p}" reads. After a write the getter returns its old value, and a two-way input bound to "${p}" goes back to it. Write what the getter reads, or read what the setter writes in the getter`,
+  relativePathOf: (r, a) => ` ("${r}" in the accessor "${a}")`,
+  relativeNoRow: (r, a) =>
+    `"${r}" is relative to a row, but the accessor "${a}" is not one of a list's rows (its key has no "*"). With no row it throws each time it is evaluated (#1402). Write the full path, or make it a row accessor (get "<list>.*.<name>"())`,
+  relativeApiPath: (r, api) =>
+    `"${r}" is relative to a row, but ${api} takes its rows from its indexes argument, not from the row it is called at. A relative path is not expanded there, and the call throws. Write the full path ("<list>.*${r === '.' ? '' : r}")`,
+  accessorListSyntax: (k, why) =>
+    `The accessor key "${k}" lists several paths, but ${why === 'space' ? 'has a space beside a comma' : why === 'empty' ? 'has an empty entry' : 'a recursive path ("**") cannot be listed'}. Separate the paths with "," alone (get "users.*.fullname,employees.*.fullname"())${why === 'recursive' ? '' : ': the runtime takes what is between the commas as it is, so this declares a path nothing reads'}`,
+  accessorListPath: (p, list, other, rel) =>
+    `"${p}" is a path of the rows of "${list}", and this accessor is also declared for "${other}": at its rows that path has no row, so a read gives undefined and a write throws. Write it relative to the row: this["${rel}"]`,
   nestedWritePathMissing: (p) =>
     `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
   readPathMissing: (p, top) => top

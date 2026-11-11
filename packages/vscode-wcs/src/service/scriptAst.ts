@@ -77,6 +77,13 @@ export interface GetterRead {
   readonly indexed?: readonly string[];
   /** 本体の中の入れ子の関数（アロー関数も）の中で起きたとき true。本体の評価中に走るとは限らない。 */
   readonly nested?: true;
+  /** パスを引数に取った `$` API の名前（`$getAll`・`$setAll` など）。`this[...]` の読み書きでは未設定。 */
+  readonly api?: string;
+  /**
+   * 行からの相対パス（`this[".name"]`・`this["."]`、4.22）として書かれ、`CollectOptions.row` の下に展開したとき、
+   * 書かれたままのパス（`.name`）。`path`・`chain` の先頭・`indexed` は展開後。
+   */
+  readonly relative?: string;
   readonly start: number;
   readonly end: number;
 }
@@ -96,6 +103,12 @@ export interface CollectOptions {
   readonly untracked?: boolean;
   /** 追えないもの（`this[key]`・値として使った `this`・リテラルでない API のパス）を `form: 'opaque'` で集める。 */
   readonly opaque?: boolean;
+  /**
+   * 本体が評価される行（`get "users.*.fullname"()` なら `users.*` — stateAnalyzer の accessorRow）。相対パス
+   * （`.name`・`.`）をその下のパスとして集める（`relative` 付き）。無い（メソッド・行のアクセサでない）ときは
+   * 書かれたまま（`.name`）で集まる — 先頭が空のセグメントなので、存在の検査は従来どおり読み飛ばす。
+   */
+  readonly row?: string | null;
 }
 
 const PREFIX = '(async function* () {\n';
@@ -134,7 +147,29 @@ export function collectGetterReads(body: string, options: CollectOptions = {}): 
   } finally {
     collecting = {};
   }
-  return out;
+  const row = options.row;
+  return row == null ? out : out.map((read) => atRow(read, row));
+}
+
+/** 相対パスを行の下のパスに: `.name` → `<row>.name`、`.` → `<row>`（ランタイムの展開と同じ）。 */
+const underRow = (path: string, row: string): string => (path === '.' ? row : row + path);
+
+/**
+ * 相対パスを行の下に展開する API。ループ文脈から添字を取るものだけ — 添字を引数で受ける `$resolve`・`$setAll`・
+ * `$update` は、ランタイムが相対パスを展開しない（書かれたままで残し、accessorListValidator が報告する）。
+ */
+const ROW_APIS = new Set(['$getAll', '$dependOn']);
+
+/** 相対パスの読み書きを、行の下のパスとして返す（相対でない・展開されない API のパスはそのまま）。 */
+function atRow(read: GetterRead, row: string): GetterRead {
+  if (!read.path.startsWith('.') || (read.api !== undefined && !ROW_APIS.has(read.api))) return read;
+  return {
+    ...read,
+    path: underRow(read.path, row),
+    chain: read.chain === null ? null : [underRow(read.chain[0], row), ...read.chain.slice(1)],
+    ...(read.indexed !== undefined ? { indexed: read.indexed.map((list) => underRow(list, row)) } : {}),
+    relative: read.path,
+  };
 }
 
 /** 関数スコープ 1 段。 */
@@ -452,7 +487,7 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
         const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith('$')) {
           out.push({
-            path, chain: null, form: TRACK_APIS.has(api) ? 'track' : 'api', callee: false, written: false,
+            path, chain: null, form: TRACK_APIS.has(api) ? 'track' : 'api', callee: false, written: false, api,
             ...(scope.nested ? { nested: true as const } : {}),
             start: node.start - PREFIX.length, end: node.end - PREFIX.length,
           });
@@ -465,7 +500,7 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
         const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith('$')) {
           out.push({
-            path, chain: null, form: 'api-write', callee: false, written: false,
+            path, chain: null, form: 'api-write', callee: false, written: false, api,
             ...(scope.nested ? { nested: true as const } : {}),
             start: first!.start - PREFIX.length, end: first!.end - PREFIX.length,
           });

@@ -93,14 +93,23 @@ interface WcsStateApi {
   // 素の \`nodes.**\`（再帰 getter の中でノード自身に束縛される読み）は \`.**.\` を含まないので
   // 末尾が \`.**\` のキーにも同じ索引を置く（@wcstack/state の defineState と対）。
   readonly [key: \`\${string}.**\`]: any;
+  // 行からの相対パス（\`this[".name"]\`・\`this["."]\`、4.22）。基準は評価している行のリスト — アクセサのキー
+  // （\`get "users.*.fullname"()\`）か、メソッドを呼んだ行で決まる。this の型は状態全体で 1 つなので、どの行かは
+  // 型では表せない（型は any。パスが在るかは lint が、アクセサのキーから展開して検査する）。setter は書くので
+  // readonly ではない（@wcstack/state の defineState と対）。
+  [key: \`.\${string}\`]: any;
 }
+// 1 つのアクセサを複数のパスに宣言したキー（\`get "users.*.fullname,employees.*.fullname"()\`、4.22）の各パス。
+// T にはキーの文字列そのものしか現れないので、カンマで分けた各パスにそのアクセサの型を写す。
+type _WcsListedPaths<K extends string> = K extends \`\${infer Head},\${infer Rest}\` ? Head | _WcsListedPaths<Rest> : K;
+type _WcsListedAccessors<T> = { [K in keyof T & \`\${string},\${string}\` as _WcsListedPaths<K>]: T[K] };
 // $stream の値は、ランタイムが宣言キーの名前で実体化するプロパティ。T には宣言オブジェクトの中にしか
 // 現れないので、getter やメソッドの this から読めるよう any で写す。initial の型は使わない — 空配列の
 // initial が never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。
 // T に同名のプロパティを明示的に事前宣言していれば写さない（交差でその型まで any に潰さないため）。
 type _WcsDeclaredValues<T> =
   (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
-type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T>;
+type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
 // キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
 type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;

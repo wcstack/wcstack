@@ -86,6 +86,21 @@ function holdsTwice(arr: unknown[]): boolean {
   return v;
 }
 
+/**
+ * `.label` / `.` at a row of `list` → `data.*.label` / `data.*`: in a `for: data` template, and in script that
+ * runs at a row (a row accessor, a method called from one — 4.22). The expansions are kept on the list's
+ * pattern: a script reads the same few at every row, and a path made anew each time is hashed each time.
+ * (Here, not in dom/plan.ts: the engine importing that module reorders the bundle, 76 B of the core.)
+ */
+export function expandPath(path: string, list: Pattern | null | undefined): string {
+  if (path.charCodeAt(0) !== 46 /* . */) return path;
+  if (!list) raise(M.WildcardRelative, [path]);
+  const known = (list.relative ??= new Map<string, string>());
+  let full = known.get(path);
+  if (full === undefined) known.set(path, (full = path === "." ? `${list.path}.*` : `${list.path}.*${path}`));
+  return full;
+}
+
 /** A promise, or anything with a then(). */
 export function isThenable(r: any): r is PromiseLike<unknown> {
   return r !== null && typeof r === "object" && typeof r.then === "function";
@@ -383,10 +398,13 @@ export class Engine implements ReconcileHooks {
         seen.add(key);
         const d = Object.getOwnPropertyDescriptor(o, key)!;
         if (d.get === undefined && d.set === undefined) continue;
-        const p = this.pattern(key);
-        p.getter = d.get ?? null;
-        p.setter = d.set ?? null;
-        if (p.getter !== null && p.depth > 0) p.slot = this.slotCount++;
+        // one accessor for several paths (4.22): `get "users.*.fullname,employees.*.fullname"()`, no spaces
+        for (const path of key.split(",")) {
+          const p = this.pattern(path);
+          p.getter = d.get ?? null;
+          p.setter = d.set ?? null;
+          if (p.getter !== null && p.depth > 0) p.slot = this.slotCount++;
+        }
       }
     }
     // accessors registered after their descendants were created: recompute
@@ -533,9 +551,12 @@ export class Engine implements ReconcileHooks {
 
   // ---------------------------------------------------------------- resolve / read
 
-  /** Splits a concrete path into (pattern, row) — written to this.rp / this.rr. */
+  /**
+   * Splits a concrete path into (pattern, row) — written to this.rp / this.rr. A path relative to the row
+   * (`.name`, 4.22) is the one under the element of the list `ctx` is a row of, as in a `for:` template.
+   */
   resolve(path: string, ctx: StateRow | null): void {
-    const parsed = parsePath(path);
+    const parsed = parsePath(expandPath(path, ctx?.list.pattern));
     const p = (this.rp = this.pattern(parsed.pattern, true));
     const idx = parsed.indexes;
     this.rr = p.depth === 0 ? null : idx === null ? ctxRow(ctx, p, p.depth) : this.rowOf(p, idx, ctx, path);
@@ -1520,7 +1541,8 @@ export class Engine implements ReconcileHooks {
   }
 
   private getAll(path: string, indexes?: number[]): unknown[] {
-    const p = this.pattern(path, true);
+    // (a relative path: under the context row, `.lines.*.amount` in a getter of `orders.*`)
+    const p = this.pattern((path = expandPath(path, this.ctx?.list.pattern)), true);
     if (indexes !== undefined) this.checkArity("$getAll", path, p, indexes, false);
     // by default the loop context, on the wildcard levels the path shares with it
     let idx = indexes;

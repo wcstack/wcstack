@@ -256,13 +256,29 @@ function warnOnce(key: string, message: string): void {
   console.warn(`[@wcstack/state] ${message}`);
 }
 
+/**
+ * The top-level names a state declares inside an accessor for several paths (`get "total,sum"()`): they
+ * are the component's own though no key of its state is named so. Read once per state object.
+ */
+const listedNames = new WeakMap<object, Set<string>>();
+function listed(state: object): Set<string> {
+  let names = listedNames.get(state);
+  if (names === undefined) {
+    listedNames.set(state, (names = new Set()));
+    for (let o: object | null = state; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+      for (const k of Object.getOwnPropertyNames(o)) if (k.includes(",")) for (const path of k.split(",")) names.add(path);
+    }
+  }
+  return names;
+}
+
 /** Whether `key` is the component's own (a data default, an accessor or a method of its state). */
-const own = (h: Host, key: string): boolean => key in h.state;
+const own = (h: Host, key: string): boolean => key in h.state || listed(h.state).has(key);
 
 /** The component's own surface for `key`: an accessor or a method (a data default is not). */
 function surface(h: Host, key: string): boolean {
   const d = findDescriptor(h.state, key);
-  return d !== undefined && (d.get !== undefined || d.set !== undefined || typeof d.value === "function");
+  return d === undefined ? listed(h.state).has(key) : d.get !== undefined || d.set !== undefined || typeof d.value === "function";
 }
 
 /**
@@ -503,19 +519,23 @@ function exportAccessors(m: Mount, whole: Entry): void {
   m.exports = new Map();
   const seen = new Set<string>();
   for (let o: object | null = h.state; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
-    for (const k of Object.getOwnPropertyNames(o)) {
-      if (seen.has(k)) continue;
-      seen.add(k);
-      const d = Object.getOwnPropertyDescriptor(o, k)!;
-      if ((d.get === undefined && d.set === undefined) || k[0] === "$" || k.includes(WILDCARD)) continue;
-      // a dotted accessor exports only from the component's own data (`form.label`), not the tree's
-      const head = headOf(k);
-      if (k !== head && !own(h, head)) continue;
-      const hp = H.pattern(`${whole.outer.path}.${k}`);
-      // the host's own accessor there wins
-      if (hp.getter === null) answer(H, hp, whole.outer);
-      else if (!exporting.has(hp.getter)) continue;
-      m.exports.set(hp, m.component.pattern(k));
+    for (const key of Object.getOwnPropertyNames(o)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const d = Object.getOwnPropertyDescriptor(o, key)!;
+      if ((d.get === undefined && d.set === undefined) || key[0] === "$") continue;
+      // (one accessor declared for several paths: each is a key of its own)
+      for (const k of key.split(",")) {
+        if (k.includes(WILDCARD)) continue;
+        // a dotted accessor exports only from the component's own data (`form.label`), not the tree's
+        const head = headOf(k);
+        if (k !== head && !own(h, head)) continue;
+        const hp = H.pattern(`${whole.outer.path}.${k}`);
+        // the host's own accessor there wins
+        if (hp.getter === null) answer(H, hp, whole.outer);
+        else if (!exporting.has(hp.getter)) continue;
+        m.exports.set(hp, m.component.pattern(k));
+      }
     }
   }
 }

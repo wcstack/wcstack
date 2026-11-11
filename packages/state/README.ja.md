@@ -876,7 +876,7 @@ this.items = await (await fetch("/api/items")).json();
 
 #### ドット省略記法
 
-`for` ループ内では、`.` で始まるパスがループの配列パスを基準に展開されます：
+`for` ループ内では、`.` で始まるパスがループの配列パスを基準に展開されます（4.22（未リリース）から、スクリプトでも同じ展開が使えます —— [行からの相対パス](#行からの相対パスthisname)）：
 
 | 省略形 | 展開後 | 説明 |
 |---|---|---|
@@ -1220,6 +1220,82 @@ export default {
 
 パス setter は双方向バインディングと連携します — input を編集すると setter が呼ばれ、`firstName` / `lastName` に分割して書き戻します。
 
+### 行からの相対パス（`this[".name"]`）
+
+4.22（未リリース）から、行について評価されるスクリプトの中では、`.` で始まるパスが**その行**からの相対パスになります。`for:` テンプレートの中の [ドット省略記法](#ドット省略記法) と同じ展開です:
+
+```javascript
+export default {
+  users: [{ firstName: "Alice", lastName: "Smith" }],
+  get "users.*.fullName"() {
+    // this["users.*.firstName"] + " " + this["users.*.lastName"] と同じ
+    return this[".firstName"] + " " + this[".lastName"];
+  },
+  set "users.*.fullName"(value) {
+    const [first, ...rest] = value.split(" ");
+    this[".firstName"] = first;
+    this[".lastName"] = rest.join(" ");
+  }
+};
+```
+
+| 書き方 | `get "users.*.fullName"()` の中での意味 | 説明 |
+|---|---|---|
+| `this[".firstName"]` | `this["users.*.firstName"]` | その行のプロパティ（読み・書き） |
+| `this["."]` | `this["users.*"]` | その行の要素そのもの（プリミティブの配列の値） |
+| `this[".lines.0.amount"]` | `this["users.*.lines.0.amount"]` | 行の下のリストの、明示の添字 |
+| `this.$getAll(".lines.*.amount")` | `this.$getAll("users.*.lines.*.amount")` | 行の下のリストの集計（添字は省略） |
+
+基準は、コードが評価されている**いちばん内側の行**です —— `$1` が読む行と同じものです:
+
+- **行のアクセサ**（`get "users.*.fullName"()` / `set …`）: キーの最後の `*` までの行。`get "regions.*.states.*.label"()` の中の `.name` は `regions.*.states.*.name` で、外側の行は従来どおりフルパス（`this["regions.*.name"]`）で読みます。`get "users.*.address.label"()` の中の `.zip` は `users.*.zip` です（`address.zip` ではありません）。
+- **行から呼ばれたメソッド**: `for:` の行の中のイベントハンドラ、`$setAll` の mapper、`$update` の関数。
+- **再帰 getter**（`get "nodes.**.label"()`）: 評価している深さのノード。
+
+相対パスを取るのは、ループ文脈から添字を取る場所です: `this[...]` の読み書き、添字を省略した `$getAll`、`$eq`、`$dependOn`、`$postUpdate`。依存追跡・キャッシュ・書き込みの届き方は、フルパスで書いたときと同じです（展開した後は同じパスです）。添字を引数で受ける `$resolve`・`$setAll`・`$update` は相対パスを取りません: 行は `indexes` で指すので、展開されず、呼び出しは例外になります。フルパスで書いてください（lint は `wcs/wildcard-rank` の error で報告します）。
+
+行が無いところ —— トップレベルの getter / setter、`$connectedCallback`、行の外から呼んだメソッド —— で相対パスを使うと、`[wcs/wildcard-rank]`（`#1402`）を throw します。lint は、行のものでないアクセサの中の相対パスを同じ code の error で報告し、行のアクセサの中の相対パスは展開したパスで存在を検査します（`wcs/read-path-missing` / `wcs/write-path-missing`）。メソッドの中の相対パスは、行が呼び出し側で決まるので lint は検査しません。型（`defineState` と VS Code 拡張）は相対パスを `any` として通します。
+
+### 1 つのアクセサを複数のパスに宣言する
+
+4.22（未リリース）から、アクセサのキーにパスを**カンマで並べる**と、同じ getter / setter がそのそれぞれに宣言されます。本体は[行からの相対パス](#行からの相対パスthisname)で書きます —— どのリストの行でも同じ本体が動きます:
+
+```javascript
+export default {
+  users: [{ firstName: "Alice", lastName: "Smith" }],
+  employees: [{ firstName: "Bob", lastName: "Jones" }],
+  // "users.*.fullName" と "employees.*.fullName" の両方を宣言する
+  get "users.*.fullName,employees.*.fullName"() {
+    return this[".firstName"] + " " + this[".lastName"];
+  }
+};
+```
+
+絞り込んだ写しを描くときに、元のリストと同じ行のアクセサを持たせるのにも使えます。`for: shown` の行は `shown.*` であって `users.*` ではないので、`users.*.fullName` だけを宣言したのでは `shown` の行に `fullName` はありません:
+
+```javascript
+export default {
+  users: [{ firstName: "Alice", lastName: "Smith", active: true }],
+  get shown() { return this.users.filter((u) => u.active); },
+  get "users.*.fullName,shown.*.fullName"() {
+    return this[".firstName"] + " " + this[".lastName"];
+  }
+};
+```
+
+```html
+<template data-wcs="for: shown">
+  <li data-wcs="textContent: .fullName"></li>
+</template>
+```
+
+決まり:
+
+- **区切りはカンマだけです。空白は書けません。** core はカンマの間をそのままパスにするので、`"users.*.fullName, employees.*.fullName"` の 2 つ目は、誰も読まない ` employees.*.fullName` というパスになります。`diagnostics` アドオンは、空白や空の項目のあるキーを `[wcs/accessor-list-syntax]` で初期化ごと失敗させ、lint は同じ code の error で報告します。
+- **本体は相対パスで書きます。** 並べたリストの 1 つをフルパスで書く（`this["users.*.firstName"]`）と、ほかのリストの行ではそのパスに行が無く、読みは `undefined`、書きは `#3` になります。`diagnostics` アドオンは state の宣言時にアクセサごとに 1 回 `[wcs/accessor-list-path]` を警告し、lint は同じ code の error で報告します。同じリストの 2 つの名前（`"users.*.fullName,users.*.displayName"`）や、並べたリストのどれにも共通の外側の行なら、フルパスのままで構いません。
+- キャッシュと依存はパスごとに別です: `users.*.fullName` と `employees.*.fullName` は、同じ関数を持つ別々の getter です。
+- 再帰のキー（`**`）は並べられません（`[wcs/recursion-anchor]`）。ボリュームの中では、並べたどのパスもマウントパスの下に宣言されます。
+
 ### 対応するパス getter パターン
 
 | パターン | 説明 | 例 |
@@ -1229,6 +1305,7 @@ export default {
 | `get "a.*.b"()` | 単一ワイルドカード | `get "users.*.fullName"()` |
 | `get "a.*.b.*.c"()` | 複数ワイルドカード | `get "categories.*.items.*.label"()` |
 | `set "a.*.b"(v)` | ワイルドカード setter | `set "users.*.fullName"(v)` |
+| `get "a.*.x,b.*.x"()` | 4.22（未リリース）から: 複数のパスに 1 つのアクセサ（カンマだけで区切る） | `get "users.*.fullName,employees.*.fullName"()` |
 
 ### 仕組み
 
@@ -3165,12 +3242,14 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | 診断 | 何を見るか | 直し方 |
 |---|---|---|
 | `wcs/index-arity` | `$resolve(path, indexes)` と `$update(path, indexes, fn)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
-| `wcs/wildcard-rank` | マークアップで、パスの `*` の本数（と `$N` の N）が囲む `for` の段数を超えていないか（`#1401`）、`.` パスを囲む `for` があるか（`#1402`）、各 `*` がその段で囲んでいる `for` の行であって、別のリストの行ではないか（`for: a` の中の `{{ b.*.y }}`、`#1403`） | `for` を足すか、別のリストの行は getter の中で `$resolve(path, indexes)` で読む |
+| `wcs/wildcard-rank` | マークアップで、パスの `*` の本数（と `$N` の N）が囲む `for` の段数を超えていないか（`#1401`）、`.` パスを囲む `for` があるか（`#1402`）、各 `*` がその段で囲んでいる `for` の行であって、別のリストの行ではないか（`for: a` の中の `{{ b.*.y }}`、`#1403`）。4.22（未リリース）から、スクリプトの相対パス（`this[".name"]`）を行の無いところで読み書きしても `#1402` —— lint は、行のものでないアクセサ（キーに `*` が無い）の中の相対パスを error で報告する | `for` を足すか、別のリストの行は getter の中で `$resolve(path, indexes)` で読む。スクリプトでは、フルパスで書くか行のアクセサにする |
 | `wcs/getter-cycle` | パス getter どうしが循環参照していないか: 評価が、すでに評価中の getter の出現に戻ってきた | 循環を断つ |
 | `wcs/getter-write` | 4.17 から: getter は読むだけ。評価中の書き込み（代入・`$setAll`・`$update`・値を渡す `$resolve`。getter が呼ぶメソッドの中も）は、パスと getter を名指して `#8` を投げる（4.16 まではどちらも名指さなかった） | メソッド・setter・`$watch` のハンドラから書くか、値を別の getter で計算する |
 | `wcs/path-readonly` | setter の無い getter への書き込み（双方向の束縛からも、スクリプトの `this.total = 0` からも）は `#2` を投げる。4.17 から、その文面に code と直し方が付く | getter が読む値を書く setter を足すか、その値を書く。双方向の束縛は `#ro` で一方向にする |
 | `wcs/setter-cycle` | 4.17 から: 自分のパスに書く setter、互いに書く setter は、スタックが溢れるまで互いを呼ぶ（何も名指さない `RangeError`）。`diagnostics` の後付けが、setter の呼び出しが 64 段に達したところで名指して投げる | 値は setter 自身のパスではなく、getter が読むデータのパス（`_count`）に置く |
 | `wcs/setter-unobserved` | 4.17 から、警告: setter が書いたもののどれも、その getter が読まない。getter は元の値のままで、束ねた双方向の入力は次の描画でそこへ戻る。setter ごとに 1 回。何も書かない setter（`null` を捨てるもの）は言わない | getter が読む値を書くか、setter が書く値を getter で読む |
+| `wcs/accessor-list-syntax` | 4.22（未リリース）から: 1 つのアクセサを複数のパスに宣言するキー（`get "users.*.full,employees.*.full"()`）に、空白や空の項目がある。core はカンマの間をそのままパスにするので、誰も読まないパスが宣言される。`diagnostics` の後付けは初期化を失敗させる | カンマだけで区切る |
+| `wcs/accessor-list-path` | 4.22（未リリース）から: 複数のリストに宣言したアクセサの本体が、そのうち 1 つのリストの行をフルパス（`this["users.*.first"]`）で読み書きしている。ほかのリストの行ではそのパスに行が無く、読みは `undefined`、書きは `#3`。`diagnostics` の後付けは宣言時にアクセサごとに 1 回警告する（`this[...]` のリテラルのパスだけを見る） | 行からの相対パスで書く（`this[".first"]`） |
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じ出現を 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
 | `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$update` / `$postUpdate` / `$dependOn`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |

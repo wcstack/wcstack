@@ -36,7 +36,7 @@ import { extractAttribute, extractAttributeSpan, parseLoadedScriptBlocks } from 
 import { analyzeElementContexts } from './forContext.js';
 import { findAllBindAttributes, parseBindingExpression, splitBindingExpressions } from './bindingValidator.js';
 import { findAllCommentBindings, findAllMustacheSyntax } from './templateSyntax.js';
-import { analyzeCallableBodies } from './stateAnalyzer.js';
+import { accessorRow, analyzeCallableBodies } from './stateAnalyzer.js';
 import { collectGetterReads } from './scriptAst.js';
 
 /**
@@ -133,7 +133,7 @@ function collectGetterReadsByName(html: string, stateTagName: string): Map<strin
     const prefix = block.mountPath === null || block.mountPath === '' ? '' : `${block.mountPath}.`;
     for (const callable of analyzeCallableBodies(block.content)) {
       if (callable.kind !== 'getter' || callable.accessor === 'set') continue;
-      const reads = collectGetterReads(callable.body) ?? [];
+      const reads = collectGetterReads(callable.body, { row: accessorRow(callable) }) ?? [];
       out.set(prefix + callable.name, reads.map((r) => prefix + r.path));
     }
   }

@@ -29,7 +29,7 @@
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnosticCode, type WcsDiagnostic } from '../core/diagnostics.js';
-import { analyzeCallableBodies, hasDefaultExportObject, type CallableBody } from './stateAnalyzer.js';
+import { accessorRow, analyzeCallableBodies, hasDefaultExportObject, type CallableBody } from './stateAnalyzer.js';
 import { isReadableStateScript } from './statePathResolver.js';
 import { collectGetterReads, type GetterRead } from './scriptAst.js';
 import { toWildcardForm } from './indexPath.js';
@@ -64,7 +64,7 @@ function isWrite(read: GetterRead): boolean {
 }
 
 function bodyOf(callable: CallableBody): Body {
-  const found = collectGetterReads(callable.body, OPTIONS);
+  const found = collectGetterReads(callable.body, { ...OPTIONS, row: accessorRow(callable) });
   if (found === null) return { callable, writes: [], reads: [], calls: [], opaque: true };
   const writes: Use[] = [];
   const reads: Use[] = [];
@@ -72,7 +72,8 @@ function bodyOf(callable: CallableBody): Body {
   let opaque = false;
   for (const read of found) {
     const at = { start: callable.bodyStart + read.start, end: callable.bodyStart + read.end, nested: read.nested === true };
-    if (read.form === 'opaque') {
+    // (a path relative to the row with no row known — in a method, whose row is the caller's: it cannot be followed)
+    if (read.form === 'opaque' || read.path.startsWith('.')) {
       opaque = true;
       continue;
     }
@@ -199,6 +200,9 @@ type At = (start: number, end: number) => { start: number; end: number };
 function getterWrites(state: StateBodies, msgs: WcsMessageCatalog, at: At): WcsDiagnostic[] {
   const out: WcsDiagnostic[] = [];
   for (const [name, getter] of state.getters) {
+    // (an accessor declared for several paths: its one body is reported at the first of them)
+    const listed = getter.callable.listed;
+    if (listed !== undefined && listed.paths[0] !== name) continue;
     for (const w of getter.writes) {
       if (w.state !== true || w.nested) continue;
       out.push({ code: WcsDiagnosticCode.GetterWrite, ...at(w.start, w.end), message: msgs.getterWrite(w.path, name), severity: 'error' });
@@ -220,9 +224,13 @@ function readonlyWrites(state: StateBodies, msgs: WcsMessageCatalog, at: At): Wc
   if (readonly.size === 0) return [];
   const out: WcsDiagnostic[] = [];
   for (const body of [...state.methods.values(), ...state.setters.values()]) {
+    // (an accessor declared for several paths: a write by a full path is the same at each of them)
+    const listed = body.callable.listed;
+    const again = listed !== undefined && listed.paths[0] !== body.callable.name;
     for (const w of body.writes) {
       const path = toWildcardForm(w.path);
       if (w.state !== true || hasRecursionWildcard(path) || !readonly.has(path)) continue;
+      if (again && out.some((d) => d.start === at(w.start, w.end).start)) continue;
       out.push({ code: WcsDiagnosticCode.PathReadonly, ...at(w.start, w.end), message: msgs.pathReadonlyWrite(path), severity: 'error' });
     }
   }
