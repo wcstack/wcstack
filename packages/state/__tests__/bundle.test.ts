@@ -126,3 +126,29 @@ describe("縮めたバンドルでの <wcs-ssr>（DOM の名前は縮められ�
     }
   });
 });
+
+describe("縮めたバンドルでの相対パスとカンマ列挙のキー（4.22）", () => {
+  it("行のアクセサの `.name` と、2 つのリストに宣言した 1 つのアクセサが動く", async () => {
+    const host = document.createElement(`bundle-rel-${seq++}`);
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><template data-wcs="for: users"><li>{{ .full }}</li></template><template data-wcs="for: staff"><em>{{ .full }}</em></template>`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState({
+      users: [{ first: "Ada", last: "Lovelace" }],
+      staff: [{ first: "Edsger", last: "Dijkstra" }],
+      get "users.*.full,staff.*.full"() { return `${(this as any)[".first"]} ${(this as any)[".last"]}`; },
+    });
+    document.body.appendChild(host);
+    try {
+      await el.connectedCallbackPromise;
+      await entry.getBindingsReady(root);
+      const texts = () => Array.from(root.querySelectorAll("li, em")).map((n) => n.textContent);
+      expect(texts()).toEqual(["Ada Lovelace", "Edsger Dijkstra"]);
+      el.createState("writable", (s: any) => { s["staff.0.first"] = "Tony"; });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(texts()).toEqual(["Ada Lovelace", "Tony Dijkstra"]);
+    } finally {
+      host.remove();
+    }
+  });
+});

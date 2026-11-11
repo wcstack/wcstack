@@ -176,7 +176,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.CommandTokenUndeclared]: (name) => `"$command.${name}" is not declared in $commandTokens.`,
 
   [M.WildcardNoLoop]: (p, depth, n = 0) => `"${p}" needs ${depth} enclosing loop level(s); the scope provides ${n}.`,
-  [M.WildcardRelative]: (p) => `"${p}" is relative: it needs an enclosing "for" template`,
+  [M.WildcardRelative]: (p) => `"${p}" is relative: it needs an enclosing "for" template (in script, a row: a row accessor, or a method called from a row)`,
   [M.WildcardOtherList]: (p, over, loop) => `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}".`,
 
   [M.SpreadNoBindable]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,

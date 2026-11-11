@@ -122,7 +122,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.EventTokenUndeclared, ["made"], '[wcs/token-undeclared] eventToken "made" is not declared in $eventTokens.'],
   [M.CommandTokenUndeclared, ["sav"], '[wcs/token-undeclared] "$command.sav" is not declared in $commandTokens.'],
   [M.WildcardNoLoop, ["items.*.name", 1], '[wcs/wildcard-rank] "items.*.name" needs 1 enclosing loop level(s); the scope provides 0.'],
-  [M.WildcardRelative, [".name"], '[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template'],
+  [M.WildcardRelative, [".name"], '[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template (in script, a row: a row accessor, or a method called from a row)'],
   [M.WildcardOtherList, ["b.*.y", "b", "a"], '[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".'],
   [M.SpreadNoBindable, ["x-el", '"...: obj"'], '[wcs/spread-no-bindable] <x-el> declares no static wcBindable ("...: obj").'],
   [M.DeclarationRemoved, ["$streams", "$stream"], "[wcs/declaration-alias] $streams was removed: write $stream."],

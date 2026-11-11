@@ -53,7 +53,8 @@ const PREFIX = (path: string) => `[@wcstack/state] <${config.tagNames.state} mou
 const PATH_APIS = new Set(["$getAll", "$setAll", "$update", "$resolve", "$postUpdate", "$dependOn", "$eq", "$eqIndex"]);
 
 function chrootOf(engine: Engine, prefix: string): object {
-  const at = (key: string) => `${prefix}.${key}`;
+  // (a path relative to the row is left to the engine: the row is one of a list under the mount path)
+  const at = (key: string) => (key.charCodeAt(0) === 46 /* . */ ? key : `${prefix}.${key}`);
   return new Proxy({}, {
     get(_t, key) {
       if (typeof key === "symbol") return undefined;
@@ -155,10 +156,12 @@ function graft(v: Volume, engine: Engine): void {
       seen.add(key);
       const { get, set, value } = Object.getOwnPropertyDescriptor(o, key)!;
       if (get !== undefined || set !== undefined) {
-        defs[`${v.path}.${key}`] = {
+        const accessor = {
           get: get && function () { return get.call(chroot); },
           set: set && function (next: unknown) { set.call(chroot, next); },
         };
+        // (one accessor declared for several paths: each is under the mount path)
+        for (const path of key.split(",")) defs[`${v.path}.${path}`] = accessor;
       } else if (key[0] === "$") continue;
       else if (typeof value === "function") {
         const fn = value.bind(chroot);

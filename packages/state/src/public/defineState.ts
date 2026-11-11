@@ -336,6 +336,12 @@ export interface WcsStateApi {
   // 末尾が `.**` のキーにも同じ索引を置く。
   readonly [key: `${string}.**.${string}`]: any;
   readonly [key: `${string}.**`]: any;
+
+  // 行からの相対パス（`this[".name"]`・`this["."]`、4.22）。HTML の `for:` の中の `.name` と同じ展開で、
+  // 基準は評価している行のリスト — getter / setter のキー（`get "users.*.fullname"()`）か、メソッドを
+  // 呼んだ行で決まる。`this` の型は状態全体で 1 つなので、どの行かは型では表せない（型は any。
+  // パスが在るかは lint が、アクセサのキーから展開して検査する）。setter は書くので readonly ではない。
+  [key: `.${string}`]: any;
 }
 
 // ============================================================
@@ -348,6 +354,7 @@ export interface WcsStateApi {
  * - `T` のプロパティに型付きでアクセス可能（直接キー）
  * - `WcsPathAccessor<T>` によるネストされたドットパスの型付きアクセス
  * - `WcsStateApi` のメソッド ($getAll, $postUpdate 等) にアクセス可能
+ * - `WcsListedAccessors<T>` によるカンマ列挙のアクセサ（`"a.*.x,b.*.x"`）の各パス
  * - 動的パス (`this[\`items.${i}.name\`]`) は型チェック対象外（キャストが必要）
  *
  * @example
@@ -363,7 +370,18 @@ export interface WcsStateApi {
  * });
  * ```
  */
-export type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
+/** @internal `"a.*.x,b.*.x"` → `"a.*.x" | "b.*.x"` */
+type WcsListedPaths<K extends string> = K extends `${infer Head},${infer Rest}` ? Head | WcsListedPaths<Rest> : K;
+
+/**
+ * 1 つのアクセサを複数のパスに宣言したキー（`get "users.*.fullname,employees.*.fullname"()`、4.22）の
+ * 各パス。どれもそのアクセサの型を持つ。
+ */
+type WcsListedAccessors<T> = {
+  [K in keyof T & `${string},${string}` as WcsListedPaths<K>]: T[K];
+};
+
+export type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & WcsListedAccessors<T>;
 
 // ============================================================
 // defineState — 型付き状態定義関数

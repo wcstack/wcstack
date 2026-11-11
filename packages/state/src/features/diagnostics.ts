@@ -825,6 +825,51 @@ function checkRecursion(target: Record<string, any>): void {
   }
 }
 
+/**
+ * One accessor declared for several paths (`get "users.*.fullname,employees.*.fullname"()`, 4.22): the paths
+ * are separated by "," alone. The core splits at each comma and takes what is between as it is, so a space
+ * or an empty entry declares a path nothing reads — refused here, as the lint refuses it.
+ */
+function accessorLists(target: object): void {
+  for (const k of keysOf(target)) {
+    if (!k.includes(",")) continue;
+    const d = findDescriptor(target, k)!;
+    if (d.get === undefined && d.set === undefined) continue;
+    const paths = k.split(",");
+    if (paths.some((p) => p === "" || /\s/.test(p))) {
+      raiseError(`[wcs/accessor-list-syntax] "${k}": the paths of one accessor are separated by "," alone: no space, no empty entry.`);
+    }
+    accessorListPaths(k, paths, d);
+  }
+}
+
+/** The accessors declared for several paths already told about (a re-set declares them again). */
+const toldAccessorLists = new WeakSet<object>();
+
+/**
+ * An accessor declared for several lists whose body names the rows of one of them by a full path
+ * (`this["users.*.first"]` in `get "users.*.full,employees.*.full"()`): at the rows of the other lists that
+ * path has no row — a read gives undefined, a write throws — and the page shows it only there. Read off the
+ * accessor's source when the state is declared, as lint's `wcs/accessor-list-path` reads it: `this[...]` with
+ * a literal path (`$getAll("users.*.first", [])` names its rows itself). Said once per accessor.
+ */
+function accessorListPaths(key: string, paths: string[], d: PropertyDescriptor): void {
+  const fn = (d.get ?? d.set)!;
+  if (toldAccessorLists.has(fn)) return;
+  // the row each path is of: `users.*` for `users.*.full`, "" for a path with no `*`
+  const rows = paths.map((p) => p.slice(0, p.lastIndexOf("*") + 1));
+  const source = `${d.get ?? ""}${d.set ?? ""}`;
+  for (const row of new Set(rows)) {
+    // a path of the list whose rows do not have this row: neither the same one, nor one above theirs
+    const other = paths.find((_, i) => rows[i] !== row && !rows[i].startsWith(`${row}.`));
+    const found = row === "" || other === undefined ? null : new RegExp(`\\[\\s*["'\`](${esc(row)}\\.[^"'\`]*)["'\`]`).exec(source);
+    if (found === null) continue;
+    toldAccessorLists.add(fn);
+    console.warn(`[@wcstack/state] [wcs/accessor-list-path] The accessor "${key}" names "${found[1]}" by its full path, and it is also declared for "${other}": at its rows that path has no row, so a read gives undefined and a write throws. Write it relative to the row: this["${found[1].slice(row.length)}"].${LINT_HINT}`);
+    return;
+  }
+}
+
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 let trustedTypesReported = false;
@@ -913,6 +958,7 @@ export const diagnostics: Feature = {
       removedDeclarations(target);
       prev?.(engine, target);
       checkRecursion(target);
+      accessorLists(target);
       onHandlersThis(target);
       recheck(engine);
       watchPostUpdate(engine);
