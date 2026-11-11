@@ -1783,3 +1783,35 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
     - 次の有界全列挙のスイート。
     - content mapper（#523・#524）。
     - 長期サポート版（保留）。npm の `next` は 4.0.0 のまま。
+
+### 4.22.0 の公開（2026-11-12）
+
+- **中身**: minor。継ぎ目アプリではなく、著者の提案から始めた `@wcstack/state` のスクリプトの 2 つの書き方。
+  - 行からの相対パス: 行について評価されるスクリプトの中の `this[".name"]` は、その行の下のパス（`get "users.*.fullName"()` の中では `this["users.*.name"]`）。`for:` テンプレートの `.name` と同じ展開。
+  - 1 つのアクセサを複数のパスに宣言する: `get "users.*.fullName,employees.*.fullName"()`。絞り込んだ写し（`for: shown`）の行に、元のリストと同じ行のアクセサを持たせるのにも使える。
+- **著者の決定（2026-11-12）**: 試作を scratchpad の写しで作り、無変更の対照（20,441 B、コミット済みの dist と一致）と比べてから、著者が決めた。
+  - 相対の基準は行（HTML と同じ）。getter の親パスではない。行から呼ばれたメソッドでも動く。
+  - 受けるのは、ループ文脈から添字を取る所だけ: `this[...]`・`$getAll`・`$eq`・`$dependOn`・`$postUpdate`。`$resolve`・`$setAll`・`$update` は受けない。
+  - 展開はリストごとにキャッシュする。キャッシュなしでは、相対の読みが 2 つある getter の評価が約 2 倍かかった（246 → 521 ns）。キャッシュありは 263 → 288 ns。
+  - 複数パスへの宣言はカンマ列挙。波括弧の形（`{users.*,employees.*}.fullName`）は、相対パスと合わせると core の残り 39 B に収まらなかった（+51〜66 B）。
+  - カンマの前後の空白は書けない。空白を取り除く形は core の残りを使い切った（+39 B）。
+- **実装**: PR #667（merge commit ca7df5bd）。
+  - core は +36 B で 20,477 B（上限まで 3 B）。`expandPath` を `dom/plan.ts` から `engine.ts` へ移した: engine が `dom/plan.ts` を import すると束の順が変わり、core が 76 B 増えた。
+  - diagnostics は +366 B で 12,653 B。一度 28 B 超えたので、slack は付けずに、実行時の文面 2 つを短くして収めた（公開時の上限まで 3 B だった）。
+  - scopes: ボリュームは相対パスをエンジンに任せ、列挙したパスをどれもマウントパスの下に宣言する。マウントしたコンポーネントは、列挙した名前を自分のキーとして数える（数えないと、`get "double,twice"()` の名前がツリーのキーと見なされ、ホストとの間で互いを無効化し続けた）。
+  - diagnostics: `[wcs/accessor-list-syntax]`（空白・空の項目のあるキーで初期化を失敗させる）、`[wcs/accessor-list-path]`（複数のリストに宣言したアクセサの本体のフルパスを、宣言時に 1 回警告する）。
+  - lint: 相対パスを行の下のパスとして読み、列挙したキーをパスごとの宣言として読む。新しい規則 `wcs/accessor-list-syntax`・`wcs/accessor-list-path`（どちらも error）。`wcs/wildcard-rank` は、行のものでないアクセサの相対パスと、`$resolve`・`$setAll`・`$update` に渡した相対パスでは error。メソッドの中の相対パスは検査しない。
+  - 誤りの目録に 4 件（どれも実行時が報告する）。リポジトリの全ページへの lint の結果は、4.21.0 の lint と同じだった。
+- **準備**: PR #668（merge commit cf82f902）。CHANGELOG を `[4.22.0] — 2026-11-12` として締め、docs/upgrading-4x.md（日英）に 4.22.0 の節と、要らなくなった回避策を書いた。固定版 18 か所を動かした。
+- **main で `minor`（run 43110634757）**: 成功した。版を上げたコミット 0f5968b7、タグ `v4.22.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約を足した）。
+  - 検証は 1 回目で済んだ: npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 23/23・文書の固定 URL 8/8。
+- **公開後の作業**:
+  - PR #669（merge commit e47c0c14）: サイズの基準値を 4.22.0 の dist で取り直した。`core.min.js` 20,477 B（残り 3 B）、diagnostics 12,653 B、scopes 9,037 B、分割の core 24,798 B、`index.esm.js` 58,337 B、`auto.min.js` 55,016 B。slack は付けていない。結合の基準値は変わらず。あわせて CLAUDE.md / AGENTS.md を更新し、拡張を 2.17.0 にした。
+  - 拡張 2.17.0: e47c0c14 から worktree で作った（依存は `npm ci`。junction は npm の作る 1 つだけで、外してから worktree を消した）。試験 1,553 件、890 ファイル、SHA-256 `0694ff1690c376231737a830ec88739811886c0172e882ff16acd7a14cab12aa`。CLI で確かめた: 4.22.0 に固定したページは 0 件、4.23.0 は警告、4 つの誤り（空白入りの列挙キー・複数リストのアクセサのフルパス・行の無い相対パス・`$update` に渡した相対パス）はどれも error。公開は著者。
+  - wcstack-skill: PR #65（merge commit 07ebe00）。状態の設計の節に 2 つの書き方と、絞り込んだ写しの行に元のリストのアクセサが無いこと。lint の節に新しい code。`references/state-binding.md` §6 の例と規則。刻印と固定 URL。公開された 4.22.0 の束と `@wcstack/lint@4.22.0` で例と誤りの報告を確かめた。注釈付きタグ `v4.22.0`。
+  - LP（wcstack.github.io ce98e4c）: リリースの表示、v4.22.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-an261e…`、gzip 81,859 B ＝約 80 KB）、llms。ローカルの検査 7/7。
+- **残り**:
+  - 拡張 2.17.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.17.0`。
+  - core の残りは 3 B、diagnostics の残りは公開時 3 B（基準値を取り直したので、今は +3 % の余裕がある）。次に core に手を入れるときは、上限を上げるか、core から何かを出す。
+  - `packages/wcstack` の README（AI 向けの手引き）には、2 つの書き方を書いていない。
+  - 4.21.0 から持ち越したもの: 二人の予算は後勝ち（記録だけ）、3 巡目の 3 本目「入力の重い業務フォーム」、`bootstrapXxx(config, registry)` の README、古いルートが歩いた入れ物、midi の Permissions-Policy、拡張の公開を 2026-12-01 より前に Microsoft Entra ID へ移す、次の有界全列挙のスイート、content mapper（#523・#524）、長期サポート版（保留）。
