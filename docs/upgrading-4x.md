@@ -394,7 +394,19 @@ Workarounds became unnecessary: a state module exported as a factory and built i
 
 Workarounds became unnecessary: a second `wcs-validate` run without `--errors-only`, made only to see a form that submits or a tag whose package is not loaded (both are errors now).
 
-## Still needed on 4.21.0
+### 4.22.0
+
+2026-11-12 — [CHANGELOG](../CHANGELOG.md#4220--2026-11-12)
+
+- `@wcstack/state`: in script evaluated for a row, a path that starts with `.` is relative to that row: `this[".firstName"]` is `this["users.*.firstName"]` inside `get "users.*.fullName"()`. Such a key read `undefined` without a word before, so no working page changes. With no row (a top-level accessor, a method called from outside a row) it throws `#1402`.
+- `@wcstack/state`: an accessor key that lists paths separated by commas declares the accessor for each of them (`get "users.*.fullName,employees.*.fullName"()`). The separator is the comma alone: with a space, the `diagnostics` add-on fails the initialization with `[wcs/accessor-list-syntax]`.
+- `@wcstack/state` console: `[wcs/accessor-list-path]` is a new warning. It names a full path of one list's rows in the body of an accessor declared for several lists, with the relative path to write.
+- `@wcstack/lint`: `wcs/accessor-list-syntax` and `wcs/accessor-list-path` are new, both errors. `wcs/wildcard-rank` is an error for a relative path in an accessor whose key has no `*`, and for one handed to `$resolve`, `$setAll` or `$update`.
+- `@wcstack/lint`: a relative path in a row accessor is checked as the path under the row. A relative path in a method is not checked.
+
+Workarounds became unnecessary: the same accessor body written once per list, and a row accessor repeated under a filtered copy (`get "shown.*.fullName"()` beside `get "users.*.fullName"()`).
+
+## Still needed on 4.22.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
