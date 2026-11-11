@@ -6,9 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.22.0] — 2026-11-12
 
-Two script syntaxes for `@wcstack/state`, decided by the author on 2026-11-12 after a prototype measured them against the core's size limit: a path relative to the row in script, and one accessor declared for several paths. Both cost 36 B of the core, which is now 20,477 B of its 20,480 B limit.
+A minor with two script syntaxes for `@wcstack/state`, decided by the author on 2026-11-12 after a prototype measured them against the core's size limit. A path relative to the row can be written in script (`this[".name"]`), and one accessor can be declared for several paths (`get "users.*.fullName,employees.*.fullName"()`). Both cost 36 B of the core, which is now 20,477 B of its 20,480 B limit. `@wcstack/state`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.21.0 with a new version.
 
 ### Upgrading
 
@@ -16,6 +16,7 @@ Two script syntaxes for `@wcstack/state`, decided by the author on 2026-11-12 af
 - `@wcstack/state`: an accessor key that contains a comma (`get "a,b"()`) now declares an accessor for each path between the commas. Such a key declared an accessor nothing could read before.
 - `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/accessor-list-syntax]` fails the initialization of a state whose accessor key lists paths with a space or an empty entry, and `[wcs/accessor-list-path]` is a new warning. The sentence of `#1402` also says what a script needs.
 - `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: two new rules, both errors — `wcs/accessor-list-syntax` and `wcs/accessor-list-path`. `wcs/wildcard-rank` is an error for a relative path in an accessor that is not a row's (it stays a warning in markup).
+- **Workarounds this release makes unnecessary**: the same accessor body written once per list (`get "users.*.fullName"()` and `get "employees.*.fullName"()`), and a row accessor repeated under a filtered copy (`get "shown.*.fullName"()` beside `get "users.*.fullName"()`) so that the copy's rows had it.
 
 ### Added
 

@@ -394,7 +394,19 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: 送信するフォームや、パッケージを読み込んでいないタグを見るためだけに、`--errors-only` を付けずに `wcs-validate` をもう 1 回走らせること（どちらも今は error）。
 
-## 4.21.0 でもまだ要るもの
+### 4.22.0
+
+2026-11-12 — [CHANGELOG](../CHANGELOG.md#4220--2026-11-12)
+
+- `@wcstack/state`: 行について評価されるスクリプトでは、`.` で始まるパスがその行からの相対パスになった: `get "users.*.fullName"()` の中の `this[".firstName"]` は `this["users.*.firstName"]`。このキーは今まで黙って `undefined` を返していたので、動いているページは変わらない。行の無いところ（トップレベルのアクセサ、行の外から呼んだメソッド）では `#1402` を throw する。
+- `@wcstack/state`: パスをカンマで並べたアクセサのキーは、そのそれぞれにアクセサを宣言する（`get "users.*.fullName,employees.*.fullName"()`）。区切りはカンマだけ: 空白があると、`diagnostics` アドオンが `[wcs/accessor-list-syntax]` で初期化を失敗させる。
+- `@wcstack/state` のコンソール: `[wcs/accessor-list-path]` が新しい警告。複数のリストに宣言したアクセサの本体が、そのうち 1 つのリストの行をフルパスで書いているときに、書くべき相対パスと一緒に言う。
+- `@wcstack/lint`: `wcs/accessor-list-syntax` と `wcs/accessor-list-path` が新しい規則で、どちらも error。`wcs/wildcard-rank` は、キーに `*` の無いアクセサの中の相対パスと、`$resolve`・`$setAll`・`$update` に渡した相対パスでは error。
+- `@wcstack/lint`: 行のアクセサの中の相対パスは、行の下のパスとして検査する。メソッドの中の相対パスは検査しない。
+
+要らなくなった回避策: 同じアクセサの本体をリストごとに書くこと、絞り込んだ写しの行のために行のアクセサをもう一度書くこと（`get "users.*.fullName"()` の横の `get "shown.*.fullName"()`）。
+
+## 4.22.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
