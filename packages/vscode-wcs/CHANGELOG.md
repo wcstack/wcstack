@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.17.0 — 2026-11-12
 
-`@wcstack/state` 4.22 のスクリプトの 2 つの書き方に対応した（版は 4.22 のリリースと同時に上げる）:
+`@wcstack/state` 4.22.0 から作った（npm の `@wcstack/lint` 4.22.0・`@wcstack/typescript` 4.22.0 と同じ判定）。4.22 のスクリプトの 2 つの書き方に対応した:
 
 - **行からの相対パス**（`this[".name"]`・`this["."]`）: 行のアクセサ（`get "users.*.fullName"()`）の本体では、その行の下のパスとして読む。スクリプトのパスを読む規則 — `wcs/read-path-missing`・`wcs/write-path-missing`・`wcs/getter-write`・`wcs/path-readonly`・`wcs/setter-cycle`・`wcs/setter-unobserved`・`wcs/getter-cycle` — は、展開したパスで検査する。メソッドの中の相対パスは検査しない（行は呼び出し側で決まる）。`wcs/index-arity` は相対パスの `*` を数えない。
 - **カンマ列挙のキー**（`get "users.*.fullName,employees.*.fullName"()`）: 列挙したパスのそれぞれを宣言として読む。束縛の存在検査・補完・hover・定義へ移動・参照の検索は、キーの中のそのパスに当たる。本体の相対パスは、列挙したリストごとに検査する。
