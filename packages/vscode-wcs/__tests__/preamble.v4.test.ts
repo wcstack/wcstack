@@ -87,3 +87,31 @@ defineState({ count: 0, $features: ["temporl"] });
 `)).toEqual(["Type 'string' is not assignable to type 'never'."]);
   });
 });
+
+describe('WCS_PREAMBLE — @wcstack/state 4.22 の相対パスとカンマ列挙のキー', () => {
+  it('行からの相対パス（`this[".name"]`・`this["."]`）は読めて書ける（型は any）', () => {
+    expect(typecheck(`
+defineState({
+  users: [{ first: "Ada", last: "Lovelace" }],
+  tags: ["a"],
+  get "users.*.full"(): string { return this[".first"] + " " + this[".last"]; },
+  set "users.*.full"(v: string) { this[".first"] = v; },
+  get "tags.*.upper"(): string { return this["."].toUpperCase(); },
+});
+`)).toEqual([]);
+  });
+
+  it('カンマ列挙のキーの各パスは、this からそのアクセサの型で読める。列挙していないパスは型エラーのまま', () => {
+    const errors = typecheck(`
+defineState({
+  users: [{ first: "Ada" }],
+  employees: [{ first: "Edsger" }],
+  get "users.*.full,employees.*.full"(): string { return this[".first"]; },
+  get a(): number { return this["users.*.full"].length + this["employees.*.full"].length; },
+  get b(): number { return this["guests.*.full"].length; },
+});
+`);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('guests.*.full');
+  });
+});

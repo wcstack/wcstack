@@ -119,6 +119,14 @@ export const WcsDiagnosticCode = {
   // 元の値を返し、双方向の入力はそこへ戻る — 何も知らせない（4.17 から diagnostics の後付けが警告する）。setter・getter
   // の読み書きを追えない（`this[key]`・`fn(this)`・知らないメソッド）なら黙る。warning。
   SetterUnobserved: "wcs/setter-unobserved",
+  // 1 つのアクセサを複数のパスに宣言するキー（`get "users.*.full,employees.*.full"()`、4.22）の書き方の誤り:
+  // カンマの前後の空白・空の項目・再帰のキー（`**`）。ランタイムはカンマで分けた間をそのままパスにするので、
+  // 空白入りのパスは誰も読まないパスになる（diagnostics の後付けは同じコードで初期化を失敗させる）。error。
+  AccessorListSyntax: "wcs/accessor-list-syntax",
+  // 複数のリストに宣言したアクセサの本体が、そのうち 1 つのリストの行を絶対パス（`this["users.*.first"]`）で
+  // 読み書きしている。ほかのリストの行ではそのパスに行が無く、読みは undefined、書きは例外になる。本体は
+  // 行からの相対パス（`this[".first"]`）で書く（diagnostics の後付けは同じコードで警告する）。error。
+  AccessorListPath: "wcs/accessor-list-path",
   // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
   // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故

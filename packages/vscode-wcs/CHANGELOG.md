@@ -2,6 +2,17 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+`@wcstack/state` 4.22 のスクリプトの 2 つの書き方に対応した（版は 4.22 のリリースと同時に上げる）:
+
+- **行からの相対パス**（`this[".name"]`・`this["."]`）: 行のアクセサ（`get "users.*.fullName"()`）の本体では、その行の下のパスとして読む。スクリプトのパスを読む規則 — `wcs/read-path-missing`・`wcs/write-path-missing`・`wcs/getter-write`・`wcs/path-readonly`・`wcs/setter-cycle`・`wcs/setter-unobserved`・`wcs/getter-cycle` — は、展開したパスで検査する。メソッドの中の相対パスは検査しない（行は呼び出し側で決まる）。`wcs/index-arity` は相対パスの `*` を数えない。
+- **カンマ列挙のキー**（`get "users.*.fullName,employees.*.fullName"()`）: 列挙したパスのそれぞれを宣言として読む。束縛の存在検査・補完・hover・定義へ移動・参照の検索は、キーの中のそのパスに当たる。本体の相対パスは、列挙したリストごとに検査する。
+- `wcs/accessor-list-syntax`（新規、error）: 列挙のキーの、カンマの前後の空白・空の項目・再帰のパス（`**`）。
+- `wcs/accessor-list-path`（新規、error）: 複数のリストに宣言したアクセサの本体が、そのうち 1 つのリストの行を絶対パスで読み書きしている。書くべき相対パスを言う。
+- `wcs/wildcard-rank`: 行のものでないアクセサ（キーに `*` が無い）の中の相対パスは error（実行時は評価のたびに #1402）。添字を引数で受ける `$resolve`・`$setAll`・`$update` に渡した相対パスも error（どの本体でも。実行時は展開せず、呼び出しが例外になる）。マークアップでは warning のまま。
+- 型: `this` は相対パスを `any` で通し、カンマ列挙のキーの各パスをそのアクセサの型で読める（`@wcstack/state` の `defineState` と対）。
+
 ## 2.16.0 — 2026-11-11
 
 `@wcstack/state` 4.21.0 から作った（npm の `@wcstack/lint` 4.21.0・`@wcstack/typescript` 4.21.0 と同じ判定）。継ぎ目アプリ ledger-repair（目録の誤りを仕込んだ家計簿を、書いていない保守担当が直す）が見つけた lint の穴を直した:

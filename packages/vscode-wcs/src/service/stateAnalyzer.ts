@@ -659,6 +659,24 @@ export interface CallableBody {
   readonly bodyStart: number;
   /** `kind: 'getter'` の get / set 種別（メソッドでは未設定）。 */
   readonly accessor?: 'get' | 'set';
+  /**
+   * カンマ列挙のキー（`get "users.*.full,employees.*.full"()`）の 1 パスとして宣言されたとき、その並び
+   * （範囲は script 内の絶対オフセット）。本体は並びのどのパスでも同じもの。
+   */
+  readonly listed?: AccessorList;
+}
+
+/**
+ * アクセサが評価される行 — `users.*.fullname` なら `users.*`、再帰のキー `nodes.**.label` なら `nodes.**`。
+ * 本体の相対パス（`this[".name"]`、4.22）はこの下に展開される。行のアクセサでない（キーに `*` が無い）
+ * ときと、メソッド（行は呼び出し側で決まる）は null。
+ */
+export function accessorRow(callable: Pick<CallableBody, 'name' | 'kind'>): string | null {
+  if (callable.kind !== 'getter') return null;
+  const segments = callable.name.split('.');
+  let last = -1;
+  for (let i = 0; i < segments.length; i++) if (segments[i] === '*' || segments[i] === '**') last = i;
+  return last < 0 ? null : segments.slice(0, last + 1).join('.');
 }
 
 /**
@@ -683,6 +701,9 @@ export function analyzeCallableBodies(scriptContent: string): CallableBody[] {
       body: prop.value ?? '',
       bodyStart: root.start + (prop.valueStart ?? 0),
       accessor: prop.accessor,
+      ...(prop.listed !== undefined
+        ? { listed: { ...prop.listed, start: root.start + prop.listed.start, end: root.start + prop.listed.end } }
+        : {}),
     });
   }
   return out;
@@ -2214,6 +2235,37 @@ interface PropertyInfo {
   nameStart?: number;
   nameEnd?: number;
   valueStart?: number;
+  /**
+   * 1 つのアクセサを複数のパスに宣言したキー（`get "users.*.full,employees.*.full"()`、4.22）の、この宣言が
+   * 属する並び。パスごとに 1 件ずつ宣言として返し（`name` はそのパス、範囲はキーの中のそのパス）、どれも
+   * 同じ並びと元のキーを持つ。
+   */
+  listed?: AccessorList;
+}
+
+/** カンマ列挙のアクセサのキー 1 つ（`"users.*.full,employees.*.full"`）。 */
+export interface AccessorList {
+  /** 列挙したパス（前後の空白を除き、空の項目は除く）。 */
+  readonly paths: readonly string[];
+  /** 書かれたままのキーと、その範囲（引用符は含まない。PropertyInfo の位置と同じ基準）。 */
+  readonly key: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** カンマ列挙のキーを、パスごとの名前と範囲に分ける（空白は名前から除く。空の項目は返さない）。 */
+function listedPaths(key: string, keyStart: number): { name: string; start: number; end: number }[] {
+  const out: { name: string; start: number; end: number }[] = [];
+  let at = 0;
+  for (const part of key.split(',')) {
+    const name = part.trim();
+    if (name !== '') {
+      const start = keyStart + at + (part.length - part.trimStart().length);
+      out.push({ name, start, end: start + name.length });
+    }
+    at += part.length + 1;
+  }
+  return out;
 }
 
 interface SimpleProperty {
@@ -2344,11 +2396,18 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
       // getter の JSDoc `@returns {T}`（`@type {T}` も）— 本体から読めない戻りの形を宣言する
       const returnsText = accessor === 'get' ? readJsDocReturnsBefore(objectContent, match.index) : undefined;
       const declaredType = returnsText === undefined ? null : parseJsDocType(returnsText);
-      props.push({
-        name: accessorName, kind: 'getter', accessor, value: body, valueStart: bodyStart,
-        nameStart: nameSpan![0], nameEnd: nameSpan![1],
+      const entry = {
+        kind: 'getter' as const, accessor, value: body, valueStart: bodyStart,
         ...(declaredType !== null ? { declaredType } : {}),
-      });
+      };
+      // 1 つのアクセサを複数のパスに宣言したキー: パスごとに 1 件（ランタイムも、カンマで分けた各パスに同じアクセサを置く）
+      const paths = accessorName.includes(',') ? listedPaths(accessorName, nameSpan![0]) : [];
+      if (paths.length > 0) {
+        const listed: AccessorList = { paths: paths.map((p) => p.name), key: accessorName, start: nameSpan![0], end: nameSpan![1] };
+        for (const p of paths) props.push({ name: p.name, ...entry, nameStart: p.start, nameEnd: p.end, listed });
+        continue;
+      }
+      props.push({ name: accessorName, ...entry, nameStart: nameSpan![0], nameEnd: nameSpan![1] });
       continue;
     }
 

@@ -38,7 +38,7 @@ import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnosticCode, type WcsDiagnostic } from '../core/diagnostics.js';
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
-import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, findTopLevelSpread, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
+import { accessorRow, analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, findTopLevelSpread, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathIndex, isUnresolvedPath, moduleLocationOf, type FileReader } from './statePathResolver.js';
 import { pathExistsInCandidates, resolveIndexedSchemaPath } from './bindingValidator.js';
 import { collectGetterReads } from './scriptAst.js';
@@ -104,8 +104,13 @@ export function validateScriptReads(
         });
       }
     }
+    // an accessor declared for several paths is read once per path (a relative path is another list's rows each
+    // time): what is said at one place of its body is said once
+    const saidInListed = new Set<string>();
     for (const callable of analyzeCallableBodies(block.content)) {
-      for (const read of collectGetterReads(callable.body, { templates: true, writes: true }) ?? []) {
+      // a path relative to the row (`this[".name"]` in `get "users.*.fullname"()`) is read as the path under it;
+      // in a method the row is the caller's, so it stays as written and is not checked
+      for (const read of collectGetterReads(callable.body, { templates: true, writes: true, row: accessorRow(callable) }) ?? []) {
         // a compound assignment reads and then writes: a write first
         const write = read.written || read.form === 'write' || read.form === 'api-write';
         // (`this.<key> = …` at the top level is scriptStateUseValidator's wcs/write-path-missing)
@@ -121,12 +126,18 @@ export function validateScriptReads(
         const said = suggestion(near.segment, near.names, msgs);
         if (said === '') continue;
         const at = block.contentStart + callable.bodyStart;
+        if (callable.listed !== undefined) {
+          const place = `${write}:${at + read.start}`;
+          if (saidInListed.has(place)) continue;
+          saidInListed.add(place);
+        }
         const member = read.form === 'member' || read.form === 'write';
         out.push({
           code: write ? WcsDiagnosticCode.WritePathMissing : WcsDiagnosticCode.ReadPathMissing,
           start: at + read.start,
           end: member ? at + read.start + statePart(callable.body.slice(read.start, read.end)) : at + read.end,
-          message: (write ? msgs.nestedWritePathMissing(read.path) : msgs.readPathMissing(read.path, !read.path.includes('.'))) + said,
+          message: (write ? msgs.nestedWritePathMissing(read.path) : msgs.readPathMissing(read.path, !read.path.includes('.')))
+            + (read.relative === undefined ? '' : msgs.relativePathOf(read.relative, callable.name)) + said,
           // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent` (a write stays a
           // warning, as the top-level one: a key the state adds on purpose is not a mistake)
           severity: !write && applicationSchema !== undefined ? 'error' : 'warning',
