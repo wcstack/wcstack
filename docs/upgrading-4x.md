@@ -406,7 +406,21 @@ Workarounds became unnecessary: a second `wcs-validate` run without `--errors-on
 
 Workarounds became unnecessary: the same accessor body written once per list, and a row accessor repeated under a filtered copy (`get "shown.*.fullName"()` beside `get "users.*.fullName"()`).
 
-## Still needed on 4.22.0
+### 4.23.0
+
+2026-11-15 — [CHANGELOG](../CHANGELOG.md#4230--2026-11-15)
+
+- `@wcstack/state` (`.`, `/auto`, the `wcstack/auto` bundle): the new `forms` add-on. State does not write a field while it is composed with an IME; the write is applied when the composition is over. A split page installs `@wcstack/state/features/forms`.
+- `@wcstack/state`: a field whose value is not the one state last saw there is told to state on `change`, and before a form's `submit` handlers run — an `input` (and `change`) event that does not bubble, dispatched on the field. A listener on the field itself hears one more event.
+- `@wcstack/state`: after a reset (`<button type="reset">`, `form.reset()`) state takes the reset values of the form's bound controls. A page that used a reset to blank the fields and meant state to keep its values must clear the fields another way.
+- I/O nodes: for the 34 nodes whose work does not depend on where they are ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §25), a move with `moveBefore()` is not a disconnect: in a row a reorder moves (Chromium 133+, Firefox 144+) a request, a connection or a timer goes on. A page that relied on a reorder to start a `<wcs-fetch>` again, or to restart a `<wcs-timer>`, must do so itself.
+- `@wcstack/router`: the route a slow guard redirects a page load to is bound. A guard whose import does not resolve is told that a guard is a `blob:` module.
+- Console: `[wcs/form-control-one-way]` (`@wcstack/state`'s diagnostics) and `[wcs/fetch-body-gone]` (`@wcstack/fetch`) are new warnings.
+- `@wcstack/lint`: `wcs/radio-name-shared`, `wcs/number-written-as-string` and `wcs/two-way-output-filter` are new warnings: a page with one of those shapes fails `--strict`. A key whose value the lint cannot read gives one `wcs/path-dynamic-unknown` info where it gave a `wcs/binding-path-missing` warning per path. `attr.aria-invalid: flag` and the other ARIA states are no longer warned about.
+
+Workarounds became unnecessary: a field that normalizes what is typed bound one way and written from a handler to protect a composition (a setter is enough; a handler is still the way to keep the caret while formatting); code that skips a field being composed when another tab's draft is applied; a `change` listener that copies a field into state for password managers; a clear method written only because `type="reset"` left state behind; a state seeded with literals written out because `team: init.team` made the lint report every path; the landing route checked in the page because a guard that redirected it left the route unbound. An upload or a fetch kept out of the rows that move is unnecessary in Chromium and Firefox, and still needed for Safari.
+
+## Still needed on 4.23.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
@@ -414,4 +428,5 @@ Workarounds became unnecessary: the same accessor body written once per list, an
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").
 - A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element. Since 4.11 the diagnostics warn when the definition never comes (`[wcs/element-undefined]`), and the lint names a `wcs-*` tag whose package the page does not load (`wcs/tag-package-missing`).
-- Safari has no `moveBefore()`: there a row a reorder moves still loses its focus (state README, "Loop (`for`)"). A row the list leaves in place keeps it in every browser.
+- Safari has no `moveBefore()`: there a row a reorder moves still loses its focus (state README, "Loop (`for`)"), and an I/O node in it its request or connection ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §25). A row the list leaves in place keeps both in every browser.
+- A `keydown` handler that acts on Enter checks for an IME composition itself (`e.isComposing || e.keyCode === 229`), and a form control of the page's own resets itself and declares `value` both ways ([forms.md](./forms.md)).

@@ -406,7 +406,21 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: 同じアクセサの本体をリストごとに書くこと、絞り込んだ写しの行のために行のアクセサをもう一度書くこと（`get "users.*.fullName"()` の横の `get "shown.*.fullName"()`）。
 
-## 4.22.0 でもまだ要るもの
+### 4.23.0
+
+2026-11-15 — [CHANGELOG](../CHANGELOG.md#4230--2026-11-15)
+
+- `@wcstack/state`（`.`・`/auto`・`wcstack/auto` のバンドル）: 新しい `forms` アドオン。IME で変換中の欄には state が書かず、変換が終わってから当てる。分割のページは `@wcstack/state/features/forms` を入れる。
+- `@wcstack/state`: state が最後に見た値と違う値を持つ欄を、`change` のときと、フォームの `submit` のハンドラが走る前に state に知らせる — 欄の上で出す、バブルしない `input`（と `change`）。欄そのものに付けたリスナーは、イベントを 1 回多く聞く。
+- `@wcstack/state`: reset（`<button type="reset">`・`form.reset()`）の後、state はフォームの束ねたコントロールの reset 後の値になる。reset で欄だけを空にし、state には値を残すつもりだったページは、別の方法で欄を空にする。
+- I/O ノード: 置かれた場所に仕事がよらない 34 個のノード（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §25）では、`moveBefore()` での移動が切断でなくなった: 並べ替えで動く行の中（Chromium 133 以降、Firefox 144 以降）で、要求・接続・タイマーは続く。並べ替えで `<wcs-fetch>` が送り直すこと、`<wcs-timer>` が始め直すことに頼っていたページは、自分でそうする。
+- `@wcstack/router`: 遅いガードがページの読み込みをリダイレクトした先のルートを束縛する。import を解決できないガードには、ガードが `blob:` のモジュールであることを言う。
+- コンソール: `[wcs/form-control-one-way]`（`@wcstack/state` の diagnostics）と `[wcs/fetch-body-gone]`（`@wcstack/fetch`）が新しい警告。
+- `@wcstack/lint`: `wcs/radio-name-shared`・`wcs/number-written-as-string`・`wcs/two-way-output-filter` が新しい warning: その形のあるページは `--strict` で落ちる。lint が値を読めないキーは、パスごとの `wcs/binding-path-missing` の代わりに、`wcs/path-dynamic-unknown`（info）を 1 回出す。`attr.aria-invalid: flag` などの ARIA の状態には、もう警告しない。
+
+要らなくなった回避策: 変換を守るために、打った文字を正規化する欄を片方向に束ねてハンドラから書くこと（setter で足りる。整形しながらキャレットを保つなら、今もハンドラ）。別のタブの下書きを当てるときに、変換中の欄を飛ばすコード。パスワード管理のために、欄を state に写す `change` のリスナー。`type="reset"` が state を残すためだけに書いた、空にするメソッド。`team: init.team` で lint が全部のパスを報告するために、リテラルで書き出した state の種。ガードがリダイレクトした先が束縛されないために、ページの中で確かめていた最初のルート。動く行の外に置いたアップロードと fetch は、Chromium と Firefox では要らなくなり、Safari では今も要る。
+
+## 4.23.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
@@ -414,4 +428,5 @@ README の例が 2 つ誤っていました: notification と speech の README 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。
 - まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。
-- Safari には `moveBefore()` が無い: そこでは並べ替えで動かした行は今もフォーカスを失う（state の README、「ループ (`for`)」）。リストがその場に残した行は、どのブラウザでもフォーカスを保つ。
+- Safari には `moveBefore()` が無い: そこでは並べ替えで動かした行は今もフォーカスを失い（state の README、「ループ (`for`)」）、行の中の I/O ノードは要求や接続を失う（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §25）。リストがその場に残した行は、どのブラウザでも両方を保つ。
+- Enter で動く `keydown` のハンドラは、IME の変換を自分で確かめる（`e.isComposing || e.keyCode === 229`）。ページの自作のフォーム部品は、自分で reset し、`value` を両方向に宣言する（[forms.ja.md](./forms.ja.md)）。
