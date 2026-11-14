@@ -40,7 +40,7 @@ test.describe("examples/synth-playground", () => {
 
   test("スライダー → state → オーディオノードが繋がっている", async ({ page }) => {
     const errors = collectErrors(page);
-    const slider = page.locator('input[data-wcs="value: cutoff"]');
+    const slider = page.locator('input[data-wcs="valueAsNumber: cutoff"]');
     await slider.fill("3000");
     await slider.dispatchEvent("input");
 
