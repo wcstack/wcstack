@@ -1815,3 +1815,42 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - core の残りは 3 B、diagnostics の残りは公開時 3 B（基準値を取り直したので、今は +3 % の余裕がある）。次に core に手を入れるときは、上限を上げるか、core から何かを出す。
   - `packages/wcstack` の README（AI 向けの手引き）には、2 つの書き方を書いていない。
   - 4.21.0 から持ち越したもの: 二人の予算は後勝ち（記録だけ）、3 巡目の 3 本目「入力の重い業務フォーム」、`bootstrapXxx(config, registry)` の README、古いルートが歩いた入れ物、midi の Permissions-Policy、拡張の公開を 2026-12-01 より前に Microsoft Entra ID へ移す、次の有界全列挙のスイート、content mapper（#523・#524）、長期サポート版（保留）。
+
+### 4.23.0 の公開（2026-11-15）
+
+- **中身**: minor。継ぎ目アプリ ekiden-entry（3 巡目の 3 本目、入力の重い業務フォーム — 市の駅伝のチーム参加申込、日本語）から。発見と著者の決定は [docs/seam-apps.ja.md](../seam-apps.ja.md) の「ekiden-entry」と [docs/v4-direction-2026-10.md](../v4-direction-2026-10.md) §5.18。
+  - `@wcstack/state`: `forms` add-on。変換中（IME）の欄に書く束縛を預かる、`input` イベントなしで入った値を `change` と送信の前に state に届ける、reset の後でフォームと state を合わせる。diagnostics の `[wcs/form-control-one-way]`。
+  - I/O ノード 34 個: `connectedMoveCallback`。`moveBefore()` での移動は切断でなくなった（タイミング契約 §25）。`<wcs-fetch>` の `[wcs/fetch-body-gone]`。
+  - `@wcstack/router`: 遅いガードがページの読み込みをリダイレクトした先のルートを束縛する。ガードの import の失敗は `blob:` が基準であることを言う。
+  - lint: `wcs/radio-name-shared`・`wcs/number-written-as-string`・`wcs/two-way-output-filter`（warning）。読めない値のキーは info を 1 回。`attr.*` の boolean の文面。
+  - 文書: `docs/forms.md`（日英）。
+- **著者の決定（2026-11-14）**: 5 つの問いを推奨の案に決めた（§5.18）。決定と違えた所は 3 つで、公開の前に著者に報告した。
+  - `connectedMoveCallback` を入れたのは 34 個（問いでは 49 ファイル）。周りを読むノードは、移動で仕事の相手が変わるので外した。
+  - `forms` add-on は、送信の前にも欄を検査する（イベントなしで入った値）。
+  - lint の目録の新しい 3 項目は「実行時に知らせる」に分類した（予定は無い）。
+- **実装**: ルーター #671（merge commit 02bde416）、state #672（5dd2bb71）、I/O #673（58653d12）、lint #674（b0ec9691。作業ツリーのエージェントが実装）、記録 #675（7bec8720）、目録 #676（e390b918）。
+  - core は 20,477 B のまま（上限まで 3 B）。`forms` は 981 B。`Engine.applyBinding` と `Binding.writeBack` を包み、残りはルートのリスナー。
+  - `forms` は core から `hooks.ts` だけを import する。`dom/view.ts` を import すると、分割ビルドの core のチャンクが 1 つ増えた（ファイルごとの gzip で +960 B）。エンジンのクラスは最初のエンジンから取り、束縛の種類の番号は自分で持つ（テストが `dom/view.ts` と比べる）。`parser/raiseError.ts` の副作用 import は、`hooks.ts` と同じチャンクに保つため（無いと +222 B と要求 1 つ）。
+  - diagnostics は +475 B で 13,128 B。リリースまでの間、基準値に 256 B の slack を付けた。
+  - 速度: CPU 4 倍の A/B（`bench/inpage-ab.mjs`、8 ページ × 30 回）で、update10k が ×0.96、create1k が ×1.02。どちらもばらつきの内。
+  - 確かめ方: 本物の変換は Chromium の CDP で。`change`・送信・reset は Chromium・Firefox・WebKit で。Firefox と WebKit の本物の IME は動かせない（預かった束縛は `compositionend` の 1 タスク後に当てるので、最後の `input` が前でも後でも同じに動く）。
+  - `docs/forms.md` の書き方は、全部 Chromium で動かしてから載せた。1 つ誤りがあって直した: `command.fetch:` は同じ更新の束縛より先に走るので、本文が 1 回遅れる（正しくは `body` → `trigger`）。目録の項目にした。
+  - e2e: `io-move-row`（Chromium と Firefox。4.22.0 の dist では落ちる）。各パッケージの `connectedMove.test.ts`（happy-dom には `moveBefore()` が無いので、クラスがコールバックを持つことを見る）。
+  - lint の新しい規則は、リポジトリの例に本物を 10 件見つけた（`examples/synth-playground` のスライダーが state の数を文字列にしていた）。`valueAsNumber:` に直した。
+- **準備**: PR #677（merge commit a053997b）。CHANGELOG を `[4.23.0] — 2026-11-15` として締め、docs/upgrading-4x.md（日英）に 4.23.0 の節と、要らなくなった回避策、まだ要るもの（Safari、Enter の IME の確認、自作部品の reset と宣言）を書いた。固定版 18 か所を動かした。
+- **main で `minor`（run 43633726044）**: 成功した。版を上げたコミット b324a2d4、タグ `v4.23.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約を足した）。
+  - 検証は 1 回目で済んだ: npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24（`forms` が増えた）・文書の固定 URL 8/8。
+- **公開後の作業**:
+  - PR #678（merge commit 026b5b8d）: サイズの基準値を 4.23.0 の dist で取り直した。`core.min.js` 20,477 B（残り 3 B）、diagnostics 13,128 B、`forms` 981 B、分割の core 24,798 B、`index.esm.js` 59,472 B、`auto.min.js` 56,109 B。diagnostics の slack は落とした。結合の基準値は変わらず。あわせて CLAUDE.md / AGENTS.md を更新し、拡張を 2.18.0 にした。
+  - 拡張 2.18.0: 026b5b8d から worktree で作った（依存は `npm ci`。junction は npm の作る 1 つだけで、外してから worktree を外した）。試験 1,608 件、890 ファイル、SHA-256 `cc6407eb609b31f6f41259e16b70b9705973964b768b3825faab57187a992f43`。CLI で確かめた: 4.23.0 に固定したページで新しい規則 2 つと info が出る、4.24.0 は警告。公開は著者。
+  - wcstack-skill: PR #66（merge commit 5ecd295）。`references/forms.md`（新規）、落とし穴の表に 9 行、ガードの import と `<wcs-link>` の `class`、add-on の名前、`<wcs-fetch>` の本文、刻印と固定 URL。公開された 4.23.0 の束と `@wcstack/lint@4.23.0` で、書き方と誤りの報告を確かめた。注釈付きタグ `v4.23.0`。
+  - LP（wcstack.github.io 2fcada2）: リリースの表示、v4.23.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-GxPxbg…`、gzip 83,488 B ＝約 82 KB）、llms。`llms-full.txt` に `islands.md` と `forms.md` を含めた（SKILL.md が指すのに入っていなかった）。ローカルの検査 7/7、本番 8/9（落ちる 1 件は、これまでと同じく、アプリのページが呼ぶ API が Pages に無いため）。
+  - 例の取り込み: PR #679（merge commit 2f1cc3c4）。`examples/ekiden-entry` と `e2e/tests/ekiden-entry.spec.ts`（Chromium 15 件、うち 2 件は Firefox でも）。4.23.0 で要らなくなった回避策（変換中の欄を飛ばすコード、ガードに任せられなかった最初のナビゲーション）を外した。取り込みの中で新しい欠陥は見つからなかった。
+- **残り**:
+  - 拡張 2.18.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.18.0`。
+  - core の残りは 3 B のまま。
+  - Safari には `moveBefore()` が無い: 動いた行の中の I/O ノードは今も要求を失う（文書に書いた）。全ブラウザで直す案（切断の後始末をマイクロタスクで判定する）は、§22 の変更になるので採らなかった。
+  - 設計の問い（記録だけ）: ハンドラは、要素がどのパスに束縛されているかを尋ねられない。
+  - 記録だけ: 空にした `valueAsNumber:` の欄の `NaN`、別のファイルの `static wcBindable` を lint が読まないこと、動く行の中の `<wcs-audio>`、数と `null` を渡した `attr.*` の文面。
+  - 止める目安には当たっていない。3 巡目の次は 4 本目「大きなリストとスクロール」。
+  - 4.22.0 から持ち越したもの: 拡張 2.17.0 のタグ（公開の後）、`packages/wcstack` の README の 2 つの書き方、ほか 4.21.0 からの持ち越し。
