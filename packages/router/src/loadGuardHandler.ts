@@ -26,10 +26,19 @@ function describeImportFailure(error: unknown, firstError: unknown, cspBlocked: 
       `Guard scripts are inline-only and are evaluated through a blob: URL: ` +
       `give the page's nonce to the <script> that loads @wcstack/router, or allow blob: in script-src. See ${CSP_GUIDE}`;
   }
-  return `loadGuardHandler: failed to import guard script. ` +
+  const detail = `loadGuardHandler: failed to import guard script. ` +
     `data: URL error: ${(error as Error)?.message ?? String(error)}` +
-    (firstError ? `. Blob URL error: ${(firstError as Error)?.message ?? String(firstError)}` : '') +
-    `. If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
+    (firstError ? `. Blob URL error: ${(firstError as Error)?.message ?? String(firstError)}` : '');
+  // 解決できない import（Chromium "Failed to resolve module specifier"、Firefox "… specifier …"、
+  // WebKit "does not resolve"）: blob: URL が基準なので相対パスは解決できない。CSP は関係しない
+  // （docs/seam-apps.md、ekiden-entry。state のインラインと同じ — community-hall）
+  if (/specifier|does not resolve/i.test(detail)) {
+    return `${detail}. A guard <script> is evaluated from a blob: URL, against which a relative or ` +
+      `root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL inside the guard function — ` +
+      `await import(new URL("/js/x.js", location.href).href) — or a name the page's import map gives ` +
+      `({ "imports": { "@app/": "/js/" } }).`;
+  }
+  return `${detail}. If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
 }
 
 async function importModule(script: HTMLScriptElement, route: IRoute): Promise<GuardHandler | null> {

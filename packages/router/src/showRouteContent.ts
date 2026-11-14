@@ -185,10 +185,14 @@ export async function showRouteContent(
         placeRoute(route);
       }
       moved ||= again;
-      // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
-      // document に居るので、そこは binder に渡す必要も報告する必要も無い。
-      // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
-      if (previous.length > 0 && !again) {
+      // 挿入の後。出ているルートが無いところへ置く内容（初回描画、どのルートにも
+      // 当たらなかった後の最初のルート）は、binder がまだ居なければ渡さない: state の
+      // 最初の走査がそのとき document に居るものを拾うので、渡す必要も報告する必要も無い。
+      // binder がもう居るなら、その走査は済んでいるかもしれない — 時間のかかるガード
+      // （`await import()`）がページを読み込むナビゲーションをリダイレクトすると、行き先の
+      // 内容は走査の後に置かれ、何も束縛されなかった（docs/seam-apps.md、ekiden-entry）。
+      // `bind()` は冪等なので、走査に間に合っていた分を渡しても壊れない。
+      if (!again && (previous.length > 0 || getBinder() !== null)) {
         bindRouteContent(route);
       }
     }

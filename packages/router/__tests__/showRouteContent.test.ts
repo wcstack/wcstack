@@ -496,7 +496,33 @@ describe('showRouteContent — binder への受け渡し', () => {
     container.remove();
   });
 
-  it('初回描画のルートは渡さないこと', async () => {
+  it('binder が居なければ、初回描画のルートは渡さず、報告もしないこと', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:initial');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const content = document.createElement('section');
+    content.innerHTML = '<span data-wcs="textContent: x"></span>';
+    const route = createMockRoute({ placeHolder: placeholder, childNodeArray: [content] });
+
+    // lastRoutes が空 ＝ 初回描画。後から来る state の走査が拾うので、保留キューにも入れない
+    await showRouteContent(router, createMatchResult([route]), []);
+
+    expect((globals[Symbol.for('wcstack.binder.pending')] as Node[] | undefined) ?? []).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+    router.remove();
+    container.remove();
+  });
+
+  // 時間のかかるガードがページを読み込むナビゲーションをリダイレクトすると、行き先の内容は
+  // state の最初の走査の後に置かれる。出ているルートが無い（初回描画と同じ形）ので渡されず、
+  // 何も束縛されなかった（docs/seam-apps.md、ekiden-entry）
+  it('binder がもう居れば、出ているルートが無いところへ置く内容も渡すこと', async () => {
     const handed: Node[] = [];
     globals[BINDER_KEY] = {
       protocol: 'wcs-binder',
@@ -515,10 +541,9 @@ describe('showRouteContent — binder への受け渡し', () => {
     content.innerHTML = '<span data-wcs="textContent: x"></span>';
     const route = createMockRoute({ placeHolder: placeholder, childNodeArray: [content] });
 
-    // lastRoutes が空 ＝ 初回描画。state の走査が拾うので渡す必要が無い
     await showRouteContent(router, createMatchResult([route]), []);
 
-    expect(handed).toEqual([]);
+    expect(handed).toEqual([content]);
     router.remove();
     container.remove();
   });

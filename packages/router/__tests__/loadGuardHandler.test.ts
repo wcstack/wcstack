@@ -392,6 +392,34 @@ describe('wcs-guard-handler', () => {
     errorSpy.mockRestore();
   });
 
+  // ガードは blob: URL から評価されるので、相対パスの import は解決できない。CSP は関係しないのに
+  // CSP を案内していた（docs/seam-apps.md、ekiden-entry）
+  it('解決できない import の失敗では、blob: が基準であることと書き方を言い、CSP を案内しないこと', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const notifyMock = vi.fn();
+    const mockRoute: Partial<IRoute> = {
+      notifyGuardHandlerLoadFailed: notifyMock,
+    };
+
+    const script = document.createElement('script');
+    script.setAttribute('type', 'module');
+    // （ブラウザの文面を投げて代える: Chromium は "Failed to resolve module specifier …" と言う）
+    script.text = 'throw new TypeError(\'Failed to resolve module specifier "./guards.js"\');';
+
+    loadGuardHandler(script, mockRoute as IRoute);
+
+    await vi.waitFor(() => {
+      expect(notifyMock).toHaveBeenCalled();
+    });
+
+    const error = errorSpy.mock.calls[0][1] as Error;
+    expect(error.message).toMatch(/failed to import guard script/);
+    expect(error.message).toMatch(/blob: URL, against which a relative or root-relative import/);
+    expect(error.message).toMatch(/new URL\("\/js\/x\.js", location\.href\)/);
+    expect(error.message).not.toMatch(/docs\/csp\.md/);
+    errorSpy.mockRestore();
+  });
+
   it('default exportが関数でない場合にnotifyGuardHandlerLoadFailedを呼ぶこと', async () => {
     const notifyMock = vi.fn();
     const guardHandlerSetter = vi.fn();
