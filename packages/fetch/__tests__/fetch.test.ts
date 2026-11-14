@@ -2080,6 +2080,93 @@ describe("自動 fetch の microtask coalesce", () => {
     });
   });
 
+  // body は 1 回送ると消える。束縛は、最後に書いた値と同じ値を書かないので、再送で同じ JSON 文字列を
+  // 書いても要素に届かず、本文なしの POST が何も知らせずに出た（docs/seam-apps.md、ekiden-entry）
+  describe("本文を送った後の、本文の無い変更（wcs/fetch-body-gone）", () => {
+    const gone = (calls: unknown[][]) => calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/fetch-body-gone]"));
+    const manual = (method: string): Fetch => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("method", method);
+      el.setAttribute("manual", "");
+      el.setAttribute("url", "/api/entries");
+      document.body.appendChild(el);
+      return el;
+    };
+
+    it("本文を送った要素が、本文を書き直されないまま POST を送ると、1 回警告する。本文をもう一度送ると、次からまた言う", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const el = manual("POST");
+        el.body = '{"team":"midori"}';
+        await el.fetch();
+        expect(gone(warn.mock.calls)).toEqual([]);
+        // the retry: state does not write the same string again
+        await el.fetch();
+        await el.fetch();
+        expect(fetchSpy.mock.calls[1][1]?.body ?? null).toBeNull();
+        expect(gone(warn.mock.calls)).toEqual([
+          "[@wcstack/fetch] [wcs/fetch-body-gone] This <wcs-fetch> sent a POST with no body: a body is sent once, and none was written since the last request. "
+          + "A binding does not write a value equal to the one it wrote last, so the same string on a retry never arrives: write a new object each time "
+          + "(this.payload = { ...entry }), or null between two sends. (Said once until a body is sent again.)",
+        ]);
+        el.body = { team: "midori" };
+        el.trigger = true;
+        await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(4));
+        el.trigger = true;
+        await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(5));
+        expect(gone(warn.mock.calls)).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("PUT・PATCH でも言い、GET・DELETE では言わない。本文を送ったことの無い要素と、<wcs-fetch-body> で本文を持つ要素にも言わない", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        for (const method of ["PUT", "PATCH", "DELETE", "GET"]) {
+          const el = manual(method);
+          el.body = { a: 1 };
+          await el.fetch();
+          await el.fetch();
+        }
+        expect(gone(warn.mock.calls).map((m) => /sent a (\w+)/.exec(m)![1])).toEqual(["PUT", "PATCH"]);
+        warn.mockClear();
+        // never sent a body
+        const ping = manual("POST");
+        await ping.fetch();
+        await ping.fetch();
+        // its body is a child element: it is there every time
+        const search = manual("POST");
+        search.innerHTML = `<wcs-fetch-body type="application/json">{"q":"a"}</wcs-fetch-body>`;
+        await search.fetch();
+        await search.fetch();
+        expect(gone(warn.mock.calls)).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("url の変化が始める要求では言わない（wcs/fetch-auto-unsafe が言う）", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const el = document.createElement("wcs-fetch") as Fetch;
+        el.setAttribute("method", "POST");
+        el.url = "/api/a";
+        document.body.appendChild(el);
+        await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+        el.body = { a: 1 };
+        el.trigger = true;
+        await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+        el.url = "/api/b";
+        await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(3));
+        expect(gone(warn.mock.calls)).toEqual([]);
+        expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/fetch-auto-unsafe]"))).toHaveLength(1);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+
   it("microtask 待ち中に disconnect されると fetch しない", async () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.setAttribute("url", "/api/users");

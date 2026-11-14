@@ -154,6 +154,7 @@ happy-dom では再現しない挙動を対象にしています。
 | `router-a11y-optin` | オプトインの `focus="heading"` / `announce="title"` (docs/a11y-design.md §3-4)。commit 後にリーフ route の見出しへフォーカスし、live region へ commit 時 title が入ること。初回描画では両方とも動かないこと |
 | `native-commands` | ネイティブ要素の `command.<method>:`（native-commands 機能）。`onclick: $command` で `<dialog>` が `:modal` で開き、state の `emit("saved")` で閉じて `returnValue` が入ること、`if:` で表示した `<input>` に `$renderedCallback` からの emit でフォーカスが移ること、popover の開閉（クリックのイベントを引数にしない）。happy-dom では top layer・フォーカス・popover の状態を見られない |
 | `state-move-before` | keyed swap 中の行内 `<input>` のフォーカス・入力値の保存 (docs/a11y-design.md §4)。mountAfter の moveBefore 分岐は happy-dom に moveBefore が無く実ブラウザでしか走らない |
+| `io-move-row` | 並べ替えで動いた行の中の `<wcs-fetch>` が、進行中の要求を中断せず送り直しもしない（docs/timing-and-firing-contract.md §25）。`connectedMoveCallback` をブラウザが呼ぶのは `moveBefore()` のある実ブラウザだけ（Chromium・Firefox） |
 | `view-transition-route` / `view-transition-list` | 実 `document.startViewTransition` に対する遷移の開始回数と DOM の一回適用（router ルート差し替え / state リスト更新・auto naming） |
 | `audio-graph-poc` / `audio-offline` | Web Audio のグラフ配線とレンダリング (OfflineAudioContext) |
 

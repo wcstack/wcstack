@@ -187,6 +187,8 @@ npm install @wcstack/upload
 - 非同期状態が `value`, `loading`, `progress`, `error`, `status` として返る
 - UI はそれらのパスへ宣言的にバインド
 
+**動くリストの行の中で。** 切断はアップロードを中断します。4.23（未リリース）から、ブラウザが `moveBefore()` で行う移動 — `@wcstack/state` が並べ替える行、Chromium 133 以降と Firefox 144 以降 — は切断ではありません: アップロードは続きます。4.22 までは、並べ替えが何も知らせずに中断していました（`loading` は false、`status` は 0、`error` なし）。行を取り出して入れ直すところ（Safari）では、今も中断します: そこでは、行がアップロードしている間は並べ替えないか、`<wcs-upload>` を動かないリストに置いてください（[docs/timing-and-firing-contract.ja.md §25](../../docs/timing-and-firing-contract.ja.md)、[docs/forms.ja.md](../../docs/forms.ja.md)）。
+
 ## 公開 API
 
 ### 要素属性とプロパティ

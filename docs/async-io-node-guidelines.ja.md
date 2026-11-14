@@ -23,6 +23,7 @@
 11. **Core は公開ヘッドレスサーフェス**。Core クラスをパッケージの entry（`exports.ts`）から export し、その構造保証（§3.9）を semver 保護の公開 API として扱う。README に headless（Core）利用の節を持つ（§9）
 12. **producer snapshot contract**。state-like object / array は公開後に producer が変更せず、logical state の変更時は fresh value を割り当ててから通知する。event は occurrence を同値ガードせず、handle は owner と release point を明示する（§3.3.1）。入力側で受け取った値の扱いは §3.3.2
 13. **property upgrade**。Shell は `connectedCallback` の先頭で `upgradeProperties(this)` を呼び、upgrade 前に代入された input を取り込み直す（§4.1.1）
+14. **移動は切断ではない**。文書のどこに居るかに仕事がよらない Shell は、空の `connectedMoveCallback` を定義する。`moveBefore()`（並べ替えで動くリストの行）で何も止まらない（§4.1.2）
 
 ---
 
@@ -316,6 +317,7 @@ export class Wcs<Name> extends HTMLElement {
     if (config.autoTrigger) registerAutoTrigger();
     this._connectedCallbackPromise = this._core.observe(/* 属性から解決した設定 */);
   }
+  connectedMoveCallback() {}                         // §4.1.2（周りを読むノードは定義しない）
   disconnectedCallback() { this._core.dispose(); }
   get connectedCallbackPromise() { return this._connectedCallbackPromise; }
 }
@@ -338,6 +340,12 @@ upgrade 後もそれが prototype の accessor を隠し続けるため、setter
 
 - Shell は **薄く**保つ。ロジックは Core に置く。Shell の責務は「属性 ↔ Core 設定の橋渡し」「Core observable の委譲」「ライフサイクル駆動」「reactive command-property」だけ
 - `this.style.display = "none"`（IO ノードは非表示。`intersection` など layout box が必要な例外は `display:contents` 等を使い理由を書く）
+
+### 4.1.2 移動は切断ではない
+
+ブラウザが要素を `moveBefore()` で動かすとき — `@wcstack/state` は残す行をそう動かす — カスタム要素は `disconnectedCallback`、続けて `connectedCallback` を受ける。クラスが `connectedMoveCallback` を定義していれば、代わりにそれが走る。切断で後始末をする Shell は、並べ替えで仕事を失っていた: 要求、接続、タイマー、アップロード（[timing-and-firing-contract.ja.md §25](./timing-and-firing-contract.ja.md)）。
+
+`connectedCallback` が要素自身の属性・プロパティ・子だけを読むなら、`connectedMoveCallback(): void {}` を定義する。自分の居る場所を見るノード — `getRootNode()`・`closest()`・親から探す対象やルート、入れ子から来る意味 — には定義しない: そういうノードでは、移動が仕事の相手を変えるので、切断と接続の組が正しい。パッケージのテストで、クラスがコールバックを持つことを確かめる（happy-dom には `moveBefore()` が無い）。
 
 ### 4.2 observable は「1イベント＋派生 getter」に分解する
 

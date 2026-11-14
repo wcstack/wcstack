@@ -618,3 +618,22 @@ One helper, `/protocol/define-element.ts` (`defineElements(registry, pkg, [[tag,
 
 ### 24.6 Testing
 Each package runs the helper's shared test and a shared registration test against its own `registerComponents()` (`__tests__/protocol.defineElement*.test.ts`): another copy's class defined first, with and without a version, the same version silent, an adopter's subclass silent, one warning per registry. `@wcstack/state` tests its wrapper in `__tests__/twice.test.ts`.
+
+## 25. A cross-cutting contract: a move is not a disconnect (2026-11-14)
+
+Applies to: the I/O nodes whose work does not depend on where they are in the document (§25.3). The `ekiden-entry` seam app found it ([seam-apps.md](./seam-apps.md)). A `<wcs-upload>` in a list row lost its upload when the row was reordered — `loading` false, `status` 0, no error — and a `<wcs-fetch>` aborted its request, in every browser: also where `@wcstack/state` moves a row with `moveBefore()` (since 4.14, Chromium 133+ and Firefox 144+). A custom element whose class has no `connectedMoveCallback` is given `disconnectedCallback` and then `connectedCallback` for a move, and a disconnect disposes (§22).
+
+### 25.1 A node that does not read its surroundings defines `connectedMoveCallback`, and it does nothing
+When the browser moves an element with `moveBefore()` and its class defines `connectedMoveCallback`, that callback runs instead of the disconnect / connect pair. For a node whose `connectedCallback` reads only its own attributes, properties and children, a move changes nothing it works from: a request in flight, an open connection, a running timer, an acquired lock or stream go on, no output changes, and no event is dispatched. Since 4.23.
+
+### 25.2 What it is not
+- Not for a move made by taking the element out and putting it back (`insertBefore`, `append`): a browser without `moveBefore()` (Safari as of 2026-11), or any code that moves so. That is a disconnect and a connect — §22's publication, §23's decision — as before. A page that reorders rows holding I/O nodes whose work must survive either does not reorder while they work, or keeps the nodes outside the rows ([forms.md](./forms.md)).
+- Not a promise about which rows move: `@wcstack/state` moves as few rows as it can and chooses them.
+
+### 25.3 The nodes
+With the callback: `<wcs-accelerometer>`, `<wcs-ambient-light-sensor>`, `<wcs-broadcast>`, `<wcs-camera>`, `<wcs-recorder>`, `<wcs-clipboard>`, `<wcs-contacts>`, `<wcs-credential>`, `<wcs-debounce>` / `<wcs-throttle>`, `<wcs-defined>`, `<wcs-eyedropper>`, `<wcs-fetch>`, `<wcs-geo>`, `<wcs-gyroscope>`, `<wcs-idle>`, `<wcs-magnetometer>`, `<wcs-media-query>`, `<wcs-midi>`, `<wcs-network>`, `<wcs-notify>`, `<wcs-permission>`, `<wcs-raf>`, `<wcs-screen-orientation>`, `<wcs-share>`, `<wcs-listen>`, `<wcs-speak>`, `<wcs-sse>`, `<wcs-storage>`, `<wcs-tilt>`, `<wcs-timer>`, `<wcs-upload>`, `<wcs-wakelock>`, `<wcs-ws>`, `<wcs-worker>`.
+
+Without it — a move stays a disconnect and a connect, because what they do depends on where they are: `<wcs-intersect>`, `<wcs-resize>` and `<wcs-infinite-scroll>` (the target and the root they observe are looked up from where they stand), `<wcs-fullscreen>`, `<wcs-pip>` and `<wcs-pointer-lock>` (their target likewise), `<wcs-audio>` and its node tags (nesting is the signal chain). `@wcstack/router`'s elements, `<wcs-autoloader>` and `<wcs-view-transition>` are not I/O nodes and are unchanged.
+
+### 25.4 Testing
+Each package checks that its class has the callback (`__tests__/connectedMove.test.ts`): happy-dom has no `moveBefore()`. The browser calling it is `e2e/tests/io-move-row.spec.ts` (Chromium and Firefox): four `<wcs-fetch>` in flight, two rows change places, each request arrives once.
