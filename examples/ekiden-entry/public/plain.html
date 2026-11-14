@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>共通コントロールの確認（wcstack なし）</title>
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/components/midori-date.js"></script>
+  <script type="module" src="/components/midori-stepper.js"></script>
+</head>
+<body>
+  <main class="plain">
+    <h1>共通コントロールの確認</h1>
+    <p>このページは wcstack を使わない、ふつうの <code>&lt;form method="post"&gt;</code> です。</p>
+    <form id="plain-form" method="post" action="/plain">
+      <fieldset id="plain-fieldset">
+        <legend>入力</legend>
+        <div class="field">
+          <label for="plain-name">お名前</label>
+          <input id="plain-name" name="name" autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="plain-birth">生年月日</label>
+          <midori-date id="plain-birth" name="birth" required></midori-date>
+        </div>
+        <div class="field">
+          <label for="plain-count">駐車券</label>
+          <midori-stepper id="plain-count" name="parking" min="0" max="3" value="1"></midori-stepper>
+        </div>
+      </fieldset>
+      <p class="actions">
+        <button type="submit">送信</button>
+        <button type="reset">リセット</button>
+        <label><input type="checkbox" id="plain-disable"> 入力欄を無効にする（fieldset disabled）</label>
+      </p>
+    </form>
+  </main>
+  <script type="module">
+    document.getElementById("plain-disable").addEventListener("change", (e) => {
+      document.getElementById("plain-fieldset").disabled = e.target.checked;
+    });
+  </script>
+</body>
+</html>

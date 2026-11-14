@@ -1,0 +1,18 @@
+{
+  "name": "wcstack-ekiden-entry",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a team entry wizard in Japanese, a page that is mostly a form — text composed with an IME, fields that format what is typed, autofill, rows of inputs that move, form-associated custom elements, a 422 that names a field of another step, a headless test of the real state file.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/router": "^4.23.0",
+    "@wcstack/server": "^4.23.0",
+    "@wcstack/state": "^4.23.0",
+    "@wcstack/testing": "^4.23.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.0.5"
+  }
+}

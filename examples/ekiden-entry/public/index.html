@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <title>みどり市民駅伝 チーム申し込み</title>
+  <link rel="stylesheet" href="app.css">
+  <!-- The city's shared controls (no wcstack dependency) first, then every wcstack I/O package, state last. -->
+  <script type="module" src="components/midori-date.js"></script>
+  <script type="module" src="components/midori-stepper.js"></script>
+  <script type="module" src="lib/ime.js"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+<wcs-state src="state.js"></wcs-state>
+
+<!-- Headless I/O: the draft, the receipt, the server's lists, the checks, the uploads. Outside the router so that
+     they keep working while the user moves between steps. -->
+<wcs-storage key="midori-ekiden-draft" data-wcs="value#init=element: draft"></wcs-storage>
+<wcs-storage key="midori-ekiden-receipt" type="session" data-wcs="value#init=element: receipt"></wcs-storage>
+<wcs-fetch url="/api/prefectures" data-wcs="...: prefFetch"></wcs-fetch>
+<wcs-fetch data-wcs="...: postalFetch; url: postalUrl; eventToken.value: postalResponded"></wcs-fetch>
+<wcs-debounce wait="500" data-wcs="source: teamNameCommitted; value: teamNameSettled"></wcs-debounce>
+<wcs-fetch data-wcs="...: availFetch; url: availUrl"></wcs-fetch>
+<wcs-fetch url="/api/entries" method="POST" manual
+  data-wcs="body: submitReq.body; trigger: submitReq.trigger; value: submitReq.value; error: submitReq.error; loading: submitReq.loading; status: submitReq.status">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<div class="uploads" hidden>
+  <!-- One upload element per runner, in a list that is never reordered. A <wcs-upload> in a row that moves keeps
+       its upload where the browser moves the row with moveBefore() (Chromium, Firefox — since 4.23); in Safari
+       the row is taken out and put back, which is a disconnect, and a disconnect aborts (docs/forms.md). -->
+  <template data-wcs="for: uploads">
+    <wcs-upload url="/api/consents" field-name="file"
+      data-wcs="files: .files; progress: .progress; loading: .loading; value: .result; error: .error; status: .status"></wcs-upload>
+  </template>
+</div>
+
+<header class="site">
+  <p class="org">みどり市 スポーツ課</p>
+  <h1>みどり市民駅伝 チーム申し込み</h1>
+  <p class="race">2027年3月7日（日）開催</p>
+  <nav aria-label="申し込みの手順">
+    <ol class="steps">
+      <template data-wcs="for: steps">
+        <li data-wcs="class.current: .current; class.complete: .complete; class.has-error: .error; attr.aria-current: .ariaCurrent">
+          <span class="num">{{ .num }}</span>
+          <span class="label">{{ .label }}</span>
+          <span class="state">{{ .state }}</span>
+        </li>
+      </template>
+    </ol>
+  </nav>
+  <div class="fee" aria-live="polite">
+    <span class="fee-label">合計金額</span>
+    <output class="fee-total" id="fee-total" data-wcs="textContent: feeText"></output>
+    <span class="fee-detail" data-wcs="textContent: feeDetail"></span>
+  </div>
+  <p class="restart"><button type="button" class="link" data-wcs="onclick: restart">最初からやり直す</button></p>
+</header>
+
+<p class="status" role="status" id="status" data-wcs="textContent: status"></p>
+
+<main id="main">
+<wcs-router data-wcs="routeName: routeName; path: routePath; searchParams: searchParams; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+<template>
+  <wcs-route path="/" name="landing" guard="/entry/team">
+    <wcs-guard-handler><script type="module">
+      export default async function () {
+        const { landing } = await import(new URL("/lib/guards.js", location.href).href);
+        return landing();
+      }
+    </script></wcs-guard-handler>
+  </wcs-route>
+  <wcs-route path="/entry" name="landing" guard="/entry/team">
+    <wcs-guard-handler><script type="module">
+      export default async function () {
+        const { landing } = await import(new URL("/lib/guards.js", location.href).href);
+        return landing();
+      }
+    </script></wcs-guard-handler>
+  </wcs-route>
+
+  <!-- ===================== 1. チームと代表者 ===================== -->
+  <wcs-route path="/entry/team" name="team">
+    <wcs-head><title>1. チームと代表者 | みどり市民駅伝 申し込み</title></wcs-head>
+    <section class="step" aria-labelledby="h-team">
+      <h2 id="h-team" tabindex="-1">1. チームと代表者</h2>
+      <p class="general-err" role="alert" data-wcs="textContent: generalErrors"></p>
+      <!-- Every field repeats its state path in data-path (and data-role / data-format / data-kana-path): the
+           form-level handlers need it, and a handler cannot ask wcstack which path an element is bound to. -->
+      <form id="form-team" novalidate autocomplete="on"
+        data-wcs="onsubmit#prevent: next; oninput: onInput; onchange: onChange; onkeydown: onKeydown; oncompositionend: onCompositionEnd; onfocusout: onFocusOut">
+        <fieldset class="bare" data-wcs="disabled: sending">
+          <h3>チーム</h3>
+          <div class="field">
+            <label for="team-name">チーム名 <span class="req">必須</span></label>
+            <input id="team-name" name="team-name" autocomplete="off" aria-describedby="team-name-err team-name-hint"
+              data-path="team.name" data-role="name" data-kana-path="team.kana" data-kana-touched-path="kanaTouched.team"
+              data-wcs="value: team.name; attr.aria-invalid: errs.team.name|truthy|string">
+            <p class="hint" id="team-name-hint"><span data-wcs="textContent: teamNameCount; class.over: teamNameOver"></span>
+              <span class="check" role="status" data-wcs="textContent: nameCheckText; class.bad: nameTaken"></span></p>
+            <p class="err" id="team-name-err" data-wcs="textContent: errs.team.name"></p>
+          </div>
+          <div class="field">
+            <label for="team-kana">チーム名のフリガナ <span class="req">必須</span></label>
+            <input id="team-kana" name="team-kana" autocomplete="off" aria-describedby="team-kana-err"
+              data-path="team.kana" data-role="kana" data-touched-path="kanaTouched.team"
+              data-wcs="value#ro: team.kana; attr.aria-invalid: errs.team.kana|truthy|string">
+            <p class="err" id="team-kana-err" data-wcs="textContent: errs.team.kana"></p>
+          </div>
+          <div class="field">
+            <div id="division-label" class="label">部門 <span class="req">必須</span></div>
+            <div class="choices" role="radiogroup" aria-labelledby="division-label" aria-describedby="division-err" data-path="team.division"
+              data-wcs="attr.aria-invalid: errs.team.division|truthy|string">
+              <label><input type="radio" name="division" value="一般" data-wcs="radio: team.division"> 一般（¥12,000）</label>
+              <label><input type="radio" name="division" value="高校生" data-wcs="radio: team.division"> 高校生（¥8,000）</label>
+              <label><input type="radio" name="division" value="中学生" data-wcs="radio: team.division"> 中学生（¥5,000）</label>
+              <label><input type="radio" name="division" value="ミックス" data-wcs="radio: team.division"> ミックス（¥10,000）</label>
+            </div>
+            <p class="err" id="division-err" data-wcs="textContent: errs.team.division"></p>
+          </div>
+
+          <h3>代表者</h3>
+          <div class="row2">
+            <div class="field">
+              <label for="rep-family">姓 <span class="req">必須</span></label>
+              <input id="rep-family" name="family-name" autocomplete="family-name" aria-describedby="rep-family-err"
+                data-path="rep.name.family" data-role="name" data-kana-path="rep.kana.family" data-kana-touched-path="kanaTouched.repFamily"
+                data-wcs="value: rep.name.family; attr.aria-invalid: errs.rep.name.family|truthy|string">
+              <p class="err" id="rep-family-err" data-wcs="textContent: errs.rep.name.family"></p>
+            </div>
+            <div class="field">
+              <label for="rep-given">名 <span class="req">必須</span></label>
+              <input id="rep-given" name="given-name" autocomplete="given-name" aria-describedby="rep-given-err"
+                data-path="rep.name.given" data-role="name" data-kana-path="rep.kana.given" data-kana-touched-path="kanaTouched.repGiven"
+                data-wcs="value: rep.name.given; attr.aria-invalid: errs.rep.name.given|truthy|string">
+              <p class="err" id="rep-given-err" data-wcs="textContent: errs.rep.name.given"></p>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="rep-kana-family">セイ <span class="req">必須</span></label>
+              <input id="rep-kana-family" name="family-name-kana" autocomplete="off" aria-describedby="rep-kana-family-err"
+                data-path="rep.kana.family" data-role="kana" data-touched-path="kanaTouched.repFamily"
+                data-wcs="value#ro: rep.kana.family; attr.aria-invalid: errs.rep.kana.family|truthy|string">
+              <p class="err" id="rep-kana-family-err" data-wcs="textContent: errs.rep.kana.family"></p>
+            </div>
+            <div class="field">
+              <label for="rep-kana-given">メイ <span class="req">必須</span></label>
+              <input id="rep-kana-given" name="given-name-kana" autocomplete="off" aria-describedby="rep-kana-given-err"
+                data-path="rep.kana.given" data-role="kana" data-touched-path="kanaTouched.repGiven"
+                data-wcs="value#ro: rep.kana.given; attr.aria-invalid: errs.rep.kana.given|truthy|string">
+              <p class="err" id="rep-kana-given-err" data-wcs="textContent: errs.rep.kana.given"></p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="rep-birth">生年月日 <span class="req">必須</span></label>
+            <midori-date id="rep-birth" name="rep-birth" required aria-describedby="rep-birth-err" data-path="rep.birth"
+              data-wcs="value: rep.birth; attr.aria-invalid: errs.rep.birth|truthy|string"></midori-date>
+            <p class="err" id="rep-birth-err" data-wcs="textContent: errs.rep.birth"></p>
+          </div>
+          <div class="field">
+            <label for="rep-postal">郵便番号 <span class="req">必須</span></label>
+            <span class="prefix" aria-hidden="true">〒</span>
+            <input id="rep-postal" name="postal-code" class="short" inputmode="numeric" autocomplete="postal-code"
+              aria-describedby="rep-postal-hint rep-postal-err" data-path="rep.postal" data-role="format" data-format="postal"
+              data-wcs="value#ro: repPostalText; attr.aria-invalid: errs.rep.postal|truthy|string">
+            <p class="hint" id="rep-postal-hint">7桁を入力すると住所を自動で入力します。
+              <span role="status" data-wcs="textContent: postalStatusText"></span></p>
+            <p class="err" id="rep-postal-err" data-wcs="textContent: errs.rep.postal"></p>
+          </div>
+          <div class="field">
+            <label for="rep-pref">都道府県 <span class="req">必須</span></label>
+            <select id="rep-pref" name="address-level1" autocomplete="address-level1" aria-describedby="rep-pref-err rep-pref-hint"
+              data-path="rep.prefecture" data-wcs="value: rep.prefecture; attr.aria-invalid: errs.rep.prefecture|truthy|string">
+              <option value="">選択してください</option>
+              <template data-wcs="for: prefectures"><option data-wcs="value: .code; textContent: .name; selected: .selected"></option></template>
+            </select>
+            <p class="hint" id="rep-pref-hint">
+              <span data-wcs="hidden: prefFetch.loading|not">都道府県の一覧を読み込んでいます…</span>
+              <span data-wcs="hidden: prefLoadFailed|not">都道府県の一覧を読み込めませんでした。
+                <button type="button" class="link" data-wcs="onclick: retryPrefectures">もう一度読み込む</button></span>
+            </p>
+            <p class="err" id="rep-pref-err" data-wcs="textContent: errs.rep.prefecture"></p>
+          </div>
+          <div class="field">
+            <label for="rep-city">市区町村 <span class="req">必須</span></label>
+            <input id="rep-city" name="address-level2" autocomplete="address-level2" aria-describedby="rep-city-err"
+              data-path="rep.city" data-wcs="value: rep.city; attr.aria-invalid: errs.rep.city|truthy|string">
+            <p class="err" id="rep-city-err" data-wcs="textContent: errs.rep.city"></p>
+          </div>
+          <div class="field">
+            <label for="rep-street">町域・番地 <span class="req">必須</span></label>
+            <input id="rep-street" name="address-line1" autocomplete="address-line1" aria-describedby="rep-street-err"
+              data-path="rep.street" data-wcs="value: rep.street; attr.aria-invalid: errs.rep.street|truthy|string">
+            <p class="err" id="rep-street-err" data-wcs="textContent: errs.rep.street"></p>
+          </div>
+          <div class="field">
+            <label for="rep-building">建物名・部屋番号 <span class="opt">任意</span></label>
+            <input id="rep-building" name="address-line2" autocomplete="address-line2" data-path="rep.building"
+              data-wcs="value: rep.building">
+          </div>
+          <div class="field">
+            <label for="rep-phone">電話番号 <span class="req">必須</span></label>
+            <input id="rep-phone" name="tel" type="tel" class="medium" autocomplete="tel" aria-describedby="rep-phone-err"
+              data-path="rep.phone" data-role="format" data-format="phone"
+              data-wcs="value#ro: repPhoneText; attr.aria-invalid: errs.rep.phone|truthy|string">
+            <p class="err" id="rep-phone-err" data-wcs="textContent: errs.rep.phone"></p>
+          </div>
+          <div class="field">
+            <label for="rep-email">メール <span class="req">必須</span></label>
+            <input id="rep-email" name="email" type="email" autocomplete="email" aria-describedby="rep-email-err"
+              data-path="rep.email" data-wcs="value: rep.email; attr.aria-invalid: errs.rep.email|truthy|string">
+            <p class="err" id="rep-email-err" data-wcs="textContent: errs.rep.email"></p>
+          </div>
+          <div class="field">
+            <label for="rep-email2">メール（確認） <span class="req">必須</span></label>
+            <input id="rep-email2" name="email-confirm" type="email" autocomplete="email" aria-describedby="rep-email2-err"
+              data-path="rep.emailConfirm" data-wcs="value: rep.emailConfirm; attr.aria-invalid: errs.rep.emailConfirm|truthy|string">
+            <p class="err" id="rep-email2-err" data-wcs="textContent: errs.rep.emailConfirm"></p>
+          </div>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" class="primary" id="next" data-wcs="textContent: nextLabel; disabled: sending"></button>
+        </div>
+      </form>
+    </section>
+  </wcs-route>
+
+  <!-- ===================== 2. 走者 ===================== -->
+  <wcs-route path="/entry/runners" name="runners" guard="/entry/team">
+    <wcs-guard-handler><script type="module">
+      export default async function () {
+        const { guardStep } = await import(new URL("/lib/guards.js", location.href).href);
+        return guardStep("runners");
+      }
+    </script></wcs-guard-handler>
+    <wcs-head><title>2. 走者 | みどり市民駅伝 申し込み</title></wcs-head>
+    <section class="step" aria-labelledby="h-runners">
+      <h2 id="h-runners" tabindex="-1">2. 走者</h2>
+      <p>上から順に 1区〜5区を走ります。6人目・7人目は補欠です（1人 ¥1,000）。行の中で Alt＋↑／Alt＋↓ を押すと、その走者を上下に移動できます。</p>
+      <p class="general-err" role="alert" data-wcs="textContent: generalErrors"></p>
+      <form id="form-runners" novalidate
+        data-wcs="onsubmit#prevent: next; oninput: onInput; onchange: onChange; onkeydown: onKeydown; oncompositionend: onCompositionEnd; onfocusout: onFocusOut">
+        <fieldset class="bare" data-wcs="disabled: sending">
+          <div class="list-tools">
+            <span data-wcs="textContent: runnerCountText"></span>
+            <button type="button" id="sort-runners" data-wcs="onclick: sortRunners">タイム順に並べ替え</button>
+          </div>
+          <p class="err" id="runners-err" data-wcs="textContent: errs.runners"></p>
+          <ol class="runners">
+            <template data-wcs="for: runners">
+              <li class="runner" data-wcs="attr.data-runner-id: .id; class.reserve: .isReserve">
+                <fieldset class="runner-box" data-wcs="attr.aria-labelledby: .ids.legend">
+                  <legend data-wcs="attr.id: .ids.legend"><span class="leg">{{ .leg }}</span> <span class="who">{{ .name }}</span></legend>
+                  <div class="row2">
+                    <div class="field">
+                      <label data-wcs="attr.for: .ids.name">氏名 <span class="req">必須</span></label>
+                      <input class="runner-name" autocomplete="off" data-path="runners.*.name" data-role="name"
+                        data-kana-path="runners.*.kana" data-kana-touched-path="runners.*.kanaTouched"
+                        data-wcs="attr.id: .ids.name; attr.aria-describedby: .ids.nameErr; value: .name; attr.aria-invalid: .err.name|truthy|string">
+                      <p class="err" data-wcs="attr.id: .ids.nameErr; textContent: .err.name"></p>
+                    </div>
+                    <div class="field">
+                      <label data-wcs="attr.for: .ids.kana">フリガナ <span class="req">必須</span></label>
+                      <input class="runner-kana" autocomplete="off" data-path="runners.*.kana" data-role="kana" data-touched-path="runners.*.kanaTouched"
+                        data-wcs="attr.id: .ids.kana; attr.aria-describedby: .ids.kanaErr; value#ro: .kana; attr.aria-invalid: .err.kana|truthy|string">
+                      <p class="err" data-wcs="attr.id: .ids.kanaErr; textContent: .err.kana"></p>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label data-wcs="attr.for: .ids.birth">生年月日 <span class="req">必須</span></label>
+                    <midori-date class="runner-birth" required data-path="runners.*.birth"
+                      data-wcs="attr.id: .ids.birth; attr.aria-describedby: .ids.birthErr; value: .birth; attr.aria-invalid: .err.birth|truthy|string"></midori-date>
+                    <p class="err" data-wcs="attr.id: .ids.birthErr; textContent: .err.birth"></p>
+                  </div>
+                  <div class="field">
+                    <div class="label" data-wcs="attr.id: .ids.sex">性別 <span class="req">必須</span></div>
+                    <div class="choices" role="radiogroup" data-path="runners.*.sex"
+                      data-wcs="attr.aria-labelledby: .ids.sex; attr.aria-describedby: .ids.sexErr; attr.aria-invalid: .err.sex|truthy|string">
+                      <label><input type="radio" value="male" data-wcs="attr.name: .ids.sex; radio: .sex"> 男</label>
+                      <label><input type="radio" value="female" data-wcs="attr.name: .ids.sex; radio: .sex"> 女</label>
+                      <label><input type="radio" value="none" data-wcs="attr.name: .ids.sex; radio: .sex"> 回答しない</label>
+                    </div>
+                    <p class="err" data-wcs="attr.id: .ids.sexErr; textContent: .err.sex"></p>
+                  </div>
+                  <div class="row2">
+                    <div class="field">
+                      <label data-wcs="attr.for: .ids.best">5 km のベストタイム（分:秒） <span class="req">必須</span></label>
+                      <input class="runner-best short" inputmode="numeric" autocomplete="off" placeholder="23:45"
+                        data-path="runners.*.best" data-role="format" data-format="time"
+                        data-wcs="attr.id: .ids.best; attr.aria-describedby: .ids.bestErr; value#ro: .bestText; attr.aria-invalid: .err.best|truthy|string">
+                      <p class="err" data-wcs="attr.id: .ids.bestErr; textContent: .err.best"></p>
+                    </div>
+                    <div class="field">
+                      <label data-wcs="attr.for: .ids.shirt">T シャツ <span class="req">必須</span></label>
+                      <select class="runner-shirt" data-path="runners.*.shirt"
+                        data-wcs="attr.id: .ids.shirt; attr.aria-describedby: .ids.shirtErr; value: .shirt; attr.aria-invalid: .err.shirt|truthy|string">
+                        <option value="">選択してください</option><option>S</option><option>M</option><option>L</option><option>XL</option>
+                      </select>
+                      <p class="err" data-wcs="attr.id: .ids.shirtErr; textContent: .err.shirt"></p>
+                    </div>
+                  </div>
+                  <details class="more" data-wcs="open: .detailsOpen; ontoggle: onDetailsToggle">
+                    <summary>緊急連絡先・持病など</summary>
+                    <div class="field">
+                      <label data-wcs="attr.for: .ids.emergencyPhone">緊急連絡先の電話番号 <span class="opt">任意</span></label>
+                      <input class="runner-emergency medium" type="tel" autocomplete="off" data-path="runners.*.emergencyPhone" data-role="format" data-format="phone"
+                        data-wcs="attr.id: .ids.emergencyPhone; attr.aria-describedby: .ids.emergencyErr; value#ro: .emergencyText; attr.aria-invalid: .err.emergencyPhone|truthy|string">
+                      <p class="err" data-wcs="attr.id: .ids.emergencyErr; textContent: .err.emergencyPhone"></p>
+                    </div>
+                    <div class="field">
+                      <label data-wcs="attr.for: .ids.notes">持病・連絡事項 <span class="opt">任意</span></label>
+                      <textarea class="runner-notes" rows="3" data-path="runners.*.notes"
+                        data-wcs="attr.id: .ids.notes; attr.aria-describedby: .ids.notesErr; value: .notes; attr.aria-invalid: .err.notes|truthy|string"></textarea>
+                      <p class="err" data-wcs="attr.id: .ids.notesErr; textContent: .err.notes"></p>
+                    </div>
+                  </details>
+                  <template data-wcs="if: .needsConsent">
+                    <div class="consent field" data-wcs="attr.aria-invalid: .err.consentId|truthy|string; attr.aria-describedby: .ids.consentErr">
+                      <p class="label">保護者の同意書 <span class="req">必須</span>（大会当日に18歳未満のため。PDF・JPEG・PNG、5MBまで）</p>
+                      <template data-wcs="if: .hasConsent">
+                        <p class="file">提出済み：<span class="consent-name">{{ .consentName }}</span>
+                          <button type="button" class="remove-consent" data-wcs="onclick: removeConsent">ファイルを削除</button></p>
+                      </template>
+                      <template data-wcs="else:">
+                        <template data-wcs="if: .up.loading">
+                          <p class="file"><progress max="100" data-wcs="value: .up.progress"></progress> アップロードしています…</p>
+                        </template>
+                        <template data-wcs="else:">
+                          <label class="file-pick">同意書のファイルを選ぶ
+                            <input type="file" class="consent-file" accept="application/pdf,image/jpeg,image/png"
+                              data-wcs="attr.id: .ids.consent; onchange: onConsentChosen"></label>
+                          <template data-wcs="if: .up.canRetry">
+                            <button type="button" class="retry-upload" data-wcs="onclick: retryUpload">もう一度アップロードする</button>
+                          </template>
+                        </template>
+                      </template>
+                      <p class="err" data-wcs="attr.id: .ids.consentErr; textContent: .err.consentId"></p>
+                      <p class="err" role="alert" data-wcs="textContent: .up.error"></p>
+                    </div>
+                  </template>
+                  <div class="row-tools">
+                    <button type="button" class="move-up" aria-label="上へ移動" data-wcs="onclick: moveUp; disabled: .isFirst">↑</button>
+                    <button type="button" class="move-down" aria-label="下へ移動" data-wcs="onclick: moveDown; disabled: .isLast">↓</button>
+                    <button type="button" class="copy-rep" data-wcs="onclick: copyRep">代表者をコピー</button>
+                    <button type="button" class="remove-runner" data-wcs="onclick: removeRunner">削除</button>
+                  </div>
+                </fieldset>
+              </li>
+            </template>
+          </ol>
+          <p><button type="button" id="add-runner" data-wcs="onclick: addRunner; disabled: canAddRunner|not">追加</button></p>
+        </fieldset>
+        <div class="actions">
+          <wcs-link to="/entry/team" class="back">戻る</wcs-link>
+          <button type="submit" class="primary" id="next" data-wcs="textContent: nextLabel; disabled: sending"></button>
+        </div>
+      </form>
+    </section>
+  </wcs-route>
+
+  <!-- ===================== 3. オプションと支払い ===================== -->
+  <wcs-route path="/entry/options" name="options" guard="/entry/team">
+    <wcs-guard-handler><script type="module">
+      export default async function () {
+        const { guardStep } = await import(new URL("/lib/guards.js", location.href).href);
+        return guardStep("options");
+      }
+    </script></wcs-guard-handler>
+    <wcs-head><title>3. オプションと支払い | みどり市民駅伝 申し込み</title></wcs-head>
+    <section class="step" aria-labelledby="h-options">
+      <h2 id="h-options" tabindex="-1">3. オプションと支払い</h2>
+      <p class="general-err" role="alert" data-wcs="textContent: generalErrors"></p>
+      <form id="form-options" novalidate
+        data-wcs="onsubmit#prevent: next; oninput: onInput; onchange: onChange; onkeydown: onKeydown; oncompositionend: onCompositionEnd; onfocusout: onFocusOut">
+        <fieldset class="bare" data-wcs="disabled: sending">
+          <div class="field">
+            <label for="opt-parking">駐車券（1枚 ¥500、0〜3枚）</label>
+            <midori-stepper id="opt-parking" name="parking" min="0" max="3" aria-describedby="opt-parking-err" data-path="options.parking"
+              data-wcs="value: options.parking; attr.aria-invalid: errs.options.parking|truthy|string"></midori-stepper>
+            <p class="err" id="opt-parking-err" data-wcs="textContent: errs.options.parking"></p>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="opt-lunch-ja">弁当（和）（1個 ¥800、0〜20個）</label>
+              <midori-stepper id="opt-lunch-ja" name="lunch-ja" min="0" max="20" aria-describedby="opt-lunch-ja-err" data-path="options.lunchJa"
+                data-wcs="value: options.lunchJa; attr.aria-invalid: errs.options.lunchJa|truthy|string"></midori-stepper>
+              <p class="err" id="opt-lunch-ja-err" data-wcs="textContent: errs.options.lunchJa"></p>
+            </div>
+            <div class="field">
+              <label for="opt-lunch-w">弁当（洋）（1個 ¥800、0〜20個）</label>
+              <midori-stepper id="opt-lunch-w" name="lunch-western" min="0" max="20" aria-describedby="opt-lunch-w-err" data-path="options.lunchWestern"
+                data-wcs="value: options.lunchWestern; attr.aria-invalid: errs.options.lunchWestern|truthy|string"></midori-stepper>
+              <p class="err" id="opt-lunch-w-err" data-wcs="textContent: errs.options.lunchWestern"></p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="opt-message">連絡事項 <span class="opt">任意・400文字まで</span></label>
+            <textarea id="opt-message" rows="5" aria-describedby="opt-message-count opt-message-err" data-path="options.message"
+              data-wcs="value: options.message; attr.aria-invalid: errs.options.message|truthy|string"></textarea>
+            <p class="hint" id="opt-message-count" data-wcs="textContent: messageCount; class.over: messageOver"></p>
+            <p class="err" id="opt-message-err" data-wcs="textContent: errs.options.message"></p>
+          </div>
+          <div class="field">
+            <label for="opt-receipt">領収書の宛名 <span class="req">必須</span></label>
+            <input id="opt-receipt" autocomplete="off" aria-describedby="opt-receipt-hint opt-receipt-err"
+              data-path="receiptNameField" data-err="options.receiptName"
+              data-wcs="value: receiptNameField; attr.aria-invalid: errs.options.receiptName|truthy|string">
+            <p class="hint" id="opt-receipt-hint">変更しなければチーム名になります。</p>
+            <p class="err" id="opt-receipt-err" data-wcs="textContent: errs.options.receiptName"></p>
+          </div>
+          <div class="field">
+            <div id="payment-label" class="label">支払い方法 <span class="req">必須</span></div>
+            <div class="choices" role="radiogroup" aria-labelledby="payment-label" aria-describedby="payment-err" data-path="options.payment"
+              data-wcs="attr.aria-invalid: errs.options.payment|truthy|string">
+              <label><input type="radio" name="payment" value="transfer" data-wcs="radio: options.payment"> 銀行振込</label>
+              <label><input type="radio" name="payment" value="konbini" data-wcs="radio: options.payment"> コンビニ払い</label>
+              <label><input type="radio" name="payment" value="cash" data-wcs="radio: options.payment"> 当日現金</label>
+            </div>
+            <p class="err" id="payment-err" data-wcs="textContent: errs.options.payment"></p>
+          </div>
+          <template data-wcs="if: isTransfer">
+            <div class="field">
+              <label for="opt-transfer">振込名義（全角カタカナ） <span class="req">必須</span></label>
+              <input id="opt-transfer" autocomplete="off" aria-describedby="opt-transfer-err" data-path="options.transferName" data-role="kana"
+                data-wcs="value#ro: options.transferName; attr.aria-invalid: errs.options.transferName|truthy|string">
+              <p class="err" id="opt-transfer-err" data-wcs="textContent: errs.options.transferName"></p>
+            </div>
+          </template>
+          <template data-wcs="if: isKonbini">
+            <div class="field">
+              <label for="opt-store">コンビニ <span class="req">必須</span></label>
+              <select id="opt-store" aria-describedby="opt-store-err" data-path="options.store"
+                data-wcs="value: options.store; attr.aria-invalid: errs.options.store|truthy|string">
+                <option value="">選択してください</option>
+                <template data-wcs="for: stores"><option data-wcs="value: .name; textContent: .name"></option></template>
+              </select>
+              <p class="err" id="opt-store-err" data-wcs="textContent: errs.options.store"></p>
+            </div>
+          </template>
+        </fieldset>
+        <div class="actions">
+          <wcs-link to="/entry/runners" class="back">戻る</wcs-link>
+          <button type="submit" class="primary" id="next" data-wcs="textContent: nextLabel; disabled: sending"></button>
+        </div>
+      </form>
+    </section>
+  </wcs-route>
+
+  <!-- ===================== 4. 確認 ===================== -->
+  <wcs-route path="/entry/confirm" name="confirm" guard="/entry/team">
+    <wcs-guard-handler><script type="module">
+      export default async function () {
+        const { guardStep } = await import(new URL("/lib/guards.js", location.href).href);
+        return guardStep("confirm");
+      }
+    </script></wcs-guard-handler>
+    <wcs-head><title>4. 確認 | みどり市民駅伝 申し込み</title></wcs-head>
+    <section class="step confirm" aria-labelledby="h-confirm">
+      <h2 id="h-confirm" tabindex="-1">4. 確認</h2>
+      <p>内容を確認して「申し込む」を押してください。</p>
+      <section class="summary" aria-labelledby="c-team">
+        <h3 id="c-team">チームと代表者 <wcs-link to="/entry/team?from=confirm" class="edit">修正する</wcs-link></h3>
+        <dl>
+          <dt>チーム名</dt><dd id="c-team-name">{{ confirmView.teamName }}（{{ confirmView.teamKana }}）</dd>
+          <dt>部門</dt><dd>{{ confirmView.division }}</dd>
+          <dt>代表者</dt><dd>{{ confirmView.repName }}（{{ confirmView.repKana }}）</dd>
+          <dt>生年月日</dt><dd id="c-rep-birth">{{ confirmView.repBirth }}</dd>
+          <dt>住所</dt><dd>{{ confirmView.postal }} {{ confirmView.address }}</dd>
+          <dt>電話番号</dt><dd id="c-rep-phone">{{ confirmView.phone }}</dd>
+          <dt>メール</dt><dd>{{ confirmView.email }}</dd>
+        </dl>
+      </section>
+      <section class="summary" aria-labelledby="c-runners">
+        <h3 id="c-runners">走者 <wcs-link to="/entry/runners?from=confirm" class="edit">修正する</wcs-link></h3>
+        <table>
+          <thead><tr><th scope="col">区間</th><th scope="col">氏名</th><th scope="col">生年月日</th><th scope="col">性別</th><th scope="col">ベスト</th><th scope="col">T シャツ</th><th scope="col">緊急連絡先</th><th scope="col">同意書</th></tr></thead>
+          <tbody>
+            <template data-wcs="for: runnersView">
+              <tr><th scope="row">{{ .leg }}</th><td>{{ .name }}<br><small>{{ .kana }}</small></td><td>{{ .birth }}（{{ .age }}歳）</td>
+                <td>{{ .sex }}</td><td>{{ .best }}</td><td>{{ .shirt }}</td><td>{{ .emergencyPhone }}<br><small>{{ .notes }}</small></td><td>{{ .consent }}</td></tr>
+            </template>
+          </tbody>
+        </table>
+      </section>
+      <section class="summary" aria-labelledby="c-options">
+        <h3 id="c-options">オプションと支払い <wcs-link to="/entry/options?from=confirm" class="edit">修正する</wcs-link></h3>
+        <dl>
+          <dt>駐車券</dt><dd>{{ confirmView.parking }}</dd>
+          <dt>弁当（和）</dt><dd>{{ confirmView.lunchJa }}</dd>
+          <dt>弁当（洋）</dt><dd>{{ confirmView.lunchWestern }}</dd>
+          <dt>連絡事項</dt><dd class="pre">{{ confirmView.message }}</dd>
+          <dt>領収書の宛名</dt><dd>{{ confirmView.receiptName }}</dd>
+          <dt>支払い方法</dt><dd>{{ confirmView.payment }}</dd>
+          <dt>合計金額</dt><dd id="c-total"><strong>{{ confirmView.total }}</strong>（{{ confirmView.detail }}）</dd>
+        </dl>
+      </section>
+      <form id="form-confirm" novalidate data-wcs="onsubmit#prevent: submit">
+        <div class="field">
+          <label class="check"><input type="checkbox" id="agree" aria-describedby="agree-err" data-wcs="checked: agreed; disabled: sending; attr.aria-invalid: agreeError|truthy|string"> 大会規約に同意する</label>
+          <p class="err" id="agree-err" data-wcs="textContent: agreeError"></p>
+        </div>
+        <p class="send-err" role="alert" data-wcs="textContent: sendMessage"></p>
+        <div class="actions">
+          <wcs-link to="/entry/options" class="back">戻る</wcs-link>
+          <button type="submit" class="primary" id="submit" data-wcs="disabled: sending; attr.aria-busy: sending|truthy|string">申し込む</button>
+          <span class="sending" data-wcs="hidden: sending|not">送信しています…しばらくお待ちください。</span>
+        </div>
+      </form>
+    </section>
+  </wcs-route>
+
+  <!-- ===================== 5. 完了 ===================== -->
+  <wcs-route path="/entry/done" name="done" guard="/entry/team">
+    <wcs-guard-handler><script type="module">
+      export default async function () {
+        const { guardStep } = await import(new URL("/lib/guards.js", location.href).href);
+        return guardStep("done");
+      }
+    </script></wcs-guard-handler>
+    <wcs-head><title>5. 完了 | みどり市民駅伝 申し込み</title></wcs-head>
+    <section class="step done" aria-labelledby="h-done">
+      <h2 id="h-done" tabindex="-1">5. 申し込みを受け付けました</h2>
+      <p>受付番号 <strong class="receipt-id" id="receipt-id" data-wcs="textContent: receipt.id"></strong></p>
+      <p>合計金額 <strong data-wcs="textContent: receiptTotal"></strong></p>
+      <p>受付番号は控えておいてください。確認のメールをお送りします。</p>
+      <p><wcs-link to="/entry/team">別のチームを申し込む</wcs-link></p>
+    </section>
+  </wcs-route>
+
+  <wcs-route fallback name="notfound">
+    <wcs-head><title>ページが見つかりません | みどり市民駅伝 申し込み</title></wcs-head>
+    <section class="step"><h2 tabindex="-1">ページが見つかりません</h2><p><wcs-link to="/entry/team">申し込みのはじめへ</wcs-link></p></section>
+  </wcs-route>
+</template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+</main>
+</body>
+</html>
