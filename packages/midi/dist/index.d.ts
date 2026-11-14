@@ -357,6 +357,7 @@ declare class WcsMidi extends HTMLElement {
     private _options;
     private _scheduleRequest;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
 }

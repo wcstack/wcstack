@@ -401,6 +401,7 @@ declare class WcsCamera extends HTMLElement {
     private _onActiveChanged;
     private _scheduleAcquire;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
     private _onVisibilityChange;
@@ -569,6 +570,7 @@ declare class WcsRecorder extends HTMLElement {
     private _numberAttr;
     private _options;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

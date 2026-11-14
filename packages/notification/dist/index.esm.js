@@ -71,7 +71,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/notification","version":"4.22.0"};
+var pkg = {"name":"@wcstack/notification","version":"4.23.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -1150,6 +1150,10 @@ class WcsNotify extends HTMLElement {
         // for SSR.
         this._connectedCallbackPromise = this._core.observe(this.mode);
     }
+    // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+    // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+    // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+    connectedMoveCallback() { }
     disconnectedCallback() {
         // Detach subscriptions. Open notifications are left on screen (see Core docs);
         // call close()/closeAll() to dismiss.

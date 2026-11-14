@@ -263,6 +263,7 @@ declare class WcsUpload extends HTMLElement {
     private _warnNotReady;
     attributeChangedCallback(_name: string, _oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

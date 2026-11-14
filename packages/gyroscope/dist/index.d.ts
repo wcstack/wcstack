@@ -263,6 +263,7 @@ declare class WcsGyroscope extends HTMLElement {
     start(): void;
     stop(): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

@@ -187,6 +187,7 @@ declare class Storage extends HTMLElement {
     remove(): void;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
     private _scheduleLoad;
 }

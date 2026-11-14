@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/permission","version":"4.22.0"};
+var pkg = {"name":"@wcstack/permission","version":"4.23.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -593,6 +593,10 @@ class WcsPermission extends HTMLElement {
         });
         this._scheduleObserve();
     }
+    // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+    // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+    // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+    connectedMoveCallback() { }
     disconnectedCallback() {
         this._core.dispose();
         // 同じタスクの remove() → append() では 2 回目の connectedCallback が

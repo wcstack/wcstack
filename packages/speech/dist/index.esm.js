@@ -74,7 +74,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/speech","version":"4.22.0"};
+var pkg = {"name":"@wcstack/speech","version":"4.23.0"};
 
 /**
  * speechCapabilities.ts
@@ -1145,6 +1145,10 @@ class WcsSpeak extends HTMLElement {
         // reinitVoices() (no-op on the first connect — the constructor subscribed).
         this._connectedCallbackPromise = this._core.observe();
     }
+    // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+    // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+    // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+    connectedMoveCallback() { }
     disconnectedCallback() {
         // Detach event subscriptions and neutralize in-flight utterance callbacks.
         // Any utterance already speaking finishes naturally (SpeechSynthesis is a
@@ -1916,6 +1920,10 @@ class WcsListen extends HTMLElement {
         this._connectedCallbackPromise = this._core.observe();
         this._scheduleStart();
     }
+    // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+    // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+    // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+    connectedMoveCallback() { }
     disconnectedCallback() {
         this._core.dispose();
     }

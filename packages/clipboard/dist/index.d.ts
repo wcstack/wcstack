@@ -344,6 +344,7 @@ declare class WcsClipboard extends HTMLElement {
     stopMonitor(): void;
     connectedCallback(): void;
     private _scheduleMonitor;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

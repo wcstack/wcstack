@@ -120,7 +120,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 ## 入力の重いフォームに言うこと
 
-4.23（未リリース）から、継ぎ目アプリ ekiden-entry — 駅伝の申し込みウィザード。IME・オートフィル・行の中の入力・フォーム連携のカスタム要素と、入力の重いページ — から。そのページで lint は、仕込んだ誤り 21 件に何も言わず、読めない state について偽の warning を 91 件出していました:
+4.23 から、継ぎ目アプリ ekiden-entry — 駅伝の申し込みウィザード。IME・オートフィル・行の中の入力・フォーム連携のカスタム要素と、入力の重いページ — から。そのページで lint は、仕込んだ誤り 21 件に何も言わず、読めない state について偽の warning を 91 件出していました:
 
 - **値を読めないキーの下は「分からない」で、「存在しない」ではありません。** `const init = emptyEntry()` の `team: init.team`、`errs: emptyErrs()`、条件式、`[1, 2].map(…)`、`[newRunner()]` の行: そうしたキーの下のパスは検査せず、キーの上の `wcs/path-dynamic-unknown`（info）が 1 回だけそう言います — その下に束ねたパスの数（キーの `for:` の行の `.name` も数えます）と、検査させる方法（キーの JSDoc の `@type` か `stateSchema`）付きで。4.22 までは、そのパスが 1 件ずつ `wcs/binding-path-missing` の誤報で、本物の打ち間違いと同じ code でした。オブジェクトリテラルを束縛する `const` のメンバー（`team: DEFAULTS.team`。モジュールの中のものも import したものも）は読み、その下のパスを検査します。
 - **`wcs/radio-name-shared`**（warning） — `for:` の行の中の、`name` をリテラルで書いた、行の値を束ねたラジオ（`<input type="radio" name="sex" data-wcs="radio: .sex">`）。どの行のラジオも同じ name になるので、ブラウザは全部の行を 1 つのグループにします: ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違います。行ごとに違う name を束ねる（`attr.name: .<行のフィールド>`）か、name を外してください — `radio:` は name が無くても、同じパスに束ねたラジオを選択に合わせます。name を束ねてあるとき、行のものでないパス（`value: .id; radio: selectedId` — 行をまたぐ 1 つの選択）、行ごとに `<form>` があるときは報告しません。

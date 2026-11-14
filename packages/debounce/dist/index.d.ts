@@ -257,6 +257,7 @@ declare class Debounce extends HTMLElement {
     protected _defaultMaxWait(): number | undefined;
     protected _options(): DebounceOptions;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

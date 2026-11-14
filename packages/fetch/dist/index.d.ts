@@ -276,6 +276,9 @@ declare class Fetch extends HTMLElement {
     private _lastFetchedUrl;
     private _toldTriggerWithoutUrl;
     private _toldUndefinedHelper;
+    private _sentBody;
+    private _toldBodyGone;
+    private _auto;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -358,9 +361,19 @@ declare class Fetch extends HTMLElement {
      */
     private _warnUndefinedHelper;
     private _warnUnsafeAutoFetch;
+    /**
+     * `body` is a one-shot input: sent with one request, then gone. A request that changes data (POST, PUT,
+     * PATCH) going out with no body after one that carried a body is a second send whose body was not written
+     * again: a binding does not write a value equal to the one it wrote last, so the same JSON string on a
+     * retry never reaches the element, and the server got an empty request without a word
+     * (docs/seam-apps.md, ekiden-entry). Said once until a body is sent again. Not for the request a url
+     * change starts, which `[wcs/fetch-auto-unsafe]` reports.
+     */
+    private _warnBodyGone;
     fetch(): Promise<any>;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

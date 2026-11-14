@@ -207,6 +207,7 @@ declare class Timer extends HTMLElement {
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
     private _scheduleStart;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

@@ -254,6 +254,7 @@ declare class WcsBroadcast extends HTMLElement {
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     private _scheduleOpen;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

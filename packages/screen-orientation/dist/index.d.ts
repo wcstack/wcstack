@@ -213,6 +213,7 @@ declare class WcsScreenOrientation extends HTMLElement {
     lock(orientation: OrientationLockType): Promise<void>;
     unlock(): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

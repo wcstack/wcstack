@@ -284,6 +284,7 @@ declare class Raf extends HTMLElement {
     resume(): void;
     private _scheduleStart;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

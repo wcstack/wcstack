@@ -237,6 +237,7 @@ declare class WcsDefined extends HTMLElement {
     get connectedCallbackPromise(): Promise<void>;
     private _parseTags;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
     private _scheduleObserve;

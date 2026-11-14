@@ -70,7 +70,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/timer","version":"4.22.0"};
+var pkg = {"name":"@wcstack/timer","version":"4.23.0"};
 
 /**
  * Headless timer primitive. A thin, framework-agnostic wrapper around
@@ -776,6 +776,10 @@ class Timer extends HTMLElement {
             }
         });
     }
+    // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+    // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+    // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+    connectedMoveCallback() { }
     disconnectedCallback() {
         // dispose() stops the timer and bumps the generation so a callback already
         // queued cannot fire onto a disconnected element (§3.5 / §4.4).

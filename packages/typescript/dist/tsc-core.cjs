@@ -6019,7 +6019,7 @@ var config = {
   locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   enableContractAnalyzer: false
 };
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release", "forms"];
 var NATIVE_COMMANDS = {
   "*": ["focus", "blur", "click", "scrollIntoView", "showPopover", "hidePopover", "togglePopover"],
   "dialog": ["show", "showModal", "close", "requestClose"],

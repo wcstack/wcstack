@@ -297,6 +297,7 @@ declare class WcsWakeLock extends HTMLElement {
     release(): void;
     connectedCallback(): void;
     private _scheduleAcquire;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
 }

@@ -265,6 +265,7 @@ declare class WcsContacts extends HTMLElement {
     get connectedCallbackPromise(): Promise<void>;
     select(properties: ContactProperty[], options?: ContactsSelectOptions): Promise<ContactInfo[] | null>;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

@@ -27,7 +27,7 @@ var config = {
 };
 
 // src/load.ts
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release", "forms"];
 
 // src/native/commands.ts
 var NATIVE_COMMANDS = {

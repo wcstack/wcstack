@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.22.0";
+var version = "4.23.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -1639,10 +1639,19 @@ function describeImportFailure(error, firstError, cspBlocked) {
             `Guard scripts are inline-only and are evaluated through a blob: URL: ` +
             `give the page's nonce to the <script> that loads @wcstack/router, or allow blob: in script-src. See ${CSP_GUIDE}`;
     }
-    return `loadGuardHandler: failed to import guard script. ` +
+    const detail = `loadGuardHandler: failed to import guard script. ` +
         `data: URL error: ${error?.message ?? String(error)}` +
-        (firstError ? `. Blob URL error: ${firstError?.message ?? String(firstError)}` : '') +
-        `. If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
+        (firstError ? `. Blob URL error: ${firstError?.message ?? String(firstError)}` : '');
+    // 解決できない import（Chromium "Failed to resolve module specifier"、Firefox "… specifier …"、
+    // WebKit "does not resolve"）: blob: URL が基準なので相対パスは解決できない。CSP は関係しない
+    // （docs/seam-apps.md、ekiden-entry。state のインラインと同じ — community-hall）
+    if (/specifier|does not resolve/i.test(detail)) {
+        return `${detail}. A guard <script> is evaluated from a blob: URL, against which a relative or ` +
+            `root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL inside the guard function — ` +
+            `await import(new URL("/js/x.js", location.href).href) — or a name the page's import map gives ` +
+            `({ "imports": { "@app/": "/js/" } }).`;
+    }
+    return `${detail}. If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
 }
 async function importModule(script, route) {
     let scriptModule = null;
@@ -2560,10 +2569,14 @@ async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChang
                 placeRoute(route);
             }
             moved ||= again;
-            // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
-            // document に居るので、そこは binder に渡す必要も報告する必要も無い。
-            // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
-            if (previous.length > 0 && !again) {
+            // 挿入の後。出ているルートが無いところへ置く内容（初回描画、どのルートにも
+            // 当たらなかった後の最初のルート）は、binder がまだ居なければ渡さない: state の
+            // 最初の走査がそのとき document に居るものを拾うので、渡す必要も報告する必要も無い。
+            // binder がもう居るなら、その走査は済んでいるかもしれない — 時間のかかるガード
+            // （`await import()`）がページを読み込むナビゲーションをリダイレクトすると、行き先の
+            // 内容は走査の後に置かれ、何も束縛されなかった（docs/seam-apps.md、ekiden-entry）。
+            // `bind()` は冪等なので、走査に間に合っていた分を渡しても壊れない。
+            if (!again && (previous.length > 0 || getBinder() !== null)) {
                 bindRouteContent(route);
             }
         }

@@ -263,6 +263,7 @@ declare class WcsCredential extends HTMLElement {
     get(options?: CredentialGetOptions): Promise<Credential | null>;
     store(credential: StorableCredential): Promise<Credential | null>;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

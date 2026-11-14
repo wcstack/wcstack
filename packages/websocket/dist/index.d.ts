@@ -278,6 +278,7 @@ declare class WcsWebSocket extends HTMLElement {
     private _reopenOnShow;
     private _onPageHide;
     private _onPageShow;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

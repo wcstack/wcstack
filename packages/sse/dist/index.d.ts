@@ -284,6 +284,7 @@ declare class WcsSse extends HTMLElement {
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     private _scheduleConnect;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

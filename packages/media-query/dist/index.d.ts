@@ -178,6 +178,7 @@ declare class WcsMediaQuery extends HTMLElement {
     get connectedCallbackPromise(): Promise<void>;
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

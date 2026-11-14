@@ -66,7 +66,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/debounce","version":"4.22.0"};
+var pkg = {"name":"@wcstack/debounce","version":"4.23.0"};
 
 /**
  * Build the wc-bindable `properties` list for a debounce/throttle element, with
@@ -757,6 +757,10 @@ class Debounce extends HTMLElement {
         // observe() is a no-op resolving once ready (the engine is command-driven).
         this._connectedCallbackPromise = this._core.observe();
     }
+    // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+    // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+    // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+    connectedMoveCallback() { }
     disconnectedCallback() {
         // Drop any in-flight timer so a detached element leaks nothing, and bump the
         // Core generation so a surviving timer callback cannot settle (§3.5).

@@ -70,7 +70,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/raf","version":"4.22.0"};
+var pkg = {"name":"@wcstack/raf","version":"4.23.0"};
 
 /**
  * Headless requestAnimationFrame primitive — `TimerCore`'s sibling with the
@@ -980,6 +980,10 @@ class Raf extends HTMLElement {
         this._connectedCallbackPromise = this._core.observe();
         this._scheduleStart();
     }
+    // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+    // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+    // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+    connectedMoveCallback() { }
     disconnectedCallback() {
         // dispose() stops the loop, releases the visibility subscription and bumps
         // the generation so a frame already queued cannot fire onto a disconnected

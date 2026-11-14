@@ -238,6 +238,7 @@ declare class WcsEyedropper extends HTMLElement {
     open(): Promise<WcsEyedropperData | null>;
     abort(): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

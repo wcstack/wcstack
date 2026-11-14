@@ -203,6 +203,7 @@ declare class WcsPermission extends HTMLElement {
     private _descriptor;
     private _scheduleObserve;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

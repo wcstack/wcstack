@@ -259,6 +259,7 @@ declare class WcsShare extends HTMLElement {
      */
     canShare(data?: WcsShareData): boolean;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

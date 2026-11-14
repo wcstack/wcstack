@@ -256,6 +256,7 @@ declare class WcsAccelerometer extends HTMLElement {
     start(): void;
     stop(): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

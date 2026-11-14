@@ -341,6 +341,7 @@ declare class WcsWorker extends HTMLElement {
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     private _scheduleStart;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

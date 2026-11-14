@@ -432,6 +432,25 @@ var WcsDiagnosticCode = {
   // 置き、文と一緒に挿入される。スクリーンリーダーは読み上げない（読み上げるのは、ページにある間に文が変わったとき）。
   // 挿入で読み上げられる `role="alert"` は対象外。継ぎ目アプリ city-library（view transition ありの Chromium で 0/10）。warning。
   LiveRegionInserted: "wcs/live-region-inserted",
+  // --- フォームの入力（要素の束縛が、利用者の入力に対して何をするか。service/formInputValidator.ts） ---
+  // `for:` の行の中の、`name` をリテラルで書いたラジオ（`<input type="radio" name="sex" data-wcs="radio: .sex">`）。
+  // どの行のラジオも同じ name になるので、ブラウザは全部の行を 1 つのグループにする: ページ全体で 1 つしか選ばれた
+  // 状態にならず、表示は最初の描画から行ごとの値と食い違う。ランタイムは何も言わない（ブラウザの規則 — 継ぎ目アプリ
+  // ekiden-entry）。name を束ねてあるとき（`attr.name:`）・行のものでないパス（`radio: selectedId` — 行をまたぐ 1 つの
+  // グループが意図）・行ごとに `<form>` があるときは黙る。warning。
+  RadioNameShared: "wcs/radio-name-shared",
+  // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
+  // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
+  // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・
+  // `valueAsNumber:`・`#ro`・アクセサペア（setter が変換しうる）では黙る。warning。
+  NumberWrittenAsString: "wcs/number-written-as-string",
+  // 双方向の `value:` / `valueAsNumber:` に付けた出力フィルタ（`value: code|upper`・`value: price|locale`）。フィルタは
+  // 要素が書き戻すたび（既定では 1 打鍵ごと）に state の値を整形して欄へ書き直す: キャレットは末尾へ飛び、IME の変換は
+  // 途切れ、state が受け取るのは整形済みの文字（出力フィルタは書き戻しで元に戻らない）。確定した値を書き戻す束縛
+  // （`#onchange`・スライダー・`<select>`）は入力中に書き換わらないので、入力フィルタ（作者が用意した戻り道 —
+  // `value#onchange|number: price|toFixed(2)`）が無いときだけ報告する。要素の書いた文字をそのまま返すフィルタ
+  // （`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）と `#ro` では黙る。warning。
+  TwoWayOutputFilter: "wcs/two-way-output-filter",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
@@ -1997,7 +2016,7 @@ var config = {
   locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   enableContractAnalyzer: false
 };
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands", "release", "forms"];
 var NATIVE_COMMANDS = {
   "*": ["focus", "blur", "click", "scrollIntoView", "showPopover", "hidePopover", "togglePopover"],
   "dialog": ["show", "showModal", "close", "requestClose"],
@@ -2564,7 +2583,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.22.0";
+var version = "4.23.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -10017,7 +10036,8 @@ function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs, scope) {
   let candidate;
   let unread = null;
   if (followed === null) {
-    candidate = { path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() };
+    const opaque2 = prop.value !== void 0 && prop.declaredType === void 0 && isUnreadExpression(prop.value) ? { opaque: unreadExpression(prop.value, scope) } : {};
+    candidate = { path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), ...opaque2 };
     paths.push(candidate);
     unread = pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
   } else {
@@ -10131,6 +10151,45 @@ function isReadableLiteral(text3) {
   const v = text3.trim();
   return /^[[{"'`]/.test(v) || /^-?\.?\d/.test(v) || WORD_LITERALS.has(v) || /^(?:async\s+)?function\b/.test(v) || /^(?:async\s*)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(v);
 }
+function isUnreadExpression(value) {
+  const v = value.trim();
+  if (!isReadableLiteral(v)) return true;
+  const open = v[0];
+  if (open !== "[" && open !== "{") return false;
+  const scan = maskCommentsAndStrings(v);
+  const inner = extractDelimitedContent(v, scan, 0, open, open === "[" ? "]" : "}");
+  const rest = scan.slice(inner.length + 2).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, " ").trimStart();
+  return /^(?:\?\.|\.|\[|\()/.test(rest);
+}
+var MAX_UNREAD_TEXT = 40;
+function unreadExpression(value, scope) {
+  const flat = value.trim().replace(/^(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)+/, "").replace(/\s+/g, " ");
+  const name = flat.length <= MAX_UNREAD_TEXT ? flat : `${flat.slice(0, MAX_UNREAD_TEXT - 1)}\u2026`;
+  const root = /^(?:\.\.\.|(?:new|await)\s+)*([$A-Za-z_][$\w]*)/.exec(flat)?.[1];
+  const from = root === void 0 || scope === void 0 ? void 0 : scope.importOf(root);
+  return { name, ...from !== void 0 ? { from } : {} };
+}
+function firstArrayElement(value) {
+  const trimmed = value.trim();
+  const scan = maskCommentsAndStrings(trimmed).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => " ".repeat(c.length));
+  const element2 = (end) => {
+    const from = 1 + (scan.slice(1, end).length - scan.slice(1, end).trimStart().length);
+    return scan.slice(from, end).trim() === "" ? null : trimmed.slice(from, end).trim();
+  };
+  let depth = 0;
+  for (let i = 1; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      if (depth === 0) return element2(i);
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      return element2(i);
+    }
+  }
+  return null;
+}
 function followValue(prop, scope) {
   const type = parseTypeImport(prop.jsdocText);
   let current2;
@@ -10144,12 +10203,20 @@ function followValue(prop, scope) {
     if (prop.value === void 0) return null;
     const written = prop.value.trim();
     const text3 = unwrapFreeze(written);
-    if (!isFollowableName(text3, scope)) return text3 === written ? null : { value: { text: text3, scope } };
-    name = text3;
-    from = scope.importOf(text3);
-    const resolved = scope.resolveName(text3);
-    if (resolved === null) return { value: null, name, from };
-    current2 = resolved;
+    if (!isFollowableName(text3, scope)) {
+      const member = followMember(text3, scope);
+      if (member === void 0) return text3 === written ? null : { value: { text: text3, scope } };
+      name = text3;
+      from = member.from;
+      if (member.value === null) return { value: null, name, from };
+      current2 = member.value;
+    } else {
+      name = text3;
+      from = scope.importOf(text3);
+      const resolved = scope.resolveName(text3);
+      if (resolved === null) return { value: null, name, from };
+      current2 = resolved;
+    }
   }
   for (let hops = 0; hops < 8; hops++) {
     const inner = unwrapFreeze(current2.text);
@@ -10159,6 +10226,38 @@ function followValue(prop, scope) {
     current2 = next;
   }
   return { value: null, name, from };
+}
+function followMember(text3, scope) {
+  const m = /^([$A-Za-z_][$\w]*)((?:\s*\.\s*[$A-Za-z_][$\w]*)+)$/.exec(text3);
+  if (m === null || WORD_LITERALS.has(m[1])) return void 0;
+  const root = m[1];
+  let keys = m[2].split(".").map((key) => key.trim()).filter((key) => key !== "");
+  let current2;
+  if (scope.isNamespaceMember(`${root}.${keys[0]}`)) {
+    current2 = scope.resolveName(`${root}.${keys[0]}`);
+    keys = keys.slice(1);
+  } else {
+    current2 = scope.resolveName(root);
+    if (current2 === null) return void 0;
+  }
+  const from = scope.importOf(root);
+  const unread = { value: null, ...from !== void 0 ? { from } : {} };
+  for (const key of keys) {
+    let literal2 = current2;
+    for (let hops = 0; literal2 !== null && hops < MAX_SPREAD_HOPS; hops++) {
+      const inner = unwrapFreeze(literal2.text);
+      if (isObjectLiteral(inner)) {
+        literal2 = { text: inner, scope: literal2.scope };
+        break;
+      }
+      literal2 = isFollowableName(inner, literal2.scope) ? literal2.scope.resolveName(inner) : null;
+    }
+    if (literal2 === null || !isObjectLiteral(literal2.text)) return unread;
+    const found = objectLiteralKeys(extractObjectContent(literal2.text), literal2.scope, true).keys.find((k) => k.prop.name === key);
+    if (found === void 0 || found.prop.value === void 0) return unread;
+    current2 = { text: found.prop.value, scope: found.scope ?? literal2.scope };
+  }
+  return { value: current2, ...from !== void 0 ? { from } : {} };
 }
 function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
   const shape = jsDocShape(type, typedefs);
@@ -10187,7 +10286,11 @@ function pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope) {
     paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return null;
     const first = firstRowObjectContent(prop.value);
-    if (first === null) return null;
+    if (first === null) {
+      const element2 = prop.declaredType === void 0 ? firstArrayElement(prop.value) : null;
+      if (element2 !== null && !isReadableLiteral(element2)) row.opaque = unreadExpression(element2, scope);
+      return null;
+    }
     const { keys, unread } = objectLiteralKeys(first, scope, false);
     for (const key of keys) {
       pushDataPropertyPathsAt(`${path}.*.${key.prop.name}`, key.prop, paths, depth + 1, typedefs, key.scope);
@@ -11960,6 +12063,11 @@ var ja = {
   getterUntrackedReadBound: (root, sp, binding, tag, written) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u304C\u3001<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001getter \u306F\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
+  attrBooleanPresence: (a, p, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001false \u306E\u3068\u304D ${a}="false" \u306B\u306A\u308A\u307E\u3059\u3002\u8AD6\u7406\u5C5E\u6027\u306F\u5024\u306B\u95A2\u4FC2\u306A\u304F\u3001\u5728\u308B\u3060\u3051\u3067\u52B9\u304D\u307E\u3059: ${a}="false" \u3067\u3082 ${a} \u306E\u307E\u307E\u3067\u3059\uFF08\u5C5E\u6027\u3092\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: ${p}: ${rhs}`,
+  attrBooleanText: (a, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001\u5C5E\u6027\u306F "true" \u304B "false" \u306B\u306A\u308A\u3001\u5916\u308C\u308B\u3053\u3068\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u5C5E\u6027\u306E\u6709\u7121\u3092\u898B\u308B\u5074\uFF08CSS \u306E [${a}]\u30FBhasAttribute()\uFF09\u306B\u306F\u3001\u3069\u3061\u3089\u3067\u3082\u5728\u308A\u307E\u3059\u3002false \u306E\u9593\u306F\u5916\u3059\u306A\u3089 attr.${a}: ${rhs}|defaults(null)\u3001\u6587\u5B57\u306E "true" / "false" \u304C\u610F\u56F3\u306A\u3089 attr.${a}: ${rhs}|string \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  radioNameShared: (name, binding) => `\u884C\u3054\u3068\u306E\u30E9\u30B8\u30AA\u304C\u3059\u3079\u3066 name="${name}" \u306B\u306A\u308B\u306E\u3067\u3001\u30D6\u30E9\u30A6\u30B6\u306F\u5168\u90E8\u306E\u884C\u306E\u30E9\u30B8\u30AA\u3092 1 \u3064\u306E\u30B0\u30EB\u30FC\u30D7\u306B\u3057\u307E\u3059\u3002\u30DA\u30FC\u30B8\u5168\u4F53\u3067 1 \u3064\u3057\u304B\u9078\u3070\u308C\u305F\u72B6\u614B\u306B\u306A\u3089\u305A\u3001\u8868\u793A\u306F\u6700\u521D\u306E\u63CF\u753B\u304B\u3089\u884C\u3054\u3068\u306E\u5024\u3068\u98DF\u3044\u9055\u3044\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${binding === "radio" ? "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u308B\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u304B\u3001name \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08radio: \u306F name \u304C\u7121\u304F\u3066\u3082\u3001\u540C\u3058\u30D1\u30B9\u306B\u675F\u306D\u305F\u30E9\u30B8\u30AA\u3092\u9078\u629E\u306B\u5408\u308F\u305B\u307E\u3059\uFF09" : "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u3002\u884C\u3092\u307E\u305F\u3044\u3067 1 \u3064\u3092\u9078\u3070\u305B\u308B\u306A\u3089\u3001\u5168\u90E8\u3092 1 \u3064\u306E\u30D1\u30B9\u306B\u675F\u306D\u307E\u3059\uFF08value: .<\u884C\u306E id>; radio: <\u30D1\u30B9>\uFF09"}`,
+  numberWrittenAsString: (path, left, asNumber) => `"${path}" \u306F state \u3067\u306F\u6570\u5024\u3067\u3059\u304C\u3001value: \u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8981\u7D20\u306E\u6301\u3064\u6587\u5B57\u5217\u3067\u3059\u30025 \u3068\u5165\u529B\u3057\u305F\u5F8C\u306E state \u306F "5" \u3067\u3001"5" + 1 \u306F "51" \u306B\u306A\u308A\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002\u66F8\u304D\u623B\u3059\u3068\u304D\u306B\u6570\u5024\u306B\u3057\u3066\u304F\u3060\u3055\u3044: ${asNumber ? `valueAsNumber: ${path}\u3001\u307E\u305F\u306F` : ""}\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF ${left}|number: ${path}\uFF08|int\u30FB|float \u3082\uFF09`,
+  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: \u306F\u53CC\u65B9\u5411\u3067 1 \u6253\u9375\u3054\u3068\u306B\u66F8\u304D\u623B\u3057\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u305D\u306E\u305F\u3073\u306B state \u306E\u5024\u3092\u6574\u5F62\u3057\u3066\u6B04\u3078\u66F8\u304D\u76F4\u3057\u307E\u3059\u3002\u5165\u529B\u4E2D\u306E\u6B04\u304C\u66F8\u304D\u63DB\u308F\u308A\uFF08\u30AD\u30E3\u30EC\u30C3\u30C8\u306F\u672B\u5C3E\u3078\u98DB\u3073\u3001IME \u306E\u5909\u63DB\u306F\u9014\u5207\u308C\u307E\u3059\uFF09\u3001state \u304C\u53D7\u3051\u53D6\u308B\u306E\u3082\u6B04\u306E\u6574\u5F62\u6E08\u307F\u306E\u6587\u5B57\u3067\u3059\uFF08\u51FA\u529B\u30D5\u30A3\u30EB\u30BF\u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\uFF09\u3002\u6574\u5F62\u3057\u305F\u6587\u5B57\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u6B04\u306E\u78BA\u5B9A\u3067\u66F8\u304D\u623B\u3057\u3066 setter \u3067\u6574\u5F62\u3059\u308B\uFF08${prop}#onchange:\uFF09\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09` : `${prop}: \u306F\u53CC\u65B9\u5411\u3067\u3059\u304C\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\u3002\u8981\u7D20\u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8868\u793A\u3057\u3066\u3044\u308B\u6574\u5F62\u6E08\u307F\u306E\u5024\u3067\u3001\u6B21\u306F\u305D\u306E\u5024\u306B\u30D5\u30A3\u30EB\u30BF\u304C\u639B\u304B\u308A\u307E\u3059\u3002\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF\u3067\u5143\u306B\u623B\u3059\uFF08${left}|<\u30D5\u30A3\u30EB\u30BF>: \u2026\uFF09\u3001\u6574\u5F62\u3057\u305F\u5024\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09`,
   filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
   filterRemoved: (n, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${c}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002"${c}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   substrRemoved: (rewrite) => `\u30D5\u30A3\u30EB\u30BF "substr" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002slice(start, start + length) \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 slice \u306E\u7B2C 2 \u5F15\u6570\u306F\u9577\u3055\u3067\u306F\u306A\u304F\u7D42\u308F\u308A\u306E\u4F4D\u7F6E\u3067\u3059${rewrite === null ? "" : `\uFF08\u3053\u3053\u3067\u306F ${rewrite}\uFF09`}`,
@@ -12197,6 +12305,11 @@ var en = {
   getterUntrackedReadBound: (root, sp, binding, tag, written) => `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
+  attrBooleanPresence: (a, p, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" \u2014 and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
+  attrBooleanText: (a, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence \u2014 [${a}] in CSS, hasAttribute() \u2014 finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
+  radioNameShared: (name, binding) => `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render \u2014 nothing says so. ${binding === "radio" ? "Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it" : "Bind a name that differs per row (attr.name: .<a row field>) \u2014 or, for one choice over all the rows, bind them all to one path: value: .<the row's id>; radio: <path>"}`,
+  numberWrittenAsString: (path, left, asNumber) => `"${path}" is a number in the state, but value: writes back what the element holds, a string: after the user enters 5 the state has "5", and "5" + 1 is "51" \u2014 nothing says so. Convert it on the way in: ${asNumber ? `valueAsNumber: ${path}, or ` : ""}an input filter on the left side, ${left}|number: ${path} (also |int, |float)`,
+  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types \u2014 the caret jumps to the end, an IME composition is cut \u2014 and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}` : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: \u2026), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") \u2014 write "${c}"`,
   substrRemoved: (rewrite) => `Filter "substr" was removed in 4.0 \u2014 write slice(start, start + length): slice takes the end index, not a length${rewrite === null ? "" : ` (here: ${rewrite})`}`,
@@ -12612,6 +12725,63 @@ function removedFilterMessage(name, args, msgs) {
   if (name === SUBSTR_FILTER) return msgs.substrRemoved(substrRewrite(args));
   const canonical = removedFilterReplacement(name);
   return canonical === null ? null : msgs.filterRemoved(name, canonical);
+}
+
+// src/service/attributeValues.ts
+var ARIA_TRUE_FALSE = /* @__PURE__ */ new Set([
+  "aria-atomic",
+  "aria-busy",
+  "aria-checked",
+  "aria-current",
+  "aria-disabled",
+  "aria-expanded",
+  "aria-grabbed",
+  "aria-haspopup",
+  "aria-hidden",
+  "aria-invalid",
+  "aria-modal",
+  "aria-multiline",
+  "aria-multiselectable",
+  "aria-pressed",
+  "aria-readonly",
+  "aria-required",
+  "aria-selected"
+]);
+var ENUMERATED_TRUE_FALSE = /* @__PURE__ */ new Set(["contenteditable", "draggable", "spellcheck", "writingsuggestions"]);
+var BOOLEAN_ATTRIBUTE_PROPERTY = {
+  allowfullscreen: "allowFullscreen",
+  async: "async",
+  autofocus: "autofocus",
+  autoplay: "autoplay",
+  checked: "checked",
+  controls: "controls",
+  default: "default",
+  defer: "defer",
+  disabled: "disabled",
+  formnovalidate: "formNoValidate",
+  hidden: "hidden",
+  inert: "inert",
+  ismap: "isMap",
+  loop: "loop",
+  multiple: "multiple",
+  muted: "muted",
+  nomodule: "noModule",
+  novalidate: "noValidate",
+  open: "open",
+  playsinline: "playsInline",
+  readonly: "readOnly",
+  required: "required",
+  reversed: "reversed",
+  selected: "selected"
+};
+function booleanAttributeText(name, tag) {
+  const attribute = name.toLowerCase();
+  if (ARIA_TRUE_FALSE.has(attribute) || ENUMERATED_TRUE_FALSE.has(attribute)) return { kind: "value" };
+  const native = tag !== void 0 && !tag.includes("-");
+  if (native && Object.hasOwn(BOOLEAN_ATTRIBUTE_PROPERTY, attribute)) {
+    return { kind: "presence", property: BOOLEAN_ATTRIBUTE_PROPERTY[attribute] };
+  }
+  return { kind: "text" };
 }
 
 // src/service/bindingValidator.ts
@@ -13044,7 +13214,19 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
           const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
             const typeReq = getExpectedType(parsed.property);
-            if (typeReq && resultType !== typeReq.expected) {
+            const attrBoolean = typeReq !== null && propNoMod.startsWith("attr.") && isBooleanType(resultType) ? booleanAttrMessage(propNoMod.slice("attr.".length), attr.tagName, binding, parsed, msgs) : void 0;
+            if (attrBoolean !== void 0) {
+              if (attrBoolean !== null) {
+                const pathStart = bindingStart + binding.indexOf(parsed.path);
+                diagnostics.push({
+                  code: WcsDiagnosticCode.BindingTypeExpectation,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: attrBoolean,
+                  severity: "warning"
+                });
+              }
+            } else if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               const schemaDefinite = typeReq.expected === "array" && parsed.filters.length === 0 && applicationSchema !== void 0 && scopedPaths.some((p) => p.path === typePath && p.fromSchema === true);
@@ -13125,7 +13307,14 @@ function findAllBindAttributes(html, attrName) {
       const valueEnd = html.indexOf(quote, valueStart);
       if (valueEnd === -1 || valueEnd > tag.end) continue;
       const inputType = tag.tagName === "input" ? extractAttribute(attrsText, "type") ?? void 0 : void 0;
-      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName, ...inputType !== void 0 ? { inputType } : {} });
+      attrs.push({
+        value: html.slice(valueStart, valueEnd),
+        valueStart,
+        tagName: tag.tagName,
+        ...inputType !== void 0 ? { inputType } : {},
+        attrsStart: tag.start,
+        attrsEnd: tag.end
+      });
       regex.lastIndex = valueEnd - tag.start;
     }
   }
@@ -13305,6 +13494,18 @@ function getExpectedType(property) {
     return { label: prop, expected: "string", severity: "warning" };
   }
   return null;
+}
+function isBooleanType(type) {
+  const parts = type.split("|");
+  return parts.includes("boolean") && parts.every((part) => part === "boolean" || part === "null");
+}
+function booleanAttrMessage(name, tag, binding, parsed, msgs) {
+  const last = parsed.filters[parsed.filters.length - 1];
+  if (last !== void 0 && last.name === "defaults" && last.args.length === 1 && last.args[0] === "null") return null;
+  const written = booleanAttributeText(name, tag);
+  if (written.kind === "value") return null;
+  const rhs = binding.slice(indexOfOutsideQuotes2(binding, ":") + 1).trim();
+  return written.kind === "presence" ? msgs.attrBooleanPresence(name, written.property, rhs) : msgs.attrBooleanText(name, rhs);
 }
 function validateFilterChainTypes(path, filters, statePaths, bindingStart, msgs) {
   const diagnostics = [];
@@ -16053,6 +16254,187 @@ function closingTagStart(html, from, name) {
   return html.length;
 }
 
+// src/service/formInputValidator.ts
+var filterMap2 = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
+var NOT_ENTERED = /* @__PURE__ */ new Set(["checkbox", "radio", "hidden", "button", "submit", "reset", "image", "file"]);
+var NOT_TYPED = /* @__PURE__ */ new Set(["range", "color", "date", "datetime-local", "month", "week", "time"]);
+var AS_NUMBER = /* @__PURE__ */ new Set(["number", "range", "date", "datetime-local", "month", "week", "time"]);
+function validateFormInputs(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
+  const attrs = findAllBindAttributes(html, bindAttribute).filter((attr) => attr.tagName === "input" || attr.tagName === "textarea" || attr.tagName === "select");
+  if (attrs.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  let types2 = null;
+  const getTypes = () => {
+    if (types2 === null) {
+      const index = getStatePathIndex(html, stateTagName, fileReader);
+      const candidates = mergeSchemaCandidates(index.paths, applicationSchema);
+      const set = new Set(candidates.map((p) => p.path));
+      types2 = {
+        candidates,
+        has: (path) => set.has(path),
+        computed: new Set(index.paths.filter((p) => p.kind === "computed").map((p) => p.path))
+      };
+    }
+    return types2;
+  };
+  const saidRadio = /* @__PURE__ */ new Set();
+  for (const attr of attrs) {
+    const bindings = splitBindingExpressions(attr.value);
+    const parsed = bindings.map(parseBindingExpression);
+    const type = (attr.inputType ?? "text").toLowerCase();
+    if (attr.tagName === "input" && type === "radio") {
+      const shared = sharedRadioName(html, attr, parsed, bindAttribute);
+      if (shared !== null && !saidRadio.has(shared.key)) {
+        saidRadio.add(shared.key);
+        out.push({
+          code: WcsDiagnosticCode.RadioNameShared,
+          start: shared.start,
+          end: shared.end,
+          message: msgs.radioNameShared(shared.name, shared.binding),
+          severity: "warning"
+        });
+      }
+      continue;
+    }
+    if (attr.tagName === "input" && NOT_ENTERED.has(type)) continue;
+    const typed = attr.tagName === "textarea" || attr.tagName === "input" && !NOT_TYPED.has(type);
+    let pos = 0;
+    for (let i = 0; i < bindings.length; i++) {
+      const binding = bindings[i];
+      const bindingStart = attr.valueStart + pos;
+      pos += binding.length + 1;
+      const p = parsed[i];
+      if (p.path === null) continue;
+      const name = propertyName(p.property);
+      if (name !== "value" && name !== "valueAsNumber") continue;
+      if (!writesBack(attr, name, p.property)) continue;
+      const path = p.path.trim();
+      const colon = indexOfOutsideQuotes2(binding, ":");
+      const left = binding.slice(0, colon).trim();
+      const rhs = binding.slice(colon + 1).trim();
+      const harmful = p.filters.find((filter) => !givesBackWhatWasWritten(filter, p));
+      const keystroke = typed && writeBackEvent(p.property) === "input";
+      if (harmful !== void 0 && (keystroke || p.inputFilters.length === 0)) {
+        if (p.filters.some((filter) => !filterMap2.has(filter.name))) continue;
+        out.push({
+          code: WcsDiagnosticCode.TwoWayOutputFilter,
+          start: bindingStart + harmful.offset,
+          end: bindingStart + harmful.offset + harmful.name.length,
+          message: msgs.twoWayOutputFilter(name, `|${binding.slice(p.filters[0].offset).trim()}`, left, rhs, keystroke),
+          severity: "warning"
+        });
+        continue;
+      }
+      if (name !== "value" || inputGivesNumber(p) !== false) continue;
+      const statePath = expandRowPath(path, html, attr.valueStart, bindAttribute);
+      if (statePath === null) continue;
+      const t = getTypes();
+      const key = candidateKeyOf(statePath, t.has);
+      const candidate = t.candidates.find((c) => c.path === key);
+      if (candidate === void 0 || candidate.kind !== "data" || t.computed.has(key) || !isNumberType(candidate.typeHint)) continue;
+      const pathStart = bindingStart + binding.indexOf(p.path, colon + 1);
+      out.push({
+        code: WcsDiagnosticCode.NumberWrittenAsString,
+        start: pathStart,
+        end: pathStart + path.length,
+        message: msgs.numberWrittenAsString(path, left, attr.tagName === "input" && AS_NUMBER.has(type)) + (path.startsWith(".") ? msgs.expansionSuffix(statePath) : ""),
+        severity: "warning",
+        statePath
+      });
+    }
+  }
+  return out;
+}
+function propertyName(property) {
+  const name = property.replace(/#.*$/, "").trim();
+  return name.startsWith(".") ? name.slice(1) : name;
+}
+function writeBackEvent(property) {
+  const hash = property.indexOf("#");
+  if (hash === -1) return "input";
+  const named = property.slice(hash + 1).split(",").map((m) => m.trim()).find((m) => /^on\w+$/.test(m));
+  return named === void 0 ? "input" : named.slice(2);
+}
+function isNumberType(typeHint) {
+  if (typeHint === void 0) return false;
+  const parts = typeHint.split("|");
+  return parts.includes("number") && parts.every((part) => part === "number" || part === "null");
+}
+function inputGivesNumber(p) {
+  let current2 = "string";
+  for (const filter of p.inputFilters) {
+    const info = filterMap2.get(filter.name);
+    if (info === void 0) return null;
+    if (info.resultType !== "passthrough") current2 = info.resultType;
+  }
+  return current2 === "number";
+}
+function isEmptyArgument(args) {
+  return args.length === 1 && (args[0] === "" || args[0] === "''" || args[0] === '""');
+}
+function givesBackWhatWasWritten(filter, p) {
+  switch (filter.name) {
+    case "string":
+    case "nullIfEmpty":
+      return true;
+    case "coalesce":
+      return isEmptyArgument(filter.args) || !p.inputFilters.some((input) => input.name === "nullIfEmpty");
+    case "defaults":
+      return isEmptyArgument(filter.args);
+    default:
+      return false;
+  }
+}
+function expandRowPath(path, html, offset2, bindAttribute) {
+  if (!path.startsWith(".")) return path;
+  if (getRowShorthandForPath(html, offset2, bindAttribute) === null) return null;
+  const list = getResolvedForListPath(html, offset2, bindAttribute);
+  if (list === null || list.startsWith(".")) return null;
+  return path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+}
+function writtenAttributes(html, from, to) {
+  const out = [];
+  const attribute = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+)))?/g;
+  const text3 = html.slice(from, to);
+  let match;
+  while ((match = attribute.exec(text3)) !== null) {
+    out.push({
+      name: match[1].toLowerCase(),
+      value: match[2] ?? match[3] ?? match[4] ?? null,
+      start: from + match.index,
+      end: from + match.index + match[0].length
+    });
+  }
+  return out;
+}
+function sharedRadioName(html, attr, parsed, bindAttribute) {
+  if (attr.attrsStart === void 0 || attr.attrsEnd === void 0) return null;
+  const names2 = parsed.map((p) => propertyName(p.property));
+  if (names2.includes("attr.name") || names2.includes("name")) return null;
+  const at2 = names2.findIndex((name) => name === "radio" || name === "checked");
+  if (at2 === -1) return null;
+  const path = parsed[at2].path?.trim() ?? "";
+  const wildcards = countWildcardSegments(path);
+  if (!path.startsWith(".") && wildcards === 0) return null;
+  const literal2 = writtenAttributes(html, attr.attrsStart, attr.attrsEnd).find((a) => a.name === "name");
+  if (literal2 === void 0 || literal2.value === null || literal2.value.trim() === "") return null;
+  const fors = getEnclosingFors(html, attr.valueStart, bindAttribute);
+  if (fors.length === 0) return null;
+  const level = path.startsWith(".") || wildcards > fors.length ? fors.length - 1 : wildcards - 1;
+  const loop = fors[level];
+  const row = html.slice(loop.anchor, attr.attrsStart).toLowerCase();
+  const form = row.lastIndexOf("<form");
+  if (form !== -1 && /^<form[\s>]/.test(row.slice(form)) && row.indexOf("</form", form) === -1) return null;
+  return {
+    name: literal2.value,
+    binding: names2[at2],
+    start: literal2.start,
+    end: literal2.end,
+    key: `${loop.anchor}\0${literal2.value}`
+  };
+}
+
 // src/service/documentEnvValidator.ts
 function validateDocumentEnv(html, locale2) {
   const diagnostics = [];
@@ -18748,8 +19130,8 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
       const spans = opaque2.length === 0 ? [] : analyzeDeclarationSpans(block.content);
       for (const candidate of opaque2) {
         const path = prefix + candidate.path;
-        bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences.filter((o) => o.kind === "path").map((o) => hasIndexSegment(o.path) ? toWildcardForm(o.path) : o.path);
-        const count = bound.filter((b) => b.startsWith(`${path}.`)).length;
+        bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences.filter((o) => o.kind === "path").map((o) => rowPathOf(o.path, html, o.pathRange.start, bindAttribute)).map((path2) => hasIndexSegment(path2) ? toWildcardForm(path2) : path2);
+        const count = bound.filter((b) => b.startsWith(`${path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
         const span = spans.find((s) => candidate.path === s.name || candidate.path.startsWith(`${s.name}.`));
         if (count === 0 || span === void 0) continue;
         out.push({
@@ -18795,6 +19177,12 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
     }
   }
   return out;
+}
+function rowPathOf(path, html, offset2, bindAttribute) {
+  if (!path.startsWith(".")) return path;
+  const list = getResolvedForListPath(html, offset2, bindAttribute);
+  if (list === null || list.startsWith(".")) return path;
+  return path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
 }
 function isList(path, candidates, candidateSet) {
   return candidateSet.has(`${path}.*`) || candidates.some((c) => c.path === path && c.kind === "list");
@@ -19159,7 +19547,7 @@ function findTopLevelReads(source) {
 }
 function readOf(node, assigned, source) {
   const object = node.object;
-  const prop = propertyName(node);
+  const prop = propertyName2(node);
   if (isGlobal(object, STORAGES)) {
     if (assigned || prop !== null && STORAGE_WRITES.has(prop)) return null;
     return { start: node.start, end: node.end, text: source.slice(node.start, node.end) };
@@ -19175,7 +19563,7 @@ function isGlobal(node, names2) {
   const object = node.object;
   return object.type === "Identifier" && GLOBALS.has(object.name) && node.property.type === "Identifier" && names2.has(node.property.name);
 }
-function propertyName(node) {
+function propertyName2(node) {
   if (!node.computed) return node.property.type === "Identifier" ? node.property.name : null;
   return node.property.type === "Literal" && typeof node.property.value === "string" ? node.property.value : null;
 }
@@ -19777,6 +20165,7 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateIoNodes(text3, bindAttribute, stateTagName, locale2, fileReader));
   out.push(...validateAriaAttributes(text3, bindAttribute, locale2));
   out.push(...validateLiveRegions(text3, bindAttribute, stateTagName, locale2));
+  out.push(...validateFormInputs(text3, bindAttribute, stateTagName, locale2, fileReader, applicationSchema));
   out.push(...validateDocumentEnv(text3, locale2));
   out.push(...validatePackageLoads(text3, locale2, fileReader));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));

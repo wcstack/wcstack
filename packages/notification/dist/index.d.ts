@@ -375,6 +375,7 @@ declare class WcsNotify extends HTMLElement {
     closeAll(): void;
     private _options;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

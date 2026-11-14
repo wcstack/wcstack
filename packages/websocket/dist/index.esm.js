@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/websocket","version":"4.22.0"};
+var pkg = {"name":"@wcstack/websocket","version":"4.23.0"};
 
 /**
  * websocketCapabilities.ts
@@ -1050,6 +1050,10 @@ class WcsWebSocket extends HTMLElement {
         if (this.url)
             this.connect();
     };
+    // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+    // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+    // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+    connectedMoveCallback() { }
     disconnectedCallback() {
         this._attached = false;
         this._reopenOnShow = false;

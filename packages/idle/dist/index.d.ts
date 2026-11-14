@@ -206,6 +206,7 @@ declare class WcsIdle extends HTMLElement {
     start(threshold?: number): Promise<void>;
     stop(): void;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

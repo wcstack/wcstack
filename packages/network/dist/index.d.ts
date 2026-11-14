@@ -158,6 +158,7 @@ declare class WcsNetwork extends HTMLElement {
     get offline(): boolean | null;
     get connectedCallbackPromise(): Promise<void>;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

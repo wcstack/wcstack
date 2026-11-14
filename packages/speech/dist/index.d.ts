@@ -427,6 +427,7 @@ declare class WcsSpeak extends HTMLElement {
     private _numberAttr;
     private _options;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 
@@ -584,6 +585,7 @@ declare class WcsListen extends HTMLElement {
     private _options;
     private _scheduleStart;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 

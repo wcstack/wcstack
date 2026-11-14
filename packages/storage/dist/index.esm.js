@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/storage","version":"4.22.0"};
+var pkg = {"name":"@wcstack/storage","version":"4.23.0"};
 
 // Single source of truth for the custom event names dispatched by StorageCore /
 // Storage. These names appear in two places that must stay in lock-step:
@@ -944,6 +944,10 @@ class Storage extends HTMLElement {
         this._syncCore();
         this._core.startSync();
     }
+    // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+    // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+    // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+    connectedMoveCallback() { }
     disconnectedCallback() {
         this._core.stopSync();
     }

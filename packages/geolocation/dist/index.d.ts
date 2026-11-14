@@ -342,6 +342,7 @@ declare class WcsGeolocation extends HTMLElement {
     private _options;
     private _scheduleLocate;
     connectedCallback(): void;
+    connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 
