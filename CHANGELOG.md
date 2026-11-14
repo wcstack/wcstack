@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.23.0] — 2026-11-15
+
+A minor from the `ekiden-entry` seam app, the third app of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a team entry wizard in Japanese, a page that is mostly a form ([docs/seam-apps.md](./docs/seam-apps.md)). A first-time author built it on 4.22.0 from the public documents. The lint said nothing about 21 mistakes made on purpose, and seven things went wrong at run time without a word — four of them lost data or left a page unbound. The author's five decisions are in §5.18. `@wcstack/state` gains the `forms` add-on: a field being composed with an IME is not written, a value that arrives with no `input` event reaches state, and a reset leaves the form and state in agreement. 34 I/O nodes keep their work when a reorder moves them with `moveBefore()`. The router binds the route a slow guard redirects a page load to. The lint has three new warnings and stops reporting what it could not read as missing. The core is unchanged, at 20,477 B of its 20,480 B limit.
 
 ### Upgrading
 
