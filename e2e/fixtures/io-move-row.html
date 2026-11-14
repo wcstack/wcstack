@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: an I/O node in a row a reorder moves keeps its request (connectedMoveCallback)</title>
+  <!-- docs/timing-and-firing-contract.md §25: @wcstack/state moves a kept row with Node.moveBefore() where
+       the browser has it, and a custom element with no connectedMoveCallback is given disconnectedCallback and
+       connectedCallback for that move. A <wcs-fetch> in the row aborted its request and started it again (a
+       <wcs-upload> lost its upload) — docs/seam-apps.md, ekiden-entry. happy-dom has no moveBefore(): this
+       real-browser spec is where the callback actually runs. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module" src="/packages/fetch/dist/auto.min.js"></script>
+  <style>
+    ul { list-style: none; padding: 0; }
+  </style>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        rows: [
+          { id: 1, url: "/api/users/1", user: null, loading: false, status: 0 },
+          { id: 2, url: "/api/users/2", user: null, loading: false, status: 0 },
+          { id: 3, url: "/api/users/3", user: null, loading: false, status: 0 },
+          { id: 4, url: "/api/users/4", user: null, loading: false, status: 0 },
+        ],
+        swap() {
+          const next = [...this.rows];
+          [next[1], next[3]] = [next[3], next[1]];
+          this.rows = next;
+        },
+      };
+    </script>
+
+    <button id="swap" data-wcs="onclick: swap">swap rows 2 and 4</button>
+
+    <ul id="list">
+      <template data-wcs="for: rows">
+        <li data-wcs="attr.data-id: .id|string">
+          <wcs-fetch data-wcs="url: .url; value: .user; loading: .loading; status: .status"></wcs-fetch>
+          <span class="name" data-wcs="textContent: .user.name"></span>
+          <span class="loading" data-wcs="textContent: .loading"></span>
+          <span class="status" data-wcs="textContent: .status"></span>
+        </li>
+      </template>
+    </ul>
+  </wcs-state>
+</body>
+</html>

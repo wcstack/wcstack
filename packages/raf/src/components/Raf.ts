@@ -284,6 +284,11 @@ export class Raf extends HTMLElement {
     this._scheduleStart();
   }
 
+  // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+  // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+  // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
     // dispose() stops the loop, releases the visibility subscription and bumps
     // the generation so a frame already queued cannot fire onto a disconnected

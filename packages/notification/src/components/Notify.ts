@@ -330,6 +330,11 @@ export class WcsNotify extends HTMLElement {
     this._connectedCallbackPromise = this._core.observe(this.mode);
   }
 
+  // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+  // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+  // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
     // Detach subscriptions. Open notifications are left on screen (see Core docs);
     // call close()/closeAll() to dismiss.

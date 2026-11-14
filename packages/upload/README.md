@@ -187,6 +187,8 @@ In this setup, upload becomes a bindable async node:
 - async state flows back as `value`, `loading`, `progress`, `error`, `status`
 - the UI binds to those paths declaratively
 
+**In a list row that moves.** A disconnect aborts the upload. Since 4.23 (not released yet) a move the browser makes with `moveBefore()` — a row `@wcstack/state` reorders, in Chromium 133+ and Firefox 144+ — is not a disconnect: the upload goes on. Up to 4.22 a reorder aborted it without a word (`loading` false, `status` 0, no `error`), and where the row is taken out and put back (Safari) it still does: there, do not reorder while a row uploads, or keep the `<wcs-upload>` elements in a list that does not move ([docs/timing-and-firing-contract.md §25](../../docs/timing-and-firing-contract.md), [docs/forms.md](../../docs/forms.md)).
+
 ## Public API
 
 ### Element attributes and properties

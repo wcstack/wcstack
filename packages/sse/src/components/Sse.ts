@@ -318,6 +318,11 @@ export class WcsSse extends HTMLElement {
     this._scheduleConnect();
   }
 
+  // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+  // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+  // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
     // §3.5/§4.4: dispose() は _gen を進めて進行中リスナを無効化しつつ接続を閉じる
     // （待っている auto-reconnect のタイマーも外す）。

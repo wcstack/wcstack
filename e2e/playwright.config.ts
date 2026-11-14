@@ -32,9 +32,10 @@ export default defineConfig({
     // city-library seam app's skip link, pagination, login under view transitions, time zones and languages.
     // And @wcstack/audio's context waiting for the first gesture, whose warning Firefox printed on load (audio-gesture).
     // And @wcstack/signals' delegateEvents, which leans on composedPath() and an overridden currentTarget (signals-delegate).
+    // And an I/O node in a row a reorder moves: Firefox's moveBefore() calls connectedMoveCallback too (io-move-row).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

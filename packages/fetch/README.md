@@ -492,6 +492,10 @@ Rewriting the url it fetched last, with nothing in between, is not a change (a r
 
 The method stays what it is set to, and a `body` is sent once. So an element that loads by url and posts by `method` + `body` + `trigger` sends the next url change as a `POST` with no body. It warns when it does (`[wcs/fetch-auto-unsafe]`): give loading and each change its own `<wcs-fetch>`.
 
+A second send needs its body written again. A binding does not write a value equal to the one it wrote last, so a retry that writes the same JSON string never reaches the element, and the `POST` goes out with no body. Write a new object each time (`this.payload = { ...entry }`) — an object is always a change — or `null` between two sends. Since 4.23 (not released yet) a `POST`, `PUT` or `PATCH` that a `trigger` or `fetch()` sends with no body, after a request of the same element that had one, warns once (`[wcs/fetch-body-gone]`); up to 4.22 it said nothing.
+
+**Moved, not removed.** Since 4.23 (not released yet) a `<wcs-fetch>` the browser moves with `moveBefore()` — in a list row `@wcstack/state` reorders, in Chromium 133+ and Firefox 144+ — keeps its request in flight; up to 4.22 the move aborted it without a word and, with a url, sent it again. Where the element is taken out and put back (Safari, `insertBefore`), it is disconnected, as before ([docs/timing-and-firing-contract.md §25](../../docs/timing-and-firing-contract.md)).
+
 If a request is already in flight when the URL changes, the previous request is automatically aborted before the new one starts.
 
 Set the `manual` attribute to disable auto-fetch and control execution explicitly via `fetch()` or `trigger`.
