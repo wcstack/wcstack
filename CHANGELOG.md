@@ -6,6 +6,56 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Upgrading
+
+- `@wcstack/state` (`.`, `/auto` and the `wcstack/auto` bundle): **the new `forms` add-on changes what a form does in three places.** A split page gets it only when it installs `@wcstack/state/features/forms`.
+  - A field being composed with an IME is not written by state until the composition is over. Nothing a working page showed changes: such a write broke the composition.
+  - A field whose value is not the one state last saw there is told to state on `change`, and before a form's `submit` handlers run: an `input` event (and, before a submit, a `change` event) that does not bubble is dispatched on it. A listener put on the field itself hears one more event; a handler bound higher up does not.
+  - After a reset (`<button type="reset">`, `form.reset()`), state takes the reset values of the form's bound controls. A page that used a reset to blank the fields and meant state to keep its values must clear the fields another way.
+- I/O nodes (34 of them, listed in [docs/timing-and-firing-contract.md](./docs/timing-and-firing-contract.md) §25): **a move with `moveBefore()` is no longer a disconnect and a connect.** In a list row `@wcstack/state` reorders (Chromium 133+, Firefox 144+), a request, a connection or a timer goes on. A page that relied on a reorder to start a `<wcs-fetch>` again, or to restart a `<wcs-timer>`, must do so itself.
+- `@wcstack/router`: content placed where no route is shown is handed to the binder when one is installed. Nothing a working page showed changes.
+- `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/form-control-one-way]` is a new warning.
+- `@wcstack/fetch` console: `[wcs/fetch-body-gone]` is a new warning.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: three new warnings — `wcs/radio-name-shared`, `wcs/number-written-as-string`, `wcs/two-way-output-filter`. A page that passed `wcs-validate --strict` with one of those shapes now fails it. A key whose value the lint cannot read gives one `wcs/path-dynamic-unknown` info where it gave a `wcs/binding-path-missing` warning per path. `attr.aria-invalid: flag` and the other ARIA states are no longer warned about.
+- **Workarounds this release makes unnecessary**:
+  - a field that normalizes or formats what is typed, bound one way (`value#ro:`) and written from a handler to keep state from breaking a composition — a setter is enough (a handler is still the way to keep the caret while formatting);
+  - code that skips a field being composed when a draft from another tab or a lookup is applied;
+  - a `change` listener that copies a field into state for password managers;
+  - a clear button written as a method only because `type="reset"` left state behind;
+  - `<wcs-upload>` or `<wcs-fetch>` kept out of the rows that move (still needed for Safari);
+  - a state seeded with literals written out because `team: init.team` made the lint report every path;
+  - the landing route checked in the page because a guard that redirected it left the route unbound.
+
+### Added
+
+- `@wcstack/state`: **the `forms` add-on** (`@wcstack/state/features/forms`; in the full entries; no core bytes). A two-way binding hears one event — `input` — and state writes a field whenever its value is not the one the field shows. Three things a form does fall between those two, and each went wrong without a word. From the `ekiden-entry` seam app.
+  - **A field being composed is not written.** A write to a field's `value` ends an IME composition where it is: the text so far is committed and typed again. A setter that normalizes what is typed did it on every keystroke (`やまだ` became `ヤヤマヤマダヤマダ`), and so did a write from elsewhere (a draft another tab saved, a looked-up address). The bindings that write the field are now held from `compositionstart`, and applied after `compositionend` with the value state has then. The same holds for a custom element state writes while an `<input>` in its shadow root is composed.
+  - **A value that arrives with no `input` event reaches state**: on `change` (an autofill that fires `change` alone), and for each field of a form before its `submit` handlers run (a value put in with no event).
+  - **After a reset, the form and state agree.** Each control of the form that state binds writes its reset value, and is then written from state again: a control that does not write back (a radio group with no `checked` radio in the markup, a `#ro` field) shows state's value.
+  - Real compositions were verified in Chromium; `change`, submit and reset in Chromium, Firefox and WebKit.
+- `@wcstack/state`: **`[wcs/form-control-one-way]`** (the diagnostics add-on). A custom element with `static formAssociated = true` whose `value` state binds, declared one way or not at all. With `value` among the properties only, state never writes the control, and the control's first value replaces the one state had: a saved draft was lost as the page loaded. With `value` among the inputs only, or with no declaration, what the user enters never reaches state. Said once per tag, 5 s after the page was ready. A binding whose direction is written (`#ro`, `#init=`, `#sync=`) is not told about.
+- I/O nodes: **a move is not a disconnect** ([docs/timing-and-firing-contract.md](./docs/timing-and-firing-contract.md) §25). The 34 nodes whose work does not depend on where they are define `connectedMoveCallback`, so a `moveBefore()` stops nothing. A `<wcs-upload>` in a row a reorder moved lost its upload (`loading` false, `status` 0, no error), and a `<wcs-fetch>` aborted its request and sent it again.
+  - Not the nodes that read their surroundings: `<wcs-intersect>`, `<wcs-resize>`, `<wcs-infinite-scroll>`, `<wcs-fullscreen>`, `<wcs-pip>`, `<wcs-pointer-lock>`, `<wcs-audio>` and its node tags.
+  - Where a row is taken out and put back — Safari has no `moveBefore()` — it is a disconnect, as before.
+- `@wcstack/fetch`: **`[wcs/fetch-body-gone]`**. A body is sent once. A binding does not write a value equal to the one it wrote last, so a retry that wrote the same JSON string never reached the element, and the `POST` went out with no body. A `POST`, `PUT` or `PATCH` that a `trigger` or `fetch()` sends with no body, after a request of the same element that had one, warns once until a body is sent again.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/radio-name-shared`** (warning). Radios in a `for:` row with a literal `name`: the browser makes one group of all the rows, so one radio on the whole page stays checked.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/number-written-as-string`** (warning). A two-way `value:` with no conversion, bound to a path the state holds as a number: an element writes a string, and `count + 1` becomes `"51"`.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/two-way-output-filter`** (warning). An output filter on a two-way field (`value: code|upper`): the field is rewritten on every keystroke, the caret jumps to the end, and state receives the formatted text.
+- [docs/forms.md](./docs/forms.md) (and `.ja.md`): a guide to forms — compositions, Enter while composing, a reading field, fields that change what is typed and the caret, numbers, values the user did not type, rows of inputs, steps, form controls of one's own, sending. Its recipes were run in Chromium as written.
+
+### Changed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **a key whose value the lint cannot read is unknown, not missing.** A member of an unreadable value (`team: init.team` beside `const init = emptyEntry()`), a call written in place, a conditional, the rows of `[newRunner()]`: the paths under such a key are not checked, and one `wcs/path-dynamic-unknown` info at the key says so. Before, each path was a false `wcs/binding-path-missing` — 91 on the `ekiden-entry` page, with the code of a real typo. A member of a `const` bound to an object literal (`team: DEFAULTS.team`) is read and checked.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: a boolean given to `attr.*` is told what happens to it (`wcs/binding-type-expectation`). The runtime writes `"true"` / `"false"`, and only `null` / `undefined` remove an attribute. Where those words are the attribute's values (the ARIA states, `contenteditable`, `draggable`, `spellcheck`) nothing is reported. A boolean attribute (`attr.disabled: flag`) is told that `disabled="false"` still disables, with the property to bind.
+- `@wcstack/router`: a guard whose import does not resolve is told why. A guard script is evaluated from a `blob:` URL, so a relative import fails; the report pointed at the Content-Security-Policy. It now names the `blob:` base and the two ways to share code (a full URL, an import map name).
+
+### Fixed
+
+- `@wcstack/router`: **the route a slow guard redirects a page load to is bound.** A guard that takes time (an `await import()`, a fetch) and then redirects placed its route after `@wcstack/state` had walked the page; with no route on screen the placement looked like the first render, whose content is not handed to the binder, and nothing bound it. Chromium, Firefox and WebKit, 5 of 5. Content placed where no route is shown is now handed over whenever a binder is installed — also the first route after a URL that matched none.
+- `examples/synth-playground`: its sliders were bound with `value:` to numbers and turned them into strings (the audio node converted them). They are bound with `valueAsNumber:`. Found by `wcs/number-written-as-string`.
+
 ## [4.22.0] — 2026-11-12
 
 A minor with two script syntaxes for `@wcstack/state`, decided by the author on 2026-11-12 after a prototype measured them against the core's size limit. A path relative to the row can be written in script (`this[".name"]`), and one accessor can be declared for several paths (`get "users.*.fullName,employees.*.fullName"()`). Both cost 36 B of the core, which is now 20,477 B of its 20,480 B limit. `@wcstack/state`, `@wcstack/lint` and `@wcstack/typescript` changed; every other package is 4.21.0 with a new version.
