@@ -70,18 +70,20 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 作者に知らせるもの | 項目 |
 |---|---|
-| 設計（書けない、または害が無い） | 12 |
-| 実行時 | 80 |
+| 設計（書けない、または害が無い） | 15 |
+| 実行時 | 83 |
 | lint だけ — 条件付きの沈黙 | 31 |
-| 文書だけ — 沈黙 | 47 |
+| 文書だけ — 沈黙 | 52 |
 | 数えない lint の code | 20 |
 
 ### 文書だけ — 沈黙
 
 | 誤り | 何が起きるか | 害 | 扱い |
 |---|---|---|---|
+| 1 つのメソッドで、同じ要素の入力を書いてコマンドも出す（`body: payload; command.fetch: $command.post` に対する `this.payload = entry; this.$command.post.emit()`）。 | コマンドはその場で要素を呼び、その更新の束縛は後から当たる: 最初の要求は本文なしで出て、以後の要求は 1 つ前の送信の本文を運ぶ。 | データの損失 | どこからも見えない — 文書。docs/forms.ja.md の書き方を動かして確かめる中で見つけた（ekiden-entry）。要素が送信に使う入力を使う: `body: payload; trigger: sending` をこの順に書く。 |
 | `for:` の行や `if:` の枝の中のカスタム要素が、`connectedCallback` で既定値から描き、state が先に設定した入力を上書きする。 | 4.0 は行や枝を挿入する前にバインドするので、要素が接続されるときには setter が走り終えている。要素は既定値を見せ、持っていたが未採用だった入力は失われる。ページの直下では要素が先に接続されるので、同じ要素がそこでは動く。 | データの損失 | どこからも見えない — 文書。外部の評価で見つかった（確定申告の下書きの金額欄。ページを 3.x から 4.0 に上げたとき）。接続した後の要素自身の書き込みは、編集と見分けられない。state の README の「Inputs と attribute ヒント」が、今のプロパティから描くよう書いている。 |
 | `event` の意味の出力（`<wcs-sse>` / `<wcs-ws>` / `<wcs-broadcast>` / `<wcs-worker>` の `message`）を、アダプターの `values` と `useEffect` / `watch` で読む。`websocket-chat` の React の例がそうしていた。 | フレームワークは続けて来た更新を 1 回の描画にまとめ、前と等しい値を捨てる。1 つのかたまりで来た 5 件のメッセージや、等しい 2 回の ping のうち、effect が見るのは 1 件。ほかは、エラーもなく失われる。 | データの損失 | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。アダプターは設計どおり最新の値を持つ。出来事を受ける口は @wc-bindable に提案した。統合の手引きと例は、要素のイベントを聞くようになった。 |
+| `<wcs-upload>` や `<wcs-fetch>` を `for:` の行に置き、要求が進んでいる間に行を並べ替える。 | 行を取り出して入れ直すところ — `moveBefore()` の無いブラウザ、Safari — では、要素は切断され、要求は中断される: `loading` は false、`status` は 0、エラーなし。4.23 から、ブラウザが `moveBefore()` で行う移動（Chromium 133 以降、Firefox 144 以降）は、置かれた場所に仕事がよらない I/O ノードにとって切断でなくなり、要求は続く。4.22 まではそこでも中断された。 | データの損失 | どこからも見えない — 文書。継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 docs/timing-and-firing-contract.ja.md §25。行の要求が進んでいる間は並べ替えないか、I/O の要素を動かないリストに置く。周りを読むノード（`<wcs-intersect>`・`<wcs-resize>`・`<wcs-audio>` など）は、どのブラウザでも移動で始め直す。 |
 | 行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。 | 新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。 | データの損失 | 設計で消す — 5.0 の議題（破壊的）。4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。 |
 | 記録の下書き（チケットへの返信）を、`<wcs-storage>` の固定のキー 1 つに置く。 | 下書きが記録から記録へ利用者について回る。セッションストレージでは複製したタブが写し、ローカルストレージでは 2 つのタブが互いの下書きを置き換える。 | データの損失 | どこからも見えない — 文書。storage の README: 記録ごとのキー（4.8 の文書）。 |
 | `<wcs-storage>` に残すオブジェクトの形を、同じキーのまま、アプリの 2 つの版の間で変える。 | 新しい版は古い版が保存したものを読み、古い版を開いたままのタブは `storage` イベントで新しい形を受け取る — 違う値を見せ、その後の保存は失われる。何も言わない。 | データの損失 | どこからも見えない — 文書。storage の README: オブジェクトに版を持たせて setter で移すか、形を変えるときにキーを変える。 |
@@ -91,6 +93,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込み、それを持つ要素に `data-wcs-ignore` を付けない。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | どこからも見えない — 文書。注入されたマークアップは、作者が書いたものと見分けられない。4.3 で文書が教える守りが加わった: 要素に `data-wcs-ignore`（R10）を付ければ、走査はその中を読まない。 |
 | ある場所の時刻（東京の開館時間）を、ゾーンを付けずに `date` / `time` のフィルタで出す。 | フィルタは読み手のタイムゾーンで書く: ロサンゼルスからは、東京の木曜 09:00 が水曜 17:00 になる — 「時刻はすべて東京時間」という注記の下で。 | 出ない・違う場所 | どこからも見えない — 文書。4.10 からフィルタは 3 つ目にタイムゾーンを受け（`time(,short,Asia/Tokyo)`）、state の README は既定が読み手のゾーンだと書く。 |
 | `date` フィルタの `Date` を、日付だけの文字列から `new Date("2026-10-01")` で作る。 | 日付だけの文字列は UTC の真夜中として読まれる: グリニッジより西では、どの日付も 1 日早く出て、11 月 1 日の記録は 11 月のページで 10 月 31 日と書かれる。 | 出ない・違う場所 | どこからも見えない — 文書。4.9 から、日付だけの文字列をそのまま渡したときの日付のフィルタの文面が `new Date(y, m - 1, d)` と言う。ページが自分で `Date` を作った後は、何も見分けられない。 |
+| サーバーが返したリストの行の誤りを行番号で持ち（`errors.runners[2].name`）、行を並べ替えたり動かしたりする。 | 並べ替えの後、文面は位置に残る: 別の走者に「すでに他のチームで申し込まれています」と出て、正しい行を直しても消えなかった。 | 出ない・違う場所 | どこからも見えない — 文書。継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 リストの隣に持つものは、行の id で引く（`errorsById[runner.id]`）— docs/forms.ja.md。 |
+| 行のオブジェクトを動かす代わりに、値を書き移して行を並べ替える（2 行目の欄の値を 1 行目へ、その逆も）。 | 束ねた値は入れ替わり、要素が持つものは位置に残る: フォーカス、開いた `<details>`、選んだファイル — 別の人の名前の隣に来る。何も知らせない。 | 出ない・違う場所 | どこからも見えない — 文書。継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 同じオブジェクトの新しい配列を代入する（`this.rows = [b, a, ...rest]`）: 行が動き、行の持つものも一緒に動く（Chromium 133 以降、Firefox 144 以降）。skill の落とし穴の表にある。 |
 | `<wcs-sse>` や `<wcs-ws>` を、`stale-after` なしで何時間も開いておく。 | 閉じられずに死んだ接続（スリープ・NAT・proxy）は、何も届かないのに `OPEN` で `connected: true` のまま: キューは 80 件遅れて止まり、"Live" と出ていた。 | 古い表示 | 設計で消す — 5.0 の議題（破壊的）。4.8 から `stale-after`（任意）が気づく。既定にすると、すべてのサーバーが定期的に何かを送る必要がある — 5.0 の問い。 |
 | `url` が変わった直後の `<wcs-fetch>` の `value` を、今ページが出している項目として読む。 | `value` は次の応答が届くまで前の応答のまま — 新しい要求が進む間も、空の `url` の後も: 編集フォームは前の記録で埋まり、古い `version` で保存した。 | 古い表示 | どこからも見えない — 文書。fetch の README（4.9 の文書）: 応答が出している項目のものか確かめる（`v && v.id === this.entryId`）。 |
 | 束縛が描く要素をサーバーに置き換えさせる（`hx-swap-oob`）。 | 新しい要素は束縛されず、束縛はもう無い古い要素へ書き込む: 検索の後にヘッダーの数が 0 になり、星を付けても 0 のままだった。 | 古い表示 | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 1 つの要素の持ち主は 1 人: アイランドが描くか、サーバーが描くか（docs/islands.ja.md）。 |
@@ -104,6 +108,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `online` イベントでだけ取り直す。 | ネットワークが切れなかったスリープは `online` を出さない: ページは 134〜137 件遅れたままだった。 | 古い表示 | どこからも見えない — 文書。docs/long-lived-pages.ja.md が間の終わりのほかの知らせを挙げる（`visibilitychange`、persisted の `pageshow`、`resume`、時計の飛び）。 |
 | サブパスの下で `<wcs-router basename="/app">` を書き、`<base href>` を置かずに配る。 | ルーティングは動くが、ディープリンクでは相対 URL がすべてページの URL の下で解決される — `<wcs-fetch url="api/…">`・`<wcs-state src>`・import map・autoloader の `@components/` — そして原因から遠いところで失敗する（データとして読んだ HTML のフォールバック、404 の部品）。 | 動かない | lint の規則 — 4.x。`wcs/base-href-missing` は basename も `<base>` も無いときだけ。属性があると無言。属性があり相対 URL があって `<base>` が無いページを知らせる規則を足せる。 |
 | HTML を処理するバンドラ（Vite）でページを作り、state を `<wcs-state>` のインラインの `<script type="module">` に書く。 | バンドラは警告なしにスクリプトをバンドルへ取り込む: `<wcs-state>` は `setInitialState()` を待ち続け、何も束ねられない（`<wcs-guard-handler>` のスクリプトも同じ: 4.7 からはルートを閉じ、router が知らせる）。 | 動かない | 実行時に知らせる — 4.x。state の README: `vite-ignore` か `src=`。ページの読み込み後も源の無い `<wcs-state>` が待っていれば、診断の後付けが警告できる。 |
+| `keydown` のハンドラで、IME の変換を確かめずに Enter で動く（ウィザードの「次へ」、チャットの送信）。 | Enter は変換を確定し、ハンドラは単語の途中で走る: 氏名を確定するとウィザードが進み、13 個のエラーが出た。実行時には意図が分からない。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 まず `if (e.isComposing \|\| e.keyCode === 229) return;`（229: Safari は確定の Enter を `compositionend` の後に出す）— docs/forms.ja.md。 |
 | リクエストが終わったことを、`<wcs-fetch>` の `status`（や `value`）への `$watch` で知る。 | どちらも state の出力で、同じ値をもう一度書いても何も発火しない。`204` を返した 1 回目の `DELETE` ではページが進んだが、2 回目は進まず、フォームは消した記録のままだった。 | 動かない | どこからも見えない — 文書。fetch の README（4.9 の文書）: 応答のイベント（`eventToken.value` ＋ `$on`、応答ごと）か、`loading` が `false` に戻るのを受ける。4.21 から lint は、そうした watch が応答のイベントに置き換わったときに残すもの — `$eventTokens` に宣言したまま、どの束縛も出さない名前（`wcs/event-token-unbound`、別の項目 — 継ぎ目アプリ ledger-repair）— を見る。トークンを宣言しなかったページは見えないので、この項目は文書のまま。 |
 | フレームワークから、オブジェクトの入力をその場で変える。`files={files}` で渡した配列への `files.push(file)` や、`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)`。 | 同じ参照には、フレームワークは何も書かないので、要素には何も伝わらない。アップロードは始まらず、前の要求で `body` を使い切った `<wcs-fetch>` は、次の要求を本文なしで送る。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。渡されたオブジェクトの中の変化は、要素からは見えない。統合の手引きは、新しいオブジェクトや配列を代入するよう書くようになった。 |
 | `for:` / `if:` のテンプレートの中に htmx の属性（`hx-get`・`hx-trigger` など）を書く。または束縛する（`attr.hx-get:`）。 | 行は htmx がページを処理した後で複製され、htmx は要素を処理するときに属性を読む: 行の中の `hx-get` は何もせず、束縛した `hx-get` は古い URL を要求し続ける — その要素に `htmx.process()` を呼ばない限り。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 |
@@ -169,7 +174,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 誤り | 実行時の知らせ方 | lint |
 |---|---|---|
 | 1 つの `<wcs-fetch>` で `url` によって読み込み、同じ要素で `method` + `body` + `trigger` によって投稿する。 | code なし: メソッドはそのままで本文は 1 回だけ送られるので、以後の url の変化ごとに本文の無い `POST` を送る。url の監視が本文の無い変更を送るとき、要素が `[wcs/fetch-auto-unsafe]` で警告する。 | — |
+| `<wcs-fetch>` の `body` に同じ JSON 文字列を書いて送り直す（再送のときの `this.payload = JSON.stringify(entry)`）。 | code なし: 本文は 1 回だけ送られ、束縛は最後に書いた値と同じ値を書かない: 再送は本文の無い `POST` で出る。4.23 から、本文のあった要求の後で `trigger` か `fetch()` が送る `POST`・`PUT`・`PATCH` に本文が無いと、要素が警告する（`[wcs/fetch-body-gone]`）。 継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 毎回、新しいオブジェクトを書く（`this.payload = { ...entry }`）— オブジェクトは必ず変更になる。または 2 回の送信の間に `null` を書く。 | — |
 | 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | code なし: 新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。 | — |
+| ページの自作のフォーム部品（`static formAssociated = true`）に `value:` を束ね、その部品は `value` を `wcBindable.properties` にだけ、または `inputs` にだけ宣言するか、`wcBindable` を持たない。 | code なし: 出力だけ: state は部品に書かず、部品の最初の値が state の値を置き換える — 保存した下書きの日付が、ページを読み込んだときに消えた。入力だけ・宣言なし: 利用者の入力が state に届かない。4.23 から diagnostics の後付けが、ページの準備ができた 5 秒後に、タグごとに 1 回警告する（`[wcs/form-control-one-way]`）。 継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 `value` を `properties`（イベントと一緒に）と `inputs` の両方に宣言する。向きを書いた束縛（`#ro`・`#init=`・`#sync=`）は知らせない。lint は別のファイルの `static wcBindable` を読まない。 | — |
 | I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`、許可の無い `<wcs-notify>` の `notify`。 | code なし: 呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。 | — |
 | `keepAlive: <録画中のパス>` なしの `<wcs-camera>` から録画し、録画中にタブが隠れる。 | code なし: カメラはページが隠れている間ストリームを止め、録画はそこまでの分で終わる（短いテイク）。カメラが `[wcs/camera-keep-alive-missing]` で 1 回警告する。 | — |
 | JSX や Vue のテンプレートで `<wcs-storage>` に `key` を書く（`<wcs-storage key="cart">`）。storage の README の React と Vue の例がそうだった。 | code なし: React と Vue は `key` を自分のものとして取り、要素に渡さない。要素には key が無く、何も読み込まず、何も保存せず、拒んだことは `error` に入るだけだった。4.6 から、最初の読み込み・保存・削除で要素が `[wcs/command-not-ready]` で 1 回警告する。`storage-key`（プロパティは `storageKey`）は、どちらのフレームワークも触らない名前の同じ入力。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。復元だけして保存しない `<wcs-storage>` は今も何も言わない。key の無いまま接続した要素は、state が `key:` の束縛を当てる前の姿でもある。5.0 で `key` を外して `storage-key` だけにするかは 5.0 の議題。 | — |
@@ -209,6 +216,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 無いフィルタか、3.x の名前（`uc`・`substr`）を使う。 | 同じ code: 束縛の計画で `#501`、state は初期化に失敗する。formats の後付けの無い書式フィルタは、`/core` でも文で言う。 | `wcs/filter-unknown` (error) |
 | 互いを読み合って循環する getter を書く。 | 同じ code: 評価の時点で `#701`、それを読む束縛はすべて失敗する。 | `wcs/getter-cycle` (error) |
 | getter の中、または getter が呼ぶメソッドの中で state に書く: 遅延のキャッシュ（`this._cache ??= …`）、カウンタ。 | 同じ code: 評価のたびに `#8` を投げ、その getter を読む束縛はすべて失敗する。4.17 から文面がパスと getter を名指す（`[wcs/getter-write]`）。4.16 までは `This state is readonly.` で、どちらも名指さなかった。 | `wcs/getter-write` (error) |
+| `<wcs-guard-handler>` のスクリプトで、相対パスやルート相対パスのモジュールを import する（`import { check } from "./guards.js"`）。 | code なし: ガードは `blob:` URL から評価され、そこからはその import が解決できない: ガードは読み込めず、そのルートへのナビゲーションはすべてリダイレクトされる。ルーターは `console.error` で報告する。4.23 から、報告は `blob:` が基準であることと、コードを共有する 2 つの書き方を言う（4.22 までは Content-Security-Policy を案内していた）。 継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 関数の中で完全な URL を import する — `await import(new URL("/js/guards.js", location.href).href)` — か、ページの import map が与える名前を使う。 | — |
 | wcstack が描いたページを履歴のキャッシュに戻させる: htmx の履歴のスナップショット（`hx-history`）、Turbo のスナップショットのキャッシュ。 | code なし: 写しは描いたままのページで、描き直す元の `<template>` は残らず、コメントの束縛は文字になっている。見た目は正しく、二度と更新されない。4.20 から diagnostics の後付けが、ルートがそのような写しを束縛するときに警告する（`[wcs/rendered-copy]`）。 継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 そのページではキャッシュを切る: `<body>` に `hx-history="false"`、`<meta name="turbo-cache-control" content="no-cache">`。 | — |
 | `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。 | `wcs/index-arity` (error) |
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
@@ -253,13 +261,16 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 誤り | 何が起きるか |
 |---|---|
+| どの値にも `input` イベントが出ると当てにする: `change` だけ出す自動入力（一部のパスワード管理）、ブラウザや拡張機能がイベントなしで入れる値。 | 4.23 から `forms` の後付けが、state が最後に見た値と違う値を持つ欄を state に知らせる — `change` のときと、フォームの `submit` のハンドラが走る前（そのフォームの欄ごと）。4.22 までは state に届かなかった: 欄には値が見え、申込はそれなしで送られた。 継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 イベントなしで入った値が分かるのは送信のときで、それより前ではない: `submit` のハンドラから送る。スクリプトがイベントなしでチェックした checkbox と radio は見えない。 |
 | `<base href="/">` を持つ SPA にスキップリンク（`href="#main"`）を書く。 | 4.9 までは base に対して解決され、ホームのルートへ移った。4.10 から router は素のフラグメントへのリンクを今のページに留め、指す要素へフォーカスを移す。 |
 | `<wcs-route>`（や `<wcs-guard-handler>`）を、別のルートの後の要素や `<wcs-layout>` の中に置く。または、守るルートの入れ子のルートの後にガードを置く。 | 4.3 から、ルートの親とガードの守るルートは、それを中に持つ `<wcs-route>`。以前は最後に解析したルートで、ルートは前のルートの下のパスになるか、絶対パスなら throw し（`is absolute but has a parent route`）、ガードは子のルートを守って自分のルートは開いていた。 |
 | 1 つの文書で、1 つの状態のモジュールを複数の `<wcs-state src>` で指す: DCC やコンポーネントのインスタンス、htmx や Turbo が body を入れ替えたページ。 | 4.20 から、それぞれがモジュールを評価し直したものを受け取る（2 つ目からは別の断片を付けて import する）。4.19 までは、モジュールの `export default` を共有してそこへ書き込んだので、次のインスタンスや次のページは 1 つ目が書いた値で始まった — 2 つ目のイベントの予約フォームに 1 つ目のイベントの枚数が出た。 継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 |
+| state に束ねたフォームを `<button type="reset">` か `form.reset()` で空にする。 | 4.23 から `forms` の後付けが、フォームの束ねたコントロールに reset 後の値を state へ書かせ、その後 state から書き直す — 書き戻さないコントロール（マークアップで `checked` の radio が無いグループ、`#ro`）には state の値が出る。4.22 までは、欄が空になり、state は全部持ったままだった: 料金にも下書きにも、次の再読み込みにも残っていた。 継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 ページの自作のフォーム部品は自分で reset する: `formResetCallback` で自分のイベントを出す。既定値がマークアップでなく state にあるなら、それを代入するメソッドが直接の書き方。 |
 | 1 つのオブジェクトを一覧の 2 つの位置に置き（`items: [o, o]`）、片方の行の下へ書く。 | 4.3 から、書き込みはそのオブジェクトを持つすべての行、その行 getter、`$getAll` に届く（#365）。以前は書き込んだ行にしか届かなかった。 |
 | 大きな音のパッチを鳴らす、または 0〜100 のスライダーを `<wcs-audio>` の `volume` にそのまま束ね、「耳の保護」のリミッターに任せる。 | 4.16 まではリミッターは閾値だけを設定したコンプレッサーで、README の 8 声のパッチを既定の音量で鳴らすだけでその後で +5 dBFS、`volume` 80 で +11.6 dBFS に達した — 割れて、ヘッドホンでは大きい。4.17 から出口は -6 dBFS の天井で、`volume` は 0〜1 に丸める。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 4.17 から大きな音のパッチは静かになる（CHANGELOG の Upgrading）。 |
 | Web MIDI の無いブラウザ（Safari、アドオンの手順を踏んでいない Firefox、安全でない文脈）で、`<wcs-midi>` の `permission` が `prompt` の間、接続のボタンを出す。 | 4.16 までは `auto` の無い要素は `request()` を呼ぶまでそこで `prompt` と言ったので、ボタンは何もできなかった。4.17 から `auto` の有無にかかわらず、接続の時点で `unsupported` と言う。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 |
 | `auto` の無い `<wcs-midi>` をルートの中身に置き、接続のボタンを `devices` で出し分ける。 | 4.16 までは、ルートを出て戻ると要素の接続は切れたのに `devices` は残り、接続し直さなかった: ページは鍵盤がつながっていると言ってボタンを隠し、再読み込みまで MIDI が死んだ。4.17 から切断は `devices: []` を知らせ、最後の `request()` でアクセスを取れた要素は、許可がまだ granted なら要求し直す。 継ぎ目アプリ music-room が見つけた（docs/seam-apps.ja.md）。 接続のボタンは `devices` ではなく `connected` で隠す。 |
+| IME で変換中の欄に state が書く: 打った文字を正規化する setter（全角の数字、仮名）、別のタブが保存した下書き、検索が入れた住所。 | 4.23 から `forms` の後付けが、その欄に書く束縛を `compositionstart` から預かり、`compositionend` の後で、そのときの state の値を当てる。4.22 までは、書き込みが変換をその場で切った: それまでの文字が確定し、もう一度打たれた（`やまだ` が `ヤヤマヤマダヤマダ` になる）。何も知らせなかった。 継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 分割のページは `@wcstack/state/features/forms` を入れる。本物の変換を試験で動かせるのは Chromium だけ。欄の文字を変える書き込みは、今もキャレットを末尾に送る（docs/forms.ja.md）。 |
 | 自動送信の `<wcs-upload>` に、`url` より先に `files` を渡す。その順の JSX の props（`files={files} url=…`）や、1 つの `data-wcs` で `url:` より前の `files:`。 | 4.6 から、ファイルは url を待ち、url が来たときに送られる。以前は何も送られず、すぐ後に来た url でも始まらず、要素が `[wcs/command-not-ready]` で 1 回警告していた。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。React 19 は props を書いた順に、要素を文書に入れる前に当てる。React の開発者は属性の順が効くとは思わない。 |
 | `<wcs-view-transition>` のあるページで、構造も変わる更新の `$watch` から画面を移す（フォーカスを動かす）。 | 4.9 までは、トランジションが 1 フレーム後に適用するバインディングより先に `$watch` が走った: 文書のログインは `<wcs-storage>` がセッションを保存する前に画面を移し、ガードが読み手を戻した。4.10 から `$watch` はそれを待つ。 |
 | `<wcs-router>` の `leaveConfirm` を真偽値に束ねる（`leaveConfirm: dirty`）。 | 4.8 までは真偽値が問いの文言になり、フォームがきれいな間も遷移のたびに `confirm("false")` が出た。4.9 から `true` は既定の文言で聞き、`false` は聞かない。 |
@@ -344,14 +355,12 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 - 圧縮の道具が SSR の出力のコメントを取り除く。
 - 委譲されるイベントと、ページ自身の `stopPropagation()`、別の root へ移した要素。
 - 束縛が中身を決める要素の中、`<noscript>`・`<iframe>` の中の束縛。
-- 要素への書き込みで行を並べ替え、束ねていない DOM の状態が元の位置に残る。
 - リテラルの `url` と、state から来る `Authorization` ヘッダ（最初の要求はそれなしで出る）。
 - `<wcs-route>` の中の light DOM のレイアウトの `slot=`。`enable-shadow-root` のレイアウトの `data-wcs`。
 - basename の付いたパスを `navigateUrl` に渡す。言語を `/:lang` のルートの引数にする。
 - `$stream` の fetch で、`<wcs-intersect>` の端ごとに `page++` する。
 - `customElements.whenDefined()` を関門にする。`pending` でなく `defined` で関門にする。
 - 要素の定義の前にマウントするフレームワークのアダプター。
-- メンバーを `properties` にだけ宣言する、または入力を属性からしか読まないカスタム要素。
 - SSR の state の `Date`・`Map`・`Set`・クラスのインスタンス。
 - `<wcs-fetch>` の `value` だけを束ねる（HTTP の誤りで一覧が消える）。
 - `id:` の無い SSE の再接続。`CLOSED` で終わったストリーム。
@@ -360,3 +369,5 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 - I/O ノードが接続のときにだけ読む入力を、後で変える。
 - `<html lang>` が無い、または最初の描画の後で `locale` を変える。
 - ほかに害の小さいもの 29 件。
+
+その後に確かめて項目にしたもの: 値を書き移して行を並べ替える（`row-values-exchanged`）、`value` を片方向にだけ宣言するか宣言しないフォーム部品（`form-control-one-way`）— 継ぎ目アプリ ekiden-entry、2026-11-14。入力を属性からしか読まない部品は、騒いで失敗する: state はプロパティに書く（`Cannot set property value … which has only a getter`）。

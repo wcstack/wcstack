@@ -1407,6 +1407,102 @@
       "effect": { "en": "The server renders them first: one becomes empty text, another stays half substituted (`合計 {{ booking.total|locale }}円（枚）`), and with `enableMustache: false` what is left stays text.", "ja": "サーバーが先にそれを描く: 1 つは空の文字になり、もう 1 つは半分置き換わったまま残り（`合計 {{ booking.total|locale }}円（枚）`）、`enableMustache: false` のもとでは残ったものも文字のまま。" },
       "disposition": "docs-only",
       "note": { "en": "Found by the community-hall seam app (docs/seam-apps.md). On such a page write bindings as `data-wcs` and comment bindings, and declare `$behavior: { enableMustache: false }` (docs/islands.md).", "ja": "継ぎ目アプリ community-hall が見つけた（docs/seam-apps.ja.md）。 そうしたページでは束縛を `data-wcs` とコメントの束縛で書き、`$behavior: { enableMustache: false }` を宣言する（docs/islands.ja.md）。" }
+    },
+    {
+      "id": "state-write-while-composing",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Lets state write a field while it is composed with an IME: a setter that normalizes what is typed (full-width digits, kana), a draft another tab saved, an address a lookup filled in.", "ja": "IME で変換中の欄に state が書く: 打った文字を正規化する setter（全角の数字、仮名）、別のタブが保存した下書き、検索が入れた住所。" },
+      "effect": { "en": "Since 4.23 the `forms` add-on holds the bindings that write the field from `compositionstart` and applies them after `compositionend`, with the value state has then. Up to 4.22 the write ended the composition where it was: the text so far was committed and typed again (`やまだ` came out as `ヤヤマヤマダヤマダ`), without a word.", "ja": "4.23 から `forms` の後付けが、その欄に書く束縛を `compositionstart` から預かり、`compositionend` の後で、そのときの state の値を当てる。4.22 までは、書き込みが変換をその場で切った: それまでの文字が確定し、もう一度打たれた（`やまだ` が `ヤヤマヤマダヤマダ` になる）。何も知らせなかった。" },
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). A split page gets it with `@wcstack/state/features/forms`. A real composition can be driven in a test in Chromium only. A write that changes a field's text still sends the caret to the end (docs/forms.md).", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 分割のページは `@wcstack/state/features/forms` を入れる。本物の変換を試験で動かせるのは Chromium だけ。欄の文字を変える書き込みは、今もキャレットを末尾に送る（docs/forms.ja.md）。" }
+    },
+    {
+      "id": "value-without-input-event",
+      "lint": [],
+      "runtime": "designed-out", "harm": "data-loss",
+      "mistake": { "en": "Counts on the `input` event for every value: an autofill that fires `change` alone (some password managers), a value a browser or an extension puts in with no event.", "ja": "どの値にも `input` イベントが出ると当てにする: `change` だけ出す自動入力（一部のパスワード管理）、ブラウザや拡張機能がイベントなしで入れる値。" },
+      "effect": { "en": "Since 4.23 the `forms` add-on tells state a field whose value is not the one state last saw there — on `change`, and for each field of a form before its `submit` handlers run. Up to 4.22 state never heard of it: the field showed the value and the entry was sent without it.", "ja": "4.23 から `forms` の後付けが、state が最後に見た値と違う値を持つ欄を state に知らせる — `change` のときと、フォームの `submit` のハンドラが走る前（そのフォームの欄ごと）。4.22 までは state に届かなかった: 欄には値が見え、申込はそれなしで送られた。" },
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). A value put in with no event is known when the form is submitted, not before: send from a `submit` handler. A checkbox or a radio a script checks with no event is not seen.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 イベントなしで入った値が分かるのは送信のときで、それより前ではない: `submit` のハンドラから送る。スクリプトがイベントなしでチェックした checkbox と radio は見えない。" }
+    },
+    {
+      "id": "form-reset-keeps-state",
+      "lint": [],
+      "runtime": "designed-out", "harm": "stale",
+      "mistake": { "en": "Clears a form bound to state with `<button type=\"reset\">` or `form.reset()`.", "ja": "state に束ねたフォームを `<button type=\"reset\">` か `form.reset()` で空にする。" },
+      "effect": { "en": "Since 4.23 the `forms` add-on has each bound control of the form write its reset value to state, and writes it from state again — a control that does not write back (a radio group with no `checked` radio in the markup, `#ro`) shows state's value. Up to 4.22 the fields went blank and state kept everything: the fee, the draft and the next reload still had it.", "ja": "4.23 から `forms` の後付けが、フォームの束ねたコントロールに reset 後の値を state へ書かせ、その後 state から書き直す — 書き戻さないコントロール（マークアップで `checked` の radio が無いグループ、`#ro`）には state の値が出る。4.22 までは、欄が空になり、state は全部持ったままだった: 料金にも下書きにも、次の再読み込みにも残っていた。" },
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). A form control of the page's own resets itself: dispatch its event from `formResetCallback`. Where the defaults are state's and not the markup's, a method that assigns them is the direct way.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 ページの自作のフォーム部品は自分で reset する: `formResetCallback` で自分のイベントを出す。既定値がマークアップでなく state にあるなら、それを代入するメソッドが直接の書き方。" }
+    },
+    {
+      "id": "form-control-one-way",
+      "lint": [],
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Binds `value:` on a form control of the page's own (`static formAssociated = true`) that declares `value` in `wcBindable.properties` only, in `inputs` only, or has no `wcBindable`.", "ja": "ページの自作のフォーム部品（`static formAssociated = true`）に `value:` を束ね、その部品は `value` を `wcBindable.properties` にだけ、または `inputs` にだけ宣言するか、`wcBindable` を持たない。" },
+      "effect": { "en": "Output only: state never writes the control, and the control's first value replaces the one state had — a saved draft's date was erased as the page loaded. Input only, or no declaration: what the user enters never reaches state. Since 4.23 the diagnostics add-on warns once per tag, 5 s after the page was ready (`[wcs/form-control-one-way]`).", "ja": "出力だけ: state は部品に書かず、部品の最初の値が state の値を置き換える — 保存した下書きの日付が、ページを読み込んだときに消えた。入力だけ・宣言なし: 利用者の入力が state に届かない。4.23 から diagnostics の後付けが、ページの準備ができた 5 秒後に、タグごとに 1 回警告する（`[wcs/form-control-one-way]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/form-control-one-way]" }],
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). Declare `value` in both `properties` (with its event) and `inputs`. A binding whose direction is written (`#ro`, `#init=`, `#sync=`) is not told about. The lint does not read a `static wcBindable` in another file.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 `value` を `properties`（イベントと一緒に）と `inputs` の両方に宣言する。向きを書いた束縛（`#ro`・`#init=`・`#sync=`）は知らせない。lint は別のファイルの `static wcBindable` を読まない。" }
+    },
+    {
+      "id": "fetch-body-gone",
+      "lint": [],
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Sends again with a `<wcs-fetch>` by writing the same JSON string to its `body` (`this.payload = JSON.stringify(entry)` on a retry).", "ja": "`<wcs-fetch>` の `body` に同じ JSON 文字列を書いて送り直す（再送のときの `this.payload = JSON.stringify(entry)`）。" },
+      "effect": { "en": "A body is sent once, and a binding does not write a value equal to the one it wrote last: the retry goes out as a `POST` with no body. Since 4.23 the element warns when a `POST`, `PUT` or `PATCH` that a `trigger` or `fetch()` sends has no body after a request that had one (`[wcs/fetch-body-gone]`).", "ja": "本文は 1 回だけ送られ、束縛は最後に書いた値と同じ値を書かない: 再送は本文の無い `POST` で出る。4.23 から、本文のあった要求の後で `trigger` か `fetch()` が送る `POST`・`PUT`・`PATCH` に本文が無いと、要素が警告する（`[wcs/fetch-body-gone]`）。" },
+      "evidence": [{ "file": "packages/fetch/src/components/Fetch.ts", "text": "[wcs/fetch-body-gone]" }],
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). Write a new object each time (`this.payload = { ...entry }`) — an object is always a change — or `null` between two sends.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 毎回、新しいオブジェクトを書く（`this.payload = { ...entry }`）— オブジェクトは必ず変更になる。または 2 回の送信の間に `null` を書く。" }
+    },
+    {
+      "id": "guard-relative-import",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Imports a relative or root-relative module in a `<wcs-guard-handler>` script (`import { check } from \"./guards.js\"`).", "ja": "`<wcs-guard-handler>` のスクリプトで、相対パスやルート相対パスのモジュールを import する（`import { check } from \"./guards.js\"`）。" },
+      "effect": { "en": "A guard is evaluated from a `blob:` URL, against which such an import does not resolve: the guard fails to load, and every navigation into its route is redirected. The router reports it with `console.error`; since 4.23 the report names the `blob:` base and the two ways to share code (up to 4.22 it pointed at the Content-Security-Policy).", "ja": "ガードは `blob:` URL から評価され、そこからはその import が解決できない: ガードは読み込めず、そのルートへのナビゲーションはすべてリダイレクトされる。ルーターは `console.error` で報告する。4.23 から、報告は `blob:` が基準であることと、コードを共有する 2 つの書き方を言う（4.22 までは Content-Security-Policy を案内していた）。" },
+      "evidence": [{ "file": "packages/router/src/loadGuardHandler.ts", "text": "against which a relative or" }],
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). Import a full URL inside the function — `await import(new URL(\"/js/guards.js\", location.href).href)` — or a name the page's import map gives.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 関数の中で完全な URL を import する — `await import(new URL(\"/js/guards.js\", location.href).href)` — か、ページの import map が与える名前を使う。" }
+    },
+    {
+      "id": "io-node-in-moving-row",
+      "lint": [],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Puts a `<wcs-upload>` or a `<wcs-fetch>` in a `for:` row and reorders the rows while its request is in flight.", "ja": "`<wcs-upload>` や `<wcs-fetch>` を `for:` の行に置き、要求が進んでいる間に行を並べ替える。" },
+      "effect": { "en": "Where the row is taken out and put back — a browser without `moveBefore()`, Safari — the element is disconnected and its request is aborted: `loading` false, `status` 0, no error. Since 4.23 a move the browser makes with `moveBefore()` (Chromium 133+, Firefox 144+) is not a disconnect for the I/O nodes whose work does not depend on where they are, and the request goes on; up to 4.22 it was aborted there too.", "ja": "行を取り出して入れ直すところ — `moveBefore()` の無いブラウザ、Safari — では、要素は切断され、要求は中断される: `loading` は false、`status` は 0、エラーなし。4.23 から、ブラウザが `moveBefore()` で行う移動（Chromium 133 以降、Firefox 144 以降）は、置かれた場所に仕事がよらない I/O ノードにとって切断でなくなり、要求は続く。4.22 まではそこでも中断された。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). docs/timing-and-firing-contract.md §25. Do not reorder while a row's request is in flight, or keep the I/O elements in a list that does not move. The nodes that read their surroundings (`<wcs-intersect>`, `<wcs-resize>`, `<wcs-audio>` …) start again on a move in every browser.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 docs/timing-and-firing-contract.ja.md §25。行の要求が進んでいる間は並べ替えないか、I/O の要素を動かないリストに置く。周りを読むノード（`<wcs-intersect>`・`<wcs-resize>`・`<wcs-audio>` など）は、どのブラウザでも移動で始め直す。" }
+    },
+    {
+      "id": "enter-while-composing",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Acts on Enter in a `keydown` handler with no check for an IME composition (a wizard's \"next\", a chat's send).", "ja": "`keydown` のハンドラで、IME の変換を確かめずに Enter で動く（ウィザードの「次へ」、チャットの送信）。" },
+      "effect": { "en": "Enter confirms a conversion, and the handler runs in the middle of a word: confirming a name moved the wizard on and showed thirteen errors. Nothing at run time can tell the intent.", "ja": "Enter は変換を確定し、ハンドラは単語の途中で走る: 氏名を確定するとウィザードが進み、13 個のエラーが出た。実行時には意図が分からない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). `if (e.isComposing || e.keyCode === 229) return;` first (229: Safari sends the confirming Enter after `compositionend`) — docs/forms.md.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 まず `if (e.isComposing || e.keyCode === 229) return;`（229: Safari は確定の Enter を `compositionend` の後に出す）— docs/forms.ja.md。" }
+    },
+    {
+      "id": "row-values-exchanged",
+      "lint": [],
+      "runtime": "silent", "harm": "wrong-place",
+      "mistake": { "en": "Reorders rows by writing their values across (row 2's fields into row 1 and back) instead of moving the row objects.", "ja": "行のオブジェクトを動かす代わりに、値を書き移して行を並べ替える（2 行目の欄の値を 1 行目へ、その逆も）。" },
+      "effect": { "en": "The bound values change places and everything the elements hold stays at the position: the focus, an open `<details>`, a chosen file — now beside another person's name. Nothing says so.", "ja": "束ねた値は入れ替わり、要素が持つものは位置に残る: フォーカス、開いた `<details>`、選んだファイル — 別の人の名前の隣に来る。何も知らせない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). Assign a new array of the same objects (`this.rows = [b, a, ...rest]`): the rows move, and what they hold moves with them (Chromium 133+, Firefox 144+). The skill's failure-mode matrix says so.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 同じオブジェクトの新しい配列を代入する（`this.rows = [b, a, ...rest]`）: 行が動き、行の持つものも一緒に動く（Chromium 133 以降、Firefox 144 以降）。skill の落とし穴の表にある。" }
+    },
+    {
+      "id": "errors-by-row-index",
+      "lint": [],
+      "runtime": "silent", "harm": "wrong-place",
+      "mistake": { "en": "Keeps a server's errors for the rows of a list by row number (`errors.runners[2].name`) and lets the rows be sorted or moved.", "ja": "サーバーが返したリストの行の誤りを行番号で持ち（`errors.runners[2].name`）、行を並べ替えたり動かしたりする。" },
+      "effect": { "en": "After a sort the message stays at the position: another runner was told they were already entered elsewhere, and correcting the right row did not clear it.", "ja": "並べ替えの後、文面は位置に残る: 別の走者に「すでに他のチームで申し込まれています」と出て、正しい行を直しても消えなかった。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the ekiden-entry seam app (docs/seam-apps.md). Key what is kept beside a list by the row's id (`errorsById[runner.id]`) — docs/forms.md.", "ja": "継ぎ目アプリ ekiden-entry が見つけた（docs/seam-apps.ja.md）。 リストの隣に持つものは、行の id で引く（`errorsById[runner.id]`）— docs/forms.ja.md。" }
+    },
+    {
+      "id": "command-before-binding",
+      "lint": [],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Writes an input and emits a command for the same element in one method (`this.payload = entry; this.$command.post.emit()` with `body: payload; command.fetch: $command.post`).", "ja": "1 つのメソッドで、同じ要素の入力を書いてコマンドも出す（`body: payload; command.fetch: $command.post` に対する `this.payload = entry; this.$command.post.emit()`）。" },
+      "effect": { "en": "A command calls the element at once, and the bindings of the update are applied after: the first request goes out with no body, and each later one carries the body of the send before.", "ja": "コマンドはその場で要素を呼び、その更新の束縛は後から当たる: 最初の要求は本文なしで出て、以後の要求は 1 つ前の送信の本文を運ぶ。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found while the recipes of docs/forms.md were run (ekiden-entry). Use the input the element sends on: `body: payload; trigger: sending`, written in that order.", "ja": "docs/forms.ja.md の書き方を動かして確かめる中で見つけた（ekiden-entry）。要素が送信に使う入力を使う: `body: payload; trigger: sending` をこの順に書く。" }
     }
   ],
   "uncounted": [
