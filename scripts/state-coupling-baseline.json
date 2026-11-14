@@ -39,6 +39,10 @@
       "hooks.ts",
       "messages.ts"
     ],
+    "forms": [
+      "hooks.ts",
+      "parser/raiseError.ts"
+    ],
     "list-keys": [
       "hooks.ts",
       "parser/raiseError.ts"

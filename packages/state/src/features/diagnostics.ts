@@ -13,7 +13,7 @@ import { raiseError } from "../parser/raiseError";
 import { parseBindTextsForElement } from "../parser/parseBindTextsForElement";
 import { config } from "../config";
 import type { WcsState } from "../element";
-import { Binding, K_CUSTOM, type RowPlan } from "../dom/view";
+import { Binding, K_CUSTOM, K_PROP, type RowPlan } from "../dom/view";
 import { walked } from "../dom/plan";
 import type { StateList } from "../list";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
@@ -577,6 +577,68 @@ function undefinedElements(engine: Engine): void {
   }
 }
 
+/** The guide to forms: compositions, values with no `input` event, resets, the page's own form controls. */
+const FORMS_GUIDE = "See https://github.com/wcstack/wcstack/blob/main/docs/forms.md";
+
+/** The tags already told about as form controls bound one way. */
+const toldControls = new Set<string>();
+
+/** A `value:` binding whose direction its author did not choose (`#ro`, `#init=`), among an element's `data-wcs`. */
+function bindsValue(text: string | null): boolean {
+  try {
+    return text !== null && parseBindTextsForElement(text).some((b) => b.bindingType === "prop" && b.propName === "value" && b.propModifiers.length === 0);
+  } catch {
+    return false;
+  }
+}
+
+/** The tags of the custom elements a row or branch plan binds `value:` on so, in it and in the plans it holds. */
+function planValueTags(plan: RowPlan, out: Set<string>): void {
+  for (const s of plan.specs) {
+    if (s.plan !== null) planValueTags(s.plan, out);
+    for (const br of s.branches ?? []) planValueTags(br.plan, out);
+    if (s.custom && s.name === "value" && s.kind === K_PROP && !s.ro && s.init === null && s.sync === null) {
+      let n: Node = plan.fragment;
+      for (const i of plan.nodePaths[s.node]) n = n.childNodes[i];
+      out.add((n as Element).localName);
+    }
+  }
+}
+
+/**
+ * A form control of the page's own — a custom element with `static formAssociated = true` — whose `value` state
+ * binds, and which declares it one way or not at all (docs/seam-apps.md, ekiden-entry). Each shape is silent:
+ * with no wc-bindable declaration, or `value` among the inputs only, state writes the control and never hears
+ * it — what the user enters does not reach state; with `value` among the properties only, state never writes it,
+ * and the control's first value replaces the one state had (a saved draft is lost as the page loads). A form
+ * control's value goes both ways. Looked at with the undefined elements (the same elements, the same moment);
+ * said once per tag. Not told: a binding whose author chose its direction (`#ro`, `#init=`, `#sync=`).
+ */
+function formControls(engine: Engine): void {
+  const tags = new Set<string>();
+  for (const l of engine.rootLists.values()) for (const v of [l.view, ...(l.extra ?? [])]) if (v !== null) planValueTags(v.plan, tags);
+  for (const bs of engine.rootBindings.values()) for (const b of bs) for (const br of b.chain?.branches ?? []) planValueTags(br.plan, tags);
+  const attr = config.bindAttributeName;
+  for (const el of (engine.root as ParentNode).querySelectorAll("*")) {
+    const tag = el.localName;
+    if (!tag.includes("-") || toldControls.has(tag)) continue;
+    const cls = (((el as any).customElementRegistry ?? customElements) as CustomElementRegistry).get(tag) as any;
+    if (!cls?.formAssociated || !(tags.has(tag) || bindsValue(el.getAttribute(attr))) || el.closest(`[${attr}-ignore]`) !== null) continue;
+    const named = (list: unknown): boolean => Array.isArray(list) && list.some((m) => m?.name === "value");
+    const decl = cls.wcBindable;
+    const out = named(decl?.properties);
+    const input = named(decl?.inputs);
+    if (out && input) continue;
+    toldControls.add(tag);
+    const event = `{ name: "value", event: "<the event it dispatches when its value changes>" }`;
+    console.warn(`[@wcstack/state] [wcs/form-control-one-way] <${tag}> is a form control (static formAssociated) ${out
+      ? `that declares "value" as an output only (wcBindable.properties): state never writes it, and the value it has when it is bound replaces the one state had — a saved draft is lost as the page loads. Add { name: "value" } to wcBindable.inputs.`
+      : `${input ? `that declares "value" as an input only (wcBindable.inputs)` : "with no wc-bindable declaration"}: "value:" writes it and never hears it, so what the user enters does not reach state. ${input
+        ? `Add ${event} to wcBindable.properties.`
+        : `Declare both directions: static wcBindable = { protocol: "wc-bindable", version: 1, properties: [${event}], inputs: [{ name: "value" }] }.`}`} ${FORMS_GUIDE}`);
+  }
+}
+
 /**
  * A root `<wcs-state>` connected (its bindings built, its `$connectedCallback` ran): its root is looked at
  * UNDEFINED_AFTER after the page was ready — its `load`, or this, whichever is later.
@@ -589,7 +651,10 @@ function lookLater(engine: Engine, phase: string): void {
   const ref = new WeakRef(engine);
   const look = (): void => void setTimeout(() => {
     const e = ref.deref();
-    if ((e?.element as Element | undefined)?.isConnected) undefinedElements(e!);
+    if ((e?.element as Element | undefined)?.isConnected) {
+      undefinedElements(e!);
+      formControls(e!);
+    }
   }, UNDEFINED_AFTER);
   if (document.readyState === "complete") look();
   else addEventListener("load", look, { once: true });

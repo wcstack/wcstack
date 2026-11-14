@@ -255,6 +255,7 @@ check (the core's size budget). Every package follows the same rule:
 | `@wcstack/state/features/formats` | The other 38 filters: arithmetic, conversion and defaults (`add`, `int`, `coalesce`, …) and formatting (`upper`, `date`, `currency`, `round`, `truncate`, …) |
 | `@wcstack/state/features/devtools` | The DevTools hook protocol source |
 | `@wcstack/state/features/release` | The binder's `release(subtree)`: lets go of markup you handed over and then threw away — [Inserting markup yourself](#inserting-markup-yourself). Since 4.20 |
+| `@wcstack/state/features/forms` | What a form does outside the `input` event: a field being composed (an IME) is not written, a value that arrives with no `input` event reaches state, a reset leaves the form and state in agreement — [Forms](#forms-what-happens-outside-the-input-event). Since 4.23 (not released yet) |
 | `@wcstack/state/features/diagnostics` | The sentences of error messages, with the did-you-mean and the pointer to lint, and the development-time warnings (a bound or `$watch` path that does not resolve, `wcs/default-getter-mismatch`). Without it a message is its number and its values ([Error messages](#error-messages-and-numbers)), those warnings are not printed, and the 3.x names 4.0 removed (`$scan`, `$streams`, `$updatedCallback`, `$trackDependency`, `$untrackDependency`) are not detected |
 | `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
 
@@ -296,7 +297,7 @@ The add-ons are named in two places, for two different reasons:
 | Who reads it | Only the split auto entry | Every entry: the split auto entry loads the missing add-ons; the other entries check that they are installed and fail the state with `[wcs/feature-not-installed]` otherwise |
 
 The names are `formats`, `diagnostics`, `temporal`, `list-keys`, `scopes`, `recursion`, `ssr`,
-`devtools`, `native-commands` and `release` (since 4.20). Any other name in `features=` makes the split auto entry fail with `[wcs/feature-unknown]`
+`devtools`, `native-commands`, `release` (since 4.20) and `forms` (since 4.23 (not released yet)). Any other name in `features=` makes the split auto entry fail with `[wcs/feature-unknown]`
 before it defines `<wcs-state>`; in `$features` it fails that state (`[wcs/feature-unknown]` on the
 split auto entry, `[wcs/feature-not-installed]` elsewhere). A `$features` that is not an array throws
 `#46`, and a volume may not declare one.
@@ -708,6 +709,22 @@ Bind a checkbox group to a state array with `checkbox`:
 ```
 
 A checkbox is checked when its `value` is included in the state array. Toggling a checkbox adds or removes the value from the array. Use `|int` to convert string values to numbers, and `#ro` for read-only.
+
+### Forms: what happens outside the `input` event
+
+A two-way binding hears one event — `input` on a field — and state writes a field whenever its value is not the one the field shows. A form does three things that fall between those two. Since 4.23 (not released yet) the `forms` add-on handles them — it is in `@wcstack/state`, `/auto` and the `wcstack/auto` bundle, and `@wcstack/state/features/forms` for the split entries. Up to 4.22 each of them went wrong without a word.
+
+- **A field being composed is not written.** While an IME composition is on (Japanese, Chinese, Korean), a write to the field's `value` ends the composition where it is: the text so far is committed, and then typed again. A setter that normalizes what is typed did that on every keystroke (`やまだ` became `ヤヤマヤマダヤマダ`), and so did a write from elsewhere — a draft another tab saved, an address a lookup filled in. Now the bindings that write the field wait, and are applied when the composition is over, with the value state has then. What the user types still reaches state on every `input`, so everything else bound to the path updates as before. The same holds for a custom element state writes through its wc-bindable inputs while an `<input>` in its shadow root is composed (a design system's text field).
+- **A value that arrives with no `input` event reaches state.** Some autofills fire `change` alone, and a browser or an extension can put a value in a field with no event at all. On `change`, and before a form's `submit` handlers run, a field whose value is not the one state last saw there is told to state.
+- **After a reset, the form and state agree.** `<button type="reset">` and `form.reset()` put the controls back to the defaults of the markup, and state kept its values: the fields were empty, and the next reload brought everything back. Now each control of the form that state binds writes its reset value to state, and is then written from state again — so a control that does not write back (a radio group with no `checked` radio in the markup, a `#ro` field) shows state's value again. To clear a form to values of your own, a method that assigns them to state is still the direct way.
+
+"Told to state" is an `input` event — and a `change` event, where a binding may hear that one — that does not bubble, dispatched on the control. Its own two-way binding hears it as it hears the user: through its input filters, on its `#on<event>`, or not at all with `#ro`. A handler bound higher up does not run (`oninput:` is delegated), and a listener you put on the control itself does.
+
+What it does not do: a checkbox or a radio a script checks with no event is not seen; a form control of your own resets itself (dispatch its event from `formResetCallback`); and a write that changes a field's text still sends the caret to the end.
+
+**A form control of your own declares `value` both ways.** A custom element with `static formAssociated = true` whose `value` state binds is a field the user enters into, so `value` belongs in both `wcBindable.properties` (with the event it dispatches) and `wcBindable.inputs`. Each other shape is silent: with no declaration, or `value` among the inputs only, what the user enters never reaches state; with `value` among the properties only, state never writes the control, and the control's first value replaces the one state had — a saved draft is lost as the page loads. Since 4.23 (not released yet) the `diagnostics` add-on says so, once per tag, 5 s after the page was ready: `[wcs/form-control-one-way] <my-date> is a form control (static formAssociated) that declares "value" as an output only …`. A binding whose direction you wrote (`#ro`, `#init=`, `#sync=`) is not told about.
+
+The recipes — a field that formats what is typed, Enter while composing, a reading (furigana) field, number fields, the radios of a row, a server's errors on rows that move, steps, form-associated custom elements — are in [docs/forms.md](../../docs/forms.md).
 
 ### Mustache Syntax
 

@@ -637,6 +637,95 @@ describe("束ねた要素が定義されないまま（wcs/element-undefined —
   });
 });
 
+describe("value を片方向にしか宣言しないフォーム部品（wcs/form-control-one-way — docs/seam-apps.md、ekiden-entry）", () => {
+  async function bound(html: string, state: Record<string, any>) {
+    const h = document.createElement(`diag-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state>${html}`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState(state);
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    return { root, el };
+  }
+  /** A form control of the page's own: `value` kept on the element, declared as `decl` says (null: nothing). */
+  function control(tag: string, decl: { properties?: unknown; inputs?: unknown } | null, formAssociated = true): void {
+    customElements.define(tag, class extends HTMLElement {
+      static formAssociated = formAssociated;
+      static wcBindable = decl === null ? undefined : { protocol: "wc-bindable", version: 1, ...decl };
+      value = "";
+    });
+  }
+  const OUT = [{ name: "value", event: "change" }];
+  const IN = [{ name: "value" }];
+  let warn: MockInstance<typeof console.warn>;
+  const said = () => warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("form-control-one-way"));
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    warn.mockRestore();
+  });
+
+  it("宣言の無い部品・入力だけ・出力だけに宣言した部品を、タグごとに 1 回、何が起きるかと直し方を付けて知らせる", async () => {
+    control("fc-none", null);
+    control("fc-input", { inputs: IN });
+    control("fc-output", { properties: OUT });
+    await bound(`<fc-none data-wcs="value: a"></fc-none><fc-none data-wcs="value: a"></fc-none><fc-input data-wcs="value: a"></fc-input><fc-output data-wcs="value: a"></fc-output>`, { a: "saved" });
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(said()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    const guide = "See https://github.com/wcstack/wcstack/blob/main/docs/forms.md";
+    const event = `{ name: "value", event: "<the event it dispatches when its value changes>" }`;
+    expect(said()).toEqual([
+      `[@wcstack/state] [wcs/form-control-one-way] <fc-none> is a form control (static formAssociated) with no wc-bindable declaration: "value:" writes it and never hears it, so what the user enters does not reach state. Declare both directions: static wcBindable = { protocol: "wc-bindable", version: 1, properties: [${event}], inputs: [{ name: "value" }] }. ${guide}`,
+      `[@wcstack/state] [wcs/form-control-one-way] <fc-input> is a form control (static formAssociated) that declares "value" as an input only (wcBindable.inputs): "value:" writes it and never hears it, so what the user enters does not reach state. Add ${event} to wcBindable.properties. ${guide}`,
+      `[@wcstack/state] [wcs/form-control-one-way] <fc-output> is a form control (static formAssociated) that declares "value" as an output only (wcBindable.properties): state never writes it, and the value it has when it is bound replaces the one state had — a saved draft is lost as the page loads. Add { name: "value" } to wcBindable.inputs. ${guide}`,
+    ]);
+    // 別のルートの同じタグは言い直さない
+    await bound(`<fc-none data-wcs="value: a"></fc-none>`, { a: "x" });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toHaveLength(3);
+  });
+
+  it("両方に宣言した部品・フォーム部品でない要素・向きを書いた束縛（#ro・#init=）・value でない束縛・data-wcs-ignore の中・定義されていない要素は知らせない", async () => {
+    control("fc-both", { properties: OUT, inputs: IN });
+    control("fc-plain", null, false);
+    control("fc-chosen", { properties: OUT });
+    control("fc-other", { properties: [{ name: "label", event: "change" }], inputs: [{ name: "label" }] });
+    control("fc-ignored", null);
+    control("fc-unparsable", null);
+    const { root } = await bound(
+      `<fc-both data-wcs="value: a"></fc-both><fc-plain data-wcs="value: a"></fc-plain>`
+      + `<fc-chosen data-wcs="value#init=element: a"></fc-chosen><fc-chosen data-wcs="value#ro: a"></fc-chosen>`
+      + `<fc-other data-wcs="label: a"></fc-other><fc-other></fc-other><div data-wcs-ignore><fc-ignored data-wcs="value: a"></fc-ignored></div>`
+      + `<fc-undefined data-wcs="value: a"></fc-undefined><fc-unparsable></fc-unparsable>`,
+      { a: "a" },
+    );
+    root.querySelector("fc-unparsable")!.setAttribute("data-wcs", "value");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toEqual([]);
+  });
+
+  it("for: の行・if: の枝の中の部品も見る。向きを書いた束縛は行の中でも知らせない", async () => {
+    control("fc-row", null);
+    control("fc-branch", { inputs: IN });
+    control("fc-row-ro", null);
+    control("fc-nested", { properties: OUT });
+    await bound(
+      `<template data-wcs="for: items"><fc-row data-wcs="value: .v"></fc-row><fc-row-ro data-wcs="value#ro: .v"></fc-row-ro><i data-wcs="textContent: .v"></i>`
+      + `<template data-wcs="if: .on"><fc-nested data-wcs="value: .v"></fc-nested></template></template>`
+      + `<template data-wcs="if: show"><fc-branch data-wcs="value: a"></fc-branch></template>`,
+      { items: [{ v: "x", on: true }], show: true, a: "a" },
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said().map((w) => /<([\w-]+)>/.exec(w)![1])).toEqual(["fc-row", "fc-nested", "fc-branch"]);
+  });
+});
+
 describe("for: が配列でない値を回す（wcs/binding-type-expectation — docs/seam-apps.md、homeroom）", () => {
   it("最初の値が数・文字列・オブジェクトなら、リストのパスごとに 1 回知らせる（行の中のリストも）。null・undefined・空の配列は黙る", async () => {
     const got = await warnings(() => page(

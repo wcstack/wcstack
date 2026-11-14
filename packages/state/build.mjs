@@ -33,7 +33,7 @@ import { pathToFileURL } from 'node:url';
 import { MANGLE_PROPS } from './mangle.mjs';
 import { terse } from './minify.mjs';
 
-export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes', 'recursion', 'ssr', 'devtools', 'native-commands', 'release'];
+export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes', 'recursion', 'ssr', 'devtools', 'native-commands', 'release', 'forms'];
 const base = { bundle: true, format: 'esm', target: 'es2022', legalComments: 'none' };
 const common = { ...base, minify: true, mangleProps: MANGLE_PROPS };
 // esbuild writes the map without the comment; terser chains it and adds `//# sourceMappingURL=`
