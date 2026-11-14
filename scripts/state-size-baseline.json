@@ -23,12 +23,18 @@
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
     "bytes": 32183,
-    "gzip": 12653
+    "gzip": 12653,
+    "slack": 256
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
     "bytes": 4914,
     "gzip": 1713
+  },
+  "split/features/forms.js (beyond the core)": {
+    "files": 1,
+    "bytes": 1963,
+    "gzip": 981
   },
   "split/features/list-keys.js (beyond the core)": {
     "files": 1,
