@@ -13,5 +13,6 @@ import { ssr } from "./ssr";
 import { devtools } from "./devtools";
 import { nativeCommands } from "./native-commands";
 import { release } from "./release";
+import { forms } from "./forms";
 
-export const ALL_FEATURES: readonly Feature[] = [formats, diagnostics, temporal, listKeys, scopes, recursion, ssr, devtools, nativeCommands, release];
+export const ALL_FEATURES: readonly Feature[] = [formats, diagnostics, temporal, listKeys, scopes, recursion, ssr, devtools, nativeCommands, release, forms];

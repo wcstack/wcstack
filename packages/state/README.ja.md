@@ -252,6 +252,7 @@ already defined by another copy of @wcstack/state that does not name its version
 | `@wcstack/state/features/formats` | 残りの 38 個のフィルタ: 算術・型変換・デフォルト（`add`・`int`・`coalesce` …）と書式（`upper`・`date`・`currency`・`round`・`truncate` …） |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
 | `@wcstack/state/features/release` | binder の `release(subtree)`: 渡してから捨てたマークアップの束縛を手放す — [マークアップを自分で差し込む](#マークアップを自分で差し込む)。4.20 から |
+| `@wcstack/state/features/forms` | フォームが `input` イベントの外でする事: 変換中（IME）の欄には書かない、`input` イベントなしで入った値を state に届ける、reset の後でフォームと state を合わせる — [フォーム](#フォーム-input-イベントの外で起きること)。4.23（未リリース）から |
 | `@wcstack/state/features/diagnostics` | エラーメッセージの文章（did-you-mean と lint への案内を含む）と、開発時の警告（束縛や `$watch` のパスが解決しない、`wcs/default-getter-mismatch`）。入れなければ、メッセージは番号と値だけになり（[エラーメッセージ](#エラーメッセージと番号)）、これらの警告は出ず、4.0 で外した 3.x の名前（`$scan`・`$streams`・`$updatedCallback`・`$trackDependency`・`$untrackDependency`）も見つけない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
 
@@ -292,7 +293,7 @@ already defined by another copy of @wcstack/state that does not name its version
 | 何のためか | どの `<wcs-state>` が動き出すよりも前に揃っているべきもの — `mount=` / `bind-component` / DCC の要素が何であるかを決める `scopes` — と、ページの開発補助（`diagnostics`・`devtools`） | その state が必要とするアドオン（`$watch` のための `temporal`、フィルタのための `formats`） |
 | 誰が読むか | 分割版の auto エントリだけ | すべてのエントリ: 分割版の auto エントリは足りないアドオンを読み込み、それ以外のエントリは入っているかを確かめ、入っていなければその state を `[wcs/feature-not-installed]` で失敗させる |
 
-名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools`・`native-commands`・`release`（4.20 から）です。
+名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools`・`native-commands`・`release`（4.20 から）・`forms`（4.23（未リリース）から）です。
 `features=` にそれ以外の名前があると、分割版の auto エントリは `<wcs-state>` を定義する前に
 `[wcs/feature-unknown]` で失敗します。`$features` にあれば、その state が失敗します（分割版の auto
 エントリでは `[wcs/feature-unknown]`、それ以外では `[wcs/feature-not-installed]`）。配列でない
@@ -699,6 +700,22 @@ authority はバインディング単位で `#init=` により上書きできま
 ```
 
 チェックボックスの `value` が状態配列に含まれている場合にチェック状態になります。チェックボックスの切り替えで配列への値の追加・削除が行われます。`|int` で文字列値を数値に変換、`#ro` で読み取り専用にできます。
+
+### フォーム: `input` イベントの外で起きること
+
+双方向バインディングが聞くイベントは 1 つ — 欄の `input` — で、state は、欄が見せている値と自分の値が違えば欄に書きます。フォームには、この 2 つの間に落ちる出来事が 3 つあります。4.23（未リリース）から `forms` add-on がそれを受け持ちます。`@wcstack/state`・`/auto`・`wcstack/auto` のバンドルに入っており、分割の入口では `@wcstack/state/features/forms` です。4.22 までは、どれも何も知らせずに壊れていました。
+
+- **変換中の欄には書きません。** IME で変換している間（日本語・中国語・韓国語）に欄の `value` へ書くと、変換はそこで切られます: それまでの文字が確定し、同じ文字がもう一度打たれます。打った文字を正規化する setter は 1 打鍵ごとにこれを起こし（`やまだ` が `ヤヤマヤマダヤマダ` になる）、ほかからの書き込み — 別のタブが保存した下書き、住所の検索が入れた値 — でも同じでした。今は、その欄に書く束縛が待ち、変換が終わってから、そのときの state の値を当てます。利用者が打った文字は、これまでどおり `input` のたびに state に届くので、同じパスに束ねたほかの要素は今までどおり更新されます。shadow root の中の `<input>` が変換中のカスタム要素（デザインシステムのテキスト欄）に、wc-bindable の入力を通して書く場合も同じです。
+- **`input` イベントなしで入った値を state に届けます。** 自動入力には `change` だけを出すものがあり、ブラウザや拡張機能はイベントをまったく出さずに値を入れることもあります。`change` のときと、フォームの `submit` のハンドラが走る前に、state が最後に見た値と違う値を持つ欄を state に知らせます。
+- **reset の後、フォームと state が合います。** `<button type="reset">` と `form.reset()` はコントロールをマークアップの既定値に戻しますが、state は値を持ったままでした: 欄は空になり、次の再読み込みで全部戻ってきます。今は、フォームのコントロールのうち state が束ねているものが、reset 後の値を state に書き、その後で state から書き直されます。書き戻さないコントロール（マークアップで `checked` の付いた radio が無いグループ、`#ro` の欄）には、state の値がもう一度出ます。自分で決めた値に戻すなら、その値を state に代入するメソッドが、今も一番直接の書き方です。
+
+「state に知らせる」とは、コントロールの上で、バブルしない `input` イベント（その束縛が聞くかもしれないところでは `change` も）を出すことです。そのコントロール自身の双方向バインディングは、利用者の入力と同じように聞きます: 入力フィルタを通し、`#on<event>` のイベントで、`#ro` なら聞きません。上に束ねたハンドラは走りません（`oninput:` は委譲です）。コントロール自身に付けたリスナーは走ります。
+
+しないこと: スクリプトがイベントなしでチェックした checkbox と radio は見えません。自作のフォーム部品の reset は部品の仕事です（`formResetCallback` で自分のイベントを出します）。欄の文字を変える書き込みは、今もキャレットを末尾に送ります。
+
+**自作のフォーム部品は `value` を両方向に宣言します。** `static formAssociated = true` のカスタム要素の `value` を state が束ねるなら、それは利用者が入力する欄なので、`value` は `wcBindable.properties`（出すイベントと一緒に）と `wcBindable.inputs` の両方に要ります。それ以外の形は、どれも何も知らせません: 宣言が無いか、`value` が inputs にだけあると、利用者の入力は state に届きません。`value` が properties にだけあると、state は部品に書かず、部品の最初の値が state の値を置き換えます — 保存した下書きが、ページを読み込んだときに消えます。4.23（未リリース）から、`diagnostics` add-on がタグごとに 1 回、ページの準備ができてから 5 秒後に知らせます: `[wcs/form-control-one-way] <my-date> is a form control (static formAssociated) that declares "value" as an output only …`。向きを自分で書いた束縛（`#ro`・`#init=`・`#sync=`）は知らせません。
+
+書き方 — 打った文字を整形する欄、変換中の Enter、フリガナの欄、数の欄、行の中の radio、動く行に付けるサーバーの誤り、ステップ、フォーム関連カスタム要素 — は [docs/forms.ja.md](../../docs/forms.ja.md) にあります。
 
 ### Mustache 構文
 
