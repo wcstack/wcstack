@@ -33,9 +33,10 @@ export default defineConfig({
     // And @wcstack/audio's context waiting for the first gesture, whose warning Firefox printed on load (audio-gesture).
     // And @wcstack/signals' delegateEvents, which leans on composedPath() and an overridden currentTarget (signals-delegate).
     // And an I/O node in a row a reorder moves: Firefox's moveBefore() calls connectedMoveCallback too (io-move-row).
+    // And the ekiden-entry seam app's guards, which redirect the page-load navigation after an import (ekiden-entry).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },
