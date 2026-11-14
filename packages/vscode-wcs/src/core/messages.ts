@@ -149,6 +149,32 @@ export interface WcsMessageCatalog {
   accessorListPath(path: string, list: string, other: string, relative: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
+  /**
+   * `attr.<a boolean HTML attribute>:` given a boolean (`attr.disabled: flag`): it is written "true" / "false", and the
+   * attribute is on whenever it is present. `property` is the element's property that takes the boolean, `rhs` the
+   * binding's right side as written.
+   */
+  attrBooleanPresence(attribute: string, property: string, rhs: string): string;
+  /** `attr.<name>:` given a boolean, any other attribute: written as the text "true" / "false", never removed. */
+  attrBooleanText(attribute: string, rhs: string): string;
+  // --- formInputValidator ---
+  /**
+   * Radios in a `for:` row with a literal `name` and a binding of the row's: the browser makes one group of every
+   * row's radios. `binding` is the binding that holds the row's value (`radio` / `checked`).
+   */
+  radioNameShared(name: string, binding: 'radio' | 'checked'): string;
+  /**
+   * A two-way `value:` with no conversion on the way in, into a path the state holds as a number. `path` and `left`
+   * (the binding's left side, `value#onchange`) as written; `asNumber`: the element has `valueAsNumber`.
+   */
+  numberWrittenAsString(path: string, left: string, asNumber: boolean): string;
+  /**
+   * An output filter on a two-way `value:` / `valueAsNumber:` (`property`). `filters` (`|upper`), `left` and `rhs`
+   * (the binding's two sides) as written. `keystroke`: the binding writes back on every keystroke — a field the user
+   * types in, on `input`; otherwise it writes back a committed value (`#onchange`, a slider, a picker, a `<select>`)
+   * and has no input filter to undo the output.
+   */
+  twoWayOutputFilter(property: string, filters: string, left: string, rhs: string, keystroke: boolean): string;
   filterUnknown(name: string): string;
   /** 4.0 で外れたフィルタの旧名（`uc` → `upper`。ランタイムは `[wcs/filter-unknown]`）。 */
   filterRemoved(name: string, canonical: string): string;
@@ -471,6 +497,19 @@ const ja: WcsMessageCatalog = {
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
+  attrBooleanPresence: (a, p, rhs) =>
+    `"attr.${a}" に boolean を束ねています。attr.* は String(value) を書くので、false のとき ${a}="false" になります。論理属性は値に関係なく、在るだけで効きます: ${a}="false" でも ${a} のままです（属性を外すのは null / undefined だけ）。プロパティを束ねてください: ${p}: ${rhs}`,
+  attrBooleanText: (a, rhs) =>
+    `"attr.${a}" に boolean を束ねています。attr.* は String(value) を書くので、属性は "true" か "false" になり、外れることはありません（外すのは null / undefined だけ）。属性の有無を見る側（CSS の [${a}]・hasAttribute()）には、どちらでも在ります。false の間は外すなら attr.${a}: ${rhs}|defaults(null)、文字の "true" / "false" が意図なら attr.${a}: ${rhs}|string と書いてください`,
+  radioNameShared: (name, binding) =>
+    `行ごとのラジオがすべて name="${name}" になるので、ブラウザは全部の行のラジオを 1 つのグループにします。ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違います（何も知らせません）。${binding === 'radio'
+      ? '行ごとに違う name を束ねる（attr.name: .<行ごとに違うフィールド>）か、name を外してください（radio: は name が無くても、同じパスに束ねたラジオを選択に合わせます）'
+      : '行ごとに違う name を束ねてください（attr.name: .<行ごとに違うフィールド>）。行をまたいで 1 つを選ばせるなら、全部を 1 つのパスに束ねます（value: .<行の id>; radio: <パス>）'}`,
+  numberWrittenAsString: (path, left, asNumber) =>
+    `"${path}" は state では数値ですが、value: が書き戻すのは要素の持つ文字列です。5 と入力した後の state は "5" で、"5" + 1 は "51" になります（何も知らせません）。書き戻すときに数値にしてください: ${asNumber ? `valueAsNumber: ${path}、または` : ''}左辺の入力フィルタ ${left}|number: ${path}（|int・|float も）`,
+  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke
+    ? `${prop}: は双方向で 1 打鍵ごとに書き戻し、出力フィルタ "${filters}" はそのたびに state の値を整形して欄へ書き直します。入力中の欄が書き換わり（キャレットは末尾へ飛び、IME の変換は途切れます）、state が受け取るのも欄の整形済みの文字です（出力フィルタは書き戻しで元に戻りません）。整形した文字は別の要素に表示する、欄の確定で書き戻して setter で整形する（${prop}#onchange:）、または一方向にしてください（${prop}#ro: ${rhs}）`
+    : `${prop}: は双方向ですが、出力フィルタ "${filters}" は書き戻しで元に戻りません。要素が書き戻すのは表示している整形済みの値で、次はその値にフィルタが掛かります。左辺の入力フィルタで元に戻す（${left}|<フィルタ>: …）、整形した値は別の要素に表示する、または一方向にしてください（${prop}#ro: ${rhs}）`,
   filterUnknown: (n) => `フィルタ "${n}" は組み込みフィルタに存在しません`,
   filterRemoved: (n, c) => `フィルタ "${n}" は 4.0 で外れました（"${c}" の 3.x の旧名）。"${c}" と書いてください`,
   substrRemoved: (rewrite) =>
@@ -805,6 +844,19 @@ const en: WcsMessageCatalog = {
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
+  attrBooleanPresence: (a, p, rhs) =>
+    `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" — and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
+  attrBooleanText: (a, rhs) =>
+    `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence — [${a}] in CSS, hasAttribute() — finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
+  radioNameShared: (name, binding) =>
+    `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render — nothing says so. ${binding === 'radio'
+      ? 'Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it'
+      : 'Bind a name that differs per row (attr.name: .<a row field>) — or, for one choice over all the rows, bind them all to one path: value: .<the row\'s id>; radio: <path>'}`,
+  numberWrittenAsString: (path, left, asNumber) =>
+    `"${path}" is a number in the state, but value: writes back what the element holds, a string: after the user enters 5 the state has "5", and "5" + 1 is "51" — nothing says so. Convert it on the way in: ${asNumber ? `valueAsNumber: ${path}, or ` : ''}an input filter on the left side, ${left}|number: ${path} (also |int, |float)`,
+  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke
+    ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types — the caret jumps to the end, an IME composition is cut — and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}`
+    : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: …), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") — write "${c}"`,
   substrRemoved: (rewrite) =>

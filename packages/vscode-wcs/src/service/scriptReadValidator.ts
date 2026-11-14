@@ -22,11 +22,15 @@
  *   with no stateSchema. The keys it brings in cannot be read, so the state's paths are not checked at all — said
  *   once, at the spread, with what turns the checks on (a stateSchema, which `wcs-schema` derives from the types).
  *   Also a key whose value the analyzer could not read — a name it could not follow to a literal (`{ t }` with `t`
- *   imported and computed — the i18n dictionary volume; moduleValues.ts) — when the document binds paths under it:
- *   those are not checked. Said once per key, at the key, with what has them checked (a JSDoc `@type`, or a
- *   stateSchema); a key nothing reads under says nothing. The same for a key seeded with an object literal that spreads
- *   what the analyzer cannot read (`draft: { ...makeDraft() }` — a spread of a module's `const` object literal is read:
- *   the homeroom seam app), with its own message naming the spread.
+ *   imported and computed — the i18n dictionary volume; moduleValues.ts), or an expression written in place that is
+ *   not a literal (`team: init.team`, `errs: emptyErrs()` — the ekiden-entry seam app, where each path under such a
+ *   key was a false `wcs/binding-path-missing`) — when the document binds paths under it: those are not checked. A
+ *   row's path (`.name` under the key's `for:`) is one of them; a path something else declares (a getter
+ *   `get "items.*.size"()`, a `$recursion`'s rows) is checked and is not counted. Said once per key, at the key, with
+ *   what has them checked (a JSDoc `@type`, or a stateSchema); a key nothing reads under says nothing. The same for a
+ *   key seeded with an object literal that spreads what the analyzer cannot read (`draft: { ...makeDraft() }` — a
+ *   spread of a module's `const` object literal is read: the homeroom seam app), with its own message naming the
+ *   spread.
  *
  * The existence is the bindings' (bindingValidator): the candidates of the document's states with the stateSchema's,
  * a stateSchema deciding where it is declared (`nonexistent` only), silence in a state that could not be read.
@@ -43,6 +47,7 @@ import { getStatePathIndex, isUnresolvedPath, moduleLocationOf, type FileReader 
 import { pathExistsInCandidates, resolveIndexedSchemaPath } from './bindingValidator.js';
 import { collectGetterReads } from './scriptAst.js';
 import { hasIndexSegment, toWildcardForm } from './indexPath.js';
+import { getResolvedForListPath } from './forContext.js';
 import { hasRecursionWildcard } from './recursionPaths.js';
 import { missingSegment, pathTree, suggestion } from './suggestion.js';
 
@@ -89,8 +94,11 @@ export function validateScriptReads(
         const path = prefix + candidate.path;
         bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences
           .filter((o) => o.kind === 'path')
-          .map((o) => (hasIndexSegment(o.path) ? toWildcardForm(o.path) : o.path));
-        const count = bound.filter((b) => b.startsWith(`${path}.`)).length;
+          .map((o) => rowPathOf(o.path, html, o.pathRange.start, bindAttribute))
+          .map((path) => (hasIndexSegment(path) ? toWildcardForm(path) : path));
+        // (a path under it that something else declares — a getter `get "items.*.size"()`, a `$recursion`'s rows, a
+        // key written beside a spread — is checked: it is not one of those the message counts)
+        const count = bound.filter((b) => b.startsWith(`${path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
         const span = spans.find((s) => candidate.path === s.name || candidate.path.startsWith(`${s.name}.`));
         if (count === 0 || span === undefined) continue;
         out.push({
@@ -146,6 +154,18 @@ export function validateScriptReads(
     }
   }
   return out;
+}
+
+/**
+ * A bound path as the state has it: a path relative to the row (`.name`, `.` — the index holds it as written) under
+ * the list its `for:` renders (`runners.*.name`), so the rows bound under a key the lint could not read
+ * (`runners: init.runners` with `for: runners`) are counted as bound under it. Left as written outside a `for:`.
+ */
+function rowPathOf(path: string, html: string, offset: number, bindAttribute: string): string {
+  if (!path.startsWith('.')) return path;
+  const list = getResolvedForListPath(html, offset, bindAttribute);
+  if (list === null || list.startsWith('.')) return path;
+  return path === '.' ? `${list}.*` : `${list}.*.${path.slice(1)}`;
 }
 
 /** Is `path` a list of the state: a list candidate, or one with rows (`items.*`)? */
