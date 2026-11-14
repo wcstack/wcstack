@@ -19,6 +19,7 @@ import { validateBindingSyntax } from "../service/bindingSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateLiveRegions } from "../service/liveRegionValidator.js";
+import { validateFormInputs } from "../service/formInputValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validatePackageLoads } from "../service/packageLoadValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
@@ -146,6 +147,9 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateAriaAttributes(text, bindAttribute, locale));
   // a live region inserted with its text by a for / if template or a route (never announced)
   out.push(...validateLiveRegions(text, bindAttribute, stateTagName, locale));
+  // what a form control's bindings do with what the user enters: a radio name every row shares, a string written
+  // into a number, an output filter on a two-way value
+  out.push(...validateFormInputs(text, bindAttribute, stateTagName, locale, fileReader, applicationSchema));
   out.push(...validateDocumentEnv(text, locale));
   // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
   out.push(...validatePackageLoads(text, locale, fileReader));

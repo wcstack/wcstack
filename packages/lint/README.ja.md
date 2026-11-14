@@ -118,6 +118,18 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 - 配列と分からない値（`budgetErrors: {}` と `this.budgetErrors[id] = …`）への `wcs/array-index-assign` は、「配列の添字」ではなくオブジェクトのキーへの代入として言います。
 - スクリプトがその場で変えるリスト（`this.budgetRows.splice(0, n, ...rows)` — `wcs/array-mutation` が報告する）の行は、リテラルや JSDoc の型からフィールドが読めなければ検査しません。4.20 までは、そうした行のフィールドがどれも `wcs/binding-path-missing` の誤報で、本物の打ち間違いと同じ code でした。
 
+## 入力の重いフォームに言うこと
+
+4.23（未リリース）から、継ぎ目アプリ ekiden-entry — 駅伝の申し込みウィザード。IME・オートフィル・行の中の入力・フォーム連携のカスタム要素と、入力の重いページ — から。そのページで lint は、仕込んだ誤り 21 件に何も言わず、読めない state について偽の warning を 91 件出していました:
+
+- **値を読めないキーの下は「分からない」で、「存在しない」ではありません。** `const init = emptyEntry()` の `team: init.team`、`errs: emptyErrs()`、条件式、`[1, 2].map(…)`、`[newRunner()]` の行: そうしたキーの下のパスは検査せず、キーの上の `wcs/path-dynamic-unknown`（info）が 1 回だけそう言います — その下に束ねたパスの数（キーの `for:` の行の `.name` も数えます）と、検査させる方法（キーの JSDoc の `@type` か `stateSchema`）付きで。4.22 までは、そのパスが 1 件ずつ `wcs/binding-path-missing` の誤報で、本物の打ち間違いと同じ code でした。オブジェクトリテラルを束縛する `const` のメンバー（`team: DEFAULTS.team`。モジュールの中のものも import したものも）は読み、その下のパスを検査します。
+- **`wcs/radio-name-shared`**（warning） — `for:` の行の中の、`name` をリテラルで書いた、行の値を束ねたラジオ（`<input type="radio" name="sex" data-wcs="radio: .sex">`）。どの行のラジオも同じ name になるので、ブラウザは全部の行を 1 つのグループにします: ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違います。行ごとに違う name を束ねる（`attr.name: .<行のフィールド>`）か、name を外してください — `radio:` は name が無くても、同じパスに束ねたラジオを選択に合わせます。name を束ねてあるとき、行のものでないパス（`value: .id; radio: selectedId` — 行をまたぐ 1 つの選択）、行ごとに `<form>` があるときは報告しません。
+- **`wcs/number-written-as-string`**（warning） — 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパスを指す: `count: 0` と `<input type="number" data-wcs="value: count">`（JSDoc の `@type {number}`・`stateSchema`・行のフィールド `value: .qty` も）。要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になります。`valueAsNumber: count` か、左辺の入力フィルタ `value|number: count`（`|int`・`|float`）と書いてください。
+- **`wcs/two-way-output-filter`**（warning） — 双方向の `value:` / `valueAsNumber:` の出力フィルタ（`value: code|upper`・`value: price|locale`）。打つ欄では、フィルタが 1 打鍵ごとに state の値を整形して欄へ書き直します: 入力中の欄が書き換わり（キャレットは末尾へ飛び、IME の変換は途切れます）、state が受け取るのも欄の整形済みの文字です — 出力フィルタは書き戻しで元に戻りません。整形した文字は別の要素に表示する、欄の確定で書き戻して setter で整形する（`value#onchange:`）、または一方向にしてください（`value#ro:`）。確定した値を書き戻す束縛（`#onchange`・`<select>`・スライダー）は、出力を元に戻す入力フィルタが無いときだけ報告します: `value#onchange|number: price|toFixed(2)` は報告しません。要素の書いた文字をそのまま返すフィルタ（`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）も報告しません。
+- **`attr.*` に束ねた boolean**（`wcs/binding-type-expectation`）には、起きることを言います: ランタイムは `String(value)` — `"true"` / `"false"` — を書き、属性を外すのは `null` / `undefined` だけです。その語が属性の値であるもの — ARIA の状態（`attr.aria-invalid: flag|truthy`）・`contenteditable`・`draggable`・`spellcheck` — は、もう報告しません（`"attr.aria-invalid" には文字列型が必要です` は誤報でした）。ネイティブ要素の論理属性（`attr.disabled: flag`）には、`disabled="false"` でも無効のままであることと、代わりに束ねるプロパティ（`disabled: flag`）を言います。ほかの属性（`attr.data-open: flag`）には、文字として書かれて外れないことと、false の間は外す `|defaults(null)`・文字が意図のときの `|string` を言います。
+
+新しい 3 つの規則は warning です: `--strict` では失敗し、`--errors-only` には出ません。
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。
