@@ -210,8 +210,9 @@ export default { t, gone, computed, called: make(), plain: null };`, {
     expect(of('t')?.opaque).toEqual({ name: 't', from: './catalog.js' });
     expect(of('gone')?.opaque).toEqual({ name: 'gone', from: './missing.js' });
     expect(of('computed')?.opaque).toEqual({ name: 'computed' });
-    // その場に書いた式は今までどおり（中身を「無い」と読む）
-    expect(of('called')?.opaque).toBeUndefined();
+    // その場に書いた呼び出しも中身は分からない（4.22 までは「無い」と読み、下のパスを偽の binding-path-missing にした）
+    expect(of('called')?.opaque).toEqual({ name: 'make()' });
+    // 読めるリテラルは中身が分かる
     expect(of('plain')?.opaque).toBeUndefined();
   });
 
@@ -279,7 +280,8 @@ export const t = mergeAndFreeze(current.default, current.default);`;
     // ファイルの中のキーの位置（`export default { lang, t }` の t）
     expect(STATE.slice(info.origin!.start, info.origin!.end)).toBe('t');
     expect(info.message).toContain('"i18n.t" (t, imported from "./catalog.js")');
-    expect(info.message).toContain('the 3 paths bound under it are not checked');
+    // （`for: i18n.t.list` の行の `.label` も、その下に束ねたパスに数える）
+    expect(info.message).toContain('the 4 paths bound under it are not checked');
     expect(info.message).toContain('typeof import("./file.js").name');
   });
 

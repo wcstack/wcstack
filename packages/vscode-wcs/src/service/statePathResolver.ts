@@ -48,7 +48,8 @@ export interface StatePathScopes {
   readonly rootUnresolved: boolean;
   /**
    * The data paths whose value the validator could not read — a name it could not follow to a literal (`{ t }` with
-   * `t` imported and computed, moduleValues.ts) — and the paths whose JSDoc type has an index signature
+   * `t` imported and computed, moduleValues.ts), an expression written in place that is not a literal
+   * (`team: init.team`, `errs: emptyErrs()`) — and the paths whose JSDoc type has an index signature
    * (`Record<string, T>`): the path exists, the paths under it are unknown.
    */
   readonly opaquePaths: readonly string[];

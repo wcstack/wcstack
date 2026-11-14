@@ -281,6 +281,25 @@ export const WcsDiagnosticCode = {
   // 置き、文と一緒に挿入される。スクリーンリーダーは読み上げない（読み上げるのは、ページにある間に文が変わったとき）。
   // 挿入で読み上げられる `role="alert"` は対象外。継ぎ目アプリ city-library（view transition ありの Chromium で 0/10）。warning。
   LiveRegionInserted: "wcs/live-region-inserted",
+  // --- フォームの入力（要素の束縛が、利用者の入力に対して何をするか。service/formInputValidator.ts） ---
+  // `for:` の行の中の、`name` をリテラルで書いたラジオ（`<input type="radio" name="sex" data-wcs="radio: .sex">`）。
+  // どの行のラジオも同じ name になるので、ブラウザは全部の行を 1 つのグループにする: ページ全体で 1 つしか選ばれた
+  // 状態にならず、表示は最初の描画から行ごとの値と食い違う。ランタイムは何も言わない（ブラウザの規則 — 継ぎ目アプリ
+  // ekiden-entry）。name を束ねてあるとき（`attr.name:`）・行のものでないパス（`radio: selectedId` — 行をまたぐ 1 つの
+  // グループが意図）・行ごとに `<form>` があるときは黙る。warning。
+  RadioNameShared: "wcs/radio-name-shared",
+  // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
+  // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
+  // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・
+  // `valueAsNumber:`・`#ro`・アクセサペア（setter が変換しうる）では黙る。warning。
+  NumberWrittenAsString: "wcs/number-written-as-string",
+  // 双方向の `value:` / `valueAsNumber:` に付けた出力フィルタ（`value: code|upper`・`value: price|locale`）。フィルタは
+  // 要素が書き戻すたび（既定では 1 打鍵ごと）に state の値を整形して欄へ書き直す: キャレットは末尾へ飛び、IME の変換は
+  // 途切れ、state が受け取るのは整形済みの文字（出力フィルタは書き戻しで元に戻らない）。確定した値を書き戻す束縛
+  // （`#onchange`・スライダー・`<select>`）は入力中に書き換わらないので、入力フィルタ（作者が用意した戻り道 —
+  // `value#onchange|number: price|toFixed(2)`）が無いときだけ報告する。要素の書いた文字をそのまま返すフィルタ
+  // （`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）と `#ro` では黙る。warning。
+  TwoWayOutputFilter: "wcs/two-way-output-filter",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。

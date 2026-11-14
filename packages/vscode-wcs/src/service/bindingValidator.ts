@@ -28,6 +28,7 @@ import type { JsonSchemaNode } from '../core/sidecar/types.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
 import { candidateKeyOf, classifyIndexParam, hasIndexSegment, hasUnsafeSegment, isIndexSegment, MAX_INDEX_PARAM, toWildcardForm } from './indexPath.js';
 import { removedFilterMessage } from './removedNames.js';
+import { booleanAttributeText } from './attributeValues.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -689,7 +690,23 @@ export function validateBindings(
           const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
             const typeReq = getExpectedType(parsed.property);
-            if (typeReq && resultType !== typeReq.expected) {
+            // a boolean given to `attr.<name>:` is written as "true" / "false": right for an attribute whose values
+            // those are (`attr.aria-invalid:` — nothing is said), still on for a boolean attribute, the text elsewhere
+            const attrBoolean = typeReq !== null && propNoMod.startsWith('attr.') && isBooleanType(resultType)
+              ? booleanAttrMessage(propNoMod.slice('attr.'.length), attr.tagName, binding, parsed, msgs)
+              : undefined;
+            if (attrBoolean !== undefined) {
+              if (attrBoolean !== null) {
+                const pathStart = bindingStart + binding.indexOf(parsed.path);
+                diagnostics.push({
+                  code: WcsDiagnosticCode.BindingTypeExpectation,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: attrBoolean,
+                  severity: 'warning',
+                });
+              }
+            } else if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               // `for:` に対して stateSchema が非配列と**確定**している（schema 由来の候補・
@@ -791,6 +808,9 @@ export interface BindAttrLocation {
   tagName?: string;
   /** その要素の `type` 属性（`<input>` の書き戻しの判定に使う）。無ければ undefined */
   inputType?: string;
+  /** 属性を持つ開始タグの属性領域（タグ名の直後から `>` の手前まで）。ほかの属性を読む検査が使う。 */
+  attrsStart?: number;
+  attrsEnd?: number;
 }
 
 interface ParsedFilter {
@@ -839,7 +859,10 @@ export function findAllBindAttributes(html: string, attrName: string): BindAttrL
       const valueEnd = html.indexOf(quote, valueStart);
       if (valueEnd === -1 || valueEnd > tag.end) continue;
       const inputType = tag.tagName === 'input' ? extractAttribute(attrsText, 'type') ?? undefined : undefined;
-      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName, ...(inputType !== undefined ? { inputType } : {}) });
+      attrs.push({
+        value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName, ...(inputType !== undefined ? { inputType } : {}),
+        attrsStart: tag.start, attrsEnd: tag.end,
+      });
       regex.lastIndex = valueEnd - tag.start;
     }
   }
@@ -1213,6 +1236,35 @@ function getExpectedType(property: string): TypeRequirement | null {
     return { label: prop, expected: 'string', severity: 'warning' };
   }
   return null;
+}
+
+/** A type hint that is a boolean, alone or with null (`boolean|null` — a JSDoc union): what `attr.*` writes as "true" / "false". */
+function isBooleanType(type: string): boolean {
+  const parts = type.split('|');
+  return parts.includes('boolean') && parts.every((part) => part === 'boolean' || part === 'null');
+}
+
+/**
+ * What to say about a boolean bound to `attr.<name>:` (attributeValues.ts): null when "true" / "false" is what the
+ * attribute takes (`attr.aria-invalid:`), or when the chain ends with `|defaults(null)` — `false` becomes `null`, which
+ * removes the attribute, so it is there exactly while the value is true.
+ */
+function booleanAttrMessage(
+  name: string,
+  tag: string | undefined,
+  binding: string,
+  parsed: ParsedBinding,
+  msgs: WcsMessageCatalog,
+): string | null {
+  const last = parsed.filters[parsed.filters.length - 1];
+  if (last !== undefined && last.name === 'defaults' && last.args.length === 1 && last.args[0] === 'null') return null;
+  const written = booleanAttributeText(name, tag);
+  if (written.kind === 'value') return null;
+  // the right side as written (path and filters), for the rewrite the message gives
+  const rhs = binding.slice(indexOfOutsideQuotes(binding, ':') + 1).trim();
+  return written.kind === 'presence'
+    ? msgs.attrBooleanPresence(name, written.property, rhs)
+    : msgs.attrBooleanText(name, rhs);
 }
 
 /**

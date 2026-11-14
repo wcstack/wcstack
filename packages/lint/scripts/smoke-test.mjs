@@ -332,6 +332,32 @@ const session = localStorage.getItem("session");
 export default function () { return session !== null; }
 </script></wcs-guard-handler></wcs-route></template></wcs-router>
 `);
+// From the ekiden-entry seam app (since 4.23). A key seeded with a member of a value the lint cannot read
+// (`team: init.team`) is unknown, not missing: one info at the key, and --strict passes (up to 4.22 each path under it
+// was a false wcs/binding-path-missing). `attr.aria-invalid:` takes "true" / "false" as written and is not reported.
+// A data-entry form's three silent mistakes are warnings: every row's radios sharing a literal name, a string
+// written into a number, an output filter on a field the user types in — --strict fails, --errors-only prints none.
+const memberSeedHtml = join(workDir, "member-seed.html");
+writeFileSync(memberSeedHtml, `<!doctype html>
+<wcs-state><script type="module">
+const init = load();
+export default { team: init.team, flag: false };
+</script></wcs-state>
+<input data-wcs="value: team.name; attr.aria-invalid: flag|truthy">
+<input data-wcs="value: team.kana">
+`);
+const formInputHtml = join(workDir, "form-input.html");
+writeFileSync(formInputHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default { count: 0, code: "", rows: [{ id: 1, sex: "m" }] };
+</script></wcs-state>
+<input type="number" data-wcs="value: count">
+<input data-wcs="value: code|upper">
+<template data-wcs="for: rows">
+  <input type="radio" name="sex" value="m" data-wcs="radio: .sex">
+  <input type="radio" name="sex" value="f" data-wcs="radio: .sex">
+</template>
+`);
 // the lint's version is the engine's (released in lockstep): a page pinning the next minor
 const [lintMajor, lintMinor] = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version.split(".").map(Number);
 const nextMinor = `${lintMajor}.${lintMinor + 1}.0`;
@@ -579,6 +605,26 @@ check("a root-absolute src → not read, said once (wcs/state-src-unread, info),
 check("--root=<site root> reads a root-absolute src: the typo under it → warning wcs/binding-path-missing, no info, exit 0", ["--lang=en", `--root=${rootSite}`, rootHtml], {
   exit: 0,
   stdout: [/warning wcs\/binding-path-missing Path "cuont"/, "0 error(s), 1 warning(s), 0 info"],
+});
+
+check("a key seeded with a member of an unread value (team: init.team) → no wcs/binding-path-missing, said once (info), --strict exit 0", ["--lang=en", "--strict", memberSeedHtml], {
+  exit: 0,
+  stdout: [/:4:18 info wcs\/path-dynamic-unknown The value of "team" \(init\.team\) cannot be read statically, so the 2 paths bound under it are not checked/, "0 error(s), 0 warning(s), 1 info (strict)"],
+});
+
+check("a data-entry form → warnings wcs/number-written-as-string, wcs/two-way-output-filter and wcs/radio-name-shared (once), exit 0", ["--lang=en", formInputHtml], {
+  exit: 0,
+  stdout: [
+    /:5:39 warning wcs\/number-written-as-string "count" is a number in the state, but value: writes back what the element holds, a string/,
+    /:6:30 warning wcs\/two-way-output-filter value: is two-way and writes back on every keystroke, and the output filter "\|upper"/,
+    /:8:23 warning wcs\/radio-name-shared Every row's radios get name="sex"/,
+    "0 error(s), 3 warning(s), 0 info",
+  ],
+});
+
+check("the data-entry form's warnings under --strict → exit 1; --errors-only prints none of them", ["--lang=en", "--strict", "--errors-only", formInputHtml], {
+  exit: 1,
+  stdout: [/^\n?0 error\(s\), 3 warning\(s\), 0 info \(strict\)/],
 });
 
 check("a framework app's page and component → named as nothing to check / not read, also with --errors-only, exit 0", ["--lang=en", "--errors-only", frameworkHtml, frameworkTsx], {

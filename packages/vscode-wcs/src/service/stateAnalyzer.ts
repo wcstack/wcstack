@@ -46,9 +46,11 @@ export interface PathCandidate {
   fromSchema?: boolean;
   /**
    * The value of this data path is one the analyzer could not read: a name it could not follow to a literal (a call,
-   * a computed expression, an import it cannot read — moduleValues.ts). The path exists; what is under it is unknown,
-   * so nothing under it is reported missing (statePathResolver's `StatePathScopes.opaquePaths`). `from` is the
-   * specifier the name is imported from, when it is imported; `name` the name the value is written as.
+   * a computed expression, an import it cannot read — moduleValues.ts), or an expression written in place that is not
+   * a literal (`team: init.team`, `errs: emptyErrs()`, `[1, 2].map(…)`; the rows of `[newRunner()]`). The path exists;
+   * what is under it is unknown, so nothing under it is reported missing (statePathResolver's
+   * `StatePathScopes.opaquePaths`). `name` is the name or the expression the value is written as (a long expression
+   * shortened); `from` the specifier that name — an expression's first name — is imported from, when it is imported.
    * `spread` is set instead of `name` when the value is an object literal whose keys are read but for a spread it could
    * not read (`draft: { ...makeDraft() }`, as written): the object has keys the analyzer does not know.
    */
@@ -1819,7 +1821,14 @@ function pushDataPropertyPathsAt(
   let candidate: PathCandidate;
   let unread: UnreadSpread | null = null;
   if (followed === null) {
-    candidate = { path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() };
+    // written in place. An expression it cannot read — a member of a name (`team: init.team`), a call
+    // (`errs: emptyErrs()`), a conditional, a literal a call goes on from (`[1, 2].map(…)`) — has contents it does not
+    // know: open, as a name it could not follow, not "missing" (unless a JSDoc @type declares them). The ekiden-entry
+    // seam app wrote `team: init.team` beside `const init = emptyEntry()`: 91 false wcs/binding-path-missing
+    const opaque = prop.value !== undefined && prop.declaredType === undefined && isUnreadExpression(prop.value)
+      ? { opaque: unreadExpression(prop.value, scope) }
+      : {};
+    candidate = { path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), ...opaque };
     paths.push(candidate);
     unread = pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
   } else {
@@ -2000,6 +2009,67 @@ function isReadableLiteral(text: string): boolean {
 }
 
 /**
+ * Whether a value written in place is an expression whose contents the analyzer does not know: anything but a literal
+ * it reads (isReadableLiteral), and an array or object literal something goes on from — `[1, 2].map(…)`,
+ * `{ … }.rows`, `[…][0]`: the value is what the call or the member gives, not the literal. (A TypeScript `as` /
+ * `satisfies` after the literal leaves it the literal.)
+ */
+function isUnreadExpression(value: string): boolean {
+  const v = value.trim();
+  if (!isReadableLiteral(v)) return true;
+  const open = v[0];
+  if (open !== '[' && open !== '{') return false;
+  const scan = maskCommentsAndStrings(v);
+  const inner = extractDelimitedContent(v, scan, 0, open, open === '[' ? ']' : '}');
+  const rest = scan.slice(inner.length + 2).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ').trimStart();
+  return /^(?:\?\.|\.|\[|\()/.test(rest);
+}
+
+/** How long an unread expression is quoted in a message at most. */
+const MAX_UNREAD_TEXT = 40;
+
+/**
+ * An unread value written in place, for `PathCandidate.opaque`: the expression as written (on one line, shortened), and
+ * the specifier its first name is imported from when it is an import (`emptyEntry()` with
+ * `import { emptyEntry } from "./shape.js"`).
+ */
+function unreadExpression(value: string, scope: ModuleScope | undefined): { name: string; from?: string } {
+  // (a comment before the expression is not part of what is quoted)
+  const flat = value.trim().replace(/^(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)+/, '').replace(/\s+/g, ' ');
+  const name = flat.length <= MAX_UNREAD_TEXT ? flat : `${flat.slice(0, MAX_UNREAD_TEXT - 1)}…`;
+  const root = /^(?:\.\.\.|(?:new|await)\s+)*([$A-Za-z_][$\w]*)/.exec(flat)?.[1];
+  const from = root === undefined || scope === undefined ? undefined : scope.importOf(root);
+  return { name, ...(from !== undefined ? { from } : {}) };
+}
+
+/**
+ * The first element of an array literal as written (`[newRunner(), newRunner()]` → `newRunner()`), or null for an
+ * empty array.
+ */
+function firstArrayElement(value: string): string | null {
+  const trimmed = value.trim();
+  const scan = maskCommentsAndStrings(trimmed).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => ' '.repeat(c.length));
+  // (taken from the mirror where only comments are blank: the element's own text, without a comment before it)
+  const element = (end: number): string | null => {
+    const from = 1 + (scan.slice(1, end).length - scan.slice(1, end).trimStart().length);
+    return scan.slice(from, end).trim() === '' ? null : trimmed.slice(from, end).trim();
+  };
+  let depth = 0;
+  for (let i = 1; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      if (depth === 0) return element(i);
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      return element(i);
+    }
+  }
+  return null;
+}
+
+/**
  * What a data property's value is when it is written as a name: the expression the name is bound to (followed through
  * the module's constants and imports), or `value: null` when it cannot be followed — with the name and the specifier it
  * is imported from, for the message. A JSDoc `@type {typeof import("./en.js").default}` on the key names the value it
@@ -2018,12 +2088,21 @@ function followValue(prop: PropertyInfo, scope: ModuleScope): { value: ResolvedV
     if (prop.value === undefined) return null;
     const written = prop.value.trim();
     const text = unwrapFreeze(written);
-    if (!isFollowableName(text, scope)) return text === written ? null : { value: { text, scope } };
-    name = text;
-    from = scope.importOf(text);
-    const resolved = scope.resolveName(text);
-    if (resolved === null) return { value: null, name, from };
-    current = resolved;
+    if (!isFollowableName(text, scope)) {
+      // a member of a name the module binds (`team: DEFAULTS.team`): the value of that key of its object literal
+      const member = followMember(text, scope);
+      if (member === undefined) return text === written ? null : { value: { text, scope } };
+      name = text;
+      from = member.from;
+      if (member.value === null) return { value: null, name, from };
+      current = member.value;
+    } else {
+      name = text;
+      from = scope.importOf(text);
+      const resolved = scope.resolveName(text);
+      if (resolved === null) return { value: null, name, from };
+      current = resolved;
+    }
   }
   // the value it leads to may be wrapped (`Object.freeze(DICT)`) or another name of the module it is in
   for (let hops = 0; hops < 8; hops++) {
@@ -2034,6 +2113,47 @@ function followValue(prop: PropertyInfo, scope: ModuleScope): { value: ResolvedV
     current = next;
   }
   return { value: null, name, from };
+}
+
+/**
+ * What a member of a name is bound to — `DEFAULTS.team`, `M.DEFAULTS.team` with `M` a namespace import: the name is
+ * followed to an object literal (through the module's constants, its imports and `Object.freeze`), and each key to its
+ * value in turn. `value: null` when a step is not an object literal the analyzer reads or has no such key —
+ * `init.team` with `const init = emptyEntry()` — with the specifier the name is imported from. undefined when the text
+ * is not such a member (`this.x`, a call, `location.pathname` — no name of the module).
+ */
+function followMember(text: string, scope: ModuleScope): { value: ResolvedValue | null; from?: string } | undefined {
+  const m = /^([$A-Za-z_][$\w]*)((?:\s*\.\s*[$A-Za-z_][$\w]*)+)$/.exec(text);
+  if (m === null || WORD_LITERALS.has(m[1])) return undefined;
+  const root = m[1];
+  let keys = m[2].split('.').map((key) => key.trim()).filter((key) => key !== '');
+  let current: ResolvedValue | null;
+  if (scope.isNamespaceMember(`${root}.${keys[0]}`)) {
+    current = scope.resolveName(`${root}.${keys[0]}`);
+    keys = keys.slice(1);
+  } else {
+    current = scope.resolveName(root);
+    if (current === null) return undefined;
+  }
+  const from = scope.importOf(root);
+  const unread = { value: null, ...(from !== undefined ? { from } : {}) };
+  for (const key of keys) {
+    // the value may be wrapped (`Object.freeze({ … })`) or another name of the module it is in
+    let literal: ResolvedValue | null = current;
+    for (let hops = 0; literal !== null && hops < MAX_SPREAD_HOPS; hops++) {
+      const inner = unwrapFreeze(literal.text);
+      if (isObjectLiteral(inner)) {
+        literal = { text: inner, scope: literal.scope };
+        break;
+      }
+      literal = isFollowableName(inner, literal.scope) ? literal.scope.resolveName(inner) : null;
+    }
+    if (literal === null || !isObjectLiteral(literal.text)) return unread;
+    const found = objectLiteralKeys(extractObjectContent(literal.text), literal.scope, true).keys.find((k) => k.prop.name === key);
+    if (found === undefined || found.prop.value === undefined) return unread;
+    current = { text: found.prop.value, scope: found.scope ?? literal.scope };
+  }
+  return { value: current, ...(from !== undefined ? { from } : {}) };
 }
 
 /**
@@ -2094,7 +2214,13 @@ function pushLiteralStructurePaths(
     paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return null;
     const first = firstRowObjectContent(prop.value);
-    if (first === null) return null;
+    if (first === null) {
+      // a first row that is not written out — a call, a name, a spread (`[newRunner()]`, `[...saved]`): the rows have
+      // fields it does not know, so they are open (a primitive or a nested array has none)
+      const element = prop.declaredType === undefined ? firstArrayElement(prop.value) : null;
+      if (element !== null && !isReadableLiteral(element)) row.opaque = unreadExpression(element, scope);
+      return null;
+    }
     const { keys, unread } = objectLiteralKeys(first, scope, false);
     for (const key of keys) {
       pushDataPropertyPathsAt(`${path}.*.${key.prop.name}`, key.prop, paths, depth + 1, typedefs, key.scope);

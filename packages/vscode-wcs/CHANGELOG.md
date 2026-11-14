@@ -2,6 +2,16 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+継ぎ目アプリ ekiden-entry（入力の重い申し込みウィザード — IME・オートフィル・行の中の入力・フォーム連携のカスタム要素）が見つけた lint の穴を直した（版は 4.23 のリリースと同時に上げる）。作者のページでは、仕込んだ誤り 21 件に何も言わず、偽の warning を 91 件出していた:
+
+- 値を読めないキーの下を「存在しない」と言わない。その場に書いたリテラルでない式 — 読めない値のメンバー（`const init = emptyEntry()` の `team: init.team`）・呼び出し（`errs: emptyErrs()`）・条件式・呼び出しを続けたリテラル（`[1, 2].map(…)`）— と、先頭の行を書いていない配列（`[newRunner()]`）の行は、辿れない名前と同じく中身の分からないキーとして読み、その下を束ねていればキーの上に `wcs/path-dynamic-unknown`（info）を 1 回出す。以前は、その下のパスが 1 件ずつ偽の `wcs/binding-path-missing` になった。`for:` の行のパス（`.name`）も「その下に束ねたパス」に数え、ほかの宣言（行の getter・`$recursion`）で分かるパスは数えない。オブジェクトリテラルを束縛する `const` のメンバー（`team: DEFAULTS.team`、import したものも）は、そのキーの形を読んで検査する。
+- `wcs/radio-name-shared`（新規、warning）: `for:` の行の中の、`name` をリテラルで書いたラジオ（`name="sex"` と `radio: .sex`）。どの行のラジオも同じ name になり、ブラウザは全部の行を 1 つのグループにする — ページ全体で 1 つしか選ばれた状態にならない。name を束ねてある・行のものでないパス（`radio: selectedId`）・行ごとに `<form>` がある、では言わない。
+- `wcs/number-written-as-string`（新規、warning）: 変換の無い双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema。行のフィールドも）を指す。要素は文字列を書くので、`count + 1` が `"51"` になる。`valueAsNumber:` と入力フィルタ（`value|number:`）を言う。
+- `wcs/two-way-output-filter`（新規、warning）: 双方向の `value:` / `valueAsNumber:` の出力フィルタ（`value: code|upper`・`value: price|locale`）。打つ欄では 1 打鍵ごとに欄が書き換わり、キャレットが末尾へ飛び、IME の変換が途切れ、state は整形済みの文字を受け取る。確定した値を書き戻す束縛（`#onchange`・スライダー・`<select>`）は、戻り道の入力フィルタが無いときだけ報告する。要素の書いた文字をそのまま返すフィルタ（`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）と `#ro` では言わない。
+- `wcs/binding-type-expectation`: `attr.*` に boolean を束ねたときの文面を、起きることで言う（ランタイムは `String(value)` を書き、属性を外すのは `null` / `undefined` だけ）。値が `true` / `false` の属性 — ARIA の状態（`attr.aria-invalid: flag|truthy`）と `contenteditable`・`draggable`・`spellcheck` — には何も言わない（誤報だった）。ネイティブ要素の論理属性（`attr.disabled: flag`）は「`disabled="false"` でも効く」と言い、束ねるプロパティを言う。ほかの属性は「文字の `"true"` / `"false"` になり、外れない」と言い、`|defaults(null)`（false の間は外す）と `|string`（文字が意図）を言う。
+
 ## 2.17.0 — 2026-11-12
 
 `@wcstack/state` 4.22.0 から作った（npm の `@wcstack/lint` 4.22.0・`@wcstack/typescript` 4.22.0 と同じ判定）。4.22 のスクリプトの 2 つの書き方に対応した:
