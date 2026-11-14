@@ -1811,7 +1811,7 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: PR #65（merge commit 07ebe00）。状態の設計の節に 2 つの書き方と、絞り込んだ写しの行に元のリストのアクセサが無いこと。lint の節に新しい code。`references/state-binding.md` §6 の例と規則。刻印と固定 URL。公開された 4.22.0 の束と `@wcstack/lint@4.22.0` で例と誤りの報告を確かめた。注釈付きタグ `v4.22.0`。
   - LP（wcstack.github.io ce98e4c）: リリースの表示、v4.22.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-an261e…`、gzip 81,859 B ＝約 80 KB）、llms。ローカルの検査 7/7。
 - **残り**:
-  - 拡張 2.17.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.17.0`。
+  - ~~拡張 2.17.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.17.0`。~~ → 著者が公開した。2026-11-15 に確かめた: Marketplace の vspackage の SHA-256 は手元の vsix と一致した（`0694ff16…`）。注釈付きタグ `vscode-wcs-v2.17.0` を e47c0c14 に付けた。
   - core の残りは 3 B、diagnostics の残りは公開時 3 B（基準値を取り直したので、今は +3 % の余裕がある）。次に core に手を入れるときは、上限を上げるか、core から何かを出す。
   - `packages/wcstack` の README（AI 向けの手引き）には、2 つの書き方を書いていない。
   - 4.21.0 から持ち越したもの: 二人の予算は後勝ち（記録だけ）、3 巡目の 3 本目「入力の重い業務フォーム」、`bootstrapXxx(config, registry)` の README、古いルートが歩いた入れ物、midi の Permissions-Policy、拡張の公開を 2026-12-01 より前に Microsoft Entra ID へ移す、次の有界全列挙のスイート、content mapper（#523・#524）、長期サポート版（保留）。
@@ -1847,10 +1847,10 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - LP（wcstack.github.io 2fcada2）: リリースの表示、v4.23.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-GxPxbg…`、gzip 83,488 B ＝約 82 KB）、llms。`llms-full.txt` に `islands.md` と `forms.md` を含めた（SKILL.md が指すのに入っていなかった）。ローカルの検査 7/7、本番 8/9（落ちる 1 件は、これまでと同じく、アプリのページが呼ぶ API が Pages に無いため）。
   - 例の取り込み: PR #679（merge commit 2f1cc3c4）。`examples/ekiden-entry` と `e2e/tests/ekiden-entry.spec.ts`（Chromium 15 件、うち 2 件は Firefox でも）。4.23.0 で要らなくなった回避策（変換中の欄を飛ばすコード、ガードに任せられなかった最初のナビゲーション）を外した。取り込みの中で新しい欠陥は見つからなかった。
 - **残り**:
-  - 拡張 2.18.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.18.0`。
+  - ~~拡張 2.18.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.18.0`。~~ → 2026-11-15、著者が公開した。Marketplace の vspackage の SHA-256 は手元の vsix と一致した（`cc6407eb…`）。注釈付きタグ `vscode-wcs-v2.18.0` を 026b5b8d に付けた。
   - core の残りは 3 B のまま。
   - Safari には `moveBefore()` が無い: 動いた行の中の I/O ノードは今も要求を失う（文書に書いた）。全ブラウザで直す案（切断の後始末をマイクロタスクで判定する）は、§22 の変更になるので採らなかった。
   - 設計の問い（記録だけ）: ハンドラは、要素がどのパスに束縛されているかを尋ねられない。
   - 記録だけ: 空にした `valueAsNumber:` の欄の `NaN`、別のファイルの `static wcBindable` を lint が読まないこと、動く行の中の `<wcs-audio>`、数と `null` を渡した `attr.*` の文面。
   - 止める目安には当たっていない。3 巡目の次は 4 本目「大きなリストとスクロール」。
-  - 4.22.0 から持ち越したもの: 拡張 2.17.0 のタグ（公開の後）、`packages/wcstack` の README の 2 つの書き方、ほか 4.21.0 からの持ち越し。
+  - 4.22.0 から持ち越したもの: `packages/wcstack` の README の 2 つの書き方、ほか 4.21.0 からの持ち越し（拡張 2.17.0 のタグは、上のとおり付けた）。
