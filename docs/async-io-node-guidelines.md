@@ -23,6 +23,7 @@
 11. **Core is a public headless surface.** Export the Core class from the package entry (`exports.ts`) and treat its structural guarantees (§3.9) as public API under semver. The README has a section on headless (Core) usage (§9)
 12. **The producer snapshot contract.** A producer does not modify a state-like object or array after publishing it, and assigns a fresh value before notifying when the logical state changes. An event does not same-value guard its occurrences, and a handle states its owner and release point explicitly (§3.3.1). How values received as input are handled is §3.3.2
 13. **Property upgrade.** The Shell calls `upgradeProperties(this)` at the top of `connectedCallback`, re-reading inputs assigned before the upgrade (§4.1.1)
+14. **A move is not a disconnect.** A Shell whose work does not depend on where it is in the document defines an empty `connectedMoveCallback`, so a `moveBefore()` (a list row a reorder moves) stops nothing (§4.1.2)
 
 ---
 
@@ -288,6 +289,7 @@ export class Wcs<Name> extends HTMLElement {
     if (config.autoTrigger) registerAutoTrigger();
     this._connectedCallbackPromise = this._core.observe(/* settings resolved from attributes */);
   }
+  connectedMoveCallback() {}                         // §4.1.2 (unless the node reads its surroundings)
   disconnectedCallback() { this._core.dispose(); }
   get connectedCallbackPromise() { return this._connectedCallbackPromise; }
 }
@@ -305,6 +307,12 @@ An element of an undefined tag is a plain `HTMLElement`, so `el.url = "..."` bef
 
 - Keep the Shell **thin**. Logic belongs in Core. The Shell's responsibilities are exactly: bridging attributes ↔ Core settings, delegating Core observables, driving the lifecycle, and reactive command-properties
 - `this.style.display = "none"` (an I/O node is invisible; exceptions that need a layout box, such as `intersection`, use `display:contents` and the like, with the reason written down)
+
+### 4.1.2 A move is not a disconnect
+
+When the browser moves an element with `moveBefore()` — `@wcstack/state` moves a kept list row so — a custom element is given `disconnectedCallback` and then `connectedCallback`, unless its class defines `connectedMoveCallback`, which then runs instead. A Shell that disposes on disconnect lost its work to a reorder: a request, a connection, a timer, an upload ([timing-and-firing-contract.md §25](./timing-and-firing-contract.md)).
+
+Define `connectedMoveCallback(): void {}` when `connectedCallback` reads only the element's own attributes, properties and children. Leave it out when the node looks at where it stands — a target or a root found with `getRootNode()`, `closest()` or the parent, a meaning that comes from nesting: for such a node a move changes what it works on, and the disconnect / connect pair is right. A package test checks that the class has the callback (happy-dom has no `moveBefore()`).
 
 ### 4.2 Decompose an observable into "one event plus derived getters"
 

@@ -331,6 +331,11 @@ export class WcsGeolocation extends HTMLElement {
     this._scheduleLocate();
   }
 
+  // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+  // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+  // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
     // 判断の前に外れたら、張った connectedCallbackPromise をここで解く — 同じタスクで
     // 入れ直されると次の connectedCallback が張り替えるので、待つ側が取り残されないように

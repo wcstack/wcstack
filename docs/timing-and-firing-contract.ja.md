@@ -607,3 +607,22 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 ### 24.6 テスト
 各パッケージは、ヘルパーの共有テストと、自分の `registerComponents()` に対する共有の登録テストを走らせる（`__tests__/protocol.defineElement*.test.ts`）: 別のコピーのクラスが先にある（版あり・なし）、同じ版は何も言わない、利用者のサブクラスは何も言わない、警告はレジストリごとに 1 回。`@wcstack/state` は包みを `__tests__/twice.test.ts` で確かめる。
+
+## 25. 横断契約: 移動は切断ではない（2026-11-14）
+
+対象: 文書のどこに置かれているかに仕事がよらない I/O ノード（§25.3）。継ぎ目アプリ `ekiden-entry` が見つけた（[seam-apps.ja.md](./seam-apps.ja.md)）。リストの行の中の `<wcs-upload>` は、行を並べ替えるとアップロードを失い — `loading` は false、`status` は 0、エラーなし — `<wcs-fetch>` は要求を中断した。どのブラウザでも起きた: `@wcstack/state` が行を `moveBefore()` で動かすところ（4.14 から、Chromium 133 以降と Firefox 144 以降）でも。クラスに `connectedMoveCallback` の無いカスタム要素は、移動のたびに `disconnectedCallback`、続けて `connectedCallback` を受け、切断は後始末をする（§22）。
+
+### 25.1 周りを読まないノードは `connectedMoveCallback` を定義し、そこでは何もしない
+ブラウザが要素を `moveBefore()` で動かすとき、クラスが `connectedMoveCallback` を定義していれば、切断と接続の組の代わりにそれが走る。`connectedCallback` が自分の属性・プロパティ・子だけを読むノードにとって、移動は仕事の元になるものを何も変えない: 進行中の要求、開いた接続、動いているタイマー、取得したロックやストリームは続き、出力は変わらず、イベントは出ない。4.23 から。
+
+### 25.2 そうでないもの
+- 要素を取り出して入れ直す移動（`insertBefore`・`append`）は対象でない: `moveBefore()` の無いブラウザ（2026-11 時点の Safari）と、そう動かすコードすべて。それは今までどおり切断と接続で、§22 の知らせと §23 の判断が起きる。仕事を続けたい I/O ノードを持つ行を並べ替えるページは、仕事の間は並べ替えないか、ノードを行の外に置く（[forms.ja.md](./forms.ja.md)）。
+- どの行が動くかの約束ではない: `@wcstack/state` は動かす行をできるだけ少なくし、どれを動かすかは自分で選ぶ。
+
+### 25.3 ノード
+コールバックを持つもの: `<wcs-accelerometer>`・`<wcs-ambient-light-sensor>`・`<wcs-broadcast>`・`<wcs-camera>`・`<wcs-recorder>`・`<wcs-clipboard>`・`<wcs-contacts>`・`<wcs-credential>`・`<wcs-debounce>` / `<wcs-throttle>`・`<wcs-defined>`・`<wcs-eyedropper>`・`<wcs-fetch>`・`<wcs-geo>`・`<wcs-gyroscope>`・`<wcs-idle>`・`<wcs-magnetometer>`・`<wcs-media-query>`・`<wcs-midi>`・`<wcs-network>`・`<wcs-notify>`・`<wcs-permission>`・`<wcs-raf>`・`<wcs-screen-orientation>`・`<wcs-share>`・`<wcs-listen>`・`<wcs-speak>`・`<wcs-sse>`・`<wcs-storage>`・`<wcs-tilt>`・`<wcs-timer>`・`<wcs-upload>`・`<wcs-wakelock>`・`<wcs-ws>`・`<wcs-worker>`。
+
+持たないもの — することが置かれた場所によるので、移動は切断と接続のまま: `<wcs-intersect>`・`<wcs-resize>`・`<wcs-infinite-scroll>`（観測する対象とルートを、自分の居る場所から探す）、`<wcs-fullscreen>`・`<wcs-pip>`・`<wcs-pointer-lock>`（対象が同じく場所による）、`<wcs-audio>` とそのノードのタグ（入れ子が信号の流れ）。`@wcstack/router` の要素・`<wcs-autoloader>`・`<wcs-view-transition>` は I/O ノードではなく、変わらない。
+
+### 25.4 テスト
+各パッケージは、クラスがコールバックを持つことを確かめる（`__tests__/connectedMove.test.ts`）: happy-dom には `moveBefore()` が無い。ブラウザが実際に呼ぶところは `e2e/tests/io-move-row.spec.ts`（Chromium と Firefox）: 4 つの `<wcs-fetch>` が進行中の間に 2 行が入れ替わり、どの要求も 1 回だけ届く。

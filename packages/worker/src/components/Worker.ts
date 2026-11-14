@@ -278,6 +278,11 @@ export class WcsWorker extends HTMLElement {
     }
   }
 
+  // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+  // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+  // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
     // Deliberately does NOT call unregisterAutoTrigger(). The autoTrigger click
     // listener is a single process-wide document listener (registerAutoTrigger

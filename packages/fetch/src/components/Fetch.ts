@@ -46,6 +46,11 @@ export class Fetch extends HTMLElement {
   private _lastFetchedUrl: string | null = null;
   private _toldTriggerWithoutUrl = false;
   private _toldUndefinedHelper = false;
+  // 本文を運んだ要求を出したことがある（body の入力か <wcs-fetch-body> から）
+  private _sentBody = false;
+  private _toldBodyGone = false;
+  // 次に始まる要求は url が始めるもの（auto-fetch）で、コマンドや trigger のものではない
+  private _auto = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -347,6 +352,7 @@ export class Fetch extends HTMLElement {
       if (this.isConnected && !this.manual && url && url !== this._lastFetchedUrl) {
         // (not the request the element starts as it connects with a url: a POST that is meant)
         if (resolveConnect === null) this._warnUnsafeAutoFetch();
+        this._auto = true;
         // fetch() cannot reject here: FetchCore swallows network/HTTP errors and
         // only rejects on an empty url, which the `url` guard above rules out.
         this.fetch().finally(() => resolveConnect?.());
@@ -410,6 +416,27 @@ export class Fetch extends HTMLElement {
     );
   }
 
+  /**
+   * `body` is a one-shot input: sent with one request, then gone. A request that changes data (POST, PUT,
+   * PATCH) going out with no body after one that carried a body is a second send whose body was not written
+   * again: a binding does not write a value equal to the one it wrote last, so the same JSON string on a
+   * retry never reaches the element, and the server got an empty request without a word
+   * (docs/seam-apps.md, ekiden-entry). Said once until a body is sent again. Not for the request a url
+   * change starts, which `[wcs/fetch-auto-unsafe]` reports.
+   */
+  private _warnBodyGone(): void {
+    const method = this.method;
+    if (!this._sentBody || this._toldBodyGone || (method !== "POST" && method !== "PUT" && method !== "PATCH")) return;
+    this._toldBodyGone = true;
+    console.warn(
+      `[@wcstack/fetch] [wcs/fetch-body-gone] This <${config.tagNames.fetch}> sent a ${method} with no body: a body is ` +
+        "sent once, and none was written since the last request. A binding does not write a value equal to the one " +
+        "it wrote last, so the same string on a retry never arrives: write a new object each time " +
+        "(this.payload = { ...entry }), or null between two sends. (Said once until a body is sent again.)",
+      this,
+    );
+  }
+
   async fetch(): Promise<any> {
     // Record the url for the auto-fetch same-value guard. Every fetch (explicit
     // included) updates it so a later auto-write of the same url is treated as a
@@ -425,6 +452,14 @@ export class Fetch extends HTMLElement {
     const bodySnapshot = this._body;
     this._body = null;
     const { body, contentType } = this._collectBody(bodySnapshot);
+    const auto = this._auto;
+    this._auto = false;
+    if (body !== null) {
+      this._sentBody = true;
+      this._toldBodyGone = false;
+    } else if (!auto) {
+      this._warnBodyGone();
+    }
 
     // FormData に手動で Content-Type を付けると、ブラウザが付与するはずの multipart
     // boundary が失われてサーバー側でパースできなくなる。ヘッダはユーザー指定を
@@ -501,6 +536,11 @@ export class Fetch extends HTMLElement {
     }
     this._scheduleAutoFetch();
   }
+
+  // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
+  // よらないので、何も止めず、何も始め直さない。connectedMoveCallback が無いと、ブラウザは代わりに
+  // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
+  connectedMoveCallback(): void {}
 
   disconnectedCallback(): void {
     this.abort();

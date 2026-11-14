@@ -245,6 +245,11 @@ export class Debounce extends HTMLElement {
     this._connectedCallbackPromise = this._core.observe();
   }
 
+  // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
+  // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls
+  // disconnectedCallback and connectedCallback instead (docs/timing-and-firing-contract.md §25)
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
     // Drop any in-flight timer so a detached element leaks nothing, and bump the
     // Core generation so a surviving timer callback cannot settle (§3.5).
