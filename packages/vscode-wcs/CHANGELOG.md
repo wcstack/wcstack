@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.19.0 — 2026-11-15
 
-継ぎ目アプリ town-archive（写真 12,000 点のアーカイブ — 無限スクロールの長い一覧と、職員の表）が見つけた lint の穴を直した（版は 4.24 のリリースと同時に上げる）。作者がわざとした 25 の間違いに、lint は 1 つも報告しなかった。
+`@wcstack/state` 4.24.0 から作った（npm の `@wcstack/lint` 4.24.0・`@wcstack/typescript` 4.24.0 と同じ判定）。継ぎ目アプリ town-archive（写真 12,000 点のアーカイブ — 無限スクロールの長い一覧と、職員の表）が見つけた lint の穴を直した。作者がわざとした 25 の間違いに、lint は 1 つも報告しなかった。
 
 - 1 つの JSDoc コメントに書いた複数の `@typedef` をすべて読む。最初の 1 つしか読まず、残りの型で宣言したリストの行のフィールドが `wcs/binding-path-missing` になっていた（誤報）。
 - `wcs/delegated-current-target`: ハンドラの中の入れ子の関数（`this.items.find((x) => … event.currentTarget …)`）での読みも報告する。dispatch の後に走る関数（`setTimeout`・`.then` などに渡したもの）は今までどおり黙る。
