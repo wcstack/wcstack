@@ -420,7 +420,22 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: 変換を守るために、打った文字を正規化する欄を片方向に束ねてハンドラから書くこと（setter で足りる。整形しながらキャレットを保つなら、今もハンドラ）。別のタブの下書きを当てるときに、変換中の欄を飛ばすコード。パスワード管理のために、欄を state に写す `change` のリスナー。`type="reset"` が state を残すためだけに書いた、空にするメソッド。`team: init.team` で lint が全部のパスを報告するために、リテラルで書き出した state の種。ガードがリダイレクトした先が束縛されないために、ページの中で確かめていた最初のルート。動く行の外に置いたアップロードと fetch は、Chromium と Firefox では要らなくなり、Safari では今も要る。
 
-## 4.23.0 でもまだ要るもの
+### 4.24.0
+
+2026-11-15 — [CHANGELOG](../CHANGELOG.md#4240--2026-11-15)
+
+- `@wcstack/fetch`: `<wcs-infinite-scroll>` が target を実行する時機が増えた（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §26）。番兵が画面にあるとき: 何も飛んでいない間に target の `url` が書かれた・変わったとき、要求が終わってその間に `url` が変わっていたとき（または要求が中断されたとき）、要求が行を足して終わり `url` が進んだとき。背の高いウィンドウの一覧は自分で埋まり、番兵が画面にあるまま変わった `url` はスクロールなしで取りに行く。そこから同じ `url` を 2 度は実行せず、行を足さなかった応答で終わる。
+- `@wcstack/fetch`: `<wcs-fetch>` の `fetch(url, init)` は、最初の引数の文字列をその要求の url として使う（`init`: `method`・`headers`・`body`）。それまでの `fetch()` は引数を無視した: 自分の `url` を持つ要素に url を渡していたコマンドトークンは、渡したものを取りに行くようになる。
+- `@wcstack/fetch`・`@wcstack/intersection`: `root` は、`<wcs-infinite-scroll>` でも `<wcs-intersect>` でも id とセレクタの両方を受ける。何も指していなかった値は今も viewport。もう一方の書き方で見つかる値は、その要素を指すようになる。
+- `@wcstack/state`: `for:` の行や `if:` のブロックで、同じ親の下でカスタム要素の後ろにある要素は、委譲ハンドラを要素自身に持つ。`<wcs-link>` の後ろのボタンは自分のハンドラが動く。それまでは動かないか、次のボタンのものが動いた。
+- `@wcstack/state`: setter が書くパスの `$watch` は、要素がその setter 越しに渡した値で、起動時に 1 回発火する。
+- `@wcstack/router`: `to` は `<wcs-link>` のプロパティになった: `data-wcs="to: .href"` は `attr.to:` と同じに動く。
+- コンソール: `[wcs/body-binding]`（`@wcstack/state` の diagnostics）、`[wcs/infinite-scroll-root]` と `[wcs/root-margin-unit]`（`@wcstack/fetch`）、`[wcs/intersect-root]` と `[wcs/root-margin-unit]`（`@wcstack/intersection`）が新しい警告。単位の無い `root-margin` は、`<wcs-infinite-scroll>` から例外として出なくなった。
+- `@wcstack/lint`: `wcs/body-binding` と `wcs/link-handler` が新しい **error** — `<body>` / `<html>` の `data-wcs`、`<wcs-link>` の `on*:`: どちらの束縛も、もともと何もしていなかった。それを持つページは `--errors-only` で落ちるようになる。`wcs/root-margin-unit` が新しい warning。`wcs/delegated-current-target` は入れ子の関数の中の読みも、`wcs/getter-untracked-read` はウィンドウや文書を読む getter も報告する。1 つの JSDoc コメントの `@typedef` をすべて読む。
+
+要らなくなった回避策: `<wcs-infinite-scroll>` が実行する `<wcs-fetch>` の、1 ページ目の静的な `url` と、`$connectedCallback` から頼む最初のページ。番兵をウィンドウの外へ押し出すために大きくした行やページ。`<wcs-infinite-scroll>` が短いページで止まるためだけに使った `<wcs-intersect>` と `reobserve()`。url を先に書き、その `$watch` から `fetch` コマンドを emit すること。隣のボタンが応えないために、行の中で `<wcs-link>` の代わりに使った素の `<a>`。要素が起動時に渡す値を `$connectedCallback` でもう一度当てること。
+
+## 4.24.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
@@ -430,3 +445,6 @@ README の例が 2 つ誤っていました: notification と speech の README 
 - まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。
 - Safari には `moveBefore()` が無い: そこでは並べ替えで動かした行は今もフォーカスを失い（state の README、「ループ (`for`)」）、行の中の I/O ノードは要求や接続を失う（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §25）。リストがその場に残した行は、どのブラウザでも両方を保つ。
 - Enter で動く `keydown` のハンドラは、IME の変換を自分で確かめる（`e.isComposing || e.keyCode === 229`）。ページの自作のフォーム部品は、自分で reset し、`value` を両方向に宣言する（[forms.ja.md](./forms.ja.md)）。
+- 絞り込みを変える一覧は、取りに行っているページを中断する（`command.abort:`）: `manual` の `<wcs-fetch>` は `url` が変わっても中断せず、前の絞り込みの行が新しい一覧に入る（[long-lists.ja.md](./long-lists.ja.md)）。
+- ページ自身のスクリプトが `for:` の行に差し込んだノードは、その後ろの要素の委譲ハンドラをずらす: それらは `on*#direct:` で束ねる（state の README、「委譲されるイベント」）。
+- 一覧の行へ戻るページ自身のリンクは、行のフラグメントへ行く（`navigateUrl = "/#photo-" + id`）: `$watch` からの `scrollIntoView()` は、push のナビゲーションが終わるときに打ち消される（router の README）。
