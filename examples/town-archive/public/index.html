@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <title>みどり市 まちの記憶アーカイブ</title>
+  <link rel="stylesheet" href="css/site.css">
+  <!-- I/O nodes first, router, then state last (module scripts run in document order). -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/intersection/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/resize/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/media-query/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ</a>
+<wcs-state src="js/site-state.js"></wcs-state>
+
+<!-- ============================ headless nodes ============================ -->
+<wcs-fetch id="page-fetch" manual
+  data-wcs="url: pageUrl; loading: pageLoading; eventToken.value: pageArrived; command.fetch: $command.loadPage"></wcs-fetch>
+<wcs-fetch id="pos-fetch" manual
+  data-wcs="url: posUrl; eventToken.value: posArrived; command.fetch: $command.loadPos"></wcs-fetch>
+<wcs-fetch url="/api/areas" data-wcs="value: areasValue"></wcs-fetch>
+<wcs-fetch data-wcs="url: photoUrl; value: photoValue; loading: photoLoading; error: photoError"></wcs-fetch>
+<wcs-fetch data-wcs="url: neighborUrl; eventToken.value: neighborsArrived"></wcs-fetch>
+<wcs-fetch data-wcs="url: photoPosUrl; eventToken.value: photoPosArrived"></wcs-fetch>
+<wcs-fetch url="/api/seen" method="POST" manual
+  data-wcs="body: seenBody; trigger: seenSend; eventToken.value: seenResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-debounce wait="400" data-wcs="source: searchText; value: searchSettled"></wcs-debounce>
+<wcs-debounce wait="1500" max-wait="5000" data-wcs="source: seenWaiting; eventToken.fired: seenDue"></wcs-debounce>
+<wcs-storage key="midori-archive.favorites" data-wcs="value#init=element: favStore"></wcs-storage>
+<wcs-storage key="midori-archive.anchor" type="session" data-wcs="value#init=element: anchorStore"></wcs-storage>
+<wcs-storage key="midori-archive.ctx" type="session" data-wcs="value#init=element: ctxStore"></wcs-storage>
+<wcs-media-query query="(min-resolution: 1.01dppx)" data-wcs="matched: over1"></wcs-media-query>
+<wcs-media-query query="(min-resolution: 1.51dppx)" data-wcs="matched: over15"></wcs-media-query>
+<wcs-media-query query="(min-resolution: 2.01dppx)" data-wcs="matched: over2"></wcs-media-query>
+<wcs-media-query query="(min-resolution: 3.01dppx)" data-wcs="matched: over3"></wcs-media-query>
+
+<!-- ============================ header ============================ -->
+<header class="site-header">
+  <div class="brand">
+    <a href="/" class="logo" data-wcs="onclick: goHome">みどり市 まちの記憶アーカイブ</a>
+    <nav aria-label="サイト">
+      <wcs-link to="/">一覧</wcs-link>
+      <wcs-link to="/favorites">お気に入り</wcs-link>
+      <span class="fav-count" aria-hidden="true"><!--@@: favCount--></span>
+    </nav>
+  </div>
+  <form class="filters" role="search" aria-label="写真をさがす" data-wcs="onsubmit#prevent: noop; class.hidden-filters: isList|not">
+    <label class="f-q">
+      <span class="vh">ことばでさがす</span>
+      <input type="search" name="q" placeholder="ことば（題名・タグ）" autocomplete="off" enterkeyhint="search"
+        data-wcs="value#ro: searchText; oninput: onSearchInput; oncompositionend: onSearchInput; onkeydown: onSearchKey">
+    </label>
+    <label>
+      <span class="lbl">地区</span>
+      <select name="area" data-wcs="onchange: onAreaChange">
+        <option value="" data-wcs="selected: filterArea|eq('')">すべて</option>
+        <template data-wcs="for: areaList">
+          <option data-wcs="value: .code; textContent: .name; selected: .selected"></option>
+        </template>
+      </select>
+    </label>
+    <label>
+      <span class="lbl">並び順</span>
+      <select name="sort" data-wcs="value#ro: filterSort; onchange: onSortChange">
+        <option value="old">古い順</option>
+        <option value="new">新しい順</option>
+        <option value="title">題名順</option>
+      </select>
+    </label>
+    <button type="button" class="clear" data-wcs="onclick: clearFilters; disabled: hasFilter|not">条件をクリア</button>
+  </form>
+</header>
+
+<main id="main" tabindex="-1" data-wcs="onkeydown: onPageKey">
+  <!-- ============================ 一覧 (kept in the document; hidden on other pages) ============================ -->
+  <div class="list-page" data-wcs="hidden: listShown|not; class.panel-closed: panelOpen|not">
+    <aside class="decades" aria-label="年代">
+      <button type="button" class="panel-toggle" data-wcs="onclick: togglePanel; attr.aria-expanded: panelOpen|string">
+年代
+      </button>
+      <div class="decade-body" data-wcs="hidden: panelOpen|not">
+        <template data-wcs="if: decadesActive">
+          <ol class="decade-list">
+            <template data-wcs="for: decadeList">
+              <li><button type="button" class="decade" data-wcs="onclick: jumpDecade; class.current: .current; attr.aria-current: .current|string; textContent: .label"></button></li>
+            </template>
+          </ol>
+        </template>
+        <template data-wcs="else:">
+          <p class="decade-note">並び順が「題名順」のときは年代で移動できません。</p>
+        </template>
+      </div>
+    </aside>
+
+    <section class="list-main" aria-label="写真の一覧">
+      <p class="count" aria-live="polite">
+        <span data-wcs="hidden: hasTotal|not"><span data-wcs="textContent: totalText"></span> 点中 <span data-wcs="textContent: shownText"></span> 点を表示</span>
+      </p>
+      <template data-wcs="if: hasEarlier">
+        <p class="earlier">↑ これより前の写真があります（上へスクロールすると読み込みます）</p>
+      </template>
+      <wcs-intersect class="sentinel sentinel-start" target="self" root-margin="100% 0px 0px 0px"
+        data-wcs="eventToken.intersecting: startSentinel; command.reobserve: $command.rearm"></wcs-intersect>
+      <div class="grid-wrap">
+        <wcs-resize class="grid-probe" target="self" round data-wcs="width: gridWidthRaw"></wcs-resize>
+        <!-- Windowed: .grid-viewport is as tall as every loaded row; .grid holds only the rows near
+             the screen, placed at their computed top. -->
+        <div class="grid-viewport" data-wcs="style.height: gridHeightCss; onviewport: onViewport">
+          <div class="grid" data-wcs="style.gridTemplateColumns: gridTemplate; style.top: shownTopCss">
+            <div class="lead-spacer" aria-hidden="true" data-wcs="style.gridColumn: leadSpanCss; hidden: noLeadSpan"></div>
+            <template data-wcs="for: shownPhotos">
+              <wcs-intersect class="seen-probe" threshold="0,0.25,0.5,0.75,1" data-wcs="eventToken.intersecting: cardVisibility">
+                <article class="card" data-wcs="attr.data-id: .id">
+                  <a class="card-link" data-wcs="attr.href: .href; onclick: openPhoto">
+                    <wcs-intersect class="thumb-probe" once root-margin="100% 0px" data-wcs="visible: .near">
+                      <span class="thumb" data-wcs="style.backgroundColor: .color; style.height: .thumbH">
+                        <img alt="" decoding="async" data-wcs="attr.src: .thumbSrc">
+                      </span>
+                    </wcs-intersect>
+                    <span class="card-title">{{ .title }}</span>
+                    <span class="card-year">{{ .year }}年</span>
+                  </a>
+                  <button type="button" class="star" data-wcs="onclick: toggleStar; attr.aria-pressed: .favText; attr.aria-label: .starLabel; textContent: .starText"></button>
+                </article>
+              </wcs-intersect>
+            </template>
+          </div>
+        </div>
+      </div>
+      <wcs-intersect class="sentinel sentinel-end" target="self" root-margin="0px 0px 100% 0px"
+        data-wcs="eventToken.intersecting: endSentinel; command.reobserve: $command.rearm"></wcs-intersect>
+      <div class="list-foot">
+        <p class="loading" data-wcs="hidden: showLoading|not">読み込み中…</p>
+        <div class="error" role="alert" data-wcs="hidden: showError|not">
+          <p>読み込めませんでした</p>
+          <button type="button" data-wcs="onclick: retryPage">もう一度</button>
+        </div>
+        <p class="end" data-wcs="hidden: isAtEnd|not">これで全部です</p>
+        <p class="empty" data-wcs="hidden: isEmpty|not">見つかりませんでした</p>
+      </div>
+    </section>
+    <wcs-intersect class="top-probe" aria-hidden="true" data-wcs="intersecting: firstScreenVisible">
+      <div class="top-probe-box"></div>
+    </wcs-intersect>
+    <button type="button" class="to-top" data-wcs="hidden: showToTop|not; onclick: toTop">トップへ</button>
+  </div>
+
+  <!-- ============================ 写真 ============================ -->
+  <template data-wcs="if: isPhoto">
+    <article class="photo-page" aria-labelledby="photo-title">
+      <nav class="photo-nav" aria-label="写真の移動">
+        <a class="back" href="/" data-wcs="attr.href: ctxSearch|defaults('/'); onclick: backToList">一覧へ戻る</a>
+        <button type="button" data-wcs="onclick: goPrev; disabled: noPrev" aria-keyshortcuts="ArrowLeft">← 前へ</button>
+        <button type="button" data-wcs="onclick: goNext; disabled: noNext" aria-keyshortcuts="ArrowRight">次へ →</button>
+      </nav>
+      <h1 id="photo-title" tabindex="-1" data-wcs="textContent: photoTitle"></h1>
+      <div class="photo-frame" data-wcs="style.aspectRatio: photoRatio; style.backgroundColor: photoColor">
+        <img alt="" data-wcs="attr.src: photoSrc; attr.alt: photoTitle">
+      </div>
+      <dl class="photo-meta" data-wcs="hidden: photo|not">
+        <dt>年月</dt><dd data-wcs="textContent: photoDate"></dd>
+        <dt>地区</dt><dd data-wcs="textContent: photoArea"></dd>
+        <dt>タグ</dt>
+        <dd><ul class="tags">
+          <template data-wcs="for: photoTags">
+            <li><a data-wcs="attr.href: .href; onclick: openTag; textContent: .tag"></a></li>
+          </template>
+        </ul></dd>
+        <dt>提供者</dt><dd data-wcs="textContent: photo.donor"></dd>
+      </dl>
+      <p class="photo-desc" data-wcs="textContent: photo.description"></p>
+      <button type="button" class="photo-star" data-wcs="onclick: togglePhotoStar; attr.aria-pressed: photoFavText; textContent: photoStarText; disabled: photo|not"></button>
+    </article>
+  </template>
+
+  <!-- ============================ お気に入り ============================ -->
+  <template data-wcs="if: isFavorites">
+    <section class="fav-page" aria-labelledby="fav-title">
+      <h1 id="fav-title">お気に入り</h1>
+      <p class="fav-head">
+        <span><!--@@: favCount--> 件（この端末に保存されています）</span>
+        <button type="button" data-wcs="onclick: clearFavorites; disabled: hasFavorites|not">すべて外す</button>
+      </p>
+      <template data-wcs="if: hasFavorites">
+        <ul class="fav-list">
+          <template data-wcs="for: favorites">
+            <li class="fav-item" data-wcs="attr.data-id: .id">
+              <a class="fav-link" data-wcs="attr.href: .href; onclick: openFavorite">
+                <span class="thumb" data-wcs="style.backgroundColor: .color; style.aspectRatio: .ratio">
+                  <!-- by hand: native lazy loading, not <wcs-intersect> (these rows are the stored favourites; friction log F24) -->
+                  <img alt="" loading="lazy" decoding="async" data-wcs="attr.src: .thumbSrc">
+                </span>
+                <span class="card-title">{{ .title }}</span>
+                <span class="card-year">{{ .year }}年</span>
+              </a>
+              <button type="button" class="star" aria-pressed="true" aria-label="お気に入りから外す" data-wcs="onclick: removeFavorite">★</button>
+            </li>
+          </template>
+        </ul>
+      </template>
+      <template data-wcs="else:">
+        <p>まだお気に入りはありません。一覧の ☆ を押すと、ここに集まります。</p>
+      </template>
+    </section>
+  </template>
+
+  <template data-wcs="if: isNotFound">
+    <section class="notfound"><h1>ページが見つかりません</h1><p><a href="/" data-wcs="onclick: goHome">一覧へ</a></p></section>
+  </template>
+
+  <wcs-router data-wcs="routeName: routeName; typedParams: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <wcs-route path="/" name="list">
+        <wcs-head><title>一覧 — みどり市 まちの記憶アーカイブ</title></wcs-head>
+      </wcs-route>
+      <wcs-route path="/photos/:id(int)" name="photo">
+        <wcs-head><title data-wcs="textContent: docTitle"></title></wcs-head>
+      </wcs-route>
+      <wcs-route path="/favorites" name="favorites">
+        <wcs-head><title>お気に入り — みどり市 まちの記憶アーカイブ</title></wcs-head>
+      </wcs-route>
+      <wcs-route fallback name="notfound">
+        <wcs-head><title>見つかりません — みどり市 まちの記憶アーカイブ</title></wcs-head>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</main>
+</body>
+</html>

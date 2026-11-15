@@ -337,6 +337,7 @@ Behavior rules:
     this.noMore = false;
   },
   ```
+- **Put the sentinel right after the list, above a spinner or a message shown while a page loads**, so that only rows move it. A spinner inserted above it when a request starts pushes it down — out of its margin — and a scroll that goes on brings it back: to the element that is the sentinel coming on screen again, and it asks again for a request that failed in between.
 - `once` is strict: after the first execution, changing attributes does not re-arm observation
 - if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, nothing is loaded, and it warns `[wcs/infinite-scroll-target]` once per `target` value
 

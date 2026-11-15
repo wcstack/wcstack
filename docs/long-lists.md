@@ -26,6 +26,7 @@ So a list that keeps every row in the document is fine at a few hundred rows and
 - **The url comes from state** (`url: nextUrl`), not from a static attribute for page 1.
 - **Advance after the response, on success only.** A failure leaves the page number where it is; the sentinel coming on screen again, or a retry button that writes `trigger`, asks for the same page.
 - **Tell the end** — a short page, or the total the server gives — and bind it to `disabled`.
+- **The sentinel goes right after the list, above a spinner or a message.** Only rows should move it: a spinner inserted above it when a request starts pushes it out of its margin, a scroll that goes on brings it back, and that is the sentinel coming on screen again — a request that failed in between is asked again.
 - **A filter starts the list again, and aborts the page on its way.** A `manual` `<wcs-fetch>` does not abort on a new `url`, so a page asked for the old filter still arrives and its rows land in the new list. Bind `command.abort: $command.cancelPage` on the `<wcs-fetch>`, emit it first, then empty the list:
 
 ```js

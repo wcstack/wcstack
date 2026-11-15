@@ -36,9 +36,11 @@ export default defineConfig({
     // And the ekiden-entry seam app's guards, which redirect the page-load navigation after an import (ekiden-entry).
     // And <wcs-infinite-scroll>, whose sentinel reported before state had written the url — never a first page in Firefox
     // (fetch-infinite-scroll).
+    // And the town-archive seam app: a $watch on a getter over the first width an element hands over, which did not
+    // fire in Firefox either, the command that carries its url, and Back to the card (town-archive).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

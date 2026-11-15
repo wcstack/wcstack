@@ -1,0 +1,95 @@
+:root {
+  --fg: #1f2a24; --muted: #5b6b62; --bg: #f6f5f0; --card: #fff; --accent: #2f6b4f; --line: #d9dcd3;
+  --header-h: 112px;
+  font-family: system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  color: var(--fg); background: var(--bg);
+}
+* { box-sizing: border-box; }
+/* The list keeps what the user looks at in place itself (it measures and scrolls when earlier
+   photos arrive), so the browser's own scroll anchoring must not move it a second time. */
+html, body, body * { overflow-anchor: none; } /* body * for Firefox: html and body alone are not enough there */
+body { margin: 0; }
+[hidden] { display: none !important; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: -999px; top: 0; background: #fff; padding: .5em 1em; z-index: 100; }
+.skip:focus { left: 8px; }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid #e0a100; outline-offset: 2px; }
+
+.site-header { position: sticky; top: 0; z-index: 20; background: #fffdf7; border-bottom: 1px solid var(--line); padding: 8px 16px; }
+.brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 20px; }
+.logo { font-weight: 700; font-size: 1.15rem; color: var(--fg); text-decoration: none; }
+.brand nav { display: flex; gap: 14px; align-items: baseline; }
+.brand nav a[aria-current="page"] { font-weight: 700; text-decoration: none; }
+.fav-count { color: var(--muted); font-size: .85rem; margin-left: -10px; }
+.fav-count:not(:empty)::before { content: "("; } .fav-count:not(:empty)::after { content: ")"; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 6px; }
+.filters.hidden-filters { display: none; }
+.filters input[type="search"] { width: min(18rem, 60vw); padding: 6px 8px; font: inherit; }
+.filters select, .filters button { font: inherit; padding: 5px 8px; }
+.lbl { font-size: .85rem; color: var(--muted); margin-right: 4px; }
+
+main { padding: 12px 16px 48px; outline: none; }
+.list-page { display: flex; gap: 16px; align-items: flex-start; }
+.decades { position: sticky; top: calc(var(--header-h) + 8px); flex: 0 0 180px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.list-page.panel-closed .decades { flex-basis: auto; }
+.panel-toggle { width: 100%; font: inherit; font-weight: 700; background: none; border: 0; text-align: left; cursor: pointer; padding: 4px; }
+.panel-toggle::before { content: "▾ "; } .panel-toggle[aria-expanded="false"]::before { content: "▸ "; }
+.decade-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.decade { display: block; width: 100%; text-align: left; font: inherit; background: none; border: 0; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.decade.current { background: var(--accent); color: #fff; }
+.decade-note { font-size: .85rem; color: var(--muted); margin: 6px 4px; }
+.list-main { flex: 1 1 auto; min-width: 0; }
+.count { margin: 0 0 8px; color: var(--muted); min-height: 1.4em; }
+.earlier { margin: 0 0 8px; font-size: .85rem; color: var(--muted); }
+.sentinel { height: 1px; }
+.grid-wrap { position: relative; }
+.grid-probe { height: 0; }
+.grid-viewport { position: relative; }
+.grid { position: absolute; left: 0; right: 0; top: 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.card { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.card-link { display: block; color: var(--fg); text-decoration: none; }
+.card-link:focus-visible { outline-offset: -3px; }
+.thumb { display: block; width: 100%; background: #ccc; overflow: hidden; }
+.thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumb img:not([src]) { visibility: hidden; }
+/* The text block has a fixed height (CARD_TEXT_PX = 1 + 6 + 40 + 18 + 8 + 1 in lib/grid.js), so the
+   height of every card follows from its photo's shape. */
+.card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; box-sizing: content-box; height: 40px; padding: 6px 8px 0; font-size: 14px; line-height: 20px; }
+.card-year { display: block; box-sizing: content-box; height: 18px; padding: 0 8px 8px; font-size: 12.8px; line-height: 18px; color: var(--muted); }
+.fav-item .card-title, .fav-item .card-year { height: auto; }
+.star { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.88); color: #c58b00; font-size: 20px; line-height: 1; cursor: pointer; }
+.star[aria-pressed="true"] { color: #e0a100; }
+.list-foot { padding: 16px 0; text-align: center; min-height: 3em; }
+.list-foot p { margin: 8px 0; }
+.error { color: #9b1c1c; }
+.error button { font: inherit; padding: 6px 16px; }
+.top-probe { display: contents; }
+.top-probe-box { position: absolute; top: 0; left: 0; width: 1px; height: 100vh; pointer-events: none; }
+.to-top { position: fixed; right: 16px; bottom: 16px; z-index: 15; font: inherit; padding: 10px 16px; border-radius: 24px; border: 1px solid var(--line); background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15); cursor: pointer; }
+
+.photo-page { max-width: 1000px; margin: 0 auto; }
+.photo-nav { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.photo-nav button { font: inherit; padding: 6px 14px; }
+.photo-page h1 { font-size: 1.5rem; margin: 12px 0; }
+.photo-frame { width: 100%; max-height: 75vh; margin: 0 auto; background: #ccc; }
+.photo-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.photo-frame img:not([src]) { visibility: hidden; }
+.photo-meta { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+.photo-meta dt { color: var(--muted); }
+.photo-meta dd { margin: 0; }
+.tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.tags a { display: inline-block; padding: 2px 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; text-decoration: none; }
+.photo-star { font: inherit; padding: 8px 16px; }
+
+.fav-head { display: flex; gap: 16px; align-items: center; }
+.fav-head button { font: inherit; }
+.fav-list { list-style: none; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); align-items: start; }
+.fav-item { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.fav-link { display: block; color: var(--fg); text-decoration: none; }
+
+@media (max-width: 640px) {
+  .list-page { flex-direction: column; align-items: stretch; }
+  .decades { position: static; flex-basis: auto; }
+  main { padding: 8px; }
+}
