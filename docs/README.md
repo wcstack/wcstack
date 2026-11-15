@@ -51,6 +51,7 @@ Four rules go with it:
 | [long-lived-pages.md](./long-lived-pages.md) | [long-lived-pages.ja.md](./long-lived-pages.ja.md) |
 | [islands.md](./islands.md) | [islands.ja.md](./islands.ja.md) |
 | [forms.md](./forms.md) | [forms.ja.md](./forms.ja.md) |
+| [long-lists.md](./long-lists.md) | [long-lists.ja.md](./long-lists.ja.md) |
 | [mistake-catalogue.md](./mistake-catalogue.md) | [mistake-catalogue.ja.md](./mistake-catalogue.ja.md) |
 | [architecture-hardening/README.md](./architecture-hardening/README.md) | [README.ja.md](./architecture-hardening/README.ja.md) |
 | [architecture-hardening/09-remediation-design.md](./architecture-hardening/09-remediation-design.md) | [09…ja.md](./architecture-hardening/09-remediation-design.ja.md) |
