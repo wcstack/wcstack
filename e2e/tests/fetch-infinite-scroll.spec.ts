@@ -54,7 +54,9 @@ test("README の書き方（url は state から）で最初のページが出�
   const served = await serveUsers(page);
   await page.setViewportSize({ width: 900, height: 500 });
   await page.goto(FIXTURE);
-  await expect(page.locator("#list li")).toHaveCount(20);
+  // (20 rows are 600 px: the sentinel is within its margin of a 500 px window, so page 2 follows at once — "exactly
+  // 20 rows" holds for a moment only)
+  await expect.poll(() => page.locator("#list li").count()).toBeGreaterThanOrEqual(20);
   for (let i = 0; i < 12 && (await page.locator("#end").count()) === 0; i++) {
     await toEnd(page);
     await page.waitForTimeout(150);
@@ -75,6 +77,49 @@ test("背の高いウィンドウ: ページが番兵を押し出さなくても
   expect(await page.evaluate(() => scrollY)).toBe(0);
 });
 
+// While the user scrolls, the observer's report that a page pushed the sentinel out arrives a frame later than
+// otherwise: its task waits behind the input and the frames. That is after the frames the element waits when a
+// request ends, and 4.24.0 read the sentinel as still on screen then: a page the window did not need was asked for
+// (docs/seam-apps.md, landing town-archive). The element now takes the reports the browser has made and not yet
+// delivered before it looks.
+//
+// On the package's own example, not this spec's fixture: the report was late on a page with that much in it (9
+// loads of 10 in Chromium, the example served by this server) and never on the fixture, whatever its rows and its
+// window. Three loads, since one alone did not always show it. On 4.24.0 this fails when it runs alone (one worker);
+// on a machine busy with other tests the report was not late, and it passed.
+const EXAMPLE = "/packages/fetch/examples/infinite-scroll/index.html";
+
+test("ページが届いた瞬間に利用者が少しスクロールしても、番兵が画面の外なら次のページを取りに行かない @browsers", async ({ page }) => {
+  const asked: number[] = [];
+  await page.route("**/api/items?**", async (route) => {
+    const url = new URL(route.request().url());
+    const n = Number(url.searchParams.get("page"));
+    const limit = Number(url.searchParams.get("limit"));
+    asked.push(n);
+    const items = [];
+    for (let i = (n - 1) * limit; i < Math.min(87, n * limit); i++) items.push({ id: i + 1, name: `Item #${i + 1}`, category: "audio", price: 1000 + i });
+    // (an answer that takes a while: the page is at rest when it lands)
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(items) }).catch(() => {});
+  });
+  // 700 px + the 240 px margin reach 940 px; one page of 20 rows puts the sentinel at about 1,190 px, and two presses
+  // of ↓ scroll 80 px (Chromium) or 144 px (Firefox): it stays out of reach
+  await page.setViewportSize({ width: 900, height: 700 });
+  for (let round = 0; round < 3; round++) {
+    asked.length = 0;
+    await page.goto(EXAMPLE);
+    // right as the first page's rows are drawn
+    await page.waitForFunction(() => document.querySelectorAll(".item").length >= 20, null, { polling: "raf" });
+    for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(700);
+    const reach = await page.evaluate(() => {
+      const top = document.querySelector("wcs-infinite-scroll")!.getBoundingClientRect().top;
+      return { scrolled: scrollY > 0, sentinelOut: top > innerHeight + 240 };
+    });
+    expect(reach).toEqual({ scrolled: true, sentinelOut: true });
+    expect(asked).toEqual([1]);
+  }
+});
 test("失敗した要求は繰り返さない。番兵が画面を出入りすると、同じページをもう一度取りに行く @browsers", async ({ page }) => {
   const served = await serveUsers(page, [3]);
   await page.setViewportSize({ width: 900, height: 4000 });

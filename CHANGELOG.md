@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/fetch`: `<wcs-infinite-scroll>` asked for a page the window did not need when the user was scrolling as a page landed. The page had pushed the sentinel out of the window, but while the user scrolls the observer's report of that arrives a frame later than otherwise — after the three frames the element waits when a request ends — and the element read the sentinel as still on screen. Before it looks, it now takes the reports the browser has made and not yet delivered. Found while landing the `town-archive` seam app, on the package's own infinite-scroll example: 7 to 9 loads of 10 in Chromium with two or three presses of ↓ as the first page arrived, once in Firefox on a page without wcstack, never in WebKit. One page ahead, in order and with no row twice — nothing a page showed was wrong.
+
 ## [4.24.0] — 2026-11-15
 
 A minor from the `town-archive` seam app, the fourth app of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a photo archive of 12,000 records — a long list with infinite scroll on `@wcstack/state`, and a staff table on `@wcstack/signals` ([docs/seam-apps.md](./docs/seam-apps.md)). A first-time author built it on 4.23.0 from the public documents. The lint said nothing about 25 copies with a mistake each. At run time a click on one button ran the next button's handler, `<wcs-infinite-scroll>` did not load its first page, and five more things failed without a word. The author's six decisions are in §5.19. `<wcs-infinite-scroll>` asks again while its sentinel stays on screen, and `<wcs-fetch>`'s `fetch` command takes a url. A button after a `<wcs-link>` in a row runs its own handler. `data-wcs` on `<body>`, a handler on `<wcs-link>`, a scroll root that is not found and a margin with no unit are said, by the runtime or the lint. The core is 20,474 B of its 20,480 B limit, 3 B less than in 4.23.0.
