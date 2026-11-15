@@ -49,6 +49,7 @@
  */
 
 import { parse, type AnyNode, type MemberExpression, type ObjectPattern, type Pattern, type Expression } from 'acorn';
+import type { AmbientReadKind } from '../core/messages.js';
 
 /** getter 本体で見つかった `this` 経由の読み取り 1 件。オフセットは本体テキスト相対。 */
 export interface GetterRead {
@@ -701,13 +702,20 @@ function thisMemberName(node: MemberExpression): { name: string; start: number; 
  * root になる（`wcs/delegated-current-target` の判定）。
  *
  * 拾う形: `e.currentTarget` / `e["currentTarget"]` / `const { currentTarget } = e` / 引数の分割代入
- * `({ currentTarget })`。断定できないときは false（黙る側）:
+ * `({ currentTarget })`。本体に入れ子にした関数（アロー関数・function 式・関数宣言）の中の読みも拾う — 引数を
+ * 閉じ込めて読む形で、ハンドラが走っている間に呼ばれる（`this.items.find((x) => String(x.id) ===
+ * e.currentTarget.closest(".card").dataset.id)` — 継ぎ目アプリ town-archive。4.23 までは入れ子の中を見ず、黙っていた）。
+ * 断定できないときは false（黙る側）:
  *   - パースできない・第 1 引数が無い・識別子でも分割代入でもない
  *   - 本体のどこかで同じ名前を束縛し直している（`let e = …`・入れ子の関数の引数・catch の引数・再代入）
- *   - 入れ子の関数の中の読み（いつ呼ばれるか分からない。非同期なら dispatch の後で `currentTarget` は null）
+ *   - 後で呼ばれる関数の中の読み — `setTimeout` / `requestAnimationFrame` / `.then(…)` / `addEventListener` などに
+ *     渡した関数（`DEFERRED_CALLS`）と、オブジェクトのメンバーに代入した関数（`img.onload = () => …`）。dispatch が
+ *     終わってから走るので、委譲でも `#direct` でも `currentTarget` は null
+ *   - class の中の読み（メソッドがいつ呼ばれるか分からない）
  *   - 最初に中断する `await` より後ろの読み（dispatch が終わっているので `currentTarget` は null）。境界は
  *     `await` の**被演算子の終わり** — 被演算子は中断の前に同期的に評価される（`await fetch(url, { body:
- *     new FormData(e.currentTarget) })` は読む側）。`for await` は反復対象の式の終わり
+ *     new FormData(e.currentTarget) })` は読む側）。`for await` は反復対象の式の終わり。入れ子の関数は、
+ *     その関数自身の最初の `await` も境界にする（`items.map(async (x) => { await save(x); e.currentTarget; })`）
  */
 export function readsEventCurrentTarget(params: string, body: string): boolean {
   let program: AnyNode;
@@ -724,34 +732,42 @@ export function readsEventCurrentTarget(params: string, body: string): boolean {
   if (first.type !== 'Identifier') return false;
   const eventName = first.name;
 
-  // 同じ名前の束縛し直し（どこであれ）・最初の await の位置
+  // 同じ名前の束縛し直し（どこであれ — 入れ子の関数が引数や宣言で影にするときも）
   const rebound = new Set<string>();
   for (const param of fn.params.slice(1)) bindingNames(param, rebound);
-  /** 最初に中断する位置（被演算子を評価し終えたところ）。それより後ろの読みは dispatch の後 */
-  let suspendAt = Infinity;
-  const scanBindings = (node: AnyNode, nested: boolean): void => {
+  const scanBindings = (node: AnyNode): void => {
     if (isFunctionNode(node)) {
       if (node.type === 'FunctionDeclaration' && node.id !== null) rebound.add(node.id.name);
       for (const param of node.params) bindingNames(param, rebound);
-      scanBindings(node.body, true);
-      return;
-    }
-    if (node.type === 'VariableDeclarator') bindingNames(node.id, rebound);
+    } else if (node.type === 'VariableDeclarator') bindingNames(node.id, rebound);
     else if (node.type === 'CatchClause' && node.param !== null && node.param !== undefined) bindingNames(node.param, rebound);
     else if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') rebound.add(node.left.name);
     else if (node.type === 'ClassDeclaration' && node.id !== null) rebound.add(node.id.name);
-    if (!nested && node.type === 'AwaitExpression') suspendAt = Math.min(suspendAt, node.argument.end);
-    else if (!nested && node.type === 'ForOfStatement' && node.await) suspendAt = Math.min(suspendAt, node.right.end);
-    forEachChild(node, (child) => scanBindings(child, nested));
+    forEachChild(node, scanBindings);
   };
-  scanBindings(fn.body, false);
+  scanBindings(fn.body);
   // `const { currentTarget } = e` は束縛し直しではない（読み）— 分割代入の左辺に e は現れない
   if (rebound.has(eventName)) return false;
 
   let found = false;
-  const visitReads = (node: AnyNode): void => {
-    if (found || isFunctionNode(node) || isClassNode(node)) return;
-    if (node.start >= suspendAt) return;
+  /** `suspendAt`: いま居る関数が最初に中断する位置。それより後ろの読みは dispatch の後 */
+  const visitReads = (node: AnyNode, suspendAt: number): void => {
+    if (found || isClassNode(node) || node.start >= suspendAt) return;
+    if (isFunctionNode(node)) {
+      const limit = Math.min(suspendAt, firstSuspend(node.body));
+      forEachChild(node, (child) => visitReads(child, limit));
+      return;
+    }
+    if (node.type === 'CallExpression' && isDeferredCall(node)) {
+      visitReads(node.callee as AnyNode, suspendAt);
+      for (const argument of node.arguments) if (!isFunctionNode(argument)) visitReads(argument, suspendAt);
+      return;
+    }
+    // `img.onload = () => …`: a function stored on an object is called by that object, after the dispatch
+    if (node.type === 'AssignmentExpression' && isFunctionNode(node.right) && unwrapChain(node.left as AnyNode).type === 'MemberExpression') {
+      visitReads(node.left as AnyNode, suspendAt);
+      return;
+    }
     if (node.type === 'MemberExpression' && node.object.type === 'Identifier' && node.object.name === eventName
       && memberPropertyIs(node, 'currentTarget')) {
       found = true;
@@ -763,10 +779,42 @@ export function readsEventCurrentTarget(params: string, body: string): boolean {
       found = true;
       return;
     }
-    forEachChild(node, visitReads);
+    forEachChild(node, (child) => visitReads(child, suspendAt));
   };
-  visitReads(fn.body);
+  visitReads(fn.body, firstSuspend(fn.body));
   return found;
+}
+
+/**
+ * 渡した関数を後で呼ぶ呼び出し（`setTimeout(fn)` / `window.requestAnimationFrame(fn)` / `promise.then(fn)` /
+ * `el.addEventListener("x", fn)`）。その関数はハンドラが返ってから走る。
+ */
+const DEFERRED_CALLS = new Set([
+  'setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback', 'queueMicrotask',
+  'then', 'catch', 'finally', 'addEventListener',
+]);
+
+function isDeferredCall(node: AnyNode & { type: 'CallExpression' }): boolean {
+  const callee = unwrapChain(node.callee as AnyNode);
+  if (callee.type === 'Identifier') return DEFERRED_CALLS.has(callee.name);
+  return callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier'
+    && DEFERRED_CALLS.has(callee.property.name);
+}
+
+/**
+ * 関数の本体が最初に中断する位置 — 最初の `await` の被演算子の終わり（`for await` は反復対象の式の終わり）。
+ * 入れ子の関数・class の中の `await` は、その関数のもの。中断しなければ Infinity。
+ */
+function firstSuspend(body: AnyNode): number {
+  let at = Infinity;
+  const scan = (node: AnyNode): void => {
+    if (isFunctionNode(node) || isClassNode(node)) return;
+    if (node.type === 'AwaitExpression') at = Math.min(at, node.argument.end);
+    else if (node.type === 'ForOfStatement' && node.await) at = Math.min(at, node.right.end);
+    forEachChild(node, scan);
+  };
+  scan(body);
+  return at;
 }
 
 /** `obj.name` / `obj["name"]` の名前が `name` か。 */
@@ -1068,4 +1116,173 @@ export function findLocationRead(body: string): { start: number; end: number; te
   };
   walk(wrapper.body);
   return found;
+}
+
+// ============================================================
+// getter の中のウィンドウと文書の読み（継ぎ目アプリ town-archive）
+// ============================================================
+
+/** The objects a window global can be read through (`window.innerWidth`, `globalThis.scrollY`). */
+const WINDOW_HOLDERS = new Set(['window', 'globalThis', 'self']);
+/** The window's own values that change while the page is open. */
+const WINDOW_VALUES: ReadonlyMap<string, AmbientReadKind> = new Map([
+  ['innerWidth', 'size'], ['innerHeight', 'size'], ['outerWidth', 'size'], ['outerHeight', 'size'],
+  ['devicePixelRatio', 'pixelRatio'],
+  ['scrollX', 'scroll'], ['scrollY', 'scroll'], ['pageXOffset', 'scroll'], ['pageYOffset', 'scroll'],
+]);
+/** `document.<one of these>.<member>`: the elements whose box is the viewport's (or the page's). */
+const DOCUMENT_ELEMENTS = new Set(['documentElement', 'body', 'scrollingElement']);
+const ELEMENT_VALUES: ReadonlyMap<string, AmbientReadKind> = new Map([
+  ['clientWidth', 'size'], ['clientHeight', 'size'], ['scrollTop', 'scroll'], ['scrollLeft', 'scroll'],
+]);
+const DOCUMENT_VALUES: ReadonlyMap<string, AmbientReadKind> = new Map([['visibilityState', 'visibility'], ['hidden', 'visibility']]);
+
+/** The spellings `findAmbientRead` looks for (a cheap gate before parsing). */
+export const AMBIENT_READ_SPELLING = /\b(?:(?:inner|outer|client)(?:Width|Height)|devicePixelRatio|scroll[XY]|page[XY]Offset|scroll(?:Top|Left)|matchMedia|onLine|visibilityState|hidden)\b/;
+
+/** What a static chain from a global reads, or null (`names` is the chain without `window.` / `globalThis.`). */
+function ambientKindOf(names: readonly string[]): AmbientReadKind | null {
+  if (names.length === 1) return WINDOW_VALUES.get(names[0]) ?? null;
+  if (names[0] === 'navigator') return names.length === 2 && names[1] === 'onLine' ? 'online' : null;
+  if (names[0] !== 'document') return null;
+  if (names.length === 2) return DOCUMENT_VALUES.get(names[1]) ?? null;
+  return names.length === 3 && DOCUMENT_ELEMENTS.has(names[1]) ? ELEMENT_VALUES.get(names[2]) ?? null : null;
+}
+
+/**
+ * getter 本体の中の、state ではないウィンドウと文書の読みの最初の位置・原文・種類。依存として登録されないので、getter は
+ * 最初の値を持ち続ける — 幅から列数を決める getter は、リサイズしても変わらない（継ぎ目アプリ town-archive）。
+ *
+ * 拾う形（`window.` / `globalThis.` / `self.` 越しでも）: `innerWidth` / `innerHeight` / `outerWidth` / `outerHeight`・
+ * `devicePixelRatio`・`scrollX` / `scrollY` / `pageXOffset` / `pageYOffset`・`matchMedia(…)` の呼び出し・`navigator.onLine`・
+ * `document.documentElement` / `document.body` / `document.scrollingElement` の `clientWidth` / `clientHeight` /
+ * `scrollTop` / `scrollLeft`・`document.visibilityState` / `document.hidden`。入れ子の関数の中も見る（`filter` の
+ * コールバックは getter の評価の中で走る）。
+ *
+ * 黙る形: 起点の名前（`innerWidth`・`window`・`document` …）を本体が束縛している（引数・宣言・catch の引数・関数や
+ * class の名前）か、モジュールのトップレベルが束縛している（`outer`）とき。メンバーの名前としての同じ綴り
+ * （`this.innerWidth`・`el.scrollTop`・`{ scrollY: 0 }`）は読みではない。パースできなければ null。
+ */
+export function findAmbientRead(
+  body: string,
+  outer: ReadonlySet<string> = new Set(),
+): { start: number; end: number; text: string; kind: AmbientReadKind } | null {
+  let program: AnyNode;
+  try {
+    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  const bound = new Set<string>(outer);
+  const scan = (node: AnyNode): void => {
+    if (isFunctionNode(node)) {
+      if (node.type === 'FunctionDeclaration' && node.id !== null) bound.add(node.id.name);
+      for (const param of node.params) bindingNames(param, bound);
+    } else if (node.type === 'VariableDeclarator') bindingNames(node.id, bound);
+    else if (node.type === 'CatchClause' && node.param !== null && node.param !== undefined) bindingNames(node.param, bound);
+    else if (node.type === 'ClassDeclaration' && node.id !== null) bound.add(node.id.name);
+    forEachChild(node, scan);
+  };
+  scan(wrapper.body);
+
+  /** The chain of static names from a global (`window.document.body.scrollTop` → document, body, scrollTop), or null. */
+  const globalChain = (node: AnyNode): string[] | null => {
+    const names: string[] = [];
+    let current = unwrapChain(node);
+    while (current.type === 'MemberExpression') {
+      const property = current.property;
+      if (!current.computed && property.type === 'Identifier') names.unshift(property.name);
+      else if (current.computed && property.type === 'Literal' && typeof property.value === 'string') names.unshift(property.value);
+      else return null;
+      current = unwrapChain(current.object as AnyNode);
+    }
+    if (current.type !== 'Identifier' || bound.has(current.name)) return null;
+    names.unshift(current.name);
+    while (names.length > 1 && WINDOW_HOLDERS.has(names[0])) names.shift();
+    return names;
+  };
+
+  let found: { start: number; end: number; text: string; kind: AmbientReadKind } | null = null;
+  const source = (node: AnyNode): string => (PREFIX + body).slice(node.start, node.end);
+  const at = (node: AnyNode, kind: AmbientReadKind, text: string): void => {
+    found = { start: node.start - PREFIX.length, end: node.end - PREFIX.length, text, kind };
+  };
+  const walk = (node: AnyNode): void => {
+    if (found !== null) return;
+    if (node.type === 'CallExpression') {
+      // `matchMedia("(max-width: 600px)")`: what it gives is the query's state at the time of the call
+      const chain = globalChain(node.callee as AnyNode);
+      if (chain !== null && chain.length === 1 && chain[0] === 'matchMedia') {
+        at(node.callee as AnyNode, 'media', `${source(node.callee as AnyNode)}(…)`);
+        return;
+      }
+    }
+    if (node.type === 'Identifier' || node.type === 'MemberExpression') {
+      const chain = globalChain(node);
+      const kind = chain === null ? null : ambientKindOf(chain);
+      if (kind !== null) { at(node, kind, source(node)); return; }
+    }
+    if (node.type === 'VariableDeclarator' && node.id.type === 'ObjectPattern' && node.init !== null && node.init !== undefined) {
+      // `const { innerWidth } = window` / `const { hidden } = document`: the same read, destructured
+      const chain = globalChain(node.init);
+      if (chain !== null) {
+        const prefix = chain.length === 1 && WINDOW_HOLDERS.has(chain[0]) ? [] : chain;
+        for (const property of node.id.properties) {
+          if (property.type !== 'Property' || property.computed) continue;
+          const key = property.key.type === 'Identifier' ? property.key.name
+            : property.key.type === 'Literal' && typeof property.key.value === 'string' ? property.key.value : null;
+          const kind = key === null ? null : ambientKindOf([...prefix, key]);
+          if (kind !== null) { at(property.key, kind, `${source(node.init)}.${key}`); return; }
+        }
+      }
+    }
+    if (node.type === 'MemberExpression') {
+      // a member's name is not a read of the global (`this.innerWidth`, `el.scrollTop`)
+      walk(node.object as AnyNode);
+      if (node.computed) walk(node.property as AnyNode);
+      return;
+    }
+    if (node.type === 'Property' || node.type === 'MethodDefinition' || node.type === 'PropertyDefinition') {
+      // nor is a key (`{ scrollY: 0 }`); a shorthand's value is (`{ scrollY }`)
+      if (node.computed) walk(node.key as AnyNode);
+      if (node.value !== null && node.value !== undefined) walk(node.value as AnyNode);
+      return;
+    }
+    // (a label is a name, not a read)
+    if (node.type === 'LabeledStatement') { walk(node.body); return; }
+    if (node.type === 'BreakStatement' || node.type === 'ContinueStatement') return;
+    forEachChild(node, walk);
+  };
+  walk(wrapper.body);
+  return found;
+}
+
+/**
+ * モジュールのトップレベルが束縛する名前（import・`const` / `let` / `var`・関数と class の宣言、`export` 付きも）。
+ * getter の中の同じ名前はグローバルではなく、その束縛を読む。パースできなければ空（TypeScript の構文など）。
+ */
+export function moduleBindingNames(script: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  let program: AnyNode;
+  try {
+    program = parse(script, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true, allowAwaitOutsideFunction: true });
+  } catch {
+    return names;
+  }
+  if (program.type !== 'Program') return names;
+  for (const statement of program.body as AnyNode[]) {
+    if (statement.type === 'ImportDeclaration') {
+      for (const specifier of statement.specifiers) names.add(specifier.local.name);
+      continue;
+    }
+    const declaration = statement.type === 'ExportNamedDeclaration' && statement.declaration ? statement.declaration as AnyNode : statement;
+    if (declaration.type === 'VariableDeclaration') {
+      for (const declarator of declaration.declarations) bindingNames(declarator.id, names);
+    } else if ((declaration.type === 'FunctionDeclaration' || declaration.type === 'ClassDeclaration') && declaration.id) {
+      names.add(declaration.id.name);
+    }
+  }
+  return names;
 }

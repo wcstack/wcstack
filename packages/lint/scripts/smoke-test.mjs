@@ -358,6 +358,34 @@ export default { count: 0, code: "", rows: [{ id: 1, sex: "m" }] };
   <input type="radio" name="sex" value="f" data-wcs="radio: .sex">
 </template>
 `);
+// From the town-archive seam app (since 4.24). Bindings written where they never take effect are errors, so
+// --errors-only shows them: data-wcs on <body> (the state binds what is inside it) and an on*: handler on a <wcs-link>
+// (its host is display: none). A root-margin without px or % (the browser refuses it) and a getter reading the window
+// (innerWidth) are warnings; so is event.currentTarget read in a function nested in the handler. A row typed with the
+// second @typedef of one JSDoc block is clean (up to 4.23 its fields were false wcs/binding-path-missing).
+const longListHtml = join(workDir, "long-list.html");
+writeFileSync(longListHtml, `<!doctype html>
+<body data-wcs="onkeydown: onKey">
+<wcs-state><script type="module">
+/**
+ * @typedef {{ id: number, href: string }} Photo
+ * @typedef {{ code: string, name: string }} Area
+ */
+export default {
+  /** @type {Photo[]} */ photos: [],
+  /** @type {Area[]} */ areas: [],
+  get cols() { return innerWidth > 900 ? 4 : 2; },
+  onKey() {},
+  open(event) { return this.photos.find((p) => String(p.id) === event.currentTarget.dataset.id); },
+};
+</script></wcs-state>
+<template data-wcs="for: areas"><p data-wcs="textContent: .name"></p></template>
+<template data-wcs="for: photos">
+  <wcs-link data-wcs="attr.to: .href; onclick: open"><img data-wcs="onclick: open"></wcs-link>
+</template>
+<wcs-intersect root-margin="0 0 900 0"></wcs-intersect>
+</body>
+`);
 // the lint's version is the engine's (released in lockstep): a page pinning the next minor
 const [lintMajor, lintMinor] = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version.split(".").map(Number);
 const nextMinor = `${lintMajor}.${lintMinor + 1}.0`;
@@ -625,6 +653,23 @@ check("a data-entry form → warnings wcs/number-written-as-string, wcs/two-way-
 check("the data-entry form's warnings under --strict → exit 1; --errors-only prints none of them", ["--lang=en", "--strict", "--errors-only", formInputHtml], {
   exit: 1,
   stdout: [/^\n?0 error\(s\), 3 warning\(s\), 0 info \(strict\)/],
+});
+
+check("a long list's page → errors wcs/body-binding and wcs/link-handler, warnings wcs/getter-untracked-read (innerWidth), wcs/delegated-current-target (nested) and wcs/root-margin-unit, no wcs/binding-path-missing, exit 1", ["--lang=en", longListHtml], {
+  exit: 1,
+  stdout: [
+    /:2:7 error wcs\/body-binding data-wcs on <body> is never bound/,
+    /:11:23 warning wcs\/getter-untracked-read This getter reads innerWidth, which is not state/,
+    /:18:39 error wcs\/link-handler "onclick:" on <wcs-link> never runs "open"/,
+    /:18:69 warning wcs\/delegated-current-target "click" bindings are delegated to the root, so event\.currentTarget in "open" is the root/,
+    /:20:29 warning wcs\/root-margin-unit The browser refuses root-margin="0 0 900 0" .*Write root-margin="0px 0px 900px 0px"/,
+    "2 error(s), 3 warning(s), 0 info",
+  ],
+});
+
+check("the long list's page with --errors-only → the two errors only, exit 1", ["--lang=en", "--errors-only", longListHtml], {
+  exit: 1,
+  stdout: [/^[^\n]*:2:7 error wcs\/body-binding [^\n]*\n[^\n]*:18:39 error wcs\/link-handler [^\n]*\n\n2 error\(s\), 3 warning\(s\), 0 info/],
 });
 
 check("a framework app's page and component → named as nothing to check / not read, also with --errors-only, exit 0", ["--lang=en", "--errors-only", frameworkHtml, frameworkTsx], {

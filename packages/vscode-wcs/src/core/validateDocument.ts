@@ -20,6 +20,8 @@ import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateLiveRegions } from "../service/liveRegionValidator.js";
 import { validateFormInputs } from "../service/formInputValidator.js";
+import { validateBindingHosts } from "../service/bindingHostValidator.js";
+import { validateIoAttributes } from "../service/ioAttributeValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validatePackageLoads } from "../service/packageLoadValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
@@ -150,6 +152,11 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // what a form control's bindings do with what the user enters: a radio name every row shares, a string written
   // into a number, an output filter on a two-way value
   out.push(...validateFormInputs(text, bindAttribute, stateTagName, locale, fileReader, applicationSchema));
+  // bindings on an element where they never take effect: on <body> / <html> (the state binds what is inside <body>),
+  // an event handler on a <wcs-link> (its host is display: none)
+  out.push(...validateBindingHosts(text, bindAttribute, stateTagName, locale));
+  // a literal attribute of a built-in tag the platform refuses: a root-margin without px or %
+  out.push(...validateIoAttributes(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));
   // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
   out.push(...validatePackageLoads(text, locale, fileReader));

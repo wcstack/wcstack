@@ -324,10 +324,12 @@ export function readJsDocTagType(comment: string, tag: 'type' | 'typedef'): stri
 
 /**
  * `@<tag> {` の位置から、波括弧の釣り合いを取って型表現を取り出す。
- * 複数行の JSDoc の行頭 `*` は空白に置き換える。
+ * 複数行の JSDoc の行頭 `*` は空白に置き換える。`from` はコメントの中で探し始める位置（同じタグの 2 つ目以降を読む）。
  */
-function readBracedType(comment: string, tag: string): { type: string; end: number } | null {
-  const tagMatch = new RegExp(`@${tag}\\s*\\{`).exec(comment);
+function readBracedType(comment: string, tag: string, from = 0): { type: string; end: number } | null {
+  const tagRegex = new RegExp(`@${tag}\\s*\\{`, 'g');
+  tagRegex.lastIndex = from;
+  const tagMatch = tagRegex.exec(comment);
   if (!tagMatch) return null;
   const open = tagMatch.index + tagMatch[0].length - 1;
   let depth = 0;
@@ -377,17 +379,23 @@ function jsDocCommentBefore(content: string, propIndex: number): string | undefi
 }
 
 /**
- * スクリプトの JSDoc コメントから `@typedef {T} Name` を集める。
+ * スクリプトの JSDoc コメントから `@typedef {T} Name` を集める。1 つのコメントに `@typedef` がいくつあっても、すべて読む
+ * （型をまとめて 1 つのブロックに書く形 — 先頭の 1 つしか読まないと、残りの型で宣言した行のフィールドが偽の
+ * `wcs/binding-path-missing` になった: 継ぎ目アプリ town-archive）。読めない型表現の `@typedef` は飛ばして次へ進む。
  * 同じ名前が 2 度あれば後の宣言が勝つ（JavaScript の評価順ではなく、単に後勝ち）。
  */
 export function collectJsDocTypedefs(script: string, scan: string): Map<string, JsDocType> {
   const typedefs = new Map<string, JsDocType>();
   for (const { text: comment } of findJsDocComments(script, scan)) {
-    const braced = readBracedType(comment, 'typedef');
-    if (braced === null) continue;
-    const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
-    const type = parseJsDocType(braced.type);
-    if (name && type !== null) typedefs.set(name[1], type);
+    let from = 0;
+    for (;;) {
+      const braced = readBracedType(comment, 'typedef', from);
+      if (braced === null) break;
+      from = braced.end;
+      const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
+      const type = parseJsDocType(braced.type);
+      if (name && type !== null) typedefs.set(name[1], type);
+    }
   }
   return typedefs;
 }

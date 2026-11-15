@@ -73,6 +73,9 @@ export const DELEGATED_EVENTS: ReadonlySet<string> = new Set([
  */
 const CUSTOM_ELEMENT_OWN_EVENTS: ReadonlySet<string> = new Set(['input', 'change', 'submit']);
 
+/** router のリンク（既定のタグ名）。ホストは `display: none` で、`on*:` のハンドラは走らない（bindingHostValidator.ts）。 */
+const LINK_TAG = 'wcs-link';
+
 /** 要素の置かれた文脈で決まる検査の候補（offset は束縛属性の値の開始 — analyzeElementContexts に渡す）。 */
 interface ElementSiteCandidate {
   readonly offset: number;
@@ -330,9 +333,11 @@ export function validateBindings(
             severity: 'error',
           });
         }
+        // (not on a `<wcs-link>`: its handler never runs — `wcs/link-handler` says so, and `#direct` would not help)
         if (DELEGATED_EVENTS.has(eventName)
           && !modifiers.includes(DIRECT_MODIFIER)
           && attr.tagName !== undefined
+          && attr.tagName !== LINK_TAG
           && !(attr.tagName.includes('-') && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName))
           && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler)
           && getCurrentTargetHandlers().has(handler)) {

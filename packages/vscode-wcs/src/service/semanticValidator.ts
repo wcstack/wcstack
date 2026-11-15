@@ -32,7 +32,7 @@ import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { accessorRow, analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { suggestion } from './suggestion.js';
-import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findInPlaceChanges, findLocationRead, findOwnThis, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
+import { AMBIENT_READ_SPELLING, collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findAmbientRead, findInPlaceChanges, findLocationRead, findOwnThis, moduleBindingNames, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import type { WatchHandlerSource } from './stateAnalyzer.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
 import { countWildcardSegments, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
@@ -583,6 +583,35 @@ function validateGetterClockReads(script: string, scriptStart: number, locale?: 
       start: scriptStart + getter.bodyStart + read.index,
       end: scriptStart + getter.bodyStart + read.index + read[0].length,
       message: msgs.getterReadsClock(text),
+      severity: 'warning',
+    });
+  }
+  return out;
+}
+
+/**
+ * getter の中のウィンドウと文書の読み（`wcs/getter-untracked-read`、warning）— `innerWidth`・`devicePixelRatio`・
+ * `scrollY`・`matchMedia(…)`・`navigator.onLine`・`document.documentElement.clientWidth`・`document.hidden` など
+ * （一覧は scriptAst.ts の findAmbientRead）。どれも state ではないので依存として登録されず、getter はキャッシュした
+ * 最初の値を返し続ける — 幅から列数を決める getter は、リサイズしても変わらない（継ぎ目アプリ town-archive）。
+ * 文面は、束ねる要素（`<wcs-resize>` / `<wcs-media-query>` / `<wcs-network>`）か、要素の無い値（スクロール位置・
+ * 可視性）は state に置いてイベントハンドラから書く形を言う。getter ごとに最初の 1 か所。
+ */
+function validateGetterAmbientReads(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  if (!AMBIENT_READ_SPELLING.test(script)) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  // the names the module binds at its top level (a getter reading one of them does not read the global)
+  let moduleNames: ReadonlySet<string> | null = null;
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== 'getter' || getter.accessor !== 'get' || !AMBIENT_READ_SPELLING.test(getter.body)) continue;
+    const read = findAmbientRead(getter.body, (moduleNames ??= moduleBindingNames(script)));
+    if (read === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.start,
+      end: scriptStart + getter.bodyStart + read.end,
+      message: msgs.getterReadsAmbient(read.text, read.kind),
       severity: 'warning',
     });
   }
@@ -1165,6 +1194,7 @@ export function validateSemantics(
     ));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale));
     out.push(...validateGetterClockReads(block.content, block.contentStart, locale));
+    out.push(...validateGetterAmbientReads(block.content, block.contentStart, locale));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale));
     out.push(...validateInPlaceChanges(block.content, block.contentStart, locale));
   }

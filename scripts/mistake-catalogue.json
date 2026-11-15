@@ -1503,6 +1503,33 @@
       "effect": { "en": "A command calls the element at once, and the bindings of the update are applied after: the first request goes out with no body, and each later one carries the body of the send before.", "ja": "コマンドはその場で要素を呼び、その更新の束縛は後から当たる: 最初の要求は本文なしで出て、以後の要求は 1 つ前の送信の本文を運ぶ。" },
       "disposition": "docs-only",
       "note": { "en": "Found while the recipes of docs/forms.md were run (ekiden-entry). Use the input the element sends on: `body: payload; trigger: sending`, written in that order.", "ja": "docs/forms.ja.md の書き方を動かして確かめる中で見つけた（ekiden-entry）。要素が送信に使う入力を使う: `body: payload; trigger: sending` をこの順に書く。" }
+    },
+    {
+      "id": "body-binding",
+      "lint": [{ "code": "wcs/body-binding", "severity": "error" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes `data-wcs` on `<body>` or `<html>` (`<body data-wcs=\"onkeydown: onKey; class.dark: dark\">`, `<html data-wcs=\"attr.lang: lang\">`).", "ja": "`<body>` や `<html>` に `data-wcs` を書く（`<body data-wcs=\"onkeydown: onKey; class.dark: dark\">`、`<html data-wcs=\"attr.lang: lang\">`）。" },
+      "effect": { "en": "Nothing on it is bound: a `<wcs-state>` binds what is inside `<body>`, not the two elements themselves. The handler never runs, the class and the attribute never change, and the attribute stays on the element as written. The town-archive seam app: ← → on a photo page did nothing, with nothing in the console.", "ja": "そこに書いたものは何も束ねられない: `<wcs-state>` が束ねるのは `<body>` の中で、この 2 つの要素そのものではない。ハンドラは走らず、クラスも属性も変わらず、属性は書かれたまま要素に残る。継ぎ目アプリ town-archive: 写真のページの ← → が何もせず、コンソールにも何も出なかった。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Since 4.24 the lint reports it as an error. The diagnostics add-on warns with the same code from 4.24 (the state change of the same release); binding `<body>` itself was measured at 12 B in the core, over its limit. Put the binding on an element inside `<body>`, or write the value from `$connectedCallback` or a `$watch`.", "ja": "4.24 から lint がエラーとして報告する。diagnostics の後付けも 4.24 から同じ code で警告する（同じリリースの state の変更）。`<body>` 自体を束ねる案は core で 12 B と測り、上限を超える。束縛は `<body>` の中の要素に置くか、値を `$connectedCallback` や `$watch` から書く。" }
+    },
+    {
+      "id": "link-handler",
+      "lint": [{ "code": "wcs/link-handler", "severity": "error" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Binds an event handler on `<wcs-link>` itself (`<wcs-link data-wcs=\"attr.to: .href; onclick: openPhoto\">`).", "ja": "`<wcs-link>` そのものにイベントハンドラを束ねる（`<wcs-link data-wcs=\"attr.to: .href; onclick: openPhoto\">`）。" },
+      "effect": { "en": "The handler never runs: the host is `display: none`, and the click happens on the `<a>` the link generates beside itself, so the event never passes the host. The link still navigates, so the page looks right until what the handler was to do is missing (the place to come back to, the list the photo was opened from).", "ja": "ハンドラは走らない: ホストは `display: none` で、クリックはリンクが自分の隣に作る `<a>` で起きるので、イベントはホストを通らない。リンク自体は遷移するので、ハンドラがするはずだったこと（戻る位置、どの一覧から開いたか）が欠けるまで、ページは正しく見える。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md): the author used plain `<a>` cards because of it. Since 4.24 the lint reports each `on*:` on a `<wcs-link>` as an error. Put the handler on an element inside the link (its children move into the `<a>`) or around it, or navigate from a handler by writing the router's `navigateUrl`. The runtime does not see it: the binding is attached and simply never fires.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）: 作者はこのためにカードを素の `<a>` にした。4.24 から lint が、`<wcs-link>` の `on*:` をそれぞれエラーとして報告する。ハンドラはリンクの中の要素（子は `<a>` の中へ移る）か外側の要素に置く。ハンドラから遷移するなら router の `navigateUrl` に書く。実行時には見えない: 束縛は付いていて、ただ一度も発火しない。" }
+    },
+    {
+      "id": "root-margin-unit",
+      "lint": [{ "code": "wcs/root-margin-unit", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes a `root-margin` with a length that has no unit on `<wcs-intersect>` or `<wcs-infinite-scroll>` (`root-margin=\"200\"`, `\"0 0 900 0\"`).", "ja": "`<wcs-intersect>` や `<wcs-infinite-scroll>` の `root-margin` に、単位の無い長さを書く（`root-margin=\"200\"`、`\"0 0 900 0\"`）。" },
+      "effect": { "en": "The browser refuses the margin (`rootMargin must be specified in pixels or percent` — a bare `0` too, in Chromium and Firefox). `<wcs-intersect>` observes nothing and `observing` stays false, without a word; `<wcs-infinite-scroll>` let the browser's exception out of its callback, and no page was loaded. The town-archive seam app: one page and nothing more.", "ja": "ブラウザがその margin を拒む（`rootMargin must be specified in pixels or percent` — Chromium と Firefox では `0` だけでも）。`<wcs-intersect>` は何も観測せず、`observing` は false のまま、無言。`<wcs-infinite-scroll>` はブラウザの例外をコールバックの外へ出し、ページは読み込まれなかった。継ぎ目アプリ town-archive: 1 ページ出て、それきり。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Since 4.24 the lint reports a literal margin whose lengths are not all in `px` or `%` (a bound `rootMargin:` is not checked). Both elements warn with the same code from 4.24 (the I/O change of the same release) and neither throws.", "ja": "4.24 から lint が、長さがすべて `px` か `%` でないリテラルの margin を報告する（束ねた `rootMargin:` は検査しない）。両方の要素も 4.24 から同じ code で警告し（同じリリースの I/O の変更）、どちらも throw しない。" }
     }
   ],
   "uncounted": [

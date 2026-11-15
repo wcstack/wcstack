@@ -95,6 +95,13 @@ export interface WcsMessageCatalog {
   objectKeyAssign(target: string, accessor: string, suggestedPath: string): string;
   /** getter の中の現在時刻（`Date.now()` / 引数の無い `new Date()` / `performance.now()`）。キャッシュされ、最初の値のまま。 */
   getterReadsClock(read: string): string;
+  /**
+   * getter の中のウィンドウと文書の読み（`innerWidth`・`scrollY`・`matchMedia(…)`・`navigator.onLine`・`document.hidden` など）。
+   * state ではないので追跡されず、getter は最初の値のまま。`kind` で、代わりに束ねる要素（`<wcs-resize>` /
+   * `<wcs-media-query>` / `<wcs-network>`）か、要素の無いもの（スクロール位置・ページの可視性）は state に置いて
+   * イベントハンドラから書く形を言う。
+   */
+  getterReadsAmbient(read: string, kind: AmbientReadKind): string;
   /** `$renderedCallback` が state に無いパスを判定に使っている（`paths` に現れないので、その分岐は走らない）。近い名前があるときだけ。 */
   updatedCallbackUnknownPath(path: string): string;
   /** 宣言したコマンドトークンを emit するが、どの `command.<method>:` 束縛にも結ばれていない。 */
@@ -175,6 +182,18 @@ export interface WcsMessageCatalog {
    * and has no input filter to undo the output.
    */
   twoWayOutputFilter(property: string, filters: string, left: string, rhs: string, keystroke: boolean): string;
+  // --- bindingHostValidator ---
+  /** The bind attribute (`attribute`) written on `<body>` or `<html>` (`tag`): `<wcs-state>` binds only what is inside `<body>`. */
+  bodyBinding(tag: string, attribute: string): string;
+  /** An `on*:` binding (`property`, as written without modifiers) on a `<wcs-link>`: the host is `display: none`, so `handler` never runs. */
+  linkHandler(property: string, handler: string): string;
+  // --- ioAttributeValidator ---
+  /**
+   * A literal `root-margin` (`value`) on `<wcs-intersect>` / `<wcs-infinite-scroll>` (`tag`) the browser refuses.
+   * `refused`: the values that are not a number with px or % (empty: there are more than four values); `suggested`:
+   * the value with `px` added to its unitless numbers, or null when that does not make it valid.
+   */
+  rootMarginUnit(tag: string, value: string, refused: readonly string[], suggested: string | null): string;
   filterUnknown(name: string): string;
   /** 4.0 で外れたフィルタの旧名（`uc` → `upper`。ランタイムは `[wcs/filter-unknown]`）。 */
   filterRemoved(name: string, canonical: string): string;
@@ -368,6 +387,13 @@ export interface WcsMessageCatalog {
   recursionConcreteCollision(concreteKey: string, recursiveKey: string): string;
 }
 
+/**
+ * getter が読んだウィンドウ・文書の値の種類（service/scriptAst.ts の findAmbientRead）: 大きさ（`innerWidth`・
+ * `document.documentElement.clientWidth`）・`devicePixelRatio`・`matchMedia(…)`・`navigator.onLine`・スクロール位置
+ * （`scrollY`・`document.documentElement.scrollTop`）・ページの可視性（`document.visibilityState` / `hidden`）。
+ */
+export type AmbientReadKind = 'size' | 'pixelRatio' | 'media' | 'online' | 'scroll' | 'visibility';
+
 /** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
 export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'whitespace' | 'reserved';
 
@@ -387,6 +413,11 @@ export type RecursionNodePathProblem =
   | 'reservedRoot' | 'reservedMount' | 'midWildcard' | 'nestedRecursion' | 'indexSegment';
 /** `**` を含む宣言キーの不正。 */
 export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself' | 'structural';
+
+/** 単位の無い 0（`0`・`0.0`・`-0`）— root margin では 0 にも単位が要る、と言い添えるため。 */
+function isUnitlessZero(token: string): boolean {
+  return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
+}
 
 /** シードの原文（長いリテラルは先頭だけ）。 */
 function shortSeed(raw: string): string {
@@ -438,6 +469,23 @@ const ja: WcsMessageCatalog = {
     `この getter は ${read} を読んでいますが、location は state ではないので、最初に読んだ URL を持ち続けます（ナビゲーションで再評価されません）。URL は state を通して読んでください — <wcs-router> の path / searchParams を束ねる`,
   getterReadsClock: (read) =>
     `この getter は ${read} を読んでいますが、時刻は state ではないので依存として登録されず、getter はキャッシュした最初の値を返し続けます（イベントトークンで毎フレーム「描き直し」ても変わりません）。時刻を state に置いてください — <wcs-raf> や <wcs-timer> が書く値を束ねる`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `この getter は ${read} を読んでいますが、state ではないので依存として登録されず、getter はキャッシュした最初の値を返し続けます`;
+    switch (kind) {
+      case 'size':
+        return `${head}（リサイズしても再評価されません）。大きさを state に置いてください — <wcs-resize> が書く width / height を束ねる（ブレークポイントの判定なら <wcs-media-query> の matched）`;
+      case 'pixelRatio':
+        return `${head}（拡大しても、別の画面へ移しても再評価されません）。ページが使う解像度のしきい値を <wcs-media-query> の matched で束ねてください（query="(min-resolution: 2dppx)"）`;
+      case 'media':
+        return `${head}（クエリが合うようになっても、合わなくなっても再評価されません）。<wcs-media-query> の matched を束ねてください（<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">）`;
+      case 'online':
+        return `${head}（オフラインになっても、戻っても再評価されません）。<wcs-network> の offline を束ねてください`;
+      case 'scroll':
+        return `${head}（スクロールしても再評価されません）。スクロール位置を出す wcstack の要素は無いので、値を state に置き、イベントハンドラ（scroll のリスナー）から書いてください`;
+      default:
+        return `${head}（ページが隠れても、表示されても再評価されません）。ページの可視性を出す wcstack の要素は無いので、値を state に置き、イベントハンドラ（visibilitychange のリスナー）から書いてください`;
+    }
+  },
   updatedCallbackUnknownPath: (p) =>
     `"${p}" は state のパスではないので $renderedCallback の paths に現れず、この分岐は一度も実行されません`,
   commandTokenUnbound: (t) =>
@@ -510,6 +558,17 @@ const ja: WcsMessageCatalog = {
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke
     ? `${prop}: は双方向で 1 打鍵ごとに書き戻し、出力フィルタ "${filters}" はそのたびに state の値を整形して欄へ書き直します。入力中の欄が書き換わり（キャレットは末尾へ飛び、IME の変換は途切れます）、state が受け取るのも欄の整形済みの文字です（出力フィルタは書き戻しで元に戻りません）。整形した文字は別の要素に表示する、欄の確定で書き戻して setter で整形する（${prop}#onchange:）、または一方向にしてください（${prop}#ro: ${rhs}）`
     : `${prop}: は双方向ですが、出力フィルタ "${filters}" は書き戻しで元に戻りません。要素が書き戻すのは表示している整形済みの値で、次はその値にフィルタが掛かります。左辺の入力フィルタで元に戻す（${left}|<フィルタ>: …）、整形した値は別の要素に表示する、または一方向にしてください（${prop}#ro: ${rhs}）`,
+  bodyBinding: (tag, attribute) =>
+    `<${tag}> の ${attribute} は束縛されません。<wcs-state> が束ねるのは <body> の中で、<body> と <html> そのものは束ねないので、ここに書いた束縛は何もしません（イベントのハンドラは走らず、class. / attr. などは書かれません）。束縛を <body> の中の要素（包む要素・<main>）へ移すか、値を $connectedCallback や $watch のハンドラから書いてください（document.documentElement.lang = …）`,
+  linkHandler: (property, handler) =>
+    `<wcs-link> の "${property}:" は "${handler}" を呼びません。<wcs-link> 自身は display: none で、利用者がクリックするのはリンクが自分の隣に作る <a> なので、イベントはホストに届きません。ハンドラは、リンクの中の要素（子は <a> の中へ移ります）か、リンクを囲む要素に書いてください。ハンドラから遷移するなら、router の navigateUrl に書きます（<wcs-router> の data-wcs="navigateUrl: …"）`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0
+      ? '値は 1〜4 個です'
+      : `${refused.map((t) => `"${t}"`).join('・')} は px か % の付いた数値ではありません${refused.some(isUnitlessZero) ? '（0 にも単位が要ります）' : ''}`;
+    const effect = tag === 'wcs-intersect' ? '要素は何も監視せず、observing は false のままです' : '要素は何も監視せず、次のページは読み込まれません';
+    return `ブラウザは root-margin="${value}" を拒みます（rootMargin must be specified in pixels or percent）: ${why}。そのため${effect}。${suggested === null ? '1〜4 個の値を、それぞれ px か % の付いた数値で書いてください' : `root-margin="${suggested}" と書いてください`}`;
+  },
   filterUnknown: (n) => `フィルタ "${n}" は組み込みフィルタに存在しません`,
   filterRemoved: (n, c) => `フィルタ "${n}" は 4.0 で外れました（"${c}" の 3.x の旧名）。"${c}" と書いてください`,
   substrRemoved: (rewrite) =>
@@ -785,6 +844,23 @@ const en: WcsMessageCatalog = {
     `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state — bind <wcs-router>'s path / searchParams`,
   getterReadsClock: (read) =>
     `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state — bind the value <wcs-raf> or <wcs-timer> writes`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `This getter reads ${read}, which is not state, so it is not a dependency: the getter is cached and keeps returning its first value`;
+    switch (kind) {
+      case 'size':
+        return `${head} (a resize does not re-evaluate it). Keep the size in state — bind the width / height <wcs-resize> writes (for a breakpoint, <wcs-media-query>'s matched)`;
+      case 'pixelRatio':
+        return `${head} (a zoom or a move to another screen does not re-evaluate it). Bind <wcs-media-query>'s matched for the resolution thresholds the page uses (query="(min-resolution: 2dppx)")`;
+      case 'media':
+        return `${head} (the query starting or ceasing to match does not re-evaluate it). Bind <wcs-media-query>'s matched instead (<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">)`;
+      case 'online':
+        return `${head} (going offline or coming back does not re-evaluate it). Bind <wcs-network>'s offline instead`;
+      case 'scroll':
+        return `${head} (scrolling does not re-evaluate it). No wcstack element gives the scroll position: keep the value in state and write it from an event handler (a scroll listener)`;
+      default:
+        return `${head} (the page being hidden or shown does not re-evaluate it). No wcstack element gives the page's visibility: keep the value in state and write it from an event handler (a visibilitychange listener)`;
+    }
+  },
   updatedCallbackUnknownPath: (p) =>
     `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
   commandTokenUnbound: (t) =>
@@ -857,6 +933,17 @@ const en: WcsMessageCatalog = {
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke
     ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types — the caret jumps to the end, an IME composition is cut — and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}`
     : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: …), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
+  bodyBinding: (tag, attribute) =>
+    `${attribute} on <${tag}> is never bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so the bindings written here do nothing (an event handler never runs; class., attr. and the rest are never written). Move the binding to an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch handler (document.documentElement.lang = …)`,
+  linkHandler: (property, handler) =>
+    `"${property}:" on <wcs-link> never runs "${handler}": the <wcs-link> itself is display: none, and what the user clicks is the <a> it generates beside itself, so no event reaches the host. Put the handler on an element inside the link (its children move into the <a>) or on an element around it; to navigate from a handler, write the router's navigateUrl (data-wcs="navigateUrl: …" on <wcs-router>)`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0
+      ? 'it takes one to four values'
+      : `${refused.map((t) => `"${t}"`).join(', ')} ${refused.length === 1 ? 'is not a number' : 'are not numbers'} with px or %${refused.some(isUnitlessZero) ? ' (a 0 needs its unit too)' : ''}`;
+    const effect = tag === 'wcs-intersect' ? 'the element observes nothing and observing stays false' : 'the element observes nothing and no page is loaded';
+    return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? 'Write one to four values, each a number with px or %' : `Write root-margin="${suggested}"`}`;
+  },
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") — write "${c}"`,
   substrRemoved: (rewrite) =>

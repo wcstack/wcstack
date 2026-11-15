@@ -130,6 +130,19 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 新しい 3 つの規則は warning です: `--strict` では失敗し、`--errors-only` には出ません。
 
+## 長いリストのページに言うこと
+
+4.24（未リリース）から、継ぎ目アプリ town-archive — 写真 12,000 枚のアーカイブ。長いリストと無限スクロールのページ — から。そのページの誤りのうち、この lint が言わなかったもの:
+
+- **`wcs/body-binding`**（error） — `<body>` / `<html>` に書いた `data-wcs`（`<body data-wcs="onkeydown: onKey; class.dark: dark">`）。`<wcs-state>` が束ねるのは `<body>` の中で、`<body>` と `<html>` そのものは束ねないので、そこに書いた束縛は何もしません: ハンドラは走らず、`class.` も `attr.` も書かれません。束縛を `<body>` の中の要素（包む要素・`<main>`）へ移すか、値を `$connectedCallback` や `$watch` のハンドラから書いてください（`document.documentElement.lang = …`）。
+- **`wcs/link-handler`**（error） — `<wcs-link>` の束縛に書いた `on*:`（`<wcs-link data-wcs="attr.to: .href; onclick: openPhoto">`）。リンクのホストは `display: none` で、利用者がクリックするのはリンクが自分の隣に作る `<a>` なので、ハンドラは走りません。ハンドラはリンクの中の要素（子は `<a>` の中へ移ります）か、リンクを囲む要素に書いてください。ハンドラから遷移するなら、router の `navigateUrl` に書きます。
+- **`wcs/root-margin-unit`**（warning） — `<wcs-intersect>` / `<wcs-infinite-scroll>` の、ブラウザが拒むリテラルの `root-margin`: `root-margin="200"`・`"0 0 900 0"`。`IntersectionObserver` が受けるのは 1〜4 個の値で、それぞれ `px` か `%` の付いた数値です — `0` にも単位が要るので、`"0 0 900px 0"` も拒まれます（`rootMargin must be specified in pixels or percent`）。そのとき `<wcs-intersect>` は何も監視せず（`observing` は `false` のまま）、`<wcs-infinite-scroll>` は次のページを読み込みません。文面は `px` を足した書き方（`root-margin="0px 0px 900px 0px"`）を言います。束ねた `rootMargin:` は検査しません。
+- **`wcs/getter-untracked-read`** は、ウィンドウと文書を読む getter も報告します: `innerWidth` / `innerHeight` / `outerWidth` / `outerHeight`、`devicePixelRatio`、`scrollX` / `scrollY` / `pageXOffset` / `pageYOffset`、`matchMedia(…)` の呼び出し、`navigator.onLine`、`document.documentElement` / `document.body` / `document.scrollingElement` の `clientWidth` / `clientHeight` / `scrollTop` / `scrollLeft`、`document.visibilityState` / `document.hidden` — `window.` / `globalThis.` の有無によりません。どれも state ではないので、キャッシュされた getter は最初の値を持ち続けます（`innerWidth` から列数を決める getter は、リサイズしても変わりません）。文面は代わりに束ねるものを言います: `<wcs-resize>` の `width` / `height`、`<wcs-media-query>` の `matched`（`matchMedia`・ブレークポイント・解像度のしきい値）、`<wcs-network>` の `offline`。スクロール位置とページの可視性を出す要素は無いので、値を state に置いてイベントハンドラから書いてください。getter やモジュールが束縛する名前（`const innerWidth = …`・引数）と、state の同名のキー（`this.innerWidth`）は報告しません。
+- **`wcs/delegated-current-target`** は、ハンドラに入れ子にした関数の中も読みます: `openPhoto(event) { return this.photos.find((p) => String(p.id) === event.currentTarget.closest(".card").dataset.id); }` を、ハンドラの本体での読みと同じに報告します。引数を影にする関数と、`setTimeout`・`requestAnimationFrame`・`.then(…)`・`addEventListener` に渡した関数・オブジェクトに置いた関数（`img.onload = () => …`）は報告しません: その関数は dispatch の後に走り、`currentTarget` はどちらにしても `null` です。
+- **JSDoc の 1 つのブロックの `@typedef` をすべて読みます。** 4.23 までは先頭の 1 つだけを読み（1 つのコメントに `/** @typedef {…} Photo` と `@typedef {…} Area */`）、2 つ目の型のリスト（`/** @type {Area[]} */ areas: []`）は、行のフィールドごとに `wcs/binding-path-missing` の誤報になりました。
+
+新しい 2 つの error は `--errors-only` にも出ます。新しい warning は `--strict` で失敗します。
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。
