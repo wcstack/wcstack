@@ -650,6 +650,8 @@ From the `town-archive` seam app ([seam-apps.md](./seam-apps.md)). Up to 4.23 th
 
 A request the page started itself (`trigger`, a command) counts as any other: the element follows the target's `loading`, not its own calls.
 
+**Where the sentinel is, at those moments, includes the reports the browser has made and not yet delivered** (`IntersectionObserver.takeRecords()`; after 4.24.0). An observer's report is a task, and while the user scrolls it waits behind the input and the frames: the report that a page pushed the sentinel out came after the third frame — 7 to 9 loads of 10 in Chromium on the package's infinite-scroll example with a few presses of ↓ as the page landed, once in Firefox, never in WebKit — and 4.24.0, which read only what had been delivered, asked for one page the window did not need. A report taken this way that says the sentinel came on screen is §2.1's edge, as if it had been delivered.
+
 ### 26.2 What it never does from there
 - **It never runs a `url` that was already asked for.** A failed request leaves the `url` where it was, so it is not repeated; the layout of an error message is not a retry. The sentinel coming on screen again (§2.1's edge) still runs the same `url` — the user's way to try again.
 - **A response that added no row ends it**, whatever the page does to the `url`: a page that counts its page number up on an empty answer asked once more and stops.
@@ -663,4 +665,4 @@ A request the page started itself (`trigger`, a command) counts as any other: th
 `<wcs-infinite-scroll root>` takes an id or a selector, `<wcs-intersect root>` a selector or an id. A root given and not found is said once per value (`[wcs/infinite-scroll-root]`, `[wcs/intersect-root]`) and the viewport is used, as before; `<wcs-infinite-scroll>` also says a root that does not scroll (`overflow: visible`). A `root-margin` the browser refuses (a length with no unit) is said once per value by both (`[wcs/root-margin-unit]`); neither throws.
 
 ### 26.5 Testing
-`packages/fetch/__tests__/townArchive.test.ts` runs the frames by hand (happy-dom's `requestAnimationFrame` cannot tell "two frames later" from "at once"). In real browsers: the README's example as written, by scrolling and in a window 4,000 px tall, Chromium, Firefox and WebKit.
+`packages/fetch/__tests__/townArchive.test.ts` runs the frames by hand (happy-dom's `requestAnimationFrame` cannot tell "two frames later" from "at once"). In real browsers: the README's example as written, by scrolling and in a window 4,000 px tall, Chromium, Firefox and WebKit. The late report is a fake observer's `takeRecords()` in the unit tests; in `e2e/tests/fetch-infinite-scroll.spec.ts` it is the package's example with two presses of ↓ as the first page lands — on 4.24.0 that test fails when it runs alone (one worker), and the report was not late on a machine busy with other tests.

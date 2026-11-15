@@ -639,6 +639,8 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 ページ自身が始めた要求（`trigger`、コマンド）も同じに数える: 要素は自分の呼び出しではなく、target の `loading` を追う。
 
+**これらの時機に見る番兵の位置には、ブラウザが作ってまだ届けていない報告も含める**（`IntersectionObserver.takeRecords()`。4.24.0 の後から）。オブザーバの報告はタスクで、利用者がスクロールしている間は入力とフレームの後ろで待つ: ページが番兵を押し出したという報告が 3 フレーム目より後に届いた — パッケージの infinite-scroll の例で、ページが届く瞬間に ↓ を数回押すと、Chromium で 10 回中 7〜9 回、Firefox で 1 回、WebKit では 0 回 — ため、届いた報告だけを読んでいた 4.24.0 は、ウィンドウに要らない 1 ページを取りに行った。こうして取り込んだ報告が「番兵が画面に入った」なら、届いた場合と同じく §2.1 のエッジとして扱う。
+
 ### 26.2 そこからは決してしないこと
 - **すでに尋ねた `url` は実行しない。** 失敗した要求は `url` をそのまま残すので、繰り返されない。エラー表示のレイアウトは再試行にならない。番兵がもう一度画面に入れば（§2.1 の端）、同じ `url` でも実行する — 利用者がもう一度試す道。
 - **行を 1 つも足さなかった応答で終わる**（ページが `url` をどう変えても）: 空の応答でページ番号を進めるページは、もう 1 回尋ねて止まる。
@@ -652,4 +654,4 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 `<wcs-infinite-scroll root>` は id かセレクタ、`<wcs-intersect root>` はセレクタか id を受ける。指定されて見つからない root は値ごとに 1 回知らせ（`[wcs/infinite-scroll-root]`・`[wcs/intersect-root]`）、今までどおり viewport を使う。`<wcs-infinite-scroll>` はスクロールしない root（`overflow: visible`）も知らせる。ブラウザが拒む `root-margin`（単位の無い長さ）は、どちらも値ごとに 1 回知らせる（`[wcs/root-margin-unit]`）。どちらも throw しない。
 
 ### 26.5 テスト
-`packages/fetch/__tests__/townArchive.test.ts` はフレームを手で進める（happy-dom の `requestAnimationFrame` では「2 フレーム後」と「その場」を区別できない）。実ブラウザでは、README の例を書かれたとおりに、スクロールと 4,000 px の高さのウィンドウで、Chromium・Firefox・WebKit。
+`packages/fetch/__tests__/townArchive.test.ts` はフレームを手で進める（happy-dom の `requestAnimationFrame` では「2 フレーム後」と「その場」を区別できない）。実ブラウザでは、README の例を書かれたとおりに、スクロールと 4,000 px の高さのウィンドウで、Chromium・Firefox・WebKit。遅れて届く報告は、単体テストでは偽のオブザーバの `takeRecords()`、`e2e/tests/fetch-infinite-scroll.spec.ts` ではパッケージの例で最初のページが届く瞬間に ↓ を 2 回押す — 4.24.0 では、このテストは単独（ワーカー 1 つ）で走らせると落ちる。ほかのテストで忙しいマシンでは、報告は遅れなかった。

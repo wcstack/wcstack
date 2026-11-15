@@ -142,6 +142,56 @@ describe("InfiniteScroll: 番兵が画面に残る・url が後から届く（to
     expect(urls()).toHaveLength(2);
   });
 
+  // 利用者がスクロールしている間は、番兵が外へ出たという報告が 1 フレーム遅れて届く（Chromium・Firefox）:
+  // 要求が終わって待つフレームの後でも、報告はまだブラウザの中にある（docs/seam-apps.ja.md、town-archive の取り込み）。
+  const undelivered = (isIntersecting: boolean) =>
+    observers[0].takeRecords.mockReturnValueOnce([{ isIntersecting } as IntersectionObserverEntry]);
+
+  it("番兵が外へ出た報告がまだ届いていない（利用者がスクロール中）: 届いていない報告を取り込んでから見るので、続きを読み込まない", async () => {
+    const { fetchEl, place } = mount("/api/items?offset=0");
+    observers[0].report(true);
+    // ページは番兵を押し出したが、その報告は届いていない
+    undelivered(false);
+    await answer({}, 200, () => { place.top += 2400; fetchEl.url = "/api/items?offset=60"; });
+    expect(urls()).toEqual(["/api/items?offset=0"]);
+    // 利用者がそこまでスクロールすれば読み込む
+    observers[0].report(true);
+    expect(urls()).toEqual(["/api/items?offset=0", "/api/items?offset=60"]);
+  });
+
+  it("届いていない報告が「画面に入った」なら、番兵が画面に入ったのと同じ: 失敗した url ももう一度取りに行く", async () => {
+    mount("/api/items?offset=120");
+    observers[0].report(true);
+    observers[0].report(false); // 読み込み中に利用者が離れた
+    undelivered(true); // 戻ってきた報告は、まだ届いていない
+    await answer({ error: "x" }, 500);
+    expect(urls()).toEqual(["/api/items?offset=120", "/api/items?offset=120"]);
+  });
+
+  it("静止中に url が変わった後の見直しでも、届いていない報告を取り込む: 番兵が外へ出ていれば読み込まない", async () => {
+    const { fetchEl } = mount("/api/items?f=a");
+    observers[0].report(true);
+    await answer(); // 0 件の結果: 番兵は動かない
+    fetchEl.url = "/api/items?f=b";
+    await flush();
+    undelivered(false);
+    await frames(4);
+    expect(urls()).toEqual(["/api/items?f=a"]);
+  });
+
+  it("要求が終わって待つ間に disabled になる: 監視が無いので報告は取り込まず、読み込まない", async () => {
+    const { fetchEl, sentinel, place } = mount("/api/items?offset=0");
+    observers[0].report(true);
+    document.addEventListener("wcs-fetch:response", () => queueMicrotask(() => { place.top += 400; fetchEl.url = "/api/items?offset=60"; }), { once: true });
+    pending.shift()!.resolve(response({}));
+    await flush();
+    await flush();
+    sentinel.setAttribute("disabled", "");
+    await frames(4);
+    expect(urls()).toEqual(["/api/items?offset=0"]);
+    expect(observers[0].takeRecords).not.toHaveBeenCalled();
+  });
+
   it("応答が行を増やさなければ、url が進んでも読み込まない（終わりを見ないページが回り続けない）", async () => {
     const { fetchEl } = mount("/api/items?offset=120");
     observers[0].report(true);
