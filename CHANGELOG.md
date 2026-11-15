@@ -6,11 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.24.1] — 2026-11-15
+
+A patch with what landing the `town-archive` seam app in `examples/` found ([docs/seam-apps.md](./docs/seam-apps.md), "Landing town-archive"): `<wcs-infinite-scroll>` asked for one page the window did not need when the user was scrolling as a page landed. Only `@wcstack/fetch`'s source changed (the `wcstack/auto` bundle carries it); every package is published at 4.24.1, as always.
+
+### Upgrading
+
+- `@wcstack/fetch`: `<wcs-infinite-scroll>` asks for the next page only while its sentinel is on screen, also when the user is scrolling as a page lands. A page that relied on the page loaded ahead in 4.24.0 gets it when the sentinel comes within its `root-margin`, as documented; a test that counted requests during a scroll may count one fewer.
 
 ### Fixed
 
 - `@wcstack/fetch`: `<wcs-infinite-scroll>` asked for a page the window did not need when the user was scrolling as a page landed. The page had pushed the sentinel out of the window, but while the user scrolls the observer's report of that arrives a frame later than otherwise — after the three frames the element waits when a request ends — and the element read the sentinel as still on screen. Before it looks, it now takes the reports the browser has made and not yet delivered. Found while landing the `town-archive` seam app, on the package's own infinite-scroll example: 7 to 9 loads of 10 in Chromium with two or three presses of ↓ as the first page arrived, once in Firefox on a page without wcstack, never in WebKit. One page ahead, in order and with no row twice — nothing a page showed was wrong.
+
+### Documentation
+
+- Where the sentinel of `<wcs-infinite-scroll>` goes: right after the list, above a spinner or a message shown while a page loads, so that only rows move it (the fetch README §5, [docs/long-lists.md](./docs/long-lists.md) §2). A spinner inserted above it when a request starts pushes it out of its margin, a scroll that goes on brings it back, and a request that failed in between is asked again.
+- `packages/fetch/examples/infinite-scroll` takes the README's form: the `url` from state only, a *Try again* button, the sentinel right after the list, and no caveat about short pages.
+- `examples/town-archive`: the seam app, without the three workarounds 4.24.0 made unnecessary, with its e2e spec.
 
 ## [4.24.0] — 2026-11-15
 

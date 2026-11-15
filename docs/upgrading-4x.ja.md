@@ -435,7 +435,13 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: `<wcs-infinite-scroll>` が実行する `<wcs-fetch>` の、1 ページ目の静的な `url` と、`$connectedCallback` から頼む最初のページ。番兵をウィンドウの外へ押し出すために大きくした行やページ。`<wcs-infinite-scroll>` が短いページで止まるためだけに使った `<wcs-intersect>` と `reobserve()`。url を先に書き、その `$watch` から `fetch` コマンドを emit すること。隣のボタンが応えないために、行の中で `<wcs-link>` の代わりに使った素の `<a>`。要素が起動時に渡す値を `$connectedCallback` でもう一度当てること。
 
-## 4.24.0 でもまだ要るもの
+### 4.24.1
+
+2026-11-15 — [CHANGELOG](../CHANGELOG.md#4241--2026-11-15)
+
+- `@wcstack/fetch`: `<wcs-infinite-scroll>` は、ページが届く瞬間に利用者がスクロールしていても、ウィンドウに要らないページを取りに行かなくなった（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §26.1）。4.24.0 では、そのとき 1 ページ先を読んでいた — Chromium で、たいていの場合。ページの側で変えることは無い。スクロールの間の要求を数えるテストは、1 回少なく数えることがある。
+
+## 4.24.1 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
