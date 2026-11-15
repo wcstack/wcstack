@@ -76,26 +76,40 @@ npm install @wcstack/intersection
 
 ### 2. 無限スクロール（センチネル）
 
-リストの末尾に空の `target="self"` マーカーを置き、`intersecting` を「さらに読み込む」をトリガする state フラグにバインドします。
+ページを `<wcs-fetch>` で読み込む一覧では、番兵には [`<wcs-infinite-scroll>`](../fetch/README.ja.md#5-wcs-infinite-scroll-による無限スクロール) を使ってください: url を待ち、背の高いウィンドウを埋め、失敗した要求を繰り返しません。`<wcs-intersect target="self">` は、端がほかのものを動かすときや、端の意味をページ自身が決めるとき（両端に伸びる一覧）に使います。
+
+リストの末尾に空の `target="self"` マーカーを置き、その**報告**（イベントトークン）で動きます。取っておいたフラグでは動きません: 保存した `intersecting` は、ページがマーカーを動かした時点で古くなります。
 
 ```html
-<ul data-wcs="for: items">
-  <li data-wcs="textContent: items.*.name"></li>
+<ul>
+  <template data-wcs="for: items">
+    <li data-wcs="textContent: .name"></li>
+  </template>
 </ul>
 
-<wcs-intersect target="self" data-wcs="intersecting: atEnd"></wcs-intersect>
+<wcs-intersect target="self" root-margin="240px 0px"
+  data-wcs="eventToken.intersecting: sentinelChanged; command.reobserve: $command.rearm"></wcs-intersect>
 ```
 
 ```js
 export default {
   items: [],
-  atEnd: false,
-  get _loadMore() {
-    // atEnd が true になることに反応する computed/effect
-    return this.atEnd ? fetchNextPage() : null;
-  }
+  $eventTokens: ["sentinelChanged"],
+  $commandTokens: ["rearm", "loadPage"],
+  $on: {
+    sentinelChanged(state, event) {
+      if (event.detail.isIntersecting) state.$command.loadPage.emit(); // 入ってきた端で次のページを取りに行く
+    },
+  },
+  $watch: {
+    // observer が報告するのは可視性の変化だけ: マーカーを画面に残したページの後は、今どこにいるかを尋ね直す。
+    // 失敗の後には尋ねない —— エラー表示のレイアウトが再試行のループになる。
+    items() { this.$command.rearm.emit(); },
+  },
 };
 ```
+
+読み込みはハンドラか `$watch` から始め、getter からは始めないでください: getter は誰かが読んだときにしか評価されず、要求を始めてはいけません。要求・一覧の終わり・再試行まで含めた形は [`examples/state-intersect-fetch`](../../examples/state-intersect-fetch) にあります。
 
 ### 3. スクロールスパイ（単一セクション）
 
@@ -117,7 +131,7 @@ export default {
 | 属性           | 型      | 既定値     | 説明 |
 |----------------|---------|------------|-------------|
 | `target`       | string  | *(省略)*   | 何を観測するか: 省略 → 最初の子、セレクタ → その要素、`self` → この要素。 |
-| `root`         | string  | *(viewport)* | スクロールルートのセレクタ。 |
+| `root`         | string  | *(viewport)* | スクロールルートのセレクタ。4.24（未リリース）から、セレクタとして何にも一致しない値は id として探し（`<wcs-infinite-scroll root>` の書き方）、見つからなければ値ごとに 1 回 `[wcs/intersect-root]` で警告します —— それまでは黙って viewport が使われました。中身を切り取らない root（`root="main"` は `<main>` に一致します）は、中にあるものをすべて交差中として数えます。 |
 | `root-margin`  | string  | `0px`      | ルート周りのマージン（CSS の margin 構文）。 |
 | `threshold`    | string  | `0`        | 単一の比率（`0.5`）またはカンマ区切りリスト（`0,0.5,1`）の `0..1` の閾値。不正 / 範囲外の値は捨てられる。 |
 | `once`         | boolean | `false`    | 最初の交差した観測の後に切断する。 |
@@ -246,7 +260,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 
 - **4.8 から、観測は接続の 1 マイクロタスク後に始まる。** そのときの `manual`・`target`・`root`・オプションで観測し、その後のオプションの変化も次のマイクロタスクで 1 回にまとめて観測し直す（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `unobserve()` / `disconnect()` はそれを取り消し、`observe()` / `reobserve()` はその場で動く。
 - **単一ターゲット。** 各 `<wcs-intersect>` はちょうど 1 つの要素を観測するので、状態は単一の値面にマップします。多数のターゲットには多数の要素を使ってください。
-- **決して throw しない。** 非対応環境（`IntersectionObserver` が無い）や不正なオプション（例: 不正な形式の `root-margin`）は無言の no-op です。throw せず `observing` が `false` のままになります。
+- **決して throw しない。** 非対応環境（`IntersectionObserver` が無い）や不正なオプションは no-op です。throw せず、`observing` は `false` のままです。ブラウザが拒む `root-margin` —— 単位の無い長さ: `200`、`0 0 900 0`、`0` だけでも。`px` か `%` を付けます —— では何も観測しません。4.24（未リリース）から、要素が値ごとに 1 回そう知らせます（`[wcs/root-margin-unit]`。lint と同じ code）。4.23 までは無言でした。
 - **パーミッションゲート / セキュアコンテキスト要件は無い**（`@wcstack/geolocation` と異なります）。
 
 ## ライセンス

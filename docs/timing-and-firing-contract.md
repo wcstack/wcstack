@@ -71,7 +71,7 @@ Visibility notifications arrive as a task after layout. They are **not microtask
 ### 2.3 `reobserve()` forces re-observation (teardown→observe)
 `reobserve(el, opts)` tears the observer down and observes again, so **a new `IntersectionObserver` emits an initial callback for the current visibility**. On success `observing` stays true (no false blip).
 
-→ **Consequence**: self-healing after a short page (an append changed the layout but no visibility transition occurred) is expressed with `reobserve()`. That is `command.reobserve` in `state-intersect-scroll`. `<wcs-infinite-scroll>` (the high-level tag) does not have that command and therefore cannot self-heal.
+→ **Consequence**: self-healing after a short page (an append changed the layout but no visibility transition occurred) is expressed with `reobserve()`. That is `command.reobserve` in `state-intersect-scroll`. `<wcs-infinite-scroll>` (the high-level tag) has no such command; since 4.24 it looks again by itself (§26). Up to 4.23 it could not self-heal.
 
 ### 2.4 `change` is event-natured (no same-value guard; fires every time)
 `wcs-intersect:change` always fires per callback (no same-value guard). `intersecting` / `ratio` are getters derived from that event. `visible` is a latch (true on the first intersection, released only by `reset()`).
@@ -637,3 +637,29 @@ Without it — a move stays a disconnect and a connect, because what they do dep
 
 ### 25.4 Testing
 Each package checks that its class has the callback (`__tests__/connectedMove.test.ts`): happy-dom has no `moveBefore()`. The browser calling it is `e2e/tests/io-move-row.spec.ts` (Chromium and Firefox): four `<wcs-fetch>` in flight, two rows change places, each request arrives once.
+
+## 26. `<wcs-infinite-scroll>`: the sentinel asks again while it stays on screen (2026-11-15)
+
+From the `town-archive` seam app ([seam-apps.md](./seam-apps.md)). Up to 4.23 the element ran its target only when the sentinel came on screen (§2.1), and three pages did not load: the first one (the sentinel reported before `@wcstack/state` had written the target's `url`; the fetch README's own example showed its first page 4 times of 10 in Chromium and never in Firefox), one after a page that left the sentinel on screen (a tall window, a short page), and a new filter's (the `url` changed with the sentinel on screen).
+
+### 26.1 Three more moments, with the sentinel on screen
+- **The target's `url` is written or changed while no request is in flight** — the first url, a filter. At once when the element has run nothing yet; otherwise two frames later, when the emptied list is laid out and the sentinel has reported where it is.
+- **A request ends and the `url` changed while it was in flight.** The new url is run, whether or not the response added rows.
+- **A request ends, and the response added rows and the page moved the `url` on.** The page gets three frames after the request ends (`SETTLE_FRAMES`); a `url` written in them is the page's reaction to the response. "Added rows" is the sentinel's position in what scrolls (its top plus the root's scroll offset) against the same when the request started.
+
+A request the page started itself (`trigger`, a command) counts as any other: the element follows the target's `loading`, not its own calls.
+
+### 26.2 What it never does from there
+- **It never runs a `url` that was already asked for.** A failed request leaves the `url` where it was, so it is not repeated; the layout of an error message is not a retry. The sentinel coming on screen again (§2.1's edge) still runs the same `url` — the user's way to try again.
+- **A response that added no row ends it**, whatever the page does to the `url`: a page that counts its page number up on an empty answer asked once more and stops.
+- It does not run while the target is `loading`, and not when `disabled`, or after `once`.
+
+### 26.3 What is still the page's
+- Which filter an answer was for: a `manual` `<wcs-fetch>` does not abort on a new `url`, and the old filter's page still arrives.
+- The `url` comes from state. A static `url` lets the first request start before state has bound the target, and its answer can arrive before the `eventToken.value` handler is attached (Firefox, with fetch loaded before state).
+
+### 26.4 Roots and margins
+`<wcs-infinite-scroll root>` takes an id or a selector, `<wcs-intersect root>` a selector or an id. A root given and not found is said once per value (`[wcs/infinite-scroll-root]`, `[wcs/intersect-root]`) and the viewport is used, as before; `<wcs-infinite-scroll>` also says a root that does not scroll (`overflow: visible`). A `root-margin` the browser refuses (a length with no unit) is said once per value by both (`[wcs/root-margin-unit]`); neither throws.
+
+### 26.5 Testing
+`packages/fetch/__tests__/townArchive.test.ts` runs the frames by hand (happy-dom's `requestAnimationFrame` cannot tell "two frames later" from "at once"). In real browsers: the README's example as written, by scrolling and in a window 4,000 px tall, Chromium, Firefox and WebKit.

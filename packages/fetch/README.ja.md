@@ -259,23 +259,36 @@ get fieldErrors() {
 
 ### 5. `<wcs-infinite-scroll>` による無限スクロール
 
-`<wcs-infinite-scroll>` は、sentinel 要素が表示領域に入ったときに既存の `<wcs-fetch>` を実行します。
-ページ番号、次の URL、レスポンスの append などは `@wcstack/state` 側で宣言し、スクロール検知だけをこのタグに任せます。
-
-動作規約:
-
-- target の `<wcs-fetch>` が `loading` 中なら重複起動しません
-- `once` は厳密な一回限りです。一度発火した後は属性を変更しても再監視しません
-- `target` の id が未解決、または対象が `<wcs-fetch>` でない場合は何も読み込まず、`target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告します
+`<wcs-infinite-scroll>` は一覧の後ろに置く番兵（sentinel）です。画面に入ったときに、既存の `<wcs-fetch>` を実行します。
+ページ番号、次の URL、レスポンスの append などは `@wcstack/state` 側で宣言し、「次のページをいつ取りに行くか」をこのタグに任せます。
 
 ```html
+<style>
+  /* 番兵は、監視されるために自分の箱を持つ必要があります */
+  wcs-infinite-scroll { display: block; min-height: 1px; }
+</style>
+
 <wcs-state>
   <script type="module">
     export default {
-      page: 1,
+      pageSize: 20,
+      page: 1, // 次に取りに行くページ
       users: [],
+      noMore: false,
+      listLoading: false,
+      listError: null,
+      $eventTokens: ["pageArrived"],
       get nextUsersUrl() {
-        return "/api/users?page=" + this.page;
+        return "/api/users?page=" + this.page + "&limit=" + this.pageSize;
+      },
+      $on: {
+        pageArrived(state, event) {
+          const { status, value } = event.detail;
+          if (status < 200 || status >= 300) return; // 失敗: ページ番号はそのまま
+          state.users = state.users.concat(value);
+          state.page = state.page + 1;
+          if (value.length < state.pageSize) state.noMore = true; // 短いページが最後
+        },
       },
     };
   </script>
@@ -284,7 +297,7 @@ get fieldErrors() {
 <wcs-fetch
   id="next-page-fetch"
   manual
-  data-wcs="url: nextUsersUrl; loading: listLoading; error: listError">
+  data-wcs="url: nextUsersUrl; loading: listLoading; error: listError; eventToken.value: pageArrived">
 </wcs-fetch>
 
 <ul>
@@ -295,16 +308,32 @@ get fieldErrors() {
 
 <wcs-infinite-scroll
   target="next-page-fetch"
-  root-margin="240px 0px">
+  root-margin="240px 0px"
+  data-wcs="disabled: noMore">
 </wcs-infinite-scroll>
 ```
+
+動作規約:
+
+- 番兵が画面に入ると、target の要求を実行します。最後に実行した `url` と同じでも実行します: 利用者がスクロールで離れて戻れば、失敗した要求をもう一度試せます。
+- target の `<wcs-fetch>` が `loading` 中なら実行しません。
+- **番兵が画面に残っている間は、次の要求を自分で実行します**（4.24（未リリース）から）:
+  - 要求が飛んでいないときに target の `url` が書かれた・変わったとき —— 最初のページ（番兵はふつう、state が `url` を書くより先に報告します）と、一覧を空にする絞り込み
+  - 要求が終わり、その間に `url` が変わっていたとき —— 読み込み中に打たれた絞り込み
+  - 要求が終わり、ページが行を足して `url` を進めたとき —— 背の高いウィンドウ、縮小表示、短いページ: 番兵が画面の外へ出るまで続けます
+
+  そこから同じ `url` をもう一度実行することはないので、失敗した要求は繰り返しません: 利用者がスクロールで離れて戻るか、ページ側の再試行（`trigger`）を待ちます。また、行を 1 つも足さなかった応答でそこで終わります（ページが `url` をどう変えても）—— 空の応答でページ番号を進めるページが、いつまでも取りに行くことはありません。4.23 までは、番兵が画面に入ったときにしか動きませんでした: 最初のページが読み込まれないことが多く（番兵が、state が `url` を書くより先に報告し、要求は `[wcs/command-not-ready]` で断られました）、番兵を画面に残したページが最後のページになりました。
+- **target の `url` は、上のように state から書いてください。** 1 ページ目の URL を静的な属性で書くと、state が要素をバインドする前に最初の要求が始まり、その応答が `eventToken.value` のハンドラより先に届くことがあります（Firefox）。
+- **応答がどの絞り込みのものかは、ページが確かめます。** `manual` の `<wcs-fetch>` は、`url` が変わっても飛んでいる要求を中断しません: ページを取りに行っている間に絞り込みが変わっても、そのページは届きます。要求が何のためのものか（絞り込み、または変更のたびに 1 ずつ増やす番号）を持っておき、今のものでない応答は捨ててください。そうしないと、前の絞り込みの行が新しい一覧に入ります。
+- `once` は厳密な一回限りです。一度発火した後は属性を変更しても再監視しません
+- `target` の id が未解決、または対象が `<wcs-fetch>` でない場合は何も読み込まず、`target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告します
 
 主な属性:
 
 - `target`: 実行する `<wcs-fetch>` の `id`
-- `root`: スクロールコンテナの `id`。未指定時は viewport
-- `root-margin`: 先読み距離。`IntersectionObserver` の `rootMargin`
-- `threshold`: 交差しきい値。未指定時は `0`
+- `root`: スクロールコンテナ。その `id`、または（4.24（未リリース）から）`<wcs-intersect root>` と同じくセレクタ。未指定時は viewport。4.24（未リリース）から、見つからない root と、スクロールしない root（`overflow: visible` —— 中にあるものがすべて画面内として数えられ、ページが次々に読み込まれます）は、値ごとに 1 回 `[wcs/infinite-scroll-root]` で警告します。それまでは、見つからない root の代わりに黙って viewport が使われました
+- `root-margin`: 先読み距離。`IntersectionObserver` の `rootMargin` に渡します: 長さはそれぞれ `px` か `%` 付きで書きます。単位の無い長さ（`200`、`0 0 900 0`。`0` だけでも）はブラウザが拒み、何も読み込まれません: 4.24（未リリース）から、要素が `[wcs/root-margin-unit]`（lint と同じ code）で警告します。それまでは、ブラウザの例外が要素から捕まえられずに出ました
+- `threshold`: 交差しきい値（`0` 〜 `1`）。未指定時は `0`
 - `disabled`: 監視を停止
 - `once`: 最初の実行後に監視を解除し、その後は再武装しない
 
@@ -343,6 +372,28 @@ HTML、JS、または `@wcstack/state` バインディングからリクエス�
 | `manual` | `boolean` | 接続時 / URL 変更時の自動実行を無効化 |
 
 **`null` と `undefined`。** 属性に対応する入力（`url`・`method`・`target`・`manual`・`responseType`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`body` はどちらも「JS の body なし」、`trigger` はどちらも無視します。
+
+### コマンドに url を渡す
+
+`fetch(url, init)` は、渡されたもので要求を 1 回実行し、要素の属性は変えません。コマンドトークンが運ぶのがこれです（4.24（未リリース）から）:
+
+```html
+<wcs-fetch manual data-wcs="command.fetch: $command.loadUsers; value: users"></wcs-fetch>
+```
+
+```javascript
+loadPage(event, page) {
+  this.$command.loadUsers.emit("/api/users?page=" + page);
+},
+save() {
+  this.$command.saveUser.emit("/api/users/" + this.user.id, { method: "PUT", body: this.user });
+},
+```
+
+- `url` はその要求のものです。渡さないとき、または文字列でないものがその位置にあるとき（`onclick: $command.x` のバインディングが先頭に渡すイベントなど）は、要素自身の `url` を取りに行き、`init` は無視します。
+- `init.method` は要素の `method` の代わりになり、`init.headers` は `<wcs-fetch-header>` のヘッダに足され（同じ名前は置き換え）、`init.body` は要素の `body` の代わりに送られます。そのとき要素の `body` は次の要求まで残ります。
+- **なぜあるのか。** コマンドは、同じ更新のバインディングより先に走ります。`url: pageUrl; command.fetch: $command.load` と書き、ハンドラが `pageUrl` の読む値を変えて同時に `load` を emit すると、変更**前**の url を取りに行きます —— 一覧が 1 ページ遅れ、何も知らせません。url をコマンドに渡すか、`url` を先に書いて `trigger` で実行してください（バインディングは書いた順に適用されます）。4.23 までの `fetch()` は引数を無視しました。
+- こうして渡した url は「最後に取りに行った url」として数えます: その後で同じ url を要素に書くバインディングが、もう一度取りに行くことはありません。
 
 ## `:state()` による CSS スタイリング
 
@@ -602,7 +653,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 
 | メソッド | 説明 |
 |----------|------|
-| `fetch()` | HTTP リクエストを実行 |
+| `fetch(url?, init?)` | HTTP リクエストを実行。引数なしなら要素自身の要求。4.24（未リリース）から、`url` と `init`（`{ method?, headers?, body? }`）はその要求だけのもの —— [コマンドに url を渡す](#コマンドに-url-を渡す) |
 | `abort()` | 実行中のリクエストをキャンセル |
 
 ### `<wcs-fetch-header>`
