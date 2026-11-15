@@ -8,6 +8,7 @@ import { queryEquals, queryIncludes, queryKeysEqual } from "../searchParams";
 import { inSsr } from "../inSsr";
 import { SSR_LINK_ATTR } from "../ssrMarkers";
 import { ILink } from "./types";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 import type { Router } from "./Router";
 
 // 生成 anchor へミラーする固定属性（docs/a11y-design.md §5）。`lang` / `dir` は SR の
@@ -37,6 +38,20 @@ export class Link extends HTMLElement implements ILink {
 
   get uuid(): string {
     return this._uuid;
+  }
+
+  /**
+   * The destination, as a property: it writes the `to` attribute (`null` removes it, `undefined` puts back what
+   * the markup had). A binding that writes the property — `data-wcs="to: .href"` in place of `attr.to:` — left an
+   * own property on the element that nothing read: the `<a>` had no `href`, and nothing said so
+   * (docs/seam-apps.md, town-archive).
+   */
+  get to(): string {
+    return this.getAttribute("to") ?? "";
+  }
+
+  set to(value: string | null | undefined) {
+    reflectAttribute(this, "to", value);
   }
   
   /**
@@ -161,6 +176,13 @@ export class Link extends HTMLElement implements ILink {
   }
 
   private _connect(): void {
+    // a `to` assigned before the element was defined (state loaded before the router) is an own property that
+    // hides the accessor: take it in through the setter
+    if (Object.prototype.hasOwnProperty.call(this, "to")) {
+      const value = (this as { to: string | null | undefined }).to;
+      delete (this as { to?: unknown }).to;
+      this.to = value;
+    }
     if (!this._initialized) {
       this._initialize();
     }
