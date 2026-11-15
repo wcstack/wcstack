@@ -182,6 +182,18 @@ export interface WcsMessageCatalog {
    * and has no input filter to undo the output.
    */
   twoWayOutputFilter(property: string, filters: string, left: string, rhs: string, keystroke: boolean): string;
+  // --- bindingHostValidator ---
+  /** The bind attribute (`attribute`) written on `<body>` or `<html>` (`tag`): `<wcs-state>` binds only what is inside `<body>`. */
+  bodyBinding(tag: string, attribute: string): string;
+  /** An `on*:` binding (`property`, as written without modifiers) on a `<wcs-link>`: the host is `display: none`, so `handler` never runs. */
+  linkHandler(property: string, handler: string): string;
+  // --- ioAttributeValidator ---
+  /**
+   * A literal `root-margin` (`value`) on `<wcs-intersect>` / `<wcs-infinite-scroll>` (`tag`) the browser refuses.
+   * `refused`: the values that are not a number with px or % (empty: there are more than four values); `suggested`:
+   * the value with `px` added to its unitless numbers, or null when that does not make it valid.
+   */
+  rootMarginUnit(tag: string, value: string, refused: readonly string[], suggested: string | null): string;
   filterUnknown(name: string): string;
   /** 4.0 で外れたフィルタの旧名（`uc` → `upper`。ランタイムは `[wcs/filter-unknown]`）。 */
   filterRemoved(name: string, canonical: string): string;
@@ -402,6 +414,11 @@ export type RecursionNodePathProblem =
 /** `**` を含む宣言キーの不正。 */
 export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself' | 'structural';
 
+/** 単位の無い 0（`0`・`0.0`・`-0`）— root margin では 0 にも単位が要る、と言い添えるため。 */
+function isUnitlessZero(token: string): boolean {
+  return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
+}
+
 /** シードの原文（長いリテラルは先頭だけ）。 */
 function shortSeed(raw: string): string {
   const flat = raw.replace(/\s+/g, ' ');
@@ -541,6 +558,17 @@ const ja: WcsMessageCatalog = {
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke
     ? `${prop}: は双方向で 1 打鍵ごとに書き戻し、出力フィルタ "${filters}" はそのたびに state の値を整形して欄へ書き直します。入力中の欄が書き換わり（キャレットは末尾へ飛び、IME の変換は途切れます）、state が受け取るのも欄の整形済みの文字です（出力フィルタは書き戻しで元に戻りません）。整形した文字は別の要素に表示する、欄の確定で書き戻して setter で整形する（${prop}#onchange:）、または一方向にしてください（${prop}#ro: ${rhs}）`
     : `${prop}: は双方向ですが、出力フィルタ "${filters}" は書き戻しで元に戻りません。要素が書き戻すのは表示している整形済みの値で、次はその値にフィルタが掛かります。左辺の入力フィルタで元に戻す（${left}|<フィルタ>: …）、整形した値は別の要素に表示する、または一方向にしてください（${prop}#ro: ${rhs}）`,
+  bodyBinding: (tag, attribute) =>
+    `<${tag}> の ${attribute} は束縛されません。<wcs-state> が束ねるのは <body> の中で、<body> と <html> そのものは束ねないので、ここに書いた束縛は何もしません（イベントのハンドラは走らず、class. / attr. などは書かれません）。束縛を <body> の中の要素（包む要素・<main>）へ移すか、値を $connectedCallback や $watch のハンドラから書いてください（document.documentElement.lang = …）`,
+  linkHandler: (property, handler) =>
+    `<wcs-link> の "${property}:" は "${handler}" を呼びません。<wcs-link> 自身は display: none で、利用者がクリックするのはリンクが自分の隣に作る <a> なので、イベントはホストに届きません。ハンドラは、リンクの中の要素（子は <a> の中へ移ります）か、リンクを囲む要素に書いてください。ハンドラから遷移するなら、router の navigateUrl に書きます（<wcs-router> の data-wcs="navigateUrl: …"）`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0
+      ? '値は 1〜4 個です'
+      : `${refused.map((t) => `"${t}"`).join('・')} は px か % の付いた数値ではありません${refused.some(isUnitlessZero) ? '（0 にも単位が要ります）' : ''}`;
+    const effect = tag === 'wcs-intersect' ? '要素は何も監視せず、observing は false のままです' : '要素は何も監視せず、次のページは読み込まれません';
+    return `ブラウザは root-margin="${value}" を拒みます（rootMargin must be specified in pixels or percent）: ${why}。そのため${effect}。${suggested === null ? '1〜4 個の値を、それぞれ px か % の付いた数値で書いてください' : `root-margin="${suggested}" と書いてください`}`;
+  },
   filterUnknown: (n) => `フィルタ "${n}" は組み込みフィルタに存在しません`,
   filterRemoved: (n, c) => `フィルタ "${n}" は 4.0 で外れました（"${c}" の 3.x の旧名）。"${c}" と書いてください`,
   substrRemoved: (rewrite) =>
@@ -905,6 +933,17 @@ const en: WcsMessageCatalog = {
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke
     ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types — the caret jumps to the end, an IME composition is cut — and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}`
     : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: …), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
+  bodyBinding: (tag, attribute) =>
+    `${attribute} on <${tag}> is never bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so the bindings written here do nothing (an event handler never runs; class., attr. and the rest are never written). Move the binding to an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch handler (document.documentElement.lang = …)`,
+  linkHandler: (property, handler) =>
+    `"${property}:" on <wcs-link> never runs "${handler}": the <wcs-link> itself is display: none, and what the user clicks is the <a> it generates beside itself, so no event reaches the host. Put the handler on an element inside the link (its children move into the <a>) or on an element around it; to navigate from a handler, write the router's navigateUrl (data-wcs="navigateUrl: …" on <wcs-router>)`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0
+      ? 'it takes one to four values'
+      : `${refused.map((t) => `"${t}"`).join(', ')} ${refused.length === 1 ? 'is not a number' : 'are not numbers'} with px or %${refused.some(isUnitlessZero) ? ' (a 0 needs its unit too)' : ''}`;
+    const effect = tag === 'wcs-intersect' ? 'the element observes nothing and observing stays false' : 'the element observes nothing and no page is loaded';
+    return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? 'Write one to four values, each a number with px or %' : `Write root-margin="${suggested}"`}`;
+  },
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") — write "${c}"`,
   substrRemoved: (rewrite) =>

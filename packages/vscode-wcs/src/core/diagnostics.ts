@@ -302,6 +302,22 @@ export const WcsDiagnosticCode = {
   // `value#onchange|number: price|toFixed(2)`）が無いときだけ報告する。要素の書いた文字をそのまま返すフィルタ
   // （`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）と `#ro` では黙る。warning。
   TwoWayOutputFilter: "wcs/two-way-output-filter",
+  // --- 束縛を書いた要素（その要素では束縛が働かない。service/bindingHostValidator.ts — 継ぎ目アプリ town-archive） ---
+  // `<body>` / `<html>` に書いた束縛の属性（`<body data-wcs="onkeydown: onKey; class.dark: dark">`）。`<wcs-state>` が束ねるのは
+  // `<body>` の中で、`<body>` と `<html>` そのものは束ねない（state の dom/mount.ts は `document.body` の子から歩く）ので、
+  // そこに書いた束縛は何もしない — イベントのハンドラは走らず、`class.` / `attr.` は書かれない。4.23 までランタイムは
+  // 何も言わない（4.24 から diagnostics の後付けが同じ code で警告する）。束縛は `<body>` の中の要素へ移すか、値を
+  // `$connectedCallback` / `$watch` から書く。error。
+  BodyBinding: "wcs/body-binding",
+  // `<wcs-link>` の束縛に書いた `on*:`（`<wcs-link data-wcs="attr.to: .href; onclick: openPhoto">`）。リンクのホストは
+  // `display: none` で、利用者がクリックするのはリンクが自分の隣に作る `<a>` なので、ハンドラは走らない。ハンドラは
+  // リンクの中の要素（子は `<a>` へ移る）か囲む要素に書き、ハンドラから遷移するなら router の `navigateUrl` に書く。error。
+  LinkHandler: "wcs/link-handler",
+  // `<wcs-intersect>` / `<wcs-infinite-scroll>` のリテラルの `root-margin` をブラウザが拒む（`root-margin="200"`・
+  // `"0 0 900 0"`）: 値は 1〜4 個、それぞれ px か % の付いた数値で、0 にも単位が要る（Chromium・Firefox で確かめた —
+  // `rootMargin must be specified in pixels or percent`）。`<wcs-intersect>` は何も監視せず `observing` が false のまま、
+  // `<wcs-infinite-scroll>` は次のページを読み込まない。束ねた値（`rootMargin: …`）は検査しない。warning。
+  RootMarginUnit: "wcs/root-margin-unit",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
