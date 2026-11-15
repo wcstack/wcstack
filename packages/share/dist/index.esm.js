@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/share","version":"4.24.0"};
+var pkg = {"name":"@wcstack/share","version":"4.24.1"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

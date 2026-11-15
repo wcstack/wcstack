@@ -68,7 +68,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/fetch","version":"4.24.0"};
+var pkg = {"name":"@wcstack/fetch","version":"4.24.1"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -1854,13 +1854,7 @@ class InfiniteScroll extends HTMLElement {
         }
         this._rootElement = this._resolveRoot();
         try {
-            this._observer = new IntersectionObserver((entries) => {
-                // the last entry is the sentinel's state now
-                this._inView = entries[entries.length - 1].isIntersecting;
-                if (this._inView) {
-                    this._run(true);
-                }
-            }, {
+            this._observer = new IntersectionObserver((entries) => this._report(entries), {
                 root: this._rootElement,
                 rootMargin: this.rootMargin,
                 // (out of 0..1 the browser throws: only the margin is left to refuse)
@@ -1887,6 +1881,25 @@ class InfiniteScroll extends HTMLElement {
             this._observer = null;
         }
         this._inView = false;
+    }
+    /** The observer's report: the last entry is the sentinel's state now, and coming on screen runs the request. */
+    _report(entries) {
+        this._inView = entries[entries.length - 1].isIntersecting;
+        if (this._inView) {
+            this._run(true);
+        }
+    }
+    /**
+     * Takes the reports the browser has made and not delivered yet, before the sentinel's state is read outside a
+     * report. While the user scrolls, the report that a page pushed the sentinel out arrives a frame later than
+     * otherwise — after the frames the end of a request waits (Chromium, Firefox): the sentinel read as still on
+     * screen, and a page the window did not need was asked for (docs/seam-apps.md, landing town-archive).
+     */
+    _sync() {
+        const pending = this._observer ? this._observer.takeRecords() : [];
+        if (pending.length > 0) {
+            this._report(pending);
+        }
     }
     /**
      * The scroll container: the element with that id, or — as `<wcs-intersect root>` spells it — the first one the
@@ -1981,6 +1994,7 @@ class InfiniteScroll extends HTMLElement {
             if (!this._settling)
                 return;
             this._settling = false;
+            this._sync();
             if (this._inView && (this._changedInFlight || !this._answered || this._position() !== this._startedAt)) {
                 this._run(false);
             }
@@ -2004,6 +2018,7 @@ class InfiniteScroll extends HTMLElement {
             return;
         }
         afterFrames(2, () => {
+            this._sync();
             if (this._inView)
                 this._run(false);
         });

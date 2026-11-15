@@ -457,6 +457,15 @@ declare class InfiniteScroll extends HTMLElement {
     attributeChangedCallback(): void;
     private _observe;
     private _disconnectObserver;
+    /** The observer's report: the last entry is the sentinel's state now, and coming on screen runs the request. */
+    private _report;
+    /**
+     * Takes the reports the browser has made and not delivered yet, before the sentinel's state is read outside a
+     * report. While the user scrolls, the report that a page pushed the sentinel out arrives a frame later than
+     * otherwise — after the frames the end of a request waits (Chromium, Firefox): the sentinel read as still on
+     * screen, and a page the window did not need was asked for (docs/seam-apps.md, landing town-archive).
+     */
+    private _sync;
     /**
      * The scroll container: the element with that id, or — as `<wcs-intersect root>` spells it — the first one the
      * value matches as a selector. A root that is given and not found, or that does not scroll, is said once per
