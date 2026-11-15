@@ -6,6 +6,51 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Upgrading
+
+- `@wcstack/fetch`: **`<wcs-infinite-scroll>` runs its target at more moments.** With the sentinel on screen it also runs when the target's `url` is written or changed while nothing is in flight, when a request ends and the `url` changed meanwhile (or the request was aborted), and when a request ends after adding rows with the `url` moved on. A page that worked — one page loaded each time the sentinel came on screen — loads the same pages. What changes: a list in a tall window fills by itself, and a `url` that changes with the sentinel on screen (a filter that empties the list) is fetched without the user scrolling. It never runs a `url` twice from there, and a response that added no row ends it.
+- `@wcstack/fetch`: `<wcs-fetch>`'s `fetch(url, init)` uses a string given as its first argument as that request's url. `fetch()` took no argument before, so a page that passed one by mistake (`emit("/api/users")` to an element with its own `url`) now fetches what it passed.
+- `@wcstack/fetch` and `@wcstack/intersection` console: `[wcs/infinite-scroll-root]`, `[wcs/intersect-root]` and `[wcs/root-margin-unit]` are new warnings. A `root-margin` with no unit no longer throws out of `<wcs-infinite-scroll>`.
+- `@wcstack/fetch` and `@wcstack/intersection`: `root` takes an id or a selector on both elements. A value that named nothing was the viewport and still is, with the warning; one that the other form finds now names that element.
+- `@wcstack/state`: an element that follows a custom element under the same parent, in a `for:` row or an `if:` block, keeps its delegated handler on itself. A button after a `<wcs-link>` runs its handler; it ran none, or its neighbour's.
+- `@wcstack/state`: a `$watch` on a path a setter writes fires once at start for the value an element handed over through that setter. A watch that was never called at start for such a value is called now.
+- `@wcstack/state` console (the diagnostics add-on, in `/auto` and `.`): `[wcs/body-binding]` is a new warning.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: two new errors — `wcs/body-binding`, `wcs/link-handler` — and a new warning, `wcs/root-margin-unit`; `wcs/delegated-current-target` and `wcs/getter-untracked-read` report more. A page that passed `wcs-validate --errors-only` with `data-wcs` on `<body>` or an `on*:` on `<wcs-link>` fails now: neither binding ever did anything.
+- **Workarounds this release makes unnecessary**:
+  - a static `url` for page 1 on the `<wcs-fetch>` a `<wcs-infinite-scroll>` runs, and a first page asked for from `$connectedCallback`;
+  - rows made tall enough, or a page size large enough, for one page to push the sentinel out of the window;
+  - `<wcs-intersect>` with `reobserve()` in place of `<wcs-infinite-scroll>` only because the latter stopped after a short page;
+  - a url written first and the `fetch` command emitted from a `$watch` on it — give the url to the command;
+  - a plain `<a>` in place of `<wcs-link>` in a row because the button beside it did not answer;
+  - a value an element hands over at start applied once more in `$connectedCallback` because the watch on it did not fire.
+
+### Added
+
+- `@wcstack/fetch`: **`<wcs-infinite-scroll>` asks again while its sentinel stays on screen** ([docs/timing-and-firing-contract.md](./docs/timing-and-firing-contract.md) §26). It acted only when the sentinel came on screen, and three pages did not load. The first: the sentinel reported before `@wcstack/state` had written the target's `url`, the request was refused (`[wcs/command-not-ready]`), and the sentinel never reported again — the README's own example showed its first page 4 times of 10 in Chromium and never in Firefox. The next after a page that left the sentinel on screen: a tall window, a zoomed-out page, a short page. And a new filter's, when the `url` changed with the sentinel on screen. From the `town-archive` seam app ([docs/seam-apps.md](./docs/seam-apps.md)).
+  - It never runs a `url` twice from there: a failed request waits for the user to scroll away and back, or for the page's retry.
+  - A response that added no row ends it, so a page that counts its page number up on an empty answer asks once more and stops.
+  - The README's example is complete and was run as written in Chromium, Firefox and WebKit. It says to write the `url` from state, and to abort the page on its way when a filter changes (`command.abort:`).
+- `@wcstack/fetch`: **`fetch(url, init)`** on `<wcs-fetch>`. A command token carries a url (`this.$command.load.emit("/api/users?page=2")`), and `init` a `method`, `headers` and a `body`, for that request only; the element's attributes stay. The state README's command-token example passed a url that was ignored. And a command runs before the bindings of its update, so with `url: pageUrl; command.fetch: $command.load` a handler that changed the page and emitted `load` fetched the page before the change.
+- `@wcstack/fetch`, `@wcstack/intersection`: **a scroll root that is not found is said**, once per value (`[wcs/infinite-scroll-root]`, `[wcs/intersect-root]`), and both elements take an id or a selector — one wanted an id and the other a selector, and the other form was the viewport without a word. `<wcs-infinite-scroll>` also says a root that does not scroll (`root="main"` loaded page after page). **A `root-margin` with no unit is said** by both (`[wcs/root-margin-unit]`): the browser refuses it, a bare `0` too.
+- `@wcstack/state`: **`[wcs/body-binding]`** (the diagnostics add-on). `data-wcs` on `<body>` or `<html>` is not bound — a `<wcs-state>` binds what is inside `<body>` — and nothing said so. Once per document.
+- `@wcstack/router`: **`to` is a property of `<wcs-link>`**, so `data-wcs="to: .href"` works as `attr.to:` does. It left the `<a>` with no `href`.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/body-binding`** (error), **`wcs/link-handler`** (error: an `on*:` on `<wcs-link>` never runs — the click is on the `<a>` beside the hidden host), **`wcs/root-margin-unit`** (warning).
+- [docs/long-lists.md](./docs/long-lists.md) (and `.ja.md`): a guide to long lists — what a row costs, loading a page at a time, a filter and a page on its way, rows, rendering a window, coming back to a place.
+
+### Changed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `wcs/delegated-current-target` reports `event.currentTarget` read inside a nested function (`this.items.find((x) => … event.currentTarget …)`), and `wcs/getter-untracked-read` a getter that reads the window or the document (`innerWidth`, `devicePixelRatio`, `matchMedia()`, `scrollY`, `document.documentElement.clientWidth`, …), naming the element to bind instead.
+- `@wcstack/router` README: handlers go inside a `<wcs-link>` or around it, not on it; and content kept outside the routes comes back to a place by its fragment (`navigateUrl = "/#photo-" + id`) — a `scrollIntoView()` from a `$watch` is undone when the push navigation finishes.
+- `@wcstack/intersection` README: the infinite-scroll example loaded the next page from a getter, on a `<ul data-wcs="for:">`.
+
+### Fixed
+
+- `@wcstack/state`: **a delegated handler on an element after a `<wcs-link>` in a row ran for another element, or never.** In a `for:` row or an `if:` block, a button that follows a `<wcs-link>` under the same parent: written with whitespace between them its `onclick:` never ran; written tight, a click on it ran the next button's handler, and a click on the link ran its own. A block's delegated handlers are found by the element's position, and `<wcs-link>` puts its `<a>` right after itself. An element after a custom element keeps its handler on itself. `core.min.js` is 20,474 B, 3 B less.
+- `@wcstack/state`: **a `$watch` fires for the value an element hands over as its binding attaches when that value goes through an accessor pair.** With `<wcs-resize>`'s `width` bound to a setter that keeps it in another path, a watch on that path, or on a getter over it, did not fire in Chromium and Firefox, where the width arrives while the bindings attach.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: every `@typedef` of a JSDoc block is read. Only the first was, and rows typed with the others were reported as `wcs/binding-path-missing`.
+
 ## [4.23.0] — 2026-11-15
 
 A minor from the `ekiden-entry` seam app, the third app of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a team entry wizard in Japanese, a page that is mostly a form ([docs/seam-apps.md](./docs/seam-apps.md)). A first-time author built it on 4.22.0 from the public documents. The lint said nothing about 21 mistakes made on purpose, and seven things went wrong at run time without a word — four of them lost data or left a page unbound. The author's five decisions are in §5.18. `@wcstack/state` gains the `forms` add-on: a field being composed with an IME is not written, a value that arrives with no `input` event reaches state, and a reset leaves the form and state in agreement. 34 I/O nodes keep their work when a reorder moves them with `moveBefore()`. The router binds the route a slow guard redirects a page load to. The lint has three new warnings and stops reporting what it could not read as missing. The core is unchanged, at 20,477 B of its 20,480 B limit.
