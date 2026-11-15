@@ -1589,5 +1589,52 @@ describe('行き先がまだ無いリンク（to が空）', () => {
       }
     });
   });
+
+  describe("to プロパティ（docs/seam-apps.md、town-archive: to: の束縛で href の無い <a> ができていた）", () => {
+    it("to プロパティは to 属性を書き、anchor の href が付く。接続の前でも後でも同じ", () => {
+      const router = document.createElement("wcs-router") as Router;
+      document.body.appendChild(router);
+      const before = document.createElement("wcs-link") as Link;
+      before.to = "/photos/1";
+      document.body.appendChild(before);
+      expect(before.getAttribute("to")).toBe("/photos/1");
+      expect(before.anchorElement!.getAttribute("href")).toBe("/photos/1");
+      const after = document.createElement("wcs-link") as Link;
+      document.body.appendChild(after);
+      expect(after.to).toBe("");
+      expect(after.anchorElement!.hasAttribute("href")).toBe(false);
+      after.to = "/photos/2";
+      expect(after.anchorElement!.getAttribute("href")).toBe("/photos/2");
+      expect(after.to).toBe("/photos/2");
+    });
+
+    it("null は属性を外し、undefined はマークアップに書かれていた値へ戻す", () => {
+      const router = document.createElement("wcs-router") as Router;
+      document.body.appendChild(router);
+      const link = document.createElement("wcs-link") as Link;
+      link.setAttribute("to", "/written");
+      document.body.appendChild(link);
+      link.to = "/bound";
+      expect(link.anchorElement!.getAttribute("href")).toBe("/bound");
+      link.to = undefined;
+      expect(link.getAttribute("to")).toBe("/written");
+      expect(link.anchorElement!.getAttribute("href")).toBe("/written");
+      link.to = null;
+      expect(link.hasAttribute("to")).toBe(false);
+      expect(link.anchorElement!.hasAttribute("href")).toBe(false);
+    });
+
+    it("定義の前に代入された to（own プロパティ）は、接続のときに取り込む", () => {
+      const router = document.createElement("wcs-router") as Router;
+      document.body.appendChild(router);
+      const link = document.createElement("wcs-link") as Link;
+      // 定義前の要素への代入は、accessor を隠す own プロパティになる
+      Object.defineProperty(link, "to", { value: "/early", writable: true, configurable: true, enumerable: true });
+      document.body.appendChild(link);
+      expect(Object.prototype.hasOwnProperty.call(link, "to")).toBe(false);
+      expect(link.getAttribute("to")).toBe("/early");
+      expect(link.anchorElement!.getAttribute("href")).toBe("/early");
+    });
+  });
 });
 
