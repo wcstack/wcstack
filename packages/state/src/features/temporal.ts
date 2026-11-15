@@ -83,10 +83,12 @@ export const temporal: Feature = {
       if (!NAMESPACES.includes(ns)) return undefined;
       return ns === key ? engine.target[key] : engine.read(engine.pattern(key), null);
     });
-    hooks.beforeWrite = first(handled, hooks.beforeWrite, (_engine, p) => {
+    hooks.beforeWrite = first(handled, hooks.beforeWrite, (engine, p, _row, _value, element) => {
       if (!internalWrite && p.path.charCodeAt(0) === 36 && NAMESPACES.includes(p.path.split(".", 1)[0])) {
         raiseError(`"${p.path}" is read-only (the stream runtime owns it).`);
       }
+      // an element writes an accessor pair: what its setter writes is the element's value too (WatchRuntime.early)
+      if (element && p.setter !== null) live(engine)?.watch.setterStarts();
       return false;
     });
   },
