@@ -261,23 +261,36 @@ and bind `textContent: fieldErrors.name` next to the field. `error` goes back to
 
 ### 5. Infinite scroll with `<wcs-infinite-scroll>`
 
-`<wcs-infinite-scroll>` runs an existing `<wcs-fetch>` when its sentinel element enters the viewport.
-Keep page numbers, next URLs, and response append behavior in `@wcstack/state`; this tag only owns scroll detection.
-
-Behavior rules:
-
-- it does not trigger again while the target `<wcs-fetch>` is `loading`
-- `once` is strict: after the first execution, changing attributes does not re-arm observation
-- if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, nothing is loaded, and it warns `[wcs/infinite-scroll-target]` once per `target` value
+`<wcs-infinite-scroll>` is a sentinel placed after a list: it runs an existing `<wcs-fetch>` when it comes on screen.
+Keep page numbers, next URLs, and response append behavior in `@wcstack/state`; this tag owns when the next page is asked for.
 
 ```html
+<style>
+  /* the sentinel needs a box of its own to be observed */
+  wcs-infinite-scroll { display: block; min-height: 1px; }
+</style>
+
 <wcs-state>
   <script type="module">
     export default {
-      page: 1,
+      pageSize: 20,
+      page: 1, // the next page to ask for
       users: [],
+      noMore: false,
+      listLoading: false,
+      listError: null,
+      $eventTokens: ["pageArrived"],
       get nextUsersUrl() {
-        return "/api/users?page=" + this.page;
+        return "/api/users?page=" + this.page + "&limit=" + this.pageSize;
+      },
+      $on: {
+        pageArrived(state, event) {
+          const { status, value } = event.detail;
+          if (status < 200 || status >= 300) return; // a failure: the page number stays where it is
+          state.users = state.users.concat(value);
+          state.page = state.page + 1;
+          if (value.length < state.pageSize) state.noMore = true; // a short page is the last one
+        },
       },
     };
   </script>
@@ -286,7 +299,7 @@ Behavior rules:
 <wcs-fetch
   id="next-page-fetch"
   manual
-  data-wcs="url: nextUsersUrl; loading: listLoading; error: listError">
+  data-wcs="url: nextUsersUrl; loading: listLoading; error: listError; eventToken.value: pageArrived">
 </wcs-fetch>
 
 <ul>
@@ -297,16 +310,42 @@ Behavior rules:
 
 <wcs-infinite-scroll
   target="next-page-fetch"
-  root-margin="240px 0px">
+  root-margin="240px 0px"
+  data-wcs="disabled: noMore">
 </wcs-infinite-scroll>
 ```
+
+Behavior rules:
+
+- The sentinel coming on screen runs the target's request — also for the `url` it ran last: a user who scrolls away and back tries a failed request again.
+- It does not run a request while the target `<wcs-fetch>` is `loading`.
+- **With the sentinel still on screen, it runs the next request by itself** (since 4.24 (not released yet)):
+  - when the target's `url` is written or changed while no request is in flight — the first page (the sentinel usually reports before state has written `url`) and a filter that empties the list;
+  - when a request ends and the `url` changed while it was in flight — a filter typed meanwhile — or it ended with no answer (aborted) and the `url` is another one;
+  - when a request ends, the page has added rows and moved the `url` on — a tall window, a zoomed-out page, a short page: it goes on until the sentinel is off screen.
+
+  It never runs a `url` again from there, so a failed request is not repeated: it waits for the user to scroll away and back, or for your retry (`trigger`). And a response that added no row ends it, whatever the page does to the `url` — a page that counts its page number up on an empty answer does not ask for ever. Up to 4.23 the element acted only on the sentinel coming on screen: the first page was often never loaded (the sentinel reported before state had written `url`, and the request was refused with `[wcs/command-not-ready]`), and a page that left the sentinel on screen was the last one.
+- **Write the target's `url` from state**, as above, not as a static attribute for page 1: a static `url` lets the first request start before state has bound the element, and its answer can arrive before your `eventToken.value` handler is attached (Firefox).
+- **When a filter changes, abort the page on its way.** A `manual` `<wcs-fetch>` does not abort on a new `url`: a page asked for the old filter still arrives, and its rows land in the new list. Bind `command.abort: $command.cancelPage` on the `<wcs-fetch>` and emit it first in the handler that changes the filter (a command runs at once), then empty the list and reset the page number — the element asks for the new list's first page:
+
+  ```javascript
+  setFilter(event) {
+    this.$command.cancelPage.emit(); // the page on its way is another list's
+    this.filter = event.target.value;
+    this.users = [];
+    this.page = 1;
+    this.noMore = false;
+  },
+  ```
+- `once` is strict: after the first execution, changing attributes does not re-arm observation
+- if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, nothing is loaded, and it warns `[wcs/infinite-scroll-target]` once per `target` value
 
 Attributes:
 
 - `target`: `id` of the `<wcs-fetch>` to run
-- `root`: `id` of the scroll container. Defaults to the viewport
-- `root-margin`: preload distance. Passed to `IntersectionObserver.rootMargin`
-- `threshold`: intersection threshold. Defaults to `0`
+- `root`: the scroll container — its `id`, or (since 4.24 (not released yet)) a selector, as `<wcs-intersect root>` takes. Defaults to the viewport. Since 4.24 (not released yet), a root that is not found, or one that does not scroll (`overflow: visible` — everything inside it counts as on screen, and page after page is loaded), warns `[wcs/infinite-scroll-root]` once per value; before, the viewport took the place of a root that was not found without a word
+- `root-margin`: preload distance. Passed to `IntersectionObserver.rootMargin`: each length with `px` or `%`. A length with no unit (`200`, `0 0 900 0` — a bare `0` too) is refused by the browser and nothing is loaded: since 4.24 (not released yet) the element warns `[wcs/root-margin-unit]` (the lint's code); before, the browser's exception came out of the element uncaught
+- `threshold`: intersection threshold, `0` to `1`. Defaults to `0`
 - `disabled`: stops observing
 - `once`: disconnects after the first execution and does not re-arm afterwards
 
@@ -346,6 +385,28 @@ These properties control request execution from HTML, JS, or `@wcstack/state` bi
 | `manual` | `boolean` | Disables auto-fetch on connect / URL change |
 
 **`null` and `undefined`.** The inputs backed by an attribute (`url`, `method`, `target`, `manual`, `responseType`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `body` takes both as "no JS body"; `trigger` ignores both.
+
+### A url with the command
+
+`fetch(url, init)` runs one request with what it is given, and leaves the element's attributes as they are. It is what a command token carries (since 4.24 (not released yet)):
+
+```html
+<wcs-fetch manual data-wcs="command.fetch: $command.loadUsers; value: users"></wcs-fetch>
+```
+
+```javascript
+loadPage(event, page) {
+  this.$command.loadUsers.emit("/api/users?page=" + page);
+},
+save() {
+  this.$command.saveUser.emit("/api/users/" + this.user.id, { method: "PUT", body: this.user });
+},
+```
+
+- `url` is this request's. With none — or with something that is not a string in its place, as the event an `onclick: $command.x` binding emits first — the element's own `url` is fetched, and `init` is ignored.
+- `init.method` replaces the element's `method`; `init.headers` are added to the `<wcs-fetch-header>` ones (a same name replaces it); `init.body` is sent in place of the element's `body`, which is then kept for the next request.
+- **Why it exists.** A command runs before the bindings of its update. With `url: pageUrl; command.fetch: $command.load`, a handler that changes what `pageUrl` reads and emits `load` in the same breath fetches the url **before** the change — the list is one page behind, and nothing says so. Give the url to the command, or write `url` first and run the request with `trigger` (bindings apply in the order written). Up to 4.23 `fetch()` ignored its arguments.
+- A url given this way counts as the last one fetched: the binding that writes the same url to the element afterwards does not fetch it again.
 
 ## CSS styling with `:state()`
 
@@ -612,7 +673,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 
 | Method | Description |
 |--------|-------------|
-| `fetch()` | Execute the HTTP request |
+| `fetch(url?, init?)` | Execute the HTTP request. With no argument, the element's own. Since 4.24 (not released yet), `url` and `init` (`{ method?, headers?, body? }`) are for that request only — see [A url with the command](#a-url-with-the-command) |
 | `abort()` | Cancel the in-flight request |
 
 ### `<wcs-fetch-header>`

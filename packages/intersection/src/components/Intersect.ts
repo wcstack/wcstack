@@ -63,6 +63,9 @@ export class WcsIntersect extends HTMLElement {
   private _internals: ElementInternals | null = null;
   // _scheduleObserve のマイクロタスクが待っている間 true
   private _observePending = false;
+  // 最後に警告した root と root-margin（値ごとに 1 回）
+  private _warnedRoot: string | null = null;
+  private _warnedMargin: string | null = null;
 
   constructor() {
     super();
@@ -253,6 +256,7 @@ export class WcsIntersect extends HTMLElement {
       return;
     }
     this._core.observe(element, this._options());
+    this._warnRefused();
   }
 
   /**
@@ -272,6 +276,33 @@ export class WcsIntersect extends HTMLElement {
       return;
     }
     this._core.reobserve(element, this._options());
+    this._warnRefused();
+  }
+
+  /**
+   * The observation did not start although there is something to observe: the browser refused the options, and
+   * with the threshold cleaned (_parseThreshold) only the margin is left — a length with no unit (`"200"`,
+   * `"0 0 900 0"`). `observing` stays false as before (never-throw); what was silent is said once per value
+   * (docs/mistake-catalogue.md, "root-margin-unit").
+   */
+  private _warnRefused(): void {
+    if (this._core.observing || typeof IntersectionObserver === "undefined") return;
+    const margin = this.rootMargin;
+    if (this._warnedMargin === margin) return;
+    let reason = "";
+    try {
+      // (Function.prototype: a callback that does nothing — this observer observes nothing)
+      new IntersectionObserver(Function.prototype as IntersectionObserverCallback, { rootMargin: margin }).disconnect();
+      return;
+    } catch (error) {
+      reason = (error as Error).message;
+    }
+    this._warnedMargin = margin;
+    console.warn(
+      `[@wcstack/intersection] [wcs/root-margin-unit] <${this.localName} root-margin="${margin}"> is not a margin the ` +
+      `browser takes (${reason}): write each length with px or %, as "200px 0px". Nothing is observed ` +
+      `(observing stays false).`,
+    );
   }
 
   // unobserve / disconnect は、予約中の自動 observe（_scheduleObserve）も取り消す。
@@ -330,7 +361,19 @@ export class WcsIntersect extends HTMLElement {
     const scope = this.getRootNode() as Document | ShadowRoot;
     // Same never-throw guard as the target selector: an invalid `root` selector
     // falls back to a null root (the viewport) rather than throwing out of observe().
-    return this._safeQuery(scope, root);
+    // A value that matches nothing as a selector is tried as an id — the way
+    // `<wcs-infinite-scroll root>` spells it (docs/seam-apps.md, town-archive).
+    const found = this._safeQuery(scope, root) ?? scope.getElementById?.(root) ?? null;
+    // A root given and not found was the viewport without a word: the margin was then
+    // measured against the wrong box. Said once per value.
+    if (!found && this._warnedRoot !== root) {
+      this._warnedRoot = root;
+      console.warn(
+        `[@wcstack/intersection] [wcs/intersect-root] <${this.localName} root="${root}">: no element matches that ` +
+        `selector, and none has it as its id, so the viewport is the root.`,
+      );
+    }
+    return found;
   }
 
   // Wrap querySelector so a syntactically invalid user-authored selector resolves

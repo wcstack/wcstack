@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: wcs-infinite-scroll asks again while its sentinel stays on screen</title>
+  <!-- docs/timing-and-firing-contract.md §26 (docs/seam-apps.md, town-archive). The fetch README's §5 example as
+       written: the target's url comes from state. Up to 4.23 the sentinel reported before state had written it
+       (the first page never came: Chromium 6 times of 10, Firefox 10 of 10), and a page that left the sentinel on
+       screen was the last. fetch is loaded before state on purpose: that order was the worse one.
+       ?naive=1: a page with no look at the end — it counts its page number up on every answer. -->
+  <script type="module" src="/packages/fetch/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+    body { margin: 0; font: 14px system-ui; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { height: 30px; }
+    /* the sentinel needs a box of its own to be observed */
+    wcs-infinite-scroll { display: block; min-height: 1px; }
+  </style>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      const naive = new URLSearchParams(location.search).has("naive");
+      export default {
+        pageSize: 20,
+        page: 1, // the next page to ask for
+        users: [],
+        noMore: false,
+        listLoading: false,
+        listError: null,
+        q: "",
+        $eventTokens: ["pageArrived"],
+        $commandTokens: ["cancelPage"],
+        get nextUsersUrl() {
+          return "/api/users?page=" + this.page + "&limit=" + this.pageSize + (this.q ? "&q=" + encodeURIComponent(this.q) : "");
+        },
+        // a filter: the page on its way is another list's — abort it, then start the list again
+        setFilter(event) {
+          this.$command.cancelPage.emit();
+          this.q = event.target.value;
+          this.users = [];
+          this.page = 1;
+          this.noMore = false;
+        },
+        get failed() {
+          return this.listError !== null;
+        },
+        $on: {
+          pageArrived(state, event) {
+            const { status, value } = event.detail;
+            if (status < 200 || status >= 300) return; // a failure: the page number stays where it is
+            state.users = state.users.concat(value);
+            state.page = state.page + 1;
+            if (!naive && value.length < state.pageSize) state.noMore = true; // a short page is the last one
+          },
+        },
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-fetch id="next-page-fetch" manual
+    data-wcs="url: nextUsersUrl; loading: listLoading; error: listError; eventToken.value: pageArrived; command.abort: $command.cancelPage"></wcs-fetch>
+
+  <input id="q" data-wcs="oninput: setFilter">
+
+  <p><span id="count" data-wcs="textContent: users.length"></span> users</p>
+  <ul id="list">
+    <template data-wcs="for: users">
+      <li data-wcs="textContent: .name"></li>
+    </template>
+  </ul>
+  <template data-wcs="if: failed"><p id="failed">could not load</p></template>
+  <template data-wcs="if: noMore"><p id="end">that is all</p></template>
+
+  <wcs-infinite-scroll target="next-page-fetch" root-margin="240px 0px" data-wcs="disabled: noMore"></wcs-infinite-scroll>
+</body>
+</html>

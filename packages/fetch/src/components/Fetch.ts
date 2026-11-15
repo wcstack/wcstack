@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { IWcBindable } from "../types.js";
+import { IWcBindable, WcsFetchCommandInit } from "../types.js";
 import { FetchCore, FetchResponseType } from "../core/FetchCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { FetchHeader } from "./FetchHeader.js";
@@ -437,20 +437,38 @@ export class Fetch extends HTMLElement {
     );
   }
 
-  async fetch(): Promise<any> {
+  /**
+   * Runs a request. With no argument it is the element's: its `url`, `method`, headers and `body`.
+   *
+   * `url` and `init` are for this request only — the element's attributes do not change. They are what a command
+   * token carries (`this.$command.load.emit("/api/users", { method: "GET" })` with `command.fetch: $command.load`):
+   * a command runs before the bindings of its update, so a `url` written in the same handler has not reached the
+   * element yet, and the request went to the one before (docs/seam-apps.md, town-archive). `init` takes `method`,
+   * `headers` (added to the `<wcs-fetch-header>` ones, replacing a same name) and `body` (in place of the
+   * element's, which is then kept for the next request). Anything that is not a string in `url`'s place — the
+   * event an `on…: $command.x` binding emits first — is ignored, and `init` with it.
+   */
+  async fetch(url?: unknown, init?: unknown): Promise<any> {
+    const given = typeof url === "string" && url !== "";
+    const requestUrl = given ? url as string : this.url;
+    const options = (given && init !== null && typeof init === "object" ? init : {}) as WcsFetchCommandInit;
     // Record the url for the auto-fetch same-value guard. Every fetch (explicit
     // included) updates it so a later auto-write of the same url is treated as a
     // no-op rather than a duplicate request.
-    this._lastFetchedUrl = this.url;
+    this._lastFetchedUrl = requestUrl;
     // ready again (a request starts): a trigger refused in the next outage is said again
-    if (this.url) this._toldTriggerWithoutUrl = false;
-    const headers = this._collectHeaders();
+    if (requestUrl) this._toldTriggerWithoutUrl = false;
+    const headers = { ...this._collectHeaders(), ...(typeof options.headers === "object" ? options.headers : null) };
 
     // Snapshot and reset `body` synchronously, before any await. The body is a
     // one-shot input; resetting it after the await (when another caller may have
     // already set a new body for the next request) would silently drop that value.
-    const bodySnapshot = this._body;
-    this._body = null;
+    // (A body the command brought is this request's: the element's waits for the next.)
+    let bodySnapshot = options.body ?? null;
+    if (bodySnapshot === null) {
+      bodySnapshot = this._body;
+      this._body = null;
+    }
     const { body, contentType } = this._collectBody(bodySnapshot);
     const auto = this._auto;
     this._auto = false;
@@ -473,8 +491,8 @@ export class Fetch extends HTMLElement {
       );
     }
 
-    const result = await this._core.fetch(this.url, {
-      method: this.method,
+    const result = await this._core.fetch(requestUrl, {
+      method: typeof options.method === "string" && options.method ? options.method.toUpperCase() : this.method,
       headers,
       body,
       contentType,

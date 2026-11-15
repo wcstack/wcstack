@@ -78,3 +78,16 @@ export interface WcsFetchCoreValues<T = unknown> {
 export interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
   trigger: boolean;
 }
+
+/**
+ * What `<wcs-fetch>`'s `fetch(url, init)` takes beside the url, for that request only — a command token carries
+ * it: `this.$command.load.emit("/api/users", { method: "POST", body: user })`.
+ */
+export interface WcsFetchCommandInit {
+  /** The method, in place of the element's `method`. */
+  method?: string;
+  /** Headers added to the `<wcs-fetch-header>` ones (a same name replaces it). */
+  headers?: Record<string, string>;
+  /** The body, in place of the element's `body` — which is then kept for the next request. */
+  body?: unknown;
+}

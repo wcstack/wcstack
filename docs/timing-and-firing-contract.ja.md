@@ -71,7 +71,7 @@
 ### 2.3 `reobserve()` は強制再観測（teardown→observe）
 `reobserve(el, opts)` は observer を一度 teardown してから observe し直すので、**新しい `IntersectionObserver` が現在の可視性で初回コールバックを出す**。成功時 `observing` は true のまま（false ブリップなし）。
 
-→ **帰結**: ショートページ後の自己修復（追記でレイアウトは変わったが可視性遷移は起きていない）は `reobserve()` で表現する。`state-intersect-scroll` の `command.reobserve` がこれ。`<wcs-infinite-scroll>`（高レベルタグ）はこのコマンドを持たないため自己修復できない。
+→ **帰結**: ショートページ後の自己修復（追記でレイアウトは変わったが可視性遷移は起きていない）は `reobserve()` で表現する。`state-intersect-scroll` の `command.reobserve` がこれ。`<wcs-infinite-scroll>`（高レベルタグ）はこのコマンドを持たない。4.24 からは自分でもう一度見る（§26）。4.23 までは自己修復できなかった。
 
 ### 2.4 `change` はイベント性（同値ガードなし、毎回発火）
 `wcs-intersect:change` はコールバックごとに必ず発火する（同値ガードしない）。`intersecting` / `ratio` はこのイベントから読む派生 getter。`visible` はラッチ（初回交差で true、`reset()` でのみ解除）。
@@ -626,3 +626,30 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 ### 25.4 テスト
 各パッケージは、クラスがコールバックを持つことを確かめる（`__tests__/connectedMove.test.ts`）: happy-dom には `moveBefore()` が無い。ブラウザが実際に呼ぶところは `e2e/tests/io-move-row.spec.ts`（Chromium と Firefox）: 4 つの `<wcs-fetch>` が進行中の間に 2 行が入れ替わり、どの要求も 1 回だけ届く。
+
+## 26. `<wcs-infinite-scroll>`: 番兵は、画面に残っている間はもう一度尋ねる（2026-11-15）
+
+継ぎ目アプリ `town-archive` から（[seam-apps.ja.md](./seam-apps.ja.md)）。4.23 までの要素は、番兵が画面に入ったとき（§2.1）にだけ target を実行し、3 つのページが読み込まれなかった: 最初のページ（番兵が、`@wcstack/state` が target の `url` を書くより先に報告した。fetch の README 自身の例で、最初のページが出たのは Chromium で 10 回中 4 回、Firefox では 0 回）、番兵を画面に残したページの次（背の高いウィンドウ、短いページ）、新しい絞り込みのページ（番兵が画面にあるまま `url` が変わった）。
+
+### 26.1 番兵が画面にあるときの、4 つの追加の時機
+- **要求が飛んでいないときに、target の `url` が書かれた・変わった** — 最初の url、絞り込み。要素がまだ何も実行していなければその場で、そうでなければ 2 フレーム後（空になった一覧がレイアウトされ、番兵が今の位置を報告した後）。
+- **要求が終わり、その間に `url` が変わっていた。** 応答が行を足したかどうかによらず、新しい url を実行する。
+- **要求が応答なしで終わり（中断）、`url` が別のものになっている。** 絞り込みが変わったときに飛んでいる要求を中断するページは、その直後に新しい url を書く: それはページ自身の変更で、応答への反応ではない。（ネットワークの失敗とタイムアウトは、ここでは応答に数える: `wcs-fetch:response` が status 0 で出る。）
+- **要求が終わり、応答が行を足し、ページが `url` を進めた。** 要求が終わってからページには 3 フレームある（`SETTLE_FRAMES`）。その間に書かれた `url` は、応答へのページの反応と見なす。「行を足した」は、スクロールするものの中での番兵の位置（top ＋ root のスクロール量）を、要求が始まったときと比べる。
+
+ページ自身が始めた要求（`trigger`、コマンド）も同じに数える: 要素は自分の呼び出しではなく、target の `loading` を追う。
+
+### 26.2 そこからは決してしないこと
+- **すでに尋ねた `url` は実行しない。** 失敗した要求は `url` をそのまま残すので、繰り返されない。エラー表示のレイアウトは再試行にならない。番兵がもう一度画面に入れば（§2.1 の端）、同じ `url` でも実行する — 利用者がもう一度試す道。
+- **行を 1 つも足さなかった応答で終わる**（ページが `url` をどう変えても）: 空の応答でページ番号を進めるページは、もう 1 回尋ねて止まる。
+- target が `loading` の間、`disabled` の間、`once` の後は実行しない。
+
+### 26.3 ページの仕事のまま残るもの
+- 応答がどの絞り込みのものか: `manual` の `<wcs-fetch>` は `url` が変わっても中断せず、前の絞り込みのページは届く。ページは、絞り込みが変わったとき、一覧を空にする前にそれを中断する（`command.abort:`）。
+- `url` は state から書く。静的な `url` では、state が target をバインドする前に最初の要求が始まり、応答が `eventToken.value` のハンドラより先に届くことがある（fetch を state より先に読み込んだ Firefox）。
+
+### 26.4 root と margin
+`<wcs-infinite-scroll root>` は id かセレクタ、`<wcs-intersect root>` はセレクタか id を受ける。指定されて見つからない root は値ごとに 1 回知らせ（`[wcs/infinite-scroll-root]`・`[wcs/intersect-root]`）、今までどおり viewport を使う。`<wcs-infinite-scroll>` はスクロールしない root（`overflow: visible`）も知らせる。ブラウザが拒む `root-margin`（単位の無い長さ）は、どちらも値ごとに 1 回知らせる（`[wcs/root-margin-unit]`）。どちらも throw しない。
+
+### 26.5 テスト
+`packages/fetch/__tests__/townArchive.test.ts` はフレームを手で進める（happy-dom の `requestAnimationFrame` では「2 フレーム後」と「その場」を区別できない）。実ブラウザでは、README の例を書かれたとおりに、スクロールと 4,000 px の高さのウィンドウで、Chromium・Firefox・WebKit。

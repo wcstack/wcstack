@@ -34,9 +34,11 @@ export default defineConfig({
     // And @wcstack/signals' delegateEvents, which leans on composedPath() and an overridden currentTarget (signals-delegate).
     // And an I/O node in a row a reorder moves: Firefox's moveBefore() calls connectedMoveCallback too (io-move-row).
     // And the ekiden-entry seam app's guards, which redirect the page-load navigation after an import (ekiden-entry).
+    // And <wcs-infinite-scroll>, whose sentinel reported before state had written the url — never a first page in Firefox
+    // (fetch-infinite-scroll).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

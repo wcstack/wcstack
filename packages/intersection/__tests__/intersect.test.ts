@@ -726,3 +726,93 @@ describe("<wcs-intersect>", () => {
     });
   });
 });
+
+describe("<wcs-intersect>: 見つからない root と、ブラウザが拒む root-margin（docs/seam-apps.md、town-archive）", () => {
+  let ctrl: IntersectionObserverController;
+  let warn: ReturnType<typeof vi.spyOn>;
+  const said = (): string[] => warn.mock.calls.map((c) => String(c[0]));
+
+  beforeEach(() => {
+    ctrl = installIntersectionObserver();
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    removeIntersectionObserver();
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  it("root がセレクタに一致しなければ id として探す（<wcs-infinite-scroll root> の書き方）。見つかれば黙る", async () => {
+    const box = document.createElement("div");
+    box.id = "list-box";
+    document.body.appendChild(box);
+    document.body.appendChild(makeEl({ target: "self", root: "list-box" }));
+    await flush();
+    expect(ctrl.last.options.root).toBe(box);
+    expect(said()).toEqual([]);
+  });
+
+  it("root が見つからなければ viewport で観測し、値ごとに 1 回警告する", async () => {
+    const el = makeEl({ target: "self", root: "list-main" });
+    document.body.appendChild(el);
+    await flush();
+    expect(ctrl.last.options.root).toBeNull();
+    expect(el.observing).toBe(true);
+    el.reobserve();
+    el.setAttribute("root", "[data-*");
+    await flush();
+    el.reobserve();
+    expect(said()).toEqual([
+      '[@wcstack/intersection] [wcs/intersect-root] <wcs-intersect root="list-main">: no element matches that selector, and none has it as its id, so the viewport is the root.',
+      '[@wcstack/intersection] [wcs/intersect-root] <wcs-intersect root="[data-*">: no element matches that selector, and none has it as its id, so the viewport is the root.',
+    ]);
+  });
+
+  it("文書につながっていない要素の observe() でも、見つからない root で throw しない", () => {
+    const el = makeEl({ target: "self", root: "nope" });
+    expect(() => el.observe()).not.toThrow();
+    expect(said()).toHaveLength(1);
+  });
+
+  it("ブラウザが拒む root-margin（単位なし）: observing は false のまま、値ごとに 1 回警告する（reobserve でも言い直さない）", async () => {
+    removeIntersectionObserver();
+    ctrl = installIntersectionObserver({ throwOnConstruct: true });
+    const el = makeEl({ target: "self", "root-margin": "200" });
+    document.body.appendChild(el);
+    await flush();
+    expect(el.observing).toBe(false);
+    el.reobserve();
+    expect(said()).toEqual([
+      '[@wcstack/intersection] [wcs/root-margin-unit] <wcs-intersect root-margin="200"> is not a margin the browser takes (invalid rootMargin): write each length with px or %, as "200px 0px". Nothing is observed (observing stays false).',
+    ]);
+    el.setAttribute("root-margin", "0 0 900 0");
+    await flush();
+    expect(said()).toHaveLength(2);
+  });
+
+  it("観測が始まらなかった理由が margin でなければ（margin だけなら受け付けられる）警告しない", async () => {
+    removeIntersectionObserver();
+    // threshold を渡すと拒み、margin だけなら受ける observer
+    (globalThis as any).IntersectionObserver = class {
+      constructor(_cb: IntersectionObserverCallback, options: IntersectionObserverInit = {}) {
+        if ("threshold" in options) throw new RangeError("threshold");
+      }
+      disconnect(): void {}
+    };
+    const el = makeEl({ target: "self" });
+    document.body.appendChild(el);
+    await flush();
+    expect(el.observing).toBe(false);
+    expect(said()).toEqual([]);
+  });
+
+  it("IntersectionObserver が無い環境では警告しない", async () => {
+    removeIntersectionObserver();
+    const el = makeEl({ target: "self", "root-margin": "200" });
+    document.body.appendChild(el);
+    await flush();
+    expect(el.observing).toBe(false);
+    expect(said()).toEqual([]);
+  });
+});

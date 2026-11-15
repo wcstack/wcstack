@@ -12,7 +12,7 @@ export { FetchHeader as WcsFetchHeader } from "./components/FetchHeader.js";
 export { FetchBody as WcsFetchBody } from "./components/FetchBody.js";
 
 export type {
-  IWritableConfig, IWritableTagNames, WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues
+  IWritableConfig, IWritableTagNames, WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues, WcsFetchCommandInit
 } from "./types.js";
 
 export type {
