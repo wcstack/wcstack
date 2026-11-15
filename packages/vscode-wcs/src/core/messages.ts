@@ -95,6 +95,13 @@ export interface WcsMessageCatalog {
   objectKeyAssign(target: string, accessor: string, suggestedPath: string): string;
   /** getter の中の現在時刻（`Date.now()` / 引数の無い `new Date()` / `performance.now()`）。キャッシュされ、最初の値のまま。 */
   getterReadsClock(read: string): string;
+  /**
+   * getter の中のウィンドウと文書の読み（`innerWidth`・`scrollY`・`matchMedia(…)`・`navigator.onLine`・`document.hidden` など）。
+   * state ではないので追跡されず、getter は最初の値のまま。`kind` で、代わりに束ねる要素（`<wcs-resize>` /
+   * `<wcs-media-query>` / `<wcs-network>`）か、要素の無いもの（スクロール位置・ページの可視性）は state に置いて
+   * イベントハンドラから書く形を言う。
+   */
+  getterReadsAmbient(read: string, kind: AmbientReadKind): string;
   /** `$renderedCallback` が state に無いパスを判定に使っている（`paths` に現れないので、その分岐は走らない）。近い名前があるときだけ。 */
   updatedCallbackUnknownPath(path: string): string;
   /** 宣言したコマンドトークンを emit するが、どの `command.<method>:` 束縛にも結ばれていない。 */
@@ -368,6 +375,13 @@ export interface WcsMessageCatalog {
   recursionConcreteCollision(concreteKey: string, recursiveKey: string): string;
 }
 
+/**
+ * getter が読んだウィンドウ・文書の値の種類（service/scriptAst.ts の findAmbientRead）: 大きさ（`innerWidth`・
+ * `document.documentElement.clientWidth`）・`devicePixelRatio`・`matchMedia(…)`・`navigator.onLine`・スクロール位置
+ * （`scrollY`・`document.documentElement.scrollTop`）・ページの可視性（`document.visibilityState` / `hidden`）。
+ */
+export type AmbientReadKind = 'size' | 'pixelRatio' | 'media' | 'online' | 'scroll' | 'visibility';
+
 /** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
 export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'whitespace' | 'reserved';
 
@@ -438,6 +452,23 @@ const ja: WcsMessageCatalog = {
     `この getter は ${read} を読んでいますが、location は state ではないので、最初に読んだ URL を持ち続けます（ナビゲーションで再評価されません）。URL は state を通して読んでください — <wcs-router> の path / searchParams を束ねる`,
   getterReadsClock: (read) =>
     `この getter は ${read} を読んでいますが、時刻は state ではないので依存として登録されず、getter はキャッシュした最初の値を返し続けます（イベントトークンで毎フレーム「描き直し」ても変わりません）。時刻を state に置いてください — <wcs-raf> や <wcs-timer> が書く値を束ねる`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `この getter は ${read} を読んでいますが、state ではないので依存として登録されず、getter はキャッシュした最初の値を返し続けます`;
+    switch (kind) {
+      case 'size':
+        return `${head}（リサイズしても再評価されません）。大きさを state に置いてください — <wcs-resize> が書く width / height を束ねる（ブレークポイントの判定なら <wcs-media-query> の matched）`;
+      case 'pixelRatio':
+        return `${head}（拡大しても、別の画面へ移しても再評価されません）。ページが使う解像度のしきい値を <wcs-media-query> の matched で束ねてください（query="(min-resolution: 2dppx)"）`;
+      case 'media':
+        return `${head}（クエリが合うようになっても、合わなくなっても再評価されません）。<wcs-media-query> の matched を束ねてください（<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">）`;
+      case 'online':
+        return `${head}（オフラインになっても、戻っても再評価されません）。<wcs-network> の offline を束ねてください`;
+      case 'scroll':
+        return `${head}（スクロールしても再評価されません）。スクロール位置を出す wcstack の要素は無いので、値を state に置き、イベントハンドラ（scroll のリスナー）から書いてください`;
+      default:
+        return `${head}（ページが隠れても、表示されても再評価されません）。ページの可視性を出す wcstack の要素は無いので、値を state に置き、イベントハンドラ（visibilitychange のリスナー）から書いてください`;
+    }
+  },
   updatedCallbackUnknownPath: (p) =>
     `"${p}" は state のパスではないので $renderedCallback の paths に現れず、この分岐は一度も実行されません`,
   commandTokenUnbound: (t) =>
@@ -785,6 +816,23 @@ const en: WcsMessageCatalog = {
     `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state — bind <wcs-router>'s path / searchParams`,
   getterReadsClock: (read) =>
     `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state — bind the value <wcs-raf> or <wcs-timer> writes`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `This getter reads ${read}, which is not state, so it is not a dependency: the getter is cached and keeps returning its first value`;
+    switch (kind) {
+      case 'size':
+        return `${head} (a resize does not re-evaluate it). Keep the size in state — bind the width / height <wcs-resize> writes (for a breakpoint, <wcs-media-query>'s matched)`;
+      case 'pixelRatio':
+        return `${head} (a zoom or a move to another screen does not re-evaluate it). Bind <wcs-media-query>'s matched for the resolution thresholds the page uses (query="(min-resolution: 2dppx)")`;
+      case 'media':
+        return `${head} (the query starting or ceasing to match does not re-evaluate it). Bind <wcs-media-query>'s matched instead (<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">)`;
+      case 'online':
+        return `${head} (going offline or coming back does not re-evaluate it). Bind <wcs-network>'s offline instead`;
+      case 'scroll':
+        return `${head} (scrolling does not re-evaluate it). No wcstack element gives the scroll position: keep the value in state and write it from an event handler (a scroll listener)`;
+      default:
+        return `${head} (the page being hidden or shown does not re-evaluate it). No wcstack element gives the page's visibility: keep the value in state and write it from an event handler (a visibilitychange listener)`;
+    }
+  },
   updatedCallbackUnknownPath: (p) =>
     `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
   commandTokenUnbound: (t) =>

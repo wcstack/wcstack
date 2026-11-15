@@ -139,7 +139,8 @@ export const WcsDiagnosticCode = {
   // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
   // 読んだパスをページの束縛（組み込みタグの spread・書き戻す束縛・要素の出力）が書くなら error（その書き込みは
   // getter に届かないと断定できる — 継ぎ目アプリ family-ledger）、スクリプトの書き込みだけなら warning（ルートも
-  // 置き換えるなら壊れない）。時刻・`location` を読む getter も同じ code（warning）。
+  // 置き換えるなら壊れない）。時刻・`location`・ウィンドウと文書の値（`innerWidth`・`scrollY`・`matchMedia(…)`・
+  // `navigator.onLine`・`document.hidden` など）を読む getter も同じ code（warning）。
   GetterUntrackedRead: "wcs/getter-untracked-read",
   OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
@@ -218,7 +219,8 @@ export const WcsDiagnosticCode = {
   // `currentTarget` を同期的に読む。委譲されたイベントの `currentTarget` は要素ではなく root なので、要素を
   // 使う処理（`setPointerCapture`・`getBoundingClientRect`・`new FormData(e.currentTarget)`）が壊れる。
   // ランタイムは何も報告しない（root は正しい値）ので lint の code。`#direct` か `event.target.closest(...)` を
-  // 案内する。読みが実行されない分岐にあることもあるので warning。
+  // 案内する。読みが実行されない分岐にあることもあるので warning。本体に入れ子にした関数の中の読み
+  // （`this.items.find((x) => … event.currentTarget …)`）も拾う — 後で呼ばれる関数（`setTimeout` などに渡したもの）は除く。
   DelegatedCurrentTarget: "wcs/delegated-current-target",
   // `<form data-wcs="onsubmit: login">` の `#prevent` 忘れ（ハンドラも preventDefault を呼ばない）。ブラウザが
   // フォームも送る — ページが読み直されるか、router があれば GET が欄（パスワードも）を URL と履歴に載せる
