@@ -1854,3 +1854,41 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 記録だけ: 空にした `valueAsNumber:` の欄の `NaN`、別のファイルの `static wcBindable` を lint が読まないこと、動く行の中の `<wcs-audio>`、数と `null` を渡した `attr.*` の文面。
   - 止める目安には当たっていない。3 巡目の次は 4 本目「大きなリストとスクロール」。
   - 4.22.0 から持ち越したもの: `packages/wcstack` の README の 2 つの書き方、ほか 4.21.0 からの持ち越し（拡張 2.17.0 のタグは、上のとおり付けた）。
+
+### 4.24.0 の公開（2026-11-15）
+
+- **中身**: minor。継ぎ目アプリ town-archive（3 巡目の 4 本目、大きなリストとスクロール — 市の写真 12,000 点のアーカイブ、公開側は state＋router、職員の表は signals）から。発見と著者の決定は [docs/seam-apps.ja.md](../seam-apps.ja.md) の「town-archive」と [docs/v4-direction-2026-10.md](../v4-direction-2026-10.md) §5.19。
+  - `@wcstack/state`: 行の中でカスタム要素（`<wcs-link>`）の後ろにある要素の委譲ハンドラが、自分のものになる。アクセサの組を通って届いた要素の最初の値でも `$watch` が発火する（temporal）。diagnostics の `[wcs/body-binding]`。
+  - `@wcstack/fetch`: `<wcs-infinite-scroll>` は、番兵が画面に残っている間、`url` が書かれた・変わったときと要求が終わったときにも target を実行する（タイミング契約 §26）。`<wcs-fetch>` の `fetch(url, init)`。root は id でもセレクタでも受け、見つからない・スクロールしない root と、単位の無い `root-margin` を言う。
+  - `@wcstack/intersection`: root は セレクタでも id でも受ける。`[wcs/intersect-root]` と `[wcs/root-margin-unit]`。
+  - `@wcstack/router`: `<wcs-link>` の `to` プロパティ。README に、ルートの外に置いた一覧へ戻る作り方（行のフラグメントへ遷移する）。
+  - lint: `wcs/body-binding`・`wcs/link-handler`（error）、`wcs/root-margin-unit`（warning）。1 つの JSDoc の中の複数の `@typedef`、入れ子の関数の `currentTarget`、ウィンドウや文書を読む getter。
+  - 文書: `docs/long-lists.md`（日英）。
+- **著者の決定（2026-11-15）**: 6 つの問いを推奨の案に決めた（§5.19）。
+- **実装**: state #682（merge commit fbd99e37）、I/O #683（d7093864）、lint #684（fd4950d3。作業ツリーのエージェントが実装）、ルーター #685（0a0cd532）、記録 #686（254c1f76）、目録と準備 #687（41a499aa。目録は 198 項目）。
+  - core は 20,474 B（上限まで 6 B）。委譲ハンドラの直しで 3 B 減った: `shifts()` が兄弟と親を 1 つのループで歩く。`<body>` 自体を束ねる案は +12 B で上限を超えるので採らなかった。
+  - temporal は +78 B、diagnostics は +169 B で 13,297 B。
+  - 作者の主張のうち 3 つは再現しなかった（state 越しのループが遅い、スクロールのアンカーで一覧が下に張り付く、2,700 枚で 1 ページ 880 ms）。`<wcs-intersect>` の observer の共有は、測って入れなかった。
+  - e2e: `state-link-row-handlers`、`fetch-infinite-scroll`（Chromium と Firefox）。
+- **準備**: PR #687 に含めた。CHANGELOG を `[4.24.0] — 2026-11-15` として締め、docs/upgrading-4x.md（日英）に 4.24.0 の節を書き、固定版 18 か所を動かした。公開の前に、版を 4.24.0 にしてローカルでビルドし、core が 20,474 B のままなのを確かめた。
+- **main で `minor`（run 43697038347）**: 成功した。版を上げたコミット 5bb374b9、タグ `v4.24.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約を足した）。
+  - 検証は 1 回目で済んだ: npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・文書の固定 URL 8/8。
+- **公開後の作業**:
+  - PR #688（merge commit e0e7883e）: サイズの基準値を 4.24.0 の dist で取り直した。`core.min.js` 20,474 B（残り 6 B）、diagnostics 13,297 B、temporal 3,929 B、scopes 9,041 B、分割の core 24,801 B、`index.esm.js` 59,677 B、`auto.min.js` 56,330 B。結合の基準値は変わらず。あわせて CLAUDE.md / AGENTS.md を更新し、拡張を 2.19.0 にした。
+  - 拡張 2.19.0: e0e7883e から作った。新しい worktree は作らず、lint の実装に使った worktree（`agent-a859fd1943ce54c04`）をそのコミットに移して使った（依存は入っていたもの。lock の差は版の 2 行だけ）。試験 1,634 件、890 ファイル、SHA-256 `bba7a274a6269ad83b9fa6688e76d6f03fe16fbd30c1ec87edabc32804da9e37`。vsix の中の `server.cjs` と `cli.cjs` に新しい 3 規則があるのを確かめた。公開は著者。
+  - wcstack-skill: PR #67（merge commit 7f1344a）。`references/long-lists.md`（新規）、落とし穴の表に 4 行（`<body>` の `data-wcs`、`<wcs-link>` の `on*:`、無限スクロール、同じハンドラでの url と `command.fetch:`）、IME の行の向きの訂正、`<wcs-infinite-scroll>` を先に案内、`<wcs-sse>` の `data`、`<wcs-link>` と行へ戻るリンク、`fetch(url, init)`、刻印と固定 URL。公開された 4.24.0 の束で、無限スクロールの例・絞り込みでの中断・行のフラグメントへのリンク・`to:` を Chromium・Firefox・WebKit で確かめ、`@wcstack/lint@4.24.0` が 3 つの規則を出すのを確かめた。注釈付きタグ `v4.24.0`。
+  - LP（wcstack.github.io 43b1569）: リリースの表示、v4.24.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-8jLw8U…`、gzip 84,616 B ＝約 83 KB）、llms。`llms-full.txt` に `long-lists.md` を含めた。ローカルの検査 7/7、本番 8/9（落ちる 1 件は、これまでと同じく、アプリのページが呼ぶ API が Pages に無いため）。
+  - 例の取り込み: PR #690（merge commit 65b86bd4）。`examples/town-archive` と `e2e/tests/town-archive.spec.ts`（Chromium 32 件、うち 3 件は Firefox でも。ポートは 8100 + 10 × ワーカーの番号）。4.24.0 で要らなくなった回避策を外した（url の `$watch` からの要求、`$connectedCallback` での最初の幅、state の横の生の配列）。アプリの単体テスト 29 件（npm の `@wcstack/testing` 4.24.0）、lint は `--strict` で 0 件。`packages/fetch/examples/infinite-scroll` を README の形にした（`url` は state から、「Try again」、番兵はリストの直後）。
+  - **取り込みの中で欠陥が 1 つ見つかり、直した: PR #689（merge commit d08cbeb4）。** `<wcs-infinite-scroll>` は、ページが届く瞬間に利用者がスクロールしていると、ウィンドウに要らない 1 ページを取りに行った。要求が終わって 3 フレーム待った後に読んでいたのが、オブザーバが届け終えた報告だけだった。スクロール中は「番兵が外へ出た」の報告が 3 フレーム目より後に届く（fetch の例で ↓ を 2〜3 回: Chromium で 10 回中 7〜9 回。Firefox と WebKit はこのページでは 0 回）。見る前に `takeRecords()` で未配信の報告を取り込むようにした。修正後は 3 ブラウザで 10 回中 0 回。単体テスト 4 件（修正なしでは 3 件が落ちる）と e2e 1 件。**npm にはまだ出ていない**（CHANGELOG の `[Unreleased]`）。
+    - 調べて分かったこと: 報告が遅れるのは、ページの中身が多く、ウィンドウが高く、マシンが空いているとき。要素自身の e2e の fixture では一度も出ず、ウィンドウの高さ 150 px では 8 回中 1 回、テストを並列に走らせると出ない。e2e はパッケージの例のページで書いた（4.24.0 では、単独で走らせると 3 回中 3 回落ちる）。
+    - 同じ spec の 1 件目（「ちょうど 20 行」を待つ）は、500 px のウィンドウでは 2 ページ目がすぐ続くので一瞬しか成り立たず、負荷の下で 36 回中 2 回落ちた。「20 行以上」を待つ形に直した。
+  - 取り込みで分かったもう 1 つ（文書）: スピナーが番兵の上にあると、要求の開始とともに番兵がマージンの外へ押し出され、続いているスクロールが戻す。その間にすぐ失敗したページを、もう一度取りに行く（番兵が画面に入ったときの規則どおり）。例の番兵をリストの直後に置き、fetch の README と long-lists.md に置く場所を書いた。
+- **残り**:
+  - 拡張 2.19.0 の公開（著者）と、その後のタグ `vscode-wcs-v2.19.0`（e0e7883e）。
+  - #689 の修正の公開。patch（4.24.1）にするか、次の minor に入れるかは著者が決める。
+  - core の残りは 6 B。
+  - 設計の問い（記録だけ）: スクロール位置を報告する要素、`$eq` の集合の形、デバイスのピクセル比の要素。
+  - 記録だけ: `@property` の行を持つ `@typedef {Object}` を lint が読まないこと、ページ自身のスクリプトが行に差し込んだノードの後ろのハンドラ（`#direct`）。
+  - worktree の残骸（著者に削除を頼む）: `ext-2.18.0`、`agent-adb32aebb8b16c9d4`、`agent-a859fd1943ce54c04`（2.19.0 のビルドに使った。公開の確認が済んだら）。
+  - 止める目安には当たっていない。3 巡目の次は 5 本目「画面とセンサーの API」。
+  - 4.23.0 から持ち越したもの: Safari の `moveBefore()`、ほか 4.22.0 からの持ち越し。
