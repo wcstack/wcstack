@@ -2,6 +2,17 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+継ぎ目アプリ town-archive（写真 12,000 点のアーカイブ — 無限スクロールの長い一覧と、職員の表）が見つけた lint の穴を直した（版は 4.24 のリリースと同時に上げる）。作者がわざとした 25 の間違いに、lint は 1 つも報告しなかった。
+
+- 1 つの JSDoc コメントに書いた複数の `@typedef` をすべて読む。最初の 1 つしか読まず、残りの型で宣言したリストの行のフィールドが `wcs/binding-path-missing` になっていた（誤報）。
+- `wcs/delegated-current-target`: ハンドラの中の入れ子の関数（`this.items.find((x) => … event.currentTarget …)`）での読みも報告する。dispatch の後に走る関数（`setTimeout`・`.then` などに渡したもの）は今までどおり黙る。
+- `wcs/getter-untracked-read`: getter の中のウィンドウと文書の読み — `innerWidth` / `innerHeight`・`devicePixelRatio`・`scrollX` / `scrollY`・`matchMedia(…)`・`navigator.onLine`・`document.documentElement.clientWidth`・`document.visibilityState` など — も報告する（`Date.now()` と `location.*` に加えて）。getter は最初の値のままになる。文面は、束ねる先の要素（`<wcs-resize>`・`<wcs-media-query>`・`<wcs-network>`）を言う。
+- `wcs/body-binding`（新規、error）: `<body>` / `<html>` に書いた `data-wcs`。`<wcs-state>` が束ねるのは `<body>` の中で、この 2 つの要素そのものは束ねられない。4.24 からは実行時（diagnostics の後付け）も同じ code で警告する。
+- `wcs/link-handler`（新規、error）: `<wcs-link>` の `data-wcs` に書いた `on*:`。ホストは `display: none` で、クリックは隣に作られる `<a>` で起きるので、ハンドラは一度も走らない。
+- `wcs/root-margin-unit`（新規、warning）: `<wcs-intersect>` / `<wcs-infinite-scroll>` のリテラルの `root-margin` に、`px` も `%` も付かない長さがある（`200`、`0 0 900 0`。`0` だけでもブラウザは拒む）。束ねた `rootMargin:` は検査しない。
+
 ## 2.18.0 — 2026-11-15
 
 `@wcstack/state` 4.23.0 から作った（npm の `@wcstack/lint` 4.23.0・`@wcstack/typescript` 4.23.0 と同じ判定）。継ぎ目アプリ ekiden-entry（入力の重い申し込みウィザード — IME・オートフィル・行の中の入力・フォーム連携のカスタム要素）が見つけた lint の穴を直した。作者のページでは、仕込んだ誤り 21 件に何も言わず、偽の warning を 91 件出していた:
