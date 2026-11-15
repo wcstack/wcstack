@@ -139,6 +139,13 @@ export class WatchRuntime {
    * A write from code before then (`$connectedCallback`) fires nothing, as before.
    */
   private early: [Pattern, StateRow | null, unknown, unknown][] = [];
+  /**
+   * An element's write is calling a setter before the watches are active: what the setter writes is the
+   * element's value too (`<wcs-resize>`'s width bound to an accessor pair that keeps it in another path —
+   * docs/seam-apps.md, town-archive: the watch on a getter over that path never fired, in the browsers where
+   * the width arrives while the bindings attach).
+   */
+  private relaying = false;
   /** The chain depth of a write made now: 0, or one more than what fired the running handler (or restart). */
   depth = 0;
   /**
@@ -205,6 +212,20 @@ export class WatchRuntime {
     this.active = false;
     this.hits.clear();
     this.early = [];
+    this.relaying = false;
+  }
+
+  /**
+   * An element's write is about to call a setter (the `beforeWrite` hook): until the setter's own landing, the
+   * writes are recorded as the element's. The setter runs within this task, so a write the hooks did not let
+   * through (no landing) leaves nothing behind.
+   */
+  setterStarts(): void {
+    if (this.active) return;
+    this.relaying = true;
+    queueMicrotask(() => {
+      this.relaying = false;
+    });
   }
 
   /** Calls fn for every row at p.depth, creating the lists on the way (they then stay synced). */
@@ -231,8 +252,10 @@ export class WatchRuntime {
 
   written(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean, element?: boolean): void {
     if (!this.active) {
-      // an element's write before the watches are active (see `early`)
-      if (element) this.early.push([p, row, old, value]);
+      // an element's write before the watches are active (see `early`): its own, and what a setter it called wrote
+      if (element || this.relaying) this.early.push([p, row, old, value]);
+      // (the element's own landing — a setter's comes after what it wrote — ends the relay)
+      if (element) this.relaying = false;
       return;
     }
     (this.changed ??= new Set()).add(p);

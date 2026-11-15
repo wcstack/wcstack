@@ -948,3 +948,53 @@ describe("getter のリストの行と、後から行が届くリスト（wcs/bi
     ]));
   });
 });
+
+describe("<body> / <html> の data-wcs（wcs/body-binding — docs/seam-apps.md、town-archive）", () => {
+  /** A root `<wcs-state>` in the document itself (not a shadow root), removed after `run`. */
+  async function inDocument(state: Record<string, any>, run: () => void = () => {}): Promise<string[]> {
+    return warnings(async () => {
+      const el = document.createElement("wcs-state") as any;
+      el.setInitialState(state);
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      await flush();
+      run();
+      el.remove();
+      await flush();
+    });
+  }
+  const mine = (got: string[]) => got.filter((w) => w.includes("body-binding"));
+
+  it("どちらにも data-wcs が無ければ黙る。あれば、束縛されないことを要素ごとに、文書につき 1 回知らせる", async () => {
+    expect(mine(await inDocument({ dark: true, lang: "ja" }))).toEqual([]);
+    document.body.setAttribute("data-wcs", "class.dark: dark; onkeydown: onKey; attr.data-a: dark; attr.data-b: dark; attr.data-c: dark");
+    document.documentElement.setAttribute("data-wcs", "attr.lang: lang");
+    try {
+      const got = mine(await inDocument({ dark: true, lang: "ja", onKey() {} }, () => {
+        // 束縛されていない: クラスも属性も付かない
+        expect(document.body.classList.contains("dark")).toBe(false);
+        expect(document.documentElement.getAttribute("lang")).not.toBe("ja");
+      }));
+      const tail = "is not bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so its bindings do nothing. Put them on an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch (document.documentElement.lang = this.lang). Validate statically: npx @wcstack/lint <file>.";
+      expect(got).toEqual([
+        `[@wcstack/state] [wcs/body-binding] <html data-wcs="attr.lang: lang"> ${tail}`,
+        `[@wcstack/state] [wcs/body-binding] <body data-wcs="class.dark: dark; onkeydown: onKey; attr.data-a: dark; at..."> ${tail}`,
+      ]);
+      // 同じ文書では言い直さない
+      expect(mine(await inDocument({ dark: true, lang: "ja", onKey() {} }))).toEqual([]);
+    } finally {
+      document.body.removeAttribute("data-wcs");
+      document.documentElement.removeAttribute("data-wcs");
+    }
+  });
+
+  it("shadow root の中のルートは、文書の <body> を見ない", async () => {
+    document.body.setAttribute("data-wcs", "class.dark: dark");
+    try {
+      const got = await warnings(() => page(`<p>{{ n }}</p>`, { n: 1 }));
+      expect(mine(got)).toEqual([]);
+    } finally {
+      document.body.removeAttribute("data-wcs");
+    }
+  });
+});

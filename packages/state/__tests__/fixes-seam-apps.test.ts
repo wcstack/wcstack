@@ -218,3 +218,145 @@ describe("state-collab-board / router-admin: 要素が bind のときに既に�
     expect(calls).toEqual([]);
   });
 });
+
+/** A custom element that puts a node right after itself when it connects, as `<wcs-link>` puts its `<a>`. */
+function insertingTag(): string {
+  const tag = `seam-ins-${tagSeq++}`;
+  customElements.define(tag, class extends HTMLElement {
+    connectedCallback() {
+      if ((this.nextSibling as Element | null)?.localName !== "a") this.after(document.createElement("a"));
+    }
+  });
+  return tag;
+}
+
+describe("town-archive: 行の中で <wcs-link>（直後に要素を差し込むカスタム要素）の後ろにある要素の委譲ハンドラ", () => {
+  const click = (el: Element | null) => el!.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+
+  it("詰めて書いた行: 押したボタンのハンドラが動く（隣のボタンのものでなく）。差し込まれた要素を押しても動かない", async () => {
+    const tag = insertingTag();
+    const calls: unknown[][] = [];
+    const { root } = await page(
+      `<ul><template data-wcs="for: items"><li><${tag}></${tag}><button class="star" data-wcs="onclick: star">s</button><button class="remove" data-wcs="onclick: remove">x</button></li></template></ul>`,
+      {
+        items: [{ id: 1 }, { id: 2 }],
+        star(_e: Event, i: number) { calls.push(["star", i]); },
+        remove(_e: Event, i: number) { calls.push(["remove", i]); },
+      },
+    );
+    // 差し込まれた <a> で、後ろの兄弟は 1 つずつずれている
+    expect([...root.querySelector("li")!.children].map((c) => c.localName)).toEqual([tag, "a", "button", "button"]);
+    click(root.querySelectorAll(".star")[1]);
+    click(root.querySelectorAll(".remove")[0]);
+    click(root.querySelector("li a"));
+    expect(calls).toEqual([["star", 1], ["remove", 0]]);
+  });
+
+  it("空白を挟んだ行でも、if: の中でも、後ろの要素のハンドラが動く", async () => {
+    const tag = insertingTag();
+    const calls: unknown[][] = [];
+    const { root } = await page(
+      `<ul><template data-wcs="for: items"><li>
+          <${tag}></${tag}>
+          <button class="star" data-wcs="onclick: star">s</button>
+        </li></template></ul>
+      <template data-wcs="if: on"><section><${tag}></${tag}> <button class="edit" data-wcs="onclick: edit">e</button></section></template>`,
+      {
+        items: [{ id: 1 }],
+        on: true,
+        star(_e: Event, i: number) { calls.push(["star", i]); },
+        edit() { calls.push(["edit"]); },
+      },
+    );
+    click(root.querySelector(".star"));
+    click(root.querySelector(".edit"));
+    expect(calls).toEqual([["star", 0], ["edit"]]);
+  });
+
+  it("差し込む要素が上の階層の兄弟でも（<td> の前の <td> の中でなく、祖先の前の兄弟）、その後ろの中のハンドラが動く", async () => {
+    const tag = insertingTag();
+    const calls: unknown[][] = [];
+    const { root } = await page(
+      `<template data-wcs="for: items"><div class="row"><${tag}></${tag}><p><span><button data-wcs="onclick: pick">p</button></span></p></div></template>`,
+      { items: [{ id: 1 }, { id: 2 }], pick(_e: Event, i: number) { calls.push(["pick", i]); } },
+    );
+    click(root.querySelectorAll("button")[1]);
+    expect(calls).toEqual([["pick", 1]]);
+  });
+
+  it("カスタム要素が前に無い行は今までどおり（ハンドラは要素に持たせず、道で見つける）", async () => {
+    const calls: unknown[][] = [];
+    const { root, write } = await page(
+      `<ul><template data-wcs="for: items"><li><span data-wcs="textContent: .id"></span><button data-wcs="onclick: star">s</button></li></template></ul>`,
+      { items: [{ id: 1 }, { id: 2 }], star(_e: Event, i: number) { calls.push(["star", i]); } },
+    );
+    click(root.querySelectorAll("button")[1]);
+    await write((s) => { s.items = s.items.concat([{ id: 3 }]); });
+    click(root.querySelectorAll("button")[2]);
+    expect(calls).toEqual([["star", 1], ["star", 2]]);
+  });
+});
+
+describe("town-archive: アクセサの組に束ねた要素が bind のときに持っていた値でも $watch が動く", () => {
+  it("setter が別のパスへ書いた値: そのパスの $watch が (cur, シード) で、それを読む根の getter の $watch も起動後に 1 回ずつ呼ばれる", async () => {
+    const tag = connectedTag(900);
+    const calls: unknown[][] = [];
+    await page(`<${tag} data-wcs="connected: widthRaw"></${tag}>`, {
+      width: 0,
+      get widthRaw() { return this.width; },
+      set widthRaw(v: number) { if (v) this.width = v; },
+      get cols() { return Math.max(2, Math.floor(this.width / 180)); },
+      get other() { return 1; },
+      $watch: {
+        width(cur: unknown, prev: unknown) { calls.push(["width", cur, prev]); },
+        cols(cur: unknown, prev: unknown) { calls.push(["cols", cur, prev]); },
+        widthRaw(cur: unknown) { calls.push(["widthRaw", cur]); },
+        other() { calls.push(["other"]); },
+      },
+    });
+    expect(calls).toHaveLength(3);
+    expect(calls).toEqual(expect.arrayContaining([["width", 900, 0], ["cols", 5, undefined], ["widthRaw", 900]]));
+  });
+
+  it("setter が値を捨てたら（何も書かなければ）呼ばない。起動後の値では今までどおり動く", async () => {
+    const tag = connectedTag(0);
+    const calls: unknown[][] = [];
+    const { root } = await page(`<${tag} data-wcs="connected: widthRaw"></${tag}>`, {
+      width: 0,
+      get widthRaw() { return this.width; },
+      set widthRaw(v: number) { if (v) this.width = v; },
+      get cols() { return Math.max(2, Math.floor(this.width / 180)); },
+      $watch: {
+        width(cur: unknown) { calls.push(["width", cur]); },
+        cols(cur: unknown) { calls.push(["cols", cur]); },
+      },
+    });
+    expect(calls).toEqual([]);
+    root.querySelector(tag)!.dispatchEvent(new CustomEvent(`${tag}:connected-changed`, { detail: 540 }));
+    await flush();
+    await flush();
+    expect(calls).toEqual(expect.arrayContaining([["width", 540], ["cols", 3]]));
+    expect(calls).toHaveLength(2);
+  });
+
+  it("$connectedCallback が setter の書いたパスを書き換えたら呼ばない。コードがアクセサの組へ書いた値でも呼ばない（従来どおり）", async () => {
+    const tag = connectedTag(900);
+    const calls: unknown[] = [];
+    await page(`<${tag} data-wcs="connected: widthRaw"></${tag}>`, {
+      width: 0,
+      get widthRaw() { return this.width; },
+      set widthRaw(v: number) { if (v) this.width = v; },
+      $connectedCallback(this: any) { this.width = 300; },
+      $watch: { width(cur: unknown) { calls.push(cur); } },
+    });
+    expect(calls).toEqual([]);
+    await page(`<p>{{ width }}</p>`, {
+      width: 0,
+      get widthRaw() { return this.width; },
+      set widthRaw(v: number) { this.width = v; },
+      $connectedCallback(this: any) { this.widthRaw = 700; },
+      $watch: { width(cur: unknown) { calls.push(cur); } },
+    });
+    expect(calls).toEqual([]);
+  });
+});

@@ -498,6 +498,28 @@ function secondRoot(engine: Engine, phase: string): void {
   console.warn(`[@wcstack/state] [wcs/second-root] ${others.length + 1} root <wcs-state> elements share one root, and there is one state tree per root: ${describeState(el)} takes it — its state was ready first, whatever the order in the document — and ${others.map(describeState).join(", ")} is refused (#47). Keep one, and graft the others with <wcs-state mount="path">.${LINT_HINT}`);
 }
 
+const toldBodies = new WeakSet<Node>();
+
+/**
+ * `data-wcs` on `<body>` or `<html>`: a root `<wcs-state>` binds what is inside `<body>` (src/dom/mount.ts walks its
+ * children), never the two elements themselves — `<body data-wcs="onkeydown: onKey">`, `class.dark:` on it,
+ * `attr.lang:` on `<html>` did nothing, with no word (docs/seam-apps.md, town-archive). Said once per document,
+ * naming the element and what it carries. (Binding `<body>` itself does not fit the core's size limit.)
+ */
+function bodyBinding(engine: Engine, phase: string): void {
+  const el = engine.element as Element | null;
+  if (phase !== "mounting" || !el) return;
+  const root = el.getRootNode() as Document;
+  if (root.nodeType !== 9 || toldBodies.has(root)) return;
+  const attr = config.bindAttributeName;
+  for (const x of [root.documentElement, root.body]) {
+    const text = x?.getAttribute(attr);
+    if (text == null) continue;
+    toldBodies.add(root);
+    console.warn(`[@wcstack/state] [wcs/body-binding] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> is not bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so its bindings do nothing. Put them on an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch (document.documentElement.lang = this.lang).${LINT_HINT}`);
+  }
+}
+
 // ---------------------------------------------------------------- bound custom elements never defined
 
 /**
@@ -1031,7 +1053,7 @@ export const diagnostics: Feature = {
       declaredKeys.set(engine, new Set(keysOf(target)));
     };
     hooks.handlerThrew = handlerThrew;
-    hooks.element = chain(chain(chain(chain(hooks.element, secondRoot), renderedCopy), lookLater), watchUnbound);
+    hooks.element = chain(chain(chain(chain(chain(hooks.element, secondRoot), bodyBinding), renderedCopy), lookLater), watchUnbound);
     hooks.written = chain(chain(chain(hooks.written, written), elementWrote), setterWrote);
     hooks.drained = chain(chain(hooks.drained, drained), setterDrained);
     hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeSetter);

@@ -476,15 +476,19 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
 }
 
 /**
- * Whether the path to `n` from its block's top node can change once the block renders: a
- * structural anchor before it on the way (its view renders before the anchor) or a custom element
- * above it (a Light DOM component may add children). Such an element's delegated events are not
- * found by path: they are stored on the element as its block is built.
+ * Whether the path to `n` from its block's top node can change once the block renders: on the way,
+ * a structural anchor before it (its view renders before the anchor), a custom element above it (a
+ * Light DOM component may add children) or a custom element before it (`<wcs-link>` puts its `<a>`
+ * right after itself, and every later sibling moves by one — docs/seam-apps.md, town-archive: a click
+ * on the next button ran the handler of the one after it). Such an element's delegated events are
+ * not found by path: they are stored on the element as its block is built.
+ *
+ * Walks from `n` to the block's top node, through the siblings before each node and then its parent.
  */
 function shifts(n: Node, top: Node): boolean {
-  for (; n.parentNode !== top; n = n.parentNode!) {
-    if ((n.parentNode as Element).localName.includes("-")) return true;
-    for (let s = n.previousSibling; s; s = s.previousSibling) if (s.nodeType === 8) return true;
+  while (n.parentNode !== top) {
+    n = n.previousSibling || n.parentNode!;
+    if (n.nodeType === 8 || n.nodeName.includes("-")) return true;
   }
   return false;
 }

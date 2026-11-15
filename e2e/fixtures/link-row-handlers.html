@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: a delegated handler after a wcs-link in a row</title>
+  <!-- docs/seam-apps.md, town-archive. @wcstack/state finds a block's delegated handlers by the element's position in
+       the block, and <wcs-link> puts its <a> right after itself: every later sibling under the same parent moved by
+       one. Written with no whitespace, a click on ★ ran the handler of the 削除 beside it and a click on the link
+       ran the ★'s; with whitespace neither button's handler ran. An element after a custom element now keeps its
+       handler on itself. The unit tests use a stand-in element that inserts a node: this is the router's own link. -->
+  <base href="/e2e/fixtures/">
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        photos: [{ id: 1, title: "one" }, { id: 2, title: "two" }, { id: 3, title: "three" }],
+        log: "",
+        open: true,
+        get "photos.*.href"() { return "/photos/" + this[".id"]; },
+        star(event, i) { this.log = this.log + " star(" + i + ")"; },
+        remove(event, i) { this.log = this.log + " remove(" + i + ")"; },
+        edit() { this.log = this.log + " edit"; },
+      };
+    </script>
+  </wcs-state>
+
+  <p id="log" data-wcs="textContent: log"></p>
+  <wcs-router>
+    <template>
+      <wcs-route path="/">
+        <!-- written tight -->
+        <ul id="tight"><template data-wcs="for: photos"><li><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link><button class="star" data-wcs="onclick: star">★</button><button class="remove" data-wcs="onclick: remove">削除</button></li></template></ul>
+        <!-- written with whitespace -->
+        <ul id="spaced">
+          <template data-wcs="for: photos">
+            <li>
+              <wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link>
+              <button class="star" data-wcs="onclick: star">★</button>
+              <button class="remove" data-wcs="onclick: remove">削除</button>
+            </li>
+          </template>
+        </ul>
+        <div id="branch">
+          <template data-wcs="if: open">
+            <section><wcs-link to="/photos/9">nine</wcs-link> <button class="edit" data-wcs="onclick: edit">編集</button></section>
+          </template>
+        </div>
+      </wcs-route>
+      <wcs-route path="/photos/:id"><h1 id="photo">photo</h1></wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</body>
+</html>
