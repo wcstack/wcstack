@@ -435,7 +435,13 @@ Workarounds became unnecessary: a field that normalizes what is typed bound one 
 
 Workarounds became unnecessary: a static `url` for page 1 on the `<wcs-fetch>` a `<wcs-infinite-scroll>` runs, and a first page asked for from `$connectedCallback`; rows or pages made large enough to push the sentinel out of the window; `<wcs-intersect>` with `reobserve()` used only because `<wcs-infinite-scroll>` stopped after a short page; a url written first and the `fetch` command emitted from a `$watch` on it; a plain `<a>` in place of `<wcs-link>` in a row because the button beside it did not answer; a value an element hands over at start applied once more in `$connectedCallback`.
 
-## Still needed on 4.24.0
+### 4.24.1
+
+2026-11-15 — [CHANGELOG](../CHANGELOG.md#4241--2026-11-15)
+
+- `@wcstack/fetch`: `<wcs-infinite-scroll>` no longer asks for a page the window does not need when the user is scrolling as a page lands ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §26.1). In 4.24.0 it was one page ahead then — Chromium, most of the time. Nothing to change in a page; a test that counted requests during a scroll may count one fewer.
+
+## Still needed on 4.24.1
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
