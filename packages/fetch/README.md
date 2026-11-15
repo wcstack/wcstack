@@ -321,12 +321,22 @@ Behavior rules:
 - It does not run a request while the target `<wcs-fetch>` is `loading`.
 - **With the sentinel still on screen, it runs the next request by itself** (since 4.24 (not released yet)):
   - when the target's `url` is written or changed while no request is in flight — the first page (the sentinel usually reports before state has written `url`) and a filter that empties the list;
-  - when a request ends and the `url` changed while it was in flight — a filter typed meanwhile;
+  - when a request ends and the `url` changed while it was in flight — a filter typed meanwhile — or it ended with no answer (aborted) and the `url` is another one;
   - when a request ends, the page has added rows and moved the `url` on — a tall window, a zoomed-out page, a short page: it goes on until the sentinel is off screen.
 
   It never runs a `url` again from there, so a failed request is not repeated: it waits for the user to scroll away and back, or for your retry (`trigger`). And a response that added no row ends it, whatever the page does to the `url` — a page that counts its page number up on an empty answer does not ask for ever. Up to 4.23 the element acted only on the sentinel coming on screen: the first page was often never loaded (the sentinel reported before state had written `url`, and the request was refused with `[wcs/command-not-ready]`), and a page that left the sentinel on screen was the last one.
 - **Write the target's `url` from state**, as above, not as a static attribute for page 1: a static `url` lets the first request start before state has bound the element, and its answer can arrive before your `eventToken.value` handler is attached (Firefox).
-- **Which filter an answer was for is yours to check.** A `manual` `<wcs-fetch>` does not abort on a new `url`: when a filter changes while a page is on its way, that page still arrives. Keep what the request was made for (the filter, or a number you count up on every change) and drop an answer that is not for the current one — otherwise the old filter's rows land in the new list.
+- **When a filter changes, abort the page on its way.** A `manual` `<wcs-fetch>` does not abort on a new `url`: a page asked for the old filter still arrives, and its rows land in the new list. Bind `command.abort: $command.cancelPage` on the `<wcs-fetch>` and emit it first in the handler that changes the filter (a command runs at once), then empty the list and reset the page number — the element asks for the new list's first page:
+
+  ```javascript
+  setFilter(event) {
+    this.$command.cancelPage.emit(); // the page on its way is another list's
+    this.filter = event.target.value;
+    this.users = [];
+    this.page = 1;
+    this.noMore = false;
+  },
+  ```
 - `once` is strict: after the first execution, changing attributes does not re-arm observation
 - if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, nothing is loaded, and it warns `[wcs/infinite-scroll-target]` once per `target` value
 

@@ -18,6 +18,8 @@ const SETTLE_FRAMES = 3;
  * So, with the sentinel on screen, the element also runs the target's request
  * - when its `url` is written or changed while no request is in flight (the first page; a filter);
  * - when a request ends and the `url` changed while it was in flight (a filter typed meanwhile);
+ * - when a request ends without an answer — aborted — and the `url` is another one (a page that aborts the request
+ *   on its way when the filter changes);
  * - when a request ends, the page has added rows (the sentinel moved) and moved the `url` on.
  *
  * It never runs a `url` again from there: a failed request waits for the user to scroll away and back, or for the
@@ -49,8 +51,13 @@ export class InfiniteScroll extends HTMLElement {
   private _startedAt: number = 0;
   // the url changed while that request was in flight
   private _changedInFlight: boolean = false;
+  // that request was answered (a response arrived, an HTTP error too): not aborted, not a network failure
+  private _answered: boolean = false;
   // a request has ended and the page is adding its rows (SETTLE_FRAMES)
   private _settling: boolean = false;
+  private _onResponse = (): void => {
+    this._answered = true;
+  };
   private _onLoadingChanged = (event: Event): void => {
     if ((event as CustomEvent).detail) {
       this._started();
@@ -241,6 +248,7 @@ export class InfiniteScroll extends HTMLElement {
   private _follow(target: Fetch | null): void {
     if (this._fetch === target) return;
     this._fetch?.removeEventListener("wcs-fetch:loading-changed", this._onLoadingChanged);
+    this._fetch?.removeEventListener("wcs-fetch:response", this._onResponse);
     this._urlObserver?.disconnect();
     this._urlObserver = null;
     this._fetch = target;
@@ -248,6 +256,7 @@ export class InfiniteScroll extends HTMLElement {
     this._changedInFlight = false;
     if (!target) return;
     target.addEventListener("wcs-fetch:loading-changed", this._onLoadingChanged);
+    target.addEventListener("wcs-fetch:response", this._onResponse);
     this._urlObserver = new MutationObserver(() => this._urlChanged());
     this._urlObserver.observe(target, { attributes: true, attributeFilter: ["url"] });
   }
@@ -262,20 +271,22 @@ export class InfiniteScroll extends HTMLElement {
     this._asked = this._fetch!.url;
     this._startedAt = this._position();
     this._changedInFlight = false;
+    this._answered = false;
     this._settling = false;
   }
 
   /**
    * The request ended: once the page has had its frames to add rows and move the url on, the sentinel — if it is
-   * still on screen — runs the next request when the url changed while this one was in flight, or when this one
-   * added rows. A response that added nothing ends it there.
+   * still on screen — runs the next request when the url changed while this one was in flight, when this one had no
+   * answer (aborted: a url written right after it is the page's own change, not its reaction to a response), or
+   * when this one added rows. A response that added nothing ends it there.
    */
   private _ended(): void {
     this._settling = true;
     afterFrames(SETTLE_FRAMES, () => {
       if (!this._settling) return;
       this._settling = false;
-      if (this._inView && (this._changedInFlight || this._position() !== this._startedAt)) {
+      if (this._inView && (this._changedInFlight || !this._answered || this._position() !== this._startedAt)) {
         this._run(false);
       }
     });

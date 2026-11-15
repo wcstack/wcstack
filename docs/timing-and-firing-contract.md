@@ -642,9 +642,10 @@ Each package checks that its class has the callback (`__tests__/connectedMove.te
 
 From the `town-archive` seam app ([seam-apps.md](./seam-apps.md)). Up to 4.23 the element ran its target only when the sentinel came on screen (§2.1), and three pages did not load: the first one (the sentinel reported before `@wcstack/state` had written the target's `url`; the fetch README's own example showed its first page 4 times of 10 in Chromium and never in Firefox), one after a page that left the sentinel on screen (a tall window, a short page), and a new filter's (the `url` changed with the sentinel on screen).
 
-### 26.1 Three more moments, with the sentinel on screen
+### 26.1 Four more moments, with the sentinel on screen
 - **The target's `url` is written or changed while no request is in flight** — the first url, a filter. At once when the element has run nothing yet; otherwise two frames later, when the emptied list is laid out and the sentinel has reported where it is.
 - **A request ends and the `url` changed while it was in flight.** The new url is run, whether or not the response added rows.
+- **A request ends with no answer — aborted — and the `url` is another one.** A page that aborts the request on its way when the filter changes writes the new url right after: that is its own change, not a reaction to a response. (A network failure and a timeout are answers here: `wcs-fetch:response` fires for them, with status 0.)
 - **A request ends, and the response added rows and the page moved the `url` on.** The page gets three frames after the request ends (`SETTLE_FRAMES`); a `url` written in them is the page's reaction to the response. "Added rows" is the sentinel's position in what scrolls (its top plus the root's scroll offset) against the same when the request started.
 
 A request the page started itself (`trigger`, a command) counts as any other: the element follows the target's `loading`, not its own calls.
@@ -655,7 +656,7 @@ A request the page started itself (`trigger`, a command) counts as any other: th
 - It does not run while the target is `loading`, and not when `disabled`, or after `once`.
 
 ### 26.3 What is still the page's
-- Which filter an answer was for: a `manual` `<wcs-fetch>` does not abort on a new `url`, and the old filter's page still arrives.
+- Which filter an answer was for: a `manual` `<wcs-fetch>` does not abort on a new `url`, and the old filter's page still arrives. The page aborts it when the filter changes (`command.abort:`), before it empties the list.
 - The `url` comes from state. A static `url` lets the first request start before state has bound the target, and its answer can arrive before the `eventToken.value` handler is attached (Firefox, with fetch loaded before state).
 
 ### 26.4 Roots and margins

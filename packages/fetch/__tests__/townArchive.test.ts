@@ -73,8 +73,12 @@ describe("InfiniteScroll: 番兵が画面に残る・url が後から届く（to
     frameQueue = [];
     vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frameQueue.push(cb));
-    fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input: any) =>
-      new Promise<Response>((resolve) => { pending.push({ url: String(input), resolve }); }));
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        pending.push({ url: String(input), resolve });
+        // 中断されたら、ブラウザの fetch と同じく AbortError で終わる
+        init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      }));
     warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -168,6 +172,23 @@ describe("InfiniteScroll: 番兵が画面に残る・url が後から届く（to
     expect(urls()).toHaveLength(1); // 読み込み中は出さない
     await answer();
     expect(urls()).toEqual(["/api/items?f=&offset=60", "/api/items?f=abc&offset=0"]);
+  });
+
+  it("ページが要求を中断して url を書き換える（絞り込み）: 応答が無かった要求の後は、行が増えていなくても新しい url を読み込む", async () => {
+    const { fetchEl } = mount("/api/items?f=a&offset=0");
+    observers[0].report(true);
+    expect(urls()).toEqual(["/api/items?f=a&offset=0"]);
+    // 空の一覧のまま: 中断し、同じ更新で url が変わる（中断で loading は false になっている）
+    fetchEl.abort();
+    queueMicrotask(() => { fetchEl.url = "/api/items?f=b&offset=0"; });
+    await flush();
+    await frames(4);
+    expect(urls()).toEqual(["/api/items?f=a&offset=0", "/api/items?f=b&offset=0"]);
+    // 中断しただけで url が同じなら、出し直さない
+    fetchEl.abort();
+    await flush();
+    await frames(4);
+    expect(urls()).toHaveLength(2);
   });
 
   it("静止中に url が変わる: 番兵が画面にあれば 2 フレーム後に読み込み、画面の外なら読み込まない", async () => {

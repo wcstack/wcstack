@@ -29,9 +29,19 @@
         noMore: false,
         listLoading: false,
         listError: null,
+        q: "",
         $eventTokens: ["pageArrived"],
+        $commandTokens: ["cancelPage"],
         get nextUsersUrl() {
-          return "/api/users?page=" + this.page + "&limit=" + this.pageSize;
+          return "/api/users?page=" + this.page + "&limit=" + this.pageSize + (this.q ? "&q=" + encodeURIComponent(this.q) : "");
+        },
+        // a filter: the page on its way is another list's — abort it, then start the list again
+        setFilter(event) {
+          this.$command.cancelPage.emit();
+          this.q = event.target.value;
+          this.users = [];
+          this.page = 1;
+          this.noMore = false;
         },
         get failed() {
           return this.listError !== null;
@@ -50,7 +60,9 @@
   </wcs-state>
 
   <wcs-fetch id="next-page-fetch" manual
-    data-wcs="url: nextUsersUrl; loading: listLoading; error: listError; eventToken.value: pageArrived"></wcs-fetch>
+    data-wcs="url: nextUsersUrl; loading: listLoading; error: listError; eventToken.value: pageArrived; command.abort: $command.cancelPage"></wcs-fetch>
+
+  <input id="q" data-wcs="oninput: setFilter">
 
   <p><span id="count" data-wcs="textContent: users.length"></span> users</p>
   <ul id="list">
