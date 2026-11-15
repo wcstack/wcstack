@@ -71,13 +71,17 @@
 
       // Receive each page's response. wcs-fetch:response carries { value, status }.
       $eventTokens: ["pageArrived"],
+      // "Try again" after a failure: runs the request for the url the element holds.
+      $commandTokens: ["retryPage"],
+      retry() {
+        this.$command.retryPage.emit();
+      },
 
       // Always the NEXT page. <wcs-fetch> is `manual`, so rewriting this url does NOT
-      // auto-fetch — the sentinel's trigger is the only thing that fetches, page 1
-      // included (an empty list leaves the sentinel in view on load, so it fires once
-      // straight away). That `manual` is also why advancing `page` here is safe:
-      // WITHOUT it, this url change would auto-fetch the next page immediately and
-      // cascade through the entire catalog with no scrolling.
+      // auto-fetch: the sentinel is the only thing that fetches, page 1 included — it
+      // runs the request when state writes this url, and again while a page that has
+      // landed leaves it on screen (a tall window). WITHOUT `manual`, every url change
+      // would fetch at once and cascade through the entire catalog with no scrolling.
       get "pageFetch.url"() {
         return "/api/items?page=" + (this.page + 1) + "&limit=" + this.pageSize;
       },
@@ -109,7 +113,7 @@
           // wcs-fetch:response also fires on HTTP/network errors (value=null). Skip
           // those: appending null would corrupt the list and advancing `page` would
           // silently skip a page. On failure we leave `page` put so the same url can
-          // be retried on the next scroll.
+          // be tried again (the sentinel does not repeat a failed request by itself).
           if (status < 200 || status >= 300) return;
           const batch = event.detail?.value ?? [];
           state.items = state.items.concat(batch);
@@ -129,20 +133,14 @@
      `manual` that url change would auto-fetch and double-load. The sentinel below is
      the only thing that fires the request (it writes trigger=true on this element).
 
-     The STATIC `url` (= page 1) is what makes the first load deterministic. The
-     sentinel's trigger is a one-shot: `set trigger` drops the write silently when
-     `url` is empty (Fetch.ts), and IntersectionObserver won't re-fire while the
-     sentinel stays in view (empty list). The url binding from @wcstack/state and the
-     sentinel's initial IntersectionObserver callback land on independent async
-     pipelines with no ordering guarantee — so if the sentinel fired first it would
-     trigger against an empty url and the page would never load (spinner stuck). A
-     static page-1 url removes that race: the trigger always has a url, whoever wins.
-     `manual` keeps this static url from auto-fetching; the binding rewrites it to
-     page 2+ as `page` advances. (`state-intersect-scroll` has no equivalent race
-     because its `$stream` producer eagerly owns the page-1 request; it does not
-     trigger a separately bound `<wcs-fetch>`.) -->
-<wcs-fetch id="page-fetch" manual url="/api/items?page=1&amp;limit=20"
-  data-wcs="url: pageFetch.url; loading: pageFetch.loading; error: pageFetch.error; eventToken.value: pageArrived"></wcs-fetch>
+     The `url` comes from state only: there is no static page-1 `url`. The sentinel
+     usually reports before state has written the url; it runs the request when the
+     url is written (since 4.24), so the first page needs nothing else. A static url
+     would let the request start before state has bound this element, and the first
+     answer could arrive before the `eventToken.value` handler is attached — in
+     Firefox it was lost. -->
+<wcs-fetch id="page-fetch" manual
+  data-wcs="url: pageFetch.url; loading: pageFetch.loading; error: pageFetch.error; eventToken.value: pageArrived; command.fetch: $command.retryPage"></wcs-fetch>
 
 <!-- ============================================================
      Feed
@@ -163,6 +161,21 @@
   </template>
 </ul>
 
+<!-- The sentinel. When it enters the viewport (+240px preload margin) it runs
+     #page-fetch. It won't re-trigger while that fetch is `loading`, and `disabled`
+     is bound to `noMore` so it stops observing once the feed is exhausted.
+     A page that leaves it on screen (a tall window, a short page) is followed by the
+     next one: when a request ends having added rows, it looks again (since 4.24).
+     It never repeats a request that failed: the user scrolls away and back, or
+     presses "Try again".
+     It sits right after the list, ABOVE the spinner and the messages: only rows move
+     it. Below them, the spinner shown while a page loads would push it down, out of
+     its margin, and a scroll that goes on would bring it back — to the element, the
+     sentinel coming on screen again, which asks again for a request that failed
+     in between. -->
+<wcs-infinite-scroll target="page-fetch" root-margin="240px 0px"
+  data-wcs="disabled: noMore"></wcs-infinite-scroll>
+
 <!-- Bottom states. Decorative spinner is hidden from a11y; the sticky meter above
      is a live region that already announces the growing count. -->
 <template data-wcs="if: showInitialSpinner">
@@ -172,20 +185,11 @@
   <div class="spinner" aria-hidden="true"></div>
 </template>
 <template data-wcs="if: showError">
-  <p class="end-msg error">Couldn't load. Scroll to retry.</p>
+  <p class="end-msg error">Couldn't load. <button type="button" data-wcs="onclick: retry">Try again</button></p>
 </template>
 <template data-wcs="if: noMore">
   <p class="end-msg">— End of list (<span data-wcs="textContent: loadedCount"></span> items) —</p>
 </template>
-
-<!-- The sentinel. When it enters the viewport (+240px preload margin) it runs
-     #page-fetch. It won't re-trigger while that fetch is `loading`, and `disabled`
-     is bound to `noMore` so it stops observing once the feed is exhausted.
-     Note: place tall-enough rows above it — IntersectionObserver only fires on a
-     visibility *change*, so a page that doesn't push this marker out of view can
-     stall (see README, "short page"). -->
-<wcs-infinite-scroll target="page-fetch" root-margin="240px 0px"
-  data-wcs="disabled: noMore"></wcs-infinite-scroll>
 
 </body>
 </html>

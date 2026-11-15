@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>整理台帳 — みどり市 まちの記憶アーカイブ</title>
+  <link rel="stylesheet" href="/css/staff.css">
+  <!-- One entry for signals (/dom re-exports the core): importing both @wcstack/signals and
+       @wcstack/signals/dom from the CDN would make two reactive cores. Every wcstack URL is pinned. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
+      "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto",
+      "@wcstack/sse/auto": "https://esm.run/@wcstack/sse/auto",
+      "@wcstack/resize/auto": "https://esm.run/@wcstack/resize/auto"
+    }
+  }
+  </script>
+  <script type="module" src="/js/staff.js"></script>
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="t-header">
+      <h1>整理台帳</h1>
+      <p class="loading-note">読み込み中…</p>
+    </header>
+  </div>
+</body>
+</html>

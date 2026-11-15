@@ -1,0 +1,24 @@
+{
+  "name": "wcstack-town-archive",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a city's archive of 12,000 photographs — a long list with infinite scroll, filters in the URL, a photo page that comes back to its card, and a staff table of all 12,000 records written with signals.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/debounce": "^4.24.0",
+    "@wcstack/fetch": "^4.24.0",
+    "@wcstack/intersection": "^4.24.0",
+    "@wcstack/media-query": "^4.24.0",
+    "@wcstack/resize": "^4.24.0",
+    "@wcstack/router": "^4.24.0",
+    "@wcstack/server": "^4.24.0",
+    "@wcstack/state": "^4.24.0",
+    "@wcstack/storage": "^4.24.0",
+    "@wcstack/testing": "^4.24.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.0.5"
+  }
+}
