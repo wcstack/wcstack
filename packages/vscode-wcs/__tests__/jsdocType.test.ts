@@ -314,3 +314,57 @@ describe('索引シグネチャの下は開いている — getter・データ�
       || d.code === WcsDiagnosticCode.WatchPathMissing)).toEqual([]);
   });
 });
+
+// 継ぎ目アプリ town-archive: 型をまとめて 1 つのコメントに書くと、先頭の @typedef しか読まれなかった
+describe('1 つの JSDoc コメントの複数の @typedef（town-archive）', () => {
+  const textOf = (html: string, d: WcsDiagnostic): string => html.slice(d.start, d.end);
+  const page = (script: string, body: string): string => `<wcs-state><script type="module">\n${script}\n</script></wcs-state>\n${body}`;
+  const TYPES = `/**
+ * @typedef {{ id: number, title: string }} Photo
+ * @typedef {{ code: string, name: string }} Area
+ */`;
+  const STATE = `export default { /** @type {Photo[]} */ photos: [], /** @type {Area[]} */ areas: [] };`;
+  const BODY = `<template data-wcs="for: areas"><li data-wcs="textContent: .name"></li></template>
+<template data-wcs="for: photos"><li data-wcs="textContent: .title"></li></template>`;
+
+  it('2 つ目の @typedef で宣言した行のフィールドに wcs/binding-path-missing を出さないこと（town-archive の形）', () => {
+    const html = page(`${TYPES}\n${STATE}`, BODY);
+    expect(ofCode(validate(html), WcsDiagnosticCode.BindingPathMissing)).toEqual([]);
+  });
+
+  it('コメントを 2 つに分けた形と同じ結果で、2 つ目の型の行に無いフィールドは従来どおり報告すること', () => {
+    const typo = `<template data-wcs="for: areas"><li data-wcs="textContent: .nmae"></li></template>`;
+    const oneBlock = page(`${TYPES}\n${STATE}`, typo);
+    const twoBlocks = page(`/** @typedef {{ id: number, title: string }} Photo */
+/** @typedef {{ code: string, name: string }} Area */
+${STATE}`, typo);
+    for (const html of [oneBlock, twoBlocks]) {
+      const found = ofCode(validate(html), WcsDiagnosticCode.BindingPathMissing);
+      expect(found.map((d) => [d.severity, textOf(html, d)])).toEqual([['warning', '.nmae']]);
+      expect(found[0].message).toContain('Did you mean "name"?');
+    }
+  });
+
+  it('collectJsDocTypedefs: ブロックの @typedef をすべて読み、読めない型表現の 1 つは飛ばして次を読むこと', () => {
+    const script = `/**
+ * The archive's types.
+ * @typedef {{ id: number, title: string }} Photo
+ * @typedef {{
+ *   code: string,
+ *   name: string
+ * }} Area
+ * @typedef {{ broken: }} Broken
+ * @typedef {Photo | Area} Either — see the "@typedef" above
+ */
+export default {};`;
+    const typedefs = collectJsDocTypedefs(script, maskCommentsAndStrings(script));
+    expect([...typedefs.keys()]).toEqual(['Photo', 'Area', 'Either']);
+    expect(typedefs.get('Area')).toEqual({
+      kind: 'object',
+      fields: [
+        { name: 'code', type: { kind: 'name', name: 'string' } },
+        { name: 'name', type: { kind: 'name', name: 'string' } },
+      ],
+    });
+  });
+});
