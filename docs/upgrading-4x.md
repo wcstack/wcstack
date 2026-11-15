@@ -420,7 +420,22 @@ Workarounds became unnecessary: the same accessor body written once per list, an
 
 Workarounds became unnecessary: a field that normalizes what is typed bound one way and written from a handler to protect a composition (a setter is enough; a handler is still the way to keep the caret while formatting); code that skips a field being composed when another tab's draft is applied; a `change` listener that copies a field into state for password managers; a clear method written only because `type="reset"` left state behind; a state seeded with literals written out because `team: init.team` made the lint report every path; the landing route checked in the page because a guard that redirected it left the route unbound. An upload or a fetch kept out of the rows that move is unnecessary in Chromium and Firefox, and still needed for Safari.
 
-## Still needed on 4.23.0
+### 4.24.0
+
+2026-11-15 — [CHANGELOG](../CHANGELOG.md#4240--2026-11-15)
+
+- `@wcstack/fetch`: `<wcs-infinite-scroll>` runs its target at more moments ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §26). With the sentinel on screen: when the target's `url` is written or changed while nothing is in flight, when a request ends and the `url` changed meanwhile (or the request was aborted), and when a request ends after adding rows with the `url` moved on. A list in a tall window fills by itself, and a `url` that changes with the sentinel on screen is fetched without a scroll. It never runs a `url` twice from there, and a response that added no row ends it.
+- `@wcstack/fetch`: `<wcs-fetch>`'s `fetch(url, init)` uses a string given as its first argument as that request's url (`init`: `method`, `headers`, `body`). `fetch()` ignored its arguments before: a command token that passed a url to an element with its own `url` now fetches what it passed.
+- `@wcstack/fetch`, `@wcstack/intersection`: `root` takes an id or a selector on both `<wcs-infinite-scroll>` and `<wcs-intersect>`. A value that named nothing is still the viewport; one the other form finds now names that element.
+- `@wcstack/state`: in a `for:` row or an `if:` block, an element that follows a custom element under the same parent keeps its delegated handler on itself. A button after a `<wcs-link>` runs its handler; it ran none, or the next button's.
+- `@wcstack/state`: a `$watch` on a path a setter writes fires once at start for the value an element handed over through that setter.
+- `@wcstack/router`: `to` is a property of `<wcs-link>`: `data-wcs="to: .href"` works as `attr.to:` does.
+- Console: `[wcs/body-binding]` (`@wcstack/state`'s diagnostics), `[wcs/infinite-scroll-root]` and `[wcs/root-margin-unit]` (`@wcstack/fetch`), `[wcs/intersect-root]` and `[wcs/root-margin-unit]` (`@wcstack/intersection`) are new warnings. A `root-margin` with no unit no longer throws out of `<wcs-infinite-scroll>`.
+- `@wcstack/lint`: `wcs/body-binding` and `wcs/link-handler` are new **errors** — `data-wcs` on `<body>` / `<html>`, an `on*:` on `<wcs-link>`: neither binding ever did anything, and a page with one fails `--errors-only` now. `wcs/root-margin-unit` is a new warning. `wcs/delegated-current-target` also reports a read inside a nested function, and `wcs/getter-untracked-read` a getter that reads the window or the document. Every `@typedef` of a JSDoc block is read.
+
+Workarounds became unnecessary: a static `url` for page 1 on the `<wcs-fetch>` a `<wcs-infinite-scroll>` runs, and a first page asked for from `$connectedCallback`; rows or pages made large enough to push the sentinel out of the window; `<wcs-intersect>` with `reobserve()` used only because `<wcs-infinite-scroll>` stopped after a short page; a url written first and the `fetch` command emitted from a `$watch` on it; a plain `<a>` in place of `<wcs-link>` in a row because the button beside it did not answer; a value an element hands over at start applied once more in `$connectedCallback`.
+
+## Still needed on 4.24.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
@@ -430,3 +445,6 @@ Workarounds became unnecessary: a field that normalizes what is typed bound one 
 - A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element. Since 4.11 the diagnostics warn when the definition never comes (`[wcs/element-undefined]`), and the lint names a `wcs-*` tag whose package the page does not load (`wcs/tag-package-missing`).
 - Safari has no `moveBefore()`: there a row a reorder moves still loses its focus (state README, "Loop (`for`)"), and an I/O node in it its request or connection ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §25). A row the list leaves in place keeps both in every browser.
 - A `keydown` handler that acts on Enter checks for an IME composition itself (`e.isComposing || e.keyCode === 229`), and a form control of the page's own resets itself and declares `value` both ways ([forms.md](./forms.md)).
+- A list that changes its filter aborts the page on its way (`command.abort:`): a `manual` `<wcs-fetch>` does not abort on a new `url`, and the old filter's rows land in the new list ([long-lists.md](./long-lists.md)).
+- A node the page's own script inserts into a `for:` row moves the delegated handlers of the elements after it: bind those `on*#direct:` (state README, "Delegated events").
+- A link of the page's own back to a row of a list goes to the row's fragment (`navigateUrl = "/#photo-" + id`): a `scrollIntoView()` from a `$watch` is undone when the push navigation finishes (router README, "Where route content lives").

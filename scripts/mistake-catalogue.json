@@ -1505,15 +1505,6 @@
       "note": { "en": "Found while the recipes of docs/forms.md were run (ekiden-entry). Use the input the element sends on: `body: payload; trigger: sending`, written in that order.", "ja": "docs/forms.ja.md の書き方を動かして確かめる中で見つけた（ekiden-entry）。要素が送信に使う入力を使う: `body: payload; trigger: sending` をこの順に書く。" }
     },
     {
-      "id": "body-binding",
-      "lint": [{ "code": "wcs/body-binding", "severity": "error" }],
-      "runtime": "silent", "harm": "broken",
-      "mistake": { "en": "Writes `data-wcs` on `<body>` or `<html>` (`<body data-wcs=\"onkeydown: onKey; class.dark: dark\">`, `<html data-wcs=\"attr.lang: lang\">`).", "ja": "`<body>` や `<html>` に `data-wcs` を書く（`<body data-wcs=\"onkeydown: onKey; class.dark: dark\">`、`<html data-wcs=\"attr.lang: lang\">`）。" },
-      "effect": { "en": "Nothing on it is bound: a `<wcs-state>` binds what is inside `<body>`, not the two elements themselves. The handler never runs, the class and the attribute never change, and the attribute stays on the element as written. The town-archive seam app: ← → on a photo page did nothing, with nothing in the console.", "ja": "そこに書いたものは何も束ねられない: `<wcs-state>` が束ねるのは `<body>` の中で、この 2 つの要素そのものではない。ハンドラは走らず、クラスも属性も変わらず、属性は書かれたまま要素に残る。継ぎ目アプリ town-archive: 写真のページの ← → が何もせず、コンソールにも何も出なかった。" },
-      "disposition": "runtime-report",
-      "note": { "en": "Since 4.24 the lint reports it as an error. The diagnostics add-on warns with the same code from 4.24 (the state change of the same release); binding `<body>` itself was measured at 12 B in the core, over its limit. Put the binding on an element inside `<body>`, or write the value from `$connectedCallback` or a `$watch`.", "ja": "4.24 から lint がエラーとして報告する。diagnostics の後付けも 4.24 から同じ code で警告する（同じリリースの state の変更）。`<body>` 自体を束ねる案は core で 12 B と測り、上限を超える。束縛は `<body>` の中の要素に置くか、値を `$connectedCallback` や `$watch` から書く。" }
-    },
-    {
       "id": "link-handler",
       "lint": [{ "code": "wcs/link-handler", "severity": "error" }],
       "runtime": "silent", "harm": "broken",
@@ -1523,13 +1514,142 @@
       "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md): the author used plain `<a>` cards because of it. Since 4.24 the lint reports each `on*:` on a `<wcs-link>` as an error. Put the handler on an element inside the link (its children move into the `<a>`) or around it, or navigate from a handler by writing the router's `navigateUrl`. The runtime does not see it: the binding is attached and simply never fires.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）: 作者はこのためにカードを素の `<a>` にした。4.24 から lint が、`<wcs-link>` の `on*:` をそれぞれエラーとして報告する。ハンドラはリンクの中の要素（子は `<a>` の中へ移る）か外側の要素に置く。ハンドラから遷移するなら router の `navigateUrl` に書く。実行時には見えない: 束縛は付いていて、ただ一度も発火しない。" }
     },
     {
+      "id": "body-binding",
+      "lint": [{ "code": "wcs/body-binding", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Writes `data-wcs` on `<body>` or `<html>` (`<body data-wcs=\"onkeydown: onKey; class.dark: dark\">`, `<html data-wcs=\"attr.lang: lang\">`).", "ja": "`<body>` や `<html>` に `data-wcs` を書く（`<body data-wcs=\"onkeydown: onKey; class.dark: dark\">`、`<html data-wcs=\"attr.lang: lang\">`）。" },
+      "effect": { "en": "Nothing on it is bound: a `<wcs-state>` binds what is inside `<body>`, not the two elements themselves. The handler never runs, the class and the attribute never change. Since 4.24 the diagnostics add-on warns once per document (`[wcs/body-binding]`) and the lint reports an error; up to 4.23 nothing said so.", "ja": "そこに書いたものは何も束ねられない: `<wcs-state>` が束ねるのは `<body>` の中で、この 2 つの要素そのものではない。ハンドラは走らず、クラスも属性も変わらない。4.24 から diagnostics の後付けが文書につき 1 回警告し（`[wcs/body-binding]`）、lint はエラーとして報告する。4.23 までは何も知らせなかった。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/body-binding]" }],
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Put the binding on an element inside `<body>`, or write the value from `$connectedCallback` or a `$watch`. Binding `<body>` itself was measured at 12 B in the core, over its limit.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 束縛は `<body>` の中の要素に置くか、値を `$connectedCallback` や `$watch` から書く。`<body>` 自体を束ねる案は core で 12 B と測り、上限を超える。" }
+    },
+    {
       "id": "root-margin-unit",
       "lint": [{ "code": "wcs/root-margin-unit", "severity": "warning" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes a `root-margin` with a length that has no unit on `<wcs-intersect>` or `<wcs-infinite-scroll>` (`root-margin=\"200\"`, `\"0 0 900 0\"`).", "ja": "`<wcs-intersect>` や `<wcs-infinite-scroll>` の `root-margin` に、単位の無い長さを書く（`root-margin=\"200\"`、`\"0 0 900 0\"`）。" },
-      "effect": { "en": "The browser refuses the margin (`rootMargin must be specified in pixels or percent` — a bare `0` too, in Chromium and Firefox). `<wcs-intersect>` observes nothing and `observing` stays false, without a word; `<wcs-infinite-scroll>` let the browser's exception out of its callback, and no page was loaded. The town-archive seam app: one page and nothing more.", "ja": "ブラウザがその margin を拒む（`rootMargin must be specified in pixels or percent` — Chromium と Firefox では `0` だけでも）。`<wcs-intersect>` は何も観測せず、`observing` は false のまま、無言。`<wcs-infinite-scroll>` はブラウザの例外をコールバックの外へ出し、ページは読み込まれなかった。継ぎ目アプリ town-archive: 1 ページ出て、それきり。" },
-      "disposition": "runtime-report",
-      "note": { "en": "Since 4.24 the lint reports a literal margin whose lengths are not all in `px` or `%` (a bound `rootMargin:` is not checked). Both elements warn with the same code from 4.24 (the I/O change of the same release) and neither throws.", "ja": "4.24 から lint が、長さがすべて `px` か `%` でないリテラルの margin を報告する（束ねた `rootMargin:` は検査しない）。両方の要素も 4.24 から同じ code で警告し（同じリリースの I/O の変更）、どちらも throw しない。" }
+      "effect": { "en": "The browser refuses the margin (a bare `0` too, in Chromium and Firefox), so nothing is observed: `<wcs-intersect>`'s `observing` stays false, `<wcs-infinite-scroll>` loads no page. Since 4.24 both warn once per value (`[wcs/root-margin-unit]`) and neither throws; up to 4.23 `<wcs-intersect>` was silent and `<wcs-infinite-scroll>` let the browser's exception out of its callback.", "ja": "ブラウザがその margin を拒むので（Chromium と Firefox では `0` だけでも）、何も観測されない: `<wcs-intersect>` の `observing` は false のまま、`<wcs-infinite-scroll>` はページを読み込まない。4.24 から、どちらも値ごとに 1 回警告し（`[wcs/root-margin-unit]`）、どちらも throw しない。4.23 までは `<wcs-intersect>` は無言で、`<wcs-infinite-scroll>` はブラウザの例外をコールバックの外へ出した。" },
+      "evidence": [{ "file": "packages/fetch/src/components/InfiniteScroll.ts", "text": "[wcs/root-margin-unit]" }, { "file": "packages/intersection/src/components/Intersect.ts", "text": "[wcs/root-margin-unit]" }],
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). The lint checks a literal margin; a bound `rootMargin:` is checked at run time only. Write each length with `px` or `%`.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 lint はリテラルの margin を検査する。束ねた `rootMargin:` は実行時だけが検査する。長さはそれぞれ `px` か `%` 付きで書く。" }
+    },
+    {
+      "id": "handler-after-link-in-row",
+      "lint": [],
+      "runtime": "designed-out", "harm": "data-loss",
+      "mistake": { "en": "Puts a button with an `on*:` handler after a `<wcs-link>` under the same parent, in a `for:` row or an `if:` block (a ★ and a 削除 beside the link of a card).", "ja": "`for:` の行や `if:` のブロックで、同じ親の下の `<wcs-link>` の後ろに、`on*:` のハンドラを持つボタンを置く（カードのリンクの隣の ★ と「削除」）。" },
+      "effect": { "en": "Since 4.24 the button runs its own handler: an element after a custom element keeps its delegated handler on itself. Up to 4.23 the handler was found by the element's position in the block, and `<wcs-link>` puts its `<a>` right after itself: with whitespace between them the buttons ran nothing, and written tight a click on ★ ran the next button's handler (削除) and a click on the link ran the ★'s. Nothing in the console.", "ja": "4.24 から、ボタンは自分のハンドラが動く: カスタム要素の後ろの要素は、委譲ハンドラを要素自身に持つ。4.23 までは、ハンドラはブロックの中での要素の位置で探され、`<wcs-link>` は自分の直後に `<a>` を置く: 空白を挟むとボタンは何も動かず、詰めて書くと ★ のクリックで次のボタンのハンドラ（削除）が、リンクのクリックで ★ のものが動いた。コンソールには何も出ない。" },
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). On 4.23, put such buttons before the link, or bind them `#direct`. A node the page's own script inserts into a row is still not accounted for (the entry `node-inserted-in-row`).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 4.23 では、そのボタンをリンクの前に置くか、`#direct` で束ねる。ページ自身のスクリプトが行に差し込むノードは、今も考慮されない（項目 `node-inserted-in-row`）。" }
+    },
+    {
+      "id": "infinite-scroll-first-page",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Writes the `url` of the `<wcs-fetch>` a `<wcs-infinite-scroll>` runs from state (`url: nextUrl`), as the fetch README does.", "ja": "`<wcs-infinite-scroll>` が実行する `<wcs-fetch>` の `url` を、fetch の README のとおり state から書く（`url: nextUrl`）。" },
+      "effect": { "en": "Since 4.24 the sentinel waits for the url and runs the request when state writes it. Up to 4.23 the sentinel reported before state had bound the element, the request was refused (`[wcs/command-not-ready]`), and the sentinel — still on screen — never reported again: no first page, 6 times of 10 in Chromium and 10 of 10 in Firefox with fetch loaded first.", "ja": "4.24 から、番兵は url を待ち、state が書いたときに要求を実行する。4.23 までは、番兵が state の束縛より先に報告し、要求は断られ（`[wcs/command-not-ready]`）、画面に残った番兵は二度と報告しなかった: 最初のページが出ない。fetch を先に読むと、Chromium で 10 回中 6 回、Firefox で 10 回中 10 回。" },
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). A static `url` for page 1 — the workaround of 4.23 — lets the request start before state has bound the element, and its answer can be lost in Firefox: write the url from state.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 1 ページ目の静的な `url`（4.23 の回避策）は、state が要素を束縛する前に要求を始めるので、Firefox では応答を失うことがある: url は state から書く。" }
+    },
+    {
+      "id": "infinite-scroll-sentinel-stays",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Counts on `<wcs-infinite-scroll>` where a page may not push the sentinel out of the screen: a tall window, a zoomed-out page, a short page, a filter that empties the list.", "ja": "ページが番兵を画面の外へ押し出さないことがある所で、`<wcs-infinite-scroll>` に任せる: 背の高いウィンドウ、縮小表示、短いページ、一覧を空にする絞り込み。" },
+      "effect": { "en": "Since 4.24 the element looks again when the target's url changes and when a request ends: it goes on until the sentinel is off screen, never runs a url twice from there (a failed request is not repeated) and stops at a response that added no row. Up to 4.23 it acted only when the sentinel came on screen: one page, and nothing more, without a word.", "ja": "4.24 から、要素は target の url が変わったときと要求が終わったときにもう一度見る: 番兵が画面の外へ出るまで続け、そこから同じ url を 2 度は実行せず（失敗した要求は繰り返さない）、行を足さなかった応答で止まる。4.23 までは、番兵が画面に入ったときにしか動かなかった: 1 ページ出て、それきり、無言。" },
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). docs/timing-and-firing-contract.md §26. On 4.23 use `<wcs-intersect>` with `reobserve()` after each page that lands.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 docs/timing-and-firing-contract.ja.md §26。4.23 では、`<wcs-intersect>` と、ページが届くたびの `reobserve()` を使う。" }
+    },
+    {
+      "id": "watch-through-accessor-pair",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Binds an element's output to an accessor pair whose setter keeps the value in another path (`set widthRaw(v) { if (v) this.width = v; }` under `<wcs-resize>`'s `width`), and watches that path or a getter over it.", "ja": "要素の出力を、setter が別のパスに値を持つアクセサの組に束ね（`<wcs-resize>` の `width` の下の `set widthRaw(v) { if (v) this.width = v; }`）、そのパスか、その上の getter を watch する。" },
+      "effect": { "en": "Since 4.24 the watch fires once at start for the value the element handed over as its binding attached: what a setter writes during an element's write counts as the element's. Up to 4.23 it did not fire in the browsers where the value arrives while the bindings attach (Chromium, Firefox) and did in WebKit: no thumbnail was ever requested.", "ja": "4.24 から、要素が束縛のときに渡した値で、watch は起動時に 1 回発火する: 要素の書き込みの間に setter が書いたものは、要素のものとして数える。4.23 までは、束縛がつながる間に値が届くブラウザ（Chromium・Firefox）では発火せず、WebKit では発火した: サムネイルが 1 枚も要求されなかった。" },
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). On 4.23, apply the value once more in `$connectedCallback`.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 4.23 では、`$connectedCallback` で値をもう一度当てる。" }
+    },
+    {
+      "id": "fetch-command-url",
+      "lint": [],
+      "runtime": "designed-out", "harm": "stale",
+      "mistake": { "en": "Gives `<wcs-fetch>`'s `fetch` command a url (`this.$command.load.emit(\"/api/users\")`), as the state README's command-token example does — or writes `url` and emits the command in one handler.", "ja": "`<wcs-fetch>` の `fetch` コマンドに url を渡す（state の README のコマンドトークンの例のとおり、`this.$command.load.emit(\"/api/users\")`）。または、1 つのハンドラの中で `url` を書いてコマンドを emit する。" },
+      "effect": { "en": "Since 4.24 `fetch(url, init)` runs the request with the url it is given. Up to 4.23 the argument was ignored and the element's own `url` was fetched — and a `url` written in the same handler reached the element after the request (a command runs before the bindings of its update), so the list was one page behind. Nothing said so.", "ja": "4.24 から、`fetch(url, init)` は渡された url で要求を実行する。4.23 までは引数を無視して要素自身の `url` を取りに行き、同じハンドラで書いた `url` は要求の後で要素に届いた（コマンドは同じ更新の束縛より先に走る）: 一覧が 1 ページ遅れた。何も知らせなかった。" },
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Writing `url` and running the request with `trigger` works on every release: bindings apply in the order written. The entry `command-before-binding` is the same rule for `body`.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 `url` を書いて `trigger` で実行する形は、どの版でも動く: 束縛は書いた順に適用される。項目 `command-before-binding` は、同じ規則の `body` の場合。" }
+    },
+    {
+      "id": "scroll-root-not-found",
+      "lint": [],
+      "runtime": "loud", "harm": "degraded",
+      "mistake": { "en": "Names a scroll root that is not there, or in the other element's form: `<wcs-infinite-scroll root=\"#box\">` (it wanted an id), `<wcs-intersect root=\"box\">` (it wanted a selector), a class with no dot.", "ja": "無いスクロールの root を指す。または、もう一方の要素の書き方で書く: `<wcs-infinite-scroll root=\"#box\">`（id を求めていた）、`<wcs-intersect root=\"box\">`（セレクタを求めていた）、ドットの無いクラス名。" },
+      "effect": { "en": "Since 4.24 both elements take an id or a selector, and a root that is not found warns once per value (`[wcs/infinite-scroll-root]`, `[wcs/intersect-root]`); the viewport is used, as before. `<wcs-infinite-scroll>` also warns for a root that does not scroll (`root=\"main\"`: everything in it counts as on screen — 4,440 photos in seconds). Up to 4.23 the viewport took the root's place without a word, and the margin was measured against the wrong box.", "ja": "4.24 から、どちらの要素も id とセレクタの両方を受け、見つからない root は値ごとに 1 回警告する（`[wcs/infinite-scroll-root]`・`[wcs/intersect-root]`）。今までどおり viewport を使う。`<wcs-infinite-scroll>` は、スクロールしない root にも警告する（`root=\"main\"`: 中のものがすべて画面内として数えられる — 数秒で 4,440 枚）。4.23 までは、黙って viewport が root の代わりになり、margin は違う箱から測られた。" },
+      "evidence": [{ "file": "packages/fetch/src/components/InfiniteScroll.ts", "text": "[wcs/infinite-scroll-root]" }, { "file": "packages/intersection/src/components/Intersect.ts", "text": "[wcs/intersect-root]" }],
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). `<wcs-intersect>` does not warn for a root that does not scroll: a root that only bounds a region is a use of it.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 `<wcs-intersect>` は、スクロールしない root を警告しない: 領域を区切るだけの root も使い方の 1 つである。" }
+    },
+    {
+      "id": "link-to-property",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Binds a `<wcs-link>`'s destination as a property (`data-wcs=\"to: .href\"`) where the README writes `attr.to:`.", "ja": "`<wcs-link>` の行き先を、README の `attr.to:` でなく、プロパティとして束ねる（`data-wcs=\"to: .href\"`）。" },
+      "effect": { "en": "Since 4.24 `to` is a property that writes the attribute, and both forms work. Up to 4.23 the write left an own property nothing read: the `<a>` had no `href`, in a row and at page level, and nothing said so.", "ja": "4.24 から、`to` は属性を書くプロパティで、どちらの書き方でも動く。4.23 までは、その書き込みは誰も読まない own プロパティを残した: 行の中でもページの直下でも `<a>` に `href` が付かず、何も知らせなかった。" },
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). `attr.to:` works on every release.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 `attr.to:` はどの版でも動く。" }
+    },
+    {
+      "id": "stale-page-after-filter",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Changes a list's filter while a page is on its way, with a `manual` `<wcs-fetch>`, and adds whatever arrives.", "ja": "`manual` の `<wcs-fetch>` でページを取りに行っている間に一覧の絞り込みを変え、届いたものをそのまま足す。" },
+      "effect": { "en": "A `manual` `<wcs-fetch>` does not abort on a new `url`: the old filter's page still arrives, and its rows land in the new list — which then goes on from the wrong page number. Nothing can tell: the answer is a valid one.", "ja": "`manual` の `<wcs-fetch>` は、`url` が変わっても中断しない: 前の絞り込みのページは届き、その行が新しい一覧に入る — 一覧はそこから、違うページ番号で続く。誰にも分からない: 応答そのものは正しい。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Emit `command.abort:` first in the handler that changes the filter, then empty the list and reset the page number (docs/long-lists.md, the fetch README §5). A page that does not reset the page number starts the new list in its middle.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 絞り込みを変えるハンドラの最初で `command.abort:` を emit してから、一覧を空にしてページ番号を戻す（docs/long-lists.ja.md、fetch の README §5）。ページ番号を戻さないページは、新しい一覧を途中から始める。" }
+    },
+    {
+      "id": "outside-routes-scroll-reset",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Keeps a list outside the routes (switched with state, as the router README says for a scrolled list) and puts it back in place with `scrollIntoView()` from a `$watch`, after the page's own link back.", "ja": "一覧をルートの外に置き（router の README がスクロールした一覧に勧めるとおり、state で切り替える）、ページ自身のリンクで戻った後、`$watch` から `scrollIntoView()` で元の位置に置く。" },
+      "effect": { "en": "The link back is a push navigation, and the browser scrolls to the top when it has finished — after the `$watch` ran: the list is at its top (y 2830 → 0, three browsers). Back restores the position by itself.", "ja": "戻るリンクは push のナビゲーションで、ブラウザは終わったときに先頭へスクロールする — `$watch` が走った後で: 一覧は先頭にある（y 2830 → 0、3 ブラウザ）。「戻る」は位置を自分で復元する。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Navigate to the row's fragment: `navigateUrl = \"/#photo-\" + id`. The browser scrolls to the row and focus moves to it (the router README, docs/long-lists.md).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 行のフラグメントへ遷移する: `navigateUrl = \"/#photo-\" + id`。ブラウザが行へスクロールし、フォーカスも移る（router の README、docs/long-lists.ja.md）。" }
+    },
+    {
+      "id": "node-inserted-in-row",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Inserts a node into a `for:` row or an `if:` block from the page's own script (a tooltip, a badge, a drag handle), before elements that have `on*:` handlers.", "ja": "ページ自身のスクリプトで、`for:` の行や `if:` のブロックに、`on*:` のハンドラを持つ要素より前にノードを差し込む（ツールチップ、バッジ、ドラッグの取っ手）。" },
+      "effect": { "en": "A block's delegated handlers are found by the element's position, so every element after the inserted node under the same parent moves by one: its handler does not run, or its neighbour's does. Nothing in the console.", "ja": "ブロックの委譲ハンドラは要素の位置で探されるので、同じ親の下で、差し込んだノードより後ろの要素がどれも 1 つずれる: ハンドラが走らないか、隣のものが走る。コンソールには何も出ない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Bind `on*#direct:` on the elements of a row the page's code changes, or let state render what is inserted. A custom element that inserts a node beside itself is accounted for since 4.24.", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 ページのコードが中身を変える行の要素は `on*#direct:` で束ねるか、差し込むものを state に描かせる。自分の隣にノードを差し込むカスタム要素は、4.24 から考慮される。" }
+    },
+    {
+      "id": "threshold-one-tall-target",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Watches an element with `threshold=\"1\"` (\"entirely on screen\") where it can be taller than the root — a card on a phone held sideways.", "ja": "root より背が高くなりうる要素（横向きに持った電話のカード）を、`threshold=\"1\"`（「完全に画面内」）で見る。" },
+      "effect": { "en": "An element taller than the root is never entirely in it, so it is never reported: of 22 cards passed, 4 were counted as seen. The browser's rule; nothing can tell.", "ja": "root より背の高い要素は、完全には中に入らないので、一度も報告されない: 通り過ぎた 22 枚のカードのうち、「見た」と数えられたのは 4 枚。ブラウザの規則で、誰にも分からない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Use `0.5`, or several thresholds and the ratio (docs/long-lists.md).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 `0.5` か、複数のしきい値と ratio を使う（docs/long-lists.ja.md）。" }
+    },
+    {
+      "id": "page-stoppropagation-around-handlers",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Calls `stopPropagation()` from the page's own listener on an element around bound elements (a menu that closes on a click outside, a modal's content).", "ja": "束縛された要素を囲む要素の、ページ自身のリスナーから `stopPropagation()` を呼ぶ（外側のクリックで閉じるメニュー、モーダルの中身）。" },
+      "effect": { "en": "The delegated `on*:` handlers inside never run: they run at the root, which the event no longer reaches. The ★ on a card did nothing, and a card still opened through its plain link with none of the page's handler run. Nothing in the console.", "ja": "内側の委譲された `on*:` のハンドラは一度も走らない: それらはルートで走るが、イベントがそこまで届かない。カードの ★ は何もせず、カードは素のリンクとして開き、ページのハンドラは走らなかった。コンソールには何も出ない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Confirmed from the candidates list. Bind the inner handlers `#direct`, or do not stop the event (the state README, Delegated events).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 候補の一覧から確認した。内側のハンドラを `#direct` で束ねるか、イベントを止めない（state の README、委譲されるイベント）。" }
+    },
+    {
+      "id": "page-increment-per-edge",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Counts the page number up on every report of a `<wcs-intersect>` sentinel (on the way in and on the way out), or with no look at a request on its way.", "ja": "`<wcs-intersect>` の番兵の報告のたびに（入るときにも出るときにも）、または取りに行っている要求を見ずに、ページ番号を進める。" },
+      "effect": { "en": "The first report — an empty list, the sentinel on screen — asked for the second page and aborted the first: an empty list on the very first load, with no message. Later, a page is skipped.", "ja": "最初の報告（空の一覧で、番兵が画面にある）が 2 ページ目を取りに行き、1 ページ目を中断した: 最初の読み込みで一覧が空のまま、何の知らせも無い。その後は、ページが飛ぶ。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Confirmed from the candidates list. Ask for the page the list's length says, on an enter edge, when nothing is in flight — or use `<wcs-infinite-scroll>` (docs/long-lists.md).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 候補の一覧から確認した。取りに行くページは一覧の長さから決め、入ってきた端で、何も飛んでいないときに頼む — または `<wcs-infinite-scroll>` を使う（docs/long-lists.ja.md）。" }
+    },
+    {
+      "id": "signals-for-first-argument",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Reads what changes from the first argument of a signals `For` row (`rec.public`) and updates records by replacing them.", "ja": "signals の `For` の行で、変わるものを最初の引数から読み（`rec.public`）、レコードは置き換えで更新する。" },
+      "effect": { "en": "A keyed row is kept while its key is, so the first argument stays the record the row was built with: after a bulk change the notice says it was done and the row still shows the old value, until the row leaves the window and comes back.", "ja": "キー付きの行はキーがある間は保たれるので、最初の引数は行を作ったときのレコードのまま: 一括変更の後、完了の知らせは出るのに行は古い値を見せ続ける。行が窓から出て戻るまで。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Confirmed from the candidates list. Read through `current()` (the signals README, Keyed lists).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 候補の一覧から確認した。`current()` 越しに読む（signals の README、Keyed lists）。" }
     }
   ],
   "uncounted": [
