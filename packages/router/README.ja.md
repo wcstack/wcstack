@@ -477,7 +477,7 @@ a.active { font-weight: bold; color: blue; }
 
 **属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 7 名（`title` / `rel` / `target` / `download` / `hreflang` / `lang` / `dir`）をホストから anchor へコピーする（`lang` / `dir` はスクリーンリーダーの読み上げ言語・方向に直結する）。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 7 名のみで、**`aria-*` の値は anchor を作るときに 1 度だけコピーされ**、その後の変更は anchor に届かない。`data-wcs` のバインド（`<wcs-link data-wcs="attr.aria-label: ...">`）では、値をいつ書くかで決まる: `for:` の行や `if:` の枝の中の `<wcs-link>` は接続より前に束ねられるので、最初の値は anchor を作るときにホストにあってコピーされる — ただしその値の後の変更は届かない。ページのマークアップの `<wcs-link>` は、state が束ねる前に anchor を持つことがあり、そのとき値は届かない。変わらない `aria-*` は静的属性で書き、変わるリンクの名前は中身で与える: ホストの子は anchor へ移されるので、`<wcs-link>` の中の束ねた `<span data-wcs="textContent: …">` は更新され続ける。
 
-**プロパティとしての `to`**（4.24（未リリース）から）: `to` は属性を書くプロパティでもあるので、`data-wcs="to: .href"` は `attr.to: .href` と同じに動きます（`null` は属性を外します）。4.23 までは、プロパティを書くバインディングでは `<a>` に `href` が付かず、何も知らせませんでした。
+**プロパティとしての `to`**（4.24 から）: `to` は属性を書くプロパティでもあるので、`data-wcs="to: .href"` は `attr.to: .href` と同じに動きます（`null` は属性を外します）。4.23 までは、プロパティを書くバインディングでは `<a>` に `href` が付かず、何も知らせませんでした。
 
 **ハンドラはリンクの上ではなく、中に置く。** `<wcs-link>` 自身は `display: none` で、クリックはリンクが隣に作る `<a>` で起きます: ホストに書いた `on*:`（`<wcs-link data-wcs="attr.to: .href; onclick: opened">`）は一度も走らず、実行時には何も出ません（`@wcstack/lint` は `wcs/link-handler` で報告します）。ハンドラは、リンクの中の要素（子は `<a>` の中へ移ります）か、外側の要素に束ねてください。`for:` の行の中で `<wcs-link>` の隣に置いたボタン（リンクであるカードの ★）は、自分のハンドラが動きます。`@wcstack/state` 4.23 までは、そのボタンの `onclick:` が走らないか、次のボタンのものが走りました。
 

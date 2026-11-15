@@ -158,6 +158,18 @@ interface WcsFetchCoreValues<T = unknown> {
 interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
     trigger: boolean;
 }
+/**
+ * What `<wcs-fetch>`'s `fetch(url, init)` takes beside the url, for that request only — a command token carries
+ * it: `this.$command.load.emit("/api/users", { method: "POST", body: user })`.
+ */
+interface WcsFetchCommandInit {
+    /** The method, in place of the element's `method`. */
+    method?: string;
+    /** Headers added to the `<wcs-fetch-header>` ones (a same name replaces it). */
+    headers?: Record<string, string>;
+    /** The body, in place of the element's `body` — which is then kept for the next request. */
+    body?: unknown;
+}
 
 declare function bootstrapFetch(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
@@ -370,18 +382,64 @@ declare class Fetch extends HTMLElement {
      * change starts, which `[wcs/fetch-auto-unsafe]` reports.
      */
     private _warnBodyGone;
-    fetch(): Promise<any>;
+    /**
+     * Runs a request. With no argument it is the element's: its `url`, `method`, headers and `body`.
+     *
+     * `url` and `init` are for this request only — the element's attributes do not change. They are what a command
+     * token carries (`this.$command.load.emit("/api/users", { method: "GET" })` with `command.fetch: $command.load`):
+     * a command runs before the bindings of its update, so a `url` written in the same handler has not reached the
+     * element yet, and the request went to the one before (docs/seam-apps.md, town-archive). `init` takes `method`,
+     * `headers` (added to the `<wcs-fetch-header>` ones, replacing a same name) and `body` (in place of the
+     * element's, which is then kept for the next request). Anything that is not a string in `url`'s place — the
+     * event an `on…: $command.x` binding emits first — is ignored, and `init` with it.
+     */
+    fetch(url?: unknown, init?: unknown): Promise<any>;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
     connectedMoveCallback(): void;
     disconnectedCallback(): void;
 }
 
+/**
+ * Runs a `<wcs-fetch>` when this element — a sentinel after a list — comes on screen.
+ *
+ * An IntersectionObserver reports a change of visibility and nothing else, and an element that only acted on that
+ * report did not load in three cases (docs/seam-apps.md, town-archive):
+ * - the sentinel reported before the page had written the target's `url` (state binds a moment after the elements
+ *   are defined): the request was refused, and the sentinel, still on screen, never reported again;
+ * - a page arrived and did not push the sentinel out — a tall window, a zoomed-out page, a short page;
+ * - the `url` changed with the sentinel on screen — a filter, with the list emptied — at rest or while a request
+ *   was in flight.
+ *
+ * So, with the sentinel on screen, the element also runs the target's request
+ * - when its `url` is written or changed while no request is in flight (the first page; a filter);
+ * - when a request ends and the `url` changed while it was in flight (a filter typed meanwhile);
+ * - when a request ends without an answer — aborted — and the `url` is another one (a page that aborts the request
+ *   on its way when the filter changes);
+ * - when a request ends, the page has added rows (the sentinel moved) and moved the `url` on.
+ *
+ * It never runs a `url` again from there: a failed request waits for the user to scroll away and back, or for the
+ * page's retry. And a response that added nothing ends it, whatever the page does to the `url`: a page that counts
+ * its page number up on an empty answer does not ask for ever.
+ */
 declare class InfiniteScroll extends HTMLElement {
     static get observedAttributes(): string[];
     private _observer;
     private _done;
     private _warnedTarget;
+    private _warnedRoot;
+    private _warnedMargin;
+    private _rootElement;
+    private _inView;
+    private _fetch;
+    private _urlObserver;
+    private _asked;
+    private _startedAt;
+    private _changedInFlight;
+    private _answered;
+    private _settling;
+    private _onResponse;
+    private _onLoadingChanged;
     get target(): string;
     set target(value: string);
     get root(): string | null;
@@ -399,8 +457,38 @@ declare class InfiniteScroll extends HTMLElement {
     attributeChangedCallback(): void;
     private _observe;
     private _disconnectObserver;
+    /**
+     * The scroll container: the element with that id, or — as `<wcs-intersect root>` spells it — the first one the
+     * value matches as a selector. A root that is given and not found, or that does not scroll, is said once per
+     * value: the viewport took its place without a word, and a root that does not clip its content counts
+     * everything in it as on screen (`root="main"` loaded page after page).
+     */
     private _resolveRoot;
-    private _triggerFetch;
+    private _resolveTarget;
+    /** Follows `target`'s url and requests (or stops following, with null). */
+    private _follow;
+    /** Where the sentinel is in what scrolls: rows added before it move it, scrolling does not. */
+    private _position;
+    /** A request started on the target (this element's, or the page's own). */
+    private _started;
+    /**
+     * The request ended: once the page has had its frames to add rows and move the url on, the sentinel — if it is
+     * still on screen — runs the next request when the url changed while this one was in flight, when this one had no
+     * answer (aborted: a url written right after it is the page's own change, not its reaction to a response), or
+     * when this one added rows. A response that added nothing ends it there.
+     */
+    private _ended;
+    /**
+     * The target's url was written. In flight, and while the page settles after a response, the end of that request
+     * decides (_ended). At rest it is the page's own change — the first url, a filter: with the sentinel on screen
+     * it is asked for, at once when nothing was asked yet, otherwise once the emptied list is laid out.
+     */
+    private _urlChanged;
+    /**
+     * Runs the target's request. `edge`: the sentinel came on screen (a user who scrolls away and back asks again,
+     * also for the same url — the way a failed request is tried again); otherwise only a url not asked yet.
+     */
+    private _run;
 }
 
 /**
@@ -459,4 +547,4 @@ declare global {
 }
 
 export { FetchCore, TRUSTED_TYPES_POLICY_SLOT, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, FetchBody as WcsFetchBody, FetchHeader as WcsFetchHeader, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
-export type { FetchRequestOptions, IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };
+export type { FetchRequestOptions, IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsFetchCommandInit, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };

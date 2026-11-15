@@ -149,7 +149,8 @@ var WcsDiagnosticCode = {
   // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
   // 読んだパスをページの束縛（組み込みタグの spread・書き戻す束縛・要素の出力）が書くなら error（その書き込みは
   // getter に届かないと断定できる — 継ぎ目アプリ family-ledger）、スクリプトの書き込みだけなら warning（ルートも
-  // 置き換えるなら壊れない）。時刻・`location` を読む getter も同じ code（warning）。
+  // 置き換えるなら壊れない）。時刻・`location`・ウィンドウと文書の値（`innerWidth`・`scrollY`・`matchMedia(…)`・
+  // `navigator.onLine`・`document.hidden` など）を読む getter も同じ code（warning）。
   GetterUntrackedRead: "wcs/getter-untracked-read",
   OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
@@ -228,7 +229,8 @@ var WcsDiagnosticCode = {
   // `currentTarget` を同期的に読む。委譲されたイベントの `currentTarget` は要素ではなく root なので、要素を
   // 使う処理（`setPointerCapture`・`getBoundingClientRect`・`new FormData(e.currentTarget)`）が壊れる。
   // ランタイムは何も報告しない（root は正しい値）ので lint の code。`#direct` か `event.target.closest(...)` を
-  // 案内する。読みが実行されない分岐にあることもあるので warning。
+  // 案内する。読みが実行されない分岐にあることもあるので warning。本体に入れ子にした関数の中の読み
+  // （`this.items.find((x) => … event.currentTarget …)`）も拾う — 後で呼ばれる関数（`setTimeout` などに渡したもの）は除く。
   DelegatedCurrentTarget: "wcs/delegated-current-target",
   // `<form data-wcs="onsubmit: login">` の `#prevent` 忘れ（ハンドラも preventDefault を呼ばない）。ブラウザが
   // フォームも送る — ページが読み直されるか、router があれば GET が欄（パスワードも）を URL と履歴に載せる
@@ -310,6 +312,22 @@ var WcsDiagnosticCode = {
   // `value#onchange|number: price|toFixed(2)`）が無いときだけ報告する。要素の書いた文字をそのまま返すフィルタ
   // （`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）と `#ro` では黙る。warning。
   TwoWayOutputFilter: "wcs/two-way-output-filter",
+  // --- 束縛を書いた要素（その要素では束縛が働かない。service/bindingHostValidator.ts — 継ぎ目アプリ town-archive） ---
+  // `<body>` / `<html>` に書いた束縛の属性（`<body data-wcs="onkeydown: onKey; class.dark: dark">`）。`<wcs-state>` が束ねるのは
+  // `<body>` の中で、`<body>` と `<html>` そのものは束ねない（state の dom/mount.ts は `document.body` の子から歩く）ので、
+  // そこに書いた束縛は何もしない — イベントのハンドラは走らず、`class.` / `attr.` は書かれない。4.23 までランタイムは
+  // 何も言わない（4.24 から diagnostics の後付けが同じ code で警告する）。束縛は `<body>` の中の要素へ移すか、値を
+  // `$connectedCallback` / `$watch` から書く。error。
+  BodyBinding: "wcs/body-binding",
+  // `<wcs-link>` の束縛に書いた `on*:`（`<wcs-link data-wcs="attr.to: .href; onclick: openPhoto">`）。リンクのホストは
+  // `display: none` で、利用者がクリックするのはリンクが自分の隣に作る `<a>` なので、ハンドラは走らない。ハンドラは
+  // リンクの中の要素（子は `<a>` へ移る）か囲む要素に書き、ハンドラから遷移するなら router の `navigateUrl` に書く。error。
+  LinkHandler: "wcs/link-handler",
+  // `<wcs-intersect>` / `<wcs-infinite-scroll>` のリテラルの `root-margin` をブラウザが拒む（`root-margin="200"`・
+  // `"0 0 900 0"`）: 値は 1〜4 個、それぞれ px か % の付いた数値で、0 にも単位が要る（Chromium・Firefox で確かめた —
+  // `rootMargin must be specified in pixels or percent`）。`<wcs-intersect>` は何も監視せず `observing` が false のまま、
+  // `<wcs-infinite-scroll>` は次のページを読み込まない。束ねた値（`rootMargin: …`）は検査しない。warning。
+  RootMarginUnit: "wcs/root-margin-unit",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
@@ -2898,7 +2916,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.23.0";
+var version = "4.24.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -8966,8 +8984,10 @@ function findJsDocComments(script, scan) {
 function readJsDocTagType(comment, tag) {
   return readBracedType(comment, tag)?.type.trim() ?? null;
 }
-function readBracedType(comment, tag) {
-  const tagMatch = new RegExp(`@${tag}\\s*\\{`).exec(comment);
+function readBracedType(comment, tag, from = 0) {
+  const tagRegex = new RegExp(`@${tag}\\s*\\{`, "g");
+  tagRegex.lastIndex = from;
+  const tagMatch = tagRegex.exec(comment);
   if (!tagMatch) return null;
   const open = tagMatch.index + tagMatch[0].length - 1;
   let depth = 0;
@@ -9004,11 +9024,15 @@ function jsDocCommentBefore(content, propIndex) {
 function collectJsDocTypedefs(script, scan) {
   const typedefs = /* @__PURE__ */ new Map();
   for (const { text: comment } of findJsDocComments(script, scan)) {
-    const braced = readBracedType(comment, "typedef");
-    if (braced === null) continue;
-    const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
-    const type = parseJsDocType(braced.type);
-    if (name && type !== null) typedefs.set(name[1], type);
+    let from = 0;
+    for (; ; ) {
+      const braced = readBracedType(comment, "typedef", from);
+      if (braced === null) break;
+      from = braced.end;
+      const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
+      const type = parseJsDocType(braced.type);
+      if (name && type !== null) typedefs.set(name[1], type);
+    }
   }
   return typedefs;
 }
@@ -12045,28 +12069,35 @@ ${body}
   const eventName = first.name;
   const rebound = /* @__PURE__ */ new Set();
   for (const param of fn.params.slice(1)) bindingNames(param, rebound);
-  let suspendAt = Infinity;
-  const scanBindings = (node, nested) => {
+  const scanBindings = (node) => {
     if (isFunctionNode(node)) {
       if (node.type === "FunctionDeclaration" && node.id !== null) rebound.add(node.id.name);
       for (const param of node.params) bindingNames(param, rebound);
-      scanBindings(node.body, true);
-      return;
-    }
-    if (node.type === "VariableDeclarator") bindingNames(node.id, rebound);
+    } else if (node.type === "VariableDeclarator") bindingNames(node.id, rebound);
     else if (node.type === "CatchClause" && node.param !== null && node.param !== void 0) bindingNames(node.param, rebound);
     else if (node.type === "AssignmentExpression" && node.left.type === "Identifier") rebound.add(node.left.name);
     else if (node.type === "ClassDeclaration" && node.id !== null) rebound.add(node.id.name);
-    if (!nested && node.type === "AwaitExpression") suspendAt = Math.min(suspendAt, node.argument.end);
-    else if (!nested && node.type === "ForOfStatement" && node.await) suspendAt = Math.min(suspendAt, node.right.end);
-    forEachChild(node, (child) => scanBindings(child, nested));
+    forEachChild(node, scanBindings);
   };
-  scanBindings(fn.body, false);
+  scanBindings(fn.body);
   if (rebound.has(eventName)) return false;
   let found = false;
-  const visitReads = (node) => {
-    if (found || isFunctionNode(node) || isClassNode(node)) return;
-    if (node.start >= suspendAt) return;
+  const visitReads = (node, suspendAt) => {
+    if (found || isClassNode(node) || node.start >= suspendAt) return;
+    if (isFunctionNode(node)) {
+      const limit = Math.min(suspendAt, firstSuspend(node.body));
+      forEachChild(node, (child) => visitReads(child, limit));
+      return;
+    }
+    if (node.type === "CallExpression" && isDeferredCall(node)) {
+      visitReads(node.callee, suspendAt);
+      for (const argument of node.arguments) if (!isFunctionNode(argument)) visitReads(argument, suspendAt);
+      return;
+    }
+    if (node.type === "AssignmentExpression" && isFunctionNode(node.right) && unwrapChain(node.left).type === "MemberExpression") {
+      visitReads(node.left, suspendAt);
+      return;
+    }
     if (node.type === "MemberExpression" && node.object.type === "Identifier" && node.object.name === eventName && memberPropertyIs(node, "currentTarget")) {
       found = true;
       return;
@@ -12075,10 +12106,37 @@ ${body}
       found = true;
       return;
     }
-    forEachChild(node, visitReads);
+    forEachChild(node, (child) => visitReads(child, suspendAt));
   };
-  visitReads(fn.body);
+  visitReads(fn.body, firstSuspend(fn.body));
   return found;
+}
+var DEFERRED_CALLS = /* @__PURE__ */ new Set([
+  "setTimeout",
+  "setInterval",
+  "requestAnimationFrame",
+  "requestIdleCallback",
+  "queueMicrotask",
+  "then",
+  "catch",
+  "finally",
+  "addEventListener"
+]);
+function isDeferredCall(node) {
+  const callee = unwrapChain(node.callee);
+  if (callee.type === "Identifier") return DEFERRED_CALLS.has(callee.name);
+  return callee.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier" && DEFERRED_CALLS.has(callee.property.name);
+}
+function firstSuspend(body) {
+  let at2 = Infinity;
+  const scan = (node) => {
+    if (isFunctionNode(node) || isClassNode(node)) return;
+    if (node.type === "AwaitExpression") at2 = Math.min(at2, node.argument.end);
+    else if (node.type === "ForOfStatement" && node.await) at2 = Math.min(at2, node.right.end);
+    forEachChild(node, scan);
+  };
+  scan(body);
+  return at2;
 }
 function memberPropertyIs(node, name) {
   const property = node.property;
@@ -12306,11 +12364,157 @@ function findLocationRead(body) {
   walk(wrapper.body);
   return found;
 }
+var WINDOW_HOLDERS = /* @__PURE__ */ new Set(["window", "globalThis", "self"]);
+var WINDOW_VALUES = /* @__PURE__ */ new Map([
+  ["innerWidth", "size"],
+  ["innerHeight", "size"],
+  ["outerWidth", "size"],
+  ["outerHeight", "size"],
+  ["devicePixelRatio", "pixelRatio"],
+  ["scrollX", "scroll"],
+  ["scrollY", "scroll"],
+  ["pageXOffset", "scroll"],
+  ["pageYOffset", "scroll"]
+]);
+var DOCUMENT_ELEMENTS = /* @__PURE__ */ new Set(["documentElement", "body", "scrollingElement"]);
+var ELEMENT_VALUES = /* @__PURE__ */ new Map([
+  ["clientWidth", "size"],
+  ["clientHeight", "size"],
+  ["scrollTop", "scroll"],
+  ["scrollLeft", "scroll"]
+]);
+var DOCUMENT_VALUES = /* @__PURE__ */ new Map([["visibilityState", "visibility"], ["hidden", "visibility"]]);
+var AMBIENT_READ_SPELLING = /\b(?:(?:inner|outer|client)(?:Width|Height)|devicePixelRatio|scroll[XY]|page[XY]Offset|scroll(?:Top|Left)|matchMedia|onLine|visibilityState|hidden)\b/;
+function ambientKindOf(names2) {
+  if (names2.length === 1) return WINDOW_VALUES.get(names2[0]) ?? null;
+  if (names2[0] === "navigator") return names2.length === 2 && names2[1] === "onLine" ? "online" : null;
+  if (names2[0] !== "document") return null;
+  if (names2.length === 2) return DOCUMENT_VALUES.get(names2[1]) ?? null;
+  return names2.length === 3 && DOCUMENT_ELEMENTS.has(names2[1]) ? ELEMENT_VALUES.get(names2[2]) ?? null : null;
+}
+function findAmbientRead(body, outer = /* @__PURE__ */ new Set()) {
+  let program;
+  try {
+    program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  const bound = new Set(outer);
+  const scan = (node) => {
+    if (isFunctionNode(node)) {
+      if (node.type === "FunctionDeclaration" && node.id !== null) bound.add(node.id.name);
+      for (const param of node.params) bindingNames(param, bound);
+    } else if (node.type === "VariableDeclarator") bindingNames(node.id, bound);
+    else if (node.type === "CatchClause" && node.param !== null && node.param !== void 0) bindingNames(node.param, bound);
+    else if (node.type === "ClassDeclaration" && node.id !== null) bound.add(node.id.name);
+    forEachChild(node, scan);
+  };
+  scan(wrapper.body);
+  const globalChain = (node) => {
+    const names2 = [];
+    let current2 = unwrapChain(node);
+    while (current2.type === "MemberExpression") {
+      const property = current2.property;
+      if (!current2.computed && property.type === "Identifier") names2.unshift(property.name);
+      else if (current2.computed && property.type === "Literal" && typeof property.value === "string") names2.unshift(property.value);
+      else return null;
+      current2 = unwrapChain(current2.object);
+    }
+    if (current2.type !== "Identifier" || bound.has(current2.name)) return null;
+    names2.unshift(current2.name);
+    while (names2.length > 1 && WINDOW_HOLDERS.has(names2[0])) names2.shift();
+    return names2;
+  };
+  let found = null;
+  const source = (node) => (PREFIX + body).slice(node.start, node.end);
+  const at2 = (node, kind, text3) => {
+    found = { start: node.start - PREFIX.length, end: node.end - PREFIX.length, text: text3, kind };
+  };
+  const walk = (node) => {
+    if (found !== null) return;
+    if (node.type === "CallExpression") {
+      const chain = globalChain(node.callee);
+      if (chain !== null && chain.length === 1 && chain[0] === "matchMedia") {
+        at2(node.callee, "media", `${source(node.callee)}(\u2026)`);
+        return;
+      }
+    }
+    if (node.type === "Identifier" || node.type === "MemberExpression") {
+      const chain = globalChain(node);
+      const kind = chain === null ? null : ambientKindOf(chain);
+      if (kind !== null) {
+        at2(node, kind, source(node));
+        return;
+      }
+    }
+    if (node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init !== null && node.init !== void 0) {
+      const chain = globalChain(node.init);
+      if (chain !== null) {
+        const prefix = chain.length === 1 && WINDOW_HOLDERS.has(chain[0]) ? [] : chain;
+        for (const property of node.id.properties) {
+          if (property.type !== "Property" || property.computed) continue;
+          const key = property.key.type === "Identifier" ? property.key.name : property.key.type === "Literal" && typeof property.key.value === "string" ? property.key.value : null;
+          const kind = key === null ? null : ambientKindOf([...prefix, key]);
+          if (kind !== null) {
+            at2(property.key, kind, `${source(node.init)}.${key}`);
+            return;
+          }
+        }
+      }
+    }
+    if (node.type === "MemberExpression") {
+      walk(node.object);
+      if (node.computed) walk(node.property);
+      return;
+    }
+    if (node.type === "Property" || node.type === "MethodDefinition" || node.type === "PropertyDefinition") {
+      if (node.computed) walk(node.key);
+      if (node.value !== null && node.value !== void 0) walk(node.value);
+      return;
+    }
+    if (node.type === "LabeledStatement") {
+      walk(node.body);
+      return;
+    }
+    if (node.type === "BreakStatement" || node.type === "ContinueStatement") return;
+    forEachChild(node, walk);
+  };
+  walk(wrapper.body);
+  return found;
+}
+function moduleBindingNames(script) {
+  const names2 = /* @__PURE__ */ new Set();
+  let program;
+  try {
+    program = parse3(script, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true });
+  } catch {
+    return names2;
+  }
+  if (program.type !== "Program") return names2;
+  for (const statement of program.body) {
+    if (statement.type === "ImportDeclaration") {
+      for (const specifier of statement.specifiers) names2.add(specifier.local.name);
+      continue;
+    }
+    const declaration = statement.type === "ExportNamedDeclaration" && statement.declaration ? statement.declaration : statement;
+    if (declaration.type === "VariableDeclaration") {
+      for (const declarator of declaration.declarations) bindingNames(declarator.id, names2);
+    } else if ((declaration.type === "FunctionDeclaration" || declaration.type === "ClassDeclaration") && declaration.id) {
+      names2.add(declaration.id.name);
+    }
+  }
+  return names2;
+}
 
 // src/core/messages.ts
 function resolveLocale(locale2) {
   if (locale2 === void 0 || locale2 === "" || /^ja\b|^ja[-_]/i.test(locale2) || locale2.toLowerCase() === "ja") return "ja";
   return "en";
+}
+function isUnitlessZero(token) {
+  return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
 }
 function shortSeed(raw) {
   const flat = raw.replace(/\s+/g, " ");
@@ -12348,6 +12552,23 @@ var ja = {
   onHandlerThis: (name) => `$on \u306E\u30CF\u30F3\u30C9\u30E9 "${name}" \u304C this \u3092\u4F7F\u3063\u3066\u3044\u307E\u3059\u3002$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F state \u3092\u7B2C 1 \u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\uFF08\`${name}(state, event) { state.x = \u2026 }\`\uFF09\u3001this \u306F undefined \u306A\u306E\u3067\u3001this.\u2026 \u306F\u547C\u3070\u308C\u305F\u3068\u304D\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002$watch \u3084\u30E1\u30BD\u30C3\u30C9\u3068\u9055\u3046\u70B9\u306B\u6CE8\u610F`,
   getterReadsLocation: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001location \u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u3001\u6700\u521D\u306B\u8AAD\u3093\u3060 URL \u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u30CA\u30D3\u30B2\u30FC\u30B7\u30E7\u30F3\u3067\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002URL \u306F state \u3092\u901A\u3057\u3066\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044 \u2014 <wcs-router> \u306E path / searchParams \u3092\u675F\u306D\u308B`,
   getterReadsClock: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001\u6642\u523B\u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u3067\u6BCE\u30D5\u30EC\u30FC\u30E0\u300C\u63CF\u304D\u76F4\u3057\u300D\u3066\u3082\u5909\u308F\u308A\u307E\u305B\u3093\uFF09\u3002\u6642\u523B\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-raf> \u3084 <wcs-timer> \u304C\u66F8\u304F\u5024\u3092\u675F\u306D\u308B`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059`;
+    switch (kind) {
+      case "size":
+        return `${head}\uFF08\u30EA\u30B5\u30A4\u30BA\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u5927\u304D\u3055\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-resize> \u304C\u66F8\u304F width / height \u3092\u675F\u306D\u308B\uFF08\u30D6\u30EC\u30FC\u30AF\u30DD\u30A4\u30F3\u30C8\u306E\u5224\u5B9A\u306A\u3089 <wcs-media-query> \u306E matched\uFF09`;
+      case "pixelRatio":
+        return `${head}\uFF08\u62E1\u5927\u3057\u3066\u3082\u3001\u5225\u306E\u753B\u9762\u3078\u79FB\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30DA\u30FC\u30B8\u304C\u4F7F\u3046\u89E3\u50CF\u5EA6\u306E\u3057\u304D\u3044\u5024\u3092 <wcs-media-query> \u306E matched \u3067\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08query="(min-resolution: 2dppx)"\uFF09`;
+      case "media":
+        return `${head}\uFF08\u30AF\u30A8\u30EA\u304C\u5408\u3046\u3088\u3046\u306B\u306A\u3063\u3066\u3082\u3001\u5408\u308F\u306A\u304F\u306A\u3063\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002<wcs-media-query> \u306E matched \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">\uFF09`;
+      case "online":
+        return `${head}\uFF08\u30AA\u30D5\u30E9\u30A4\u30F3\u306B\u306A\u3063\u3066\u3082\u3001\u623B\u3063\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002<wcs-network> \u306E offline \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`;
+      case "scroll":
+        return `${head}\uFF08\u30B9\u30AF\u30ED\u30FC\u30EB\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30B9\u30AF\u30ED\u30FC\u30EB\u4F4D\u7F6E\u3092\u51FA\u3059 wcstack \u306E\u8981\u7D20\u306F\u7121\u3044\u306E\u3067\u3001\u5024\u3092 state \u306B\u7F6E\u304D\u3001\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9\uFF08scroll \u306E\u30EA\u30B9\u30CA\u30FC\uFF09\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+      default:
+        return `${head}\uFF08\u30DA\u30FC\u30B8\u304C\u96A0\u308C\u3066\u3082\u3001\u8868\u793A\u3055\u308C\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30DA\u30FC\u30B8\u306E\u53EF\u8996\u6027\u3092\u51FA\u3059 wcstack \u306E\u8981\u7D20\u306F\u7121\u3044\u306E\u3067\u3001\u5024\u3092 state \u306B\u7F6E\u304D\u3001\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9\uFF08visibilitychange \u306E\u30EA\u30B9\u30CA\u30FC\uFF09\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+    }
+  },
   updatedCallbackUnknownPath: (p) => `"${p}" \u306F state \u306E\u30D1\u30B9\u3067\u306F\u306A\u3044\u306E\u3067 $renderedCallback \u306E paths \u306B\u73FE\u308C\u305A\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093`,
   commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u2014 <\u30E1\u30BD\u30C3\u30C9> \u306F\u305D\u306E\u8981\u7D20\u306E\u30E1\u30BD\u30C3\u30C9\u306E\u540D\u524D\uFF09`,
   writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
@@ -12383,6 +12604,13 @@ var ja = {
   radioNameShared: (name, binding) => `\u884C\u3054\u3068\u306E\u30E9\u30B8\u30AA\u304C\u3059\u3079\u3066 name="${name}" \u306B\u306A\u308B\u306E\u3067\u3001\u30D6\u30E9\u30A6\u30B6\u306F\u5168\u90E8\u306E\u884C\u306E\u30E9\u30B8\u30AA\u3092 1 \u3064\u306E\u30B0\u30EB\u30FC\u30D7\u306B\u3057\u307E\u3059\u3002\u30DA\u30FC\u30B8\u5168\u4F53\u3067 1 \u3064\u3057\u304B\u9078\u3070\u308C\u305F\u72B6\u614B\u306B\u306A\u3089\u305A\u3001\u8868\u793A\u306F\u6700\u521D\u306E\u63CF\u753B\u304B\u3089\u884C\u3054\u3068\u306E\u5024\u3068\u98DF\u3044\u9055\u3044\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${binding === "radio" ? "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u308B\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u304B\u3001name \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08radio: \u306F name \u304C\u7121\u304F\u3066\u3082\u3001\u540C\u3058\u30D1\u30B9\u306B\u675F\u306D\u305F\u30E9\u30B8\u30AA\u3092\u9078\u629E\u306B\u5408\u308F\u305B\u307E\u3059\uFF09" : "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u3002\u884C\u3092\u307E\u305F\u3044\u3067 1 \u3064\u3092\u9078\u3070\u305B\u308B\u306A\u3089\u3001\u5168\u90E8\u3092 1 \u3064\u306E\u30D1\u30B9\u306B\u675F\u306D\u307E\u3059\uFF08value: .<\u884C\u306E id>; radio: <\u30D1\u30B9>\uFF09"}`,
   numberWrittenAsString: (path, left, asNumber) => `"${path}" \u306F state \u3067\u306F\u6570\u5024\u3067\u3059\u304C\u3001value: \u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8981\u7D20\u306E\u6301\u3064\u6587\u5B57\u5217\u3067\u3059\u30025 \u3068\u5165\u529B\u3057\u305F\u5F8C\u306E state \u306F "5" \u3067\u3001"5" + 1 \u306F "51" \u306B\u306A\u308A\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002\u66F8\u304D\u623B\u3059\u3068\u304D\u306B\u6570\u5024\u306B\u3057\u3066\u304F\u3060\u3055\u3044: ${asNumber ? `valueAsNumber: ${path}\u3001\u307E\u305F\u306F` : ""}\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF ${left}|number: ${path}\uFF08|int\u30FB|float \u3082\uFF09`,
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: \u306F\u53CC\u65B9\u5411\u3067 1 \u6253\u9375\u3054\u3068\u306B\u66F8\u304D\u623B\u3057\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u305D\u306E\u305F\u3073\u306B state \u306E\u5024\u3092\u6574\u5F62\u3057\u3066\u6B04\u3078\u66F8\u304D\u76F4\u3057\u307E\u3059\u3002\u5165\u529B\u4E2D\u306E\u6B04\u304C\u66F8\u304D\u63DB\u308F\u308A\uFF08\u30AD\u30E3\u30EC\u30C3\u30C8\u306F\u672B\u5C3E\u3078\u98DB\u3073\u3001IME \u306E\u5909\u63DB\u306F\u9014\u5207\u308C\u307E\u3059\uFF09\u3001state \u304C\u53D7\u3051\u53D6\u308B\u306E\u3082\u6B04\u306E\u6574\u5F62\u6E08\u307F\u306E\u6587\u5B57\u3067\u3059\uFF08\u51FA\u529B\u30D5\u30A3\u30EB\u30BF\u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\uFF09\u3002\u6574\u5F62\u3057\u305F\u6587\u5B57\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u6B04\u306E\u78BA\u5B9A\u3067\u66F8\u304D\u623B\u3057\u3066 setter \u3067\u6574\u5F62\u3059\u308B\uFF08${prop}#onchange:\uFF09\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09` : `${prop}: \u306F\u53CC\u65B9\u5411\u3067\u3059\u304C\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\u3002\u8981\u7D20\u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8868\u793A\u3057\u3066\u3044\u308B\u6574\u5F62\u6E08\u307F\u306E\u5024\u3067\u3001\u6B21\u306F\u305D\u306E\u5024\u306B\u30D5\u30A3\u30EB\u30BF\u304C\u639B\u304B\u308A\u307E\u3059\u3002\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF\u3067\u5143\u306B\u623B\u3059\uFF08${left}|<\u30D5\u30A3\u30EB\u30BF>: \u2026\uFF09\u3001\u6574\u5F62\u3057\u305F\u5024\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09`,
+  bodyBinding: (tag, attribute) => `<${tag}> \u306E ${attribute} \u306F\u675F\u7E1B\u3055\u308C\u307E\u305B\u3093\u3002<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u306E\u4E2D\u3067\u3001<body> \u3068 <html> \u305D\u306E\u3082\u306E\u306F\u675F\u306D\u306A\u3044\u306E\u3067\u3001\u3053\u3053\u306B\u66F8\u3044\u305F\u675F\u7E1B\u306F\u4F55\u3082\u3057\u307E\u305B\u3093\uFF08\u30A4\u30D9\u30F3\u30C8\u306E\u30CF\u30F3\u30C9\u30E9\u306F\u8D70\u3089\u305A\u3001class. / attr. \u306A\u3069\u306F\u66F8\u304B\u308C\u307E\u305B\u3093\uFF09\u3002\u675F\u7E1B\u3092 <body> \u306E\u4E2D\u306E\u8981\u7D20\uFF08\u5305\u3080\u8981\u7D20\u30FB<main>\uFF09\u3078\u79FB\u3059\u304B\u3001\u5024\u3092 $connectedCallback \u3084 $watch \u306E\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08document.documentElement.lang = \u2026\uFF09`,
+  linkHandler: (property, handler) => `<wcs-link> \u306E "${property}:" \u306F "${handler}" \u3092\u547C\u3073\u307E\u305B\u3093\u3002<wcs-link> \u81EA\u8EAB\u306F display: none \u3067\u3001\u5229\u7528\u8005\u304C\u30AF\u30EA\u30C3\u30AF\u3059\u308B\u306E\u306F\u30EA\u30F3\u30AF\u304C\u81EA\u5206\u306E\u96A3\u306B\u4F5C\u308B <a> \u306A\u306E\u3067\u3001\u30A4\u30D9\u30F3\u30C8\u306F\u30DB\u30B9\u30C8\u306B\u5C4A\u304D\u307E\u305B\u3093\u3002\u30CF\u30F3\u30C9\u30E9\u306F\u3001\u30EA\u30F3\u30AF\u306E\u4E2D\u306E\u8981\u7D20\uFF08\u5B50\u306F <a> \u306E\u4E2D\u3078\u79FB\u308A\u307E\u3059\uFF09\u304B\u3001\u30EA\u30F3\u30AF\u3092\u56F2\u3080\u8981\u7D20\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\u3002\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u9077\u79FB\u3059\u308B\u306A\u3089\u3001router \u306E navigateUrl \u306B\u66F8\u304D\u307E\u3059\uFF08<wcs-router> \u306E data-wcs="navigateUrl: \u2026"\uFF09`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0 ? "\u5024\u306F 1\u301C4 \u500B\u3067\u3059" : `${refused.map((t) => `"${t}"`).join("\u30FB")} \u306F px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093${refused.some(isUnitlessZero) ? "\uFF080 \u306B\u3082\u5358\u4F4D\u304C\u8981\u308A\u307E\u3059\uFF09" : ""}`;
+    const effect = tag === "wcs-intersect" ? "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059" : "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001\u6B21\u306E\u30DA\u30FC\u30B8\u306F\u8AAD\u307F\u8FBC\u307E\u308C\u307E\u305B\u3093";
+    return `\u30D6\u30E9\u30A6\u30B6\u306F root-margin="${value}" \u3092\u62D2\u307F\u307E\u3059\uFF08rootMargin must be specified in pixels or percent\uFF09: ${why}\u3002\u305D\u306E\u305F\u3081${effect}\u3002${suggested === null ? "1\u301C4 \u500B\u306E\u5024\u3092\u3001\u305D\u308C\u305E\u308C px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044" : `root-margin="${suggested}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`}`;
+  },
   filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
   filterRemoved: (n, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${c}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002"${c}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   substrRemoved: (rewrite) => `\u30D5\u30A3\u30EB\u30BF "substr" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002slice(start, start + length) \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 slice \u306E\u7B2C 2 \u5F15\u6570\u306F\u9577\u3055\u3067\u306F\u306A\u304F\u7D42\u308F\u308A\u306E\u4F4D\u7F6E\u3067\u3059${rewrite === null ? "" : `\uFF08\u3053\u3053\u3067\u306F ${rewrite}\uFF09`}`,
@@ -12590,6 +12818,23 @@ var en = {
   onHandlerThis: (name) => `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = \u2026 }\`) and this is undefined, so this.\u2026 throws when it is called \u2014 unlike $watch handlers and methods`,
   getterReadsLocation: (read) => `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state \u2014 bind <wcs-router>'s path / searchParams`,
   getterReadsClock: (read) => `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state \u2014 bind the value <wcs-raf> or <wcs-timer> writes`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `This getter reads ${read}, which is not state, so it is not a dependency: the getter is cached and keeps returning its first value`;
+    switch (kind) {
+      case "size":
+        return `${head} (a resize does not re-evaluate it). Keep the size in state \u2014 bind the width / height <wcs-resize> writes (for a breakpoint, <wcs-media-query>'s matched)`;
+      case "pixelRatio":
+        return `${head} (a zoom or a move to another screen does not re-evaluate it). Bind <wcs-media-query>'s matched for the resolution thresholds the page uses (query="(min-resolution: 2dppx)")`;
+      case "media":
+        return `${head} (the query starting or ceasing to match does not re-evaluate it). Bind <wcs-media-query>'s matched instead (<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">)`;
+      case "online":
+        return `${head} (going offline or coming back does not re-evaluate it). Bind <wcs-network>'s offline instead`;
+      case "scroll":
+        return `${head} (scrolling does not re-evaluate it). No wcstack element gives the scroll position: keep the value in state and write it from an event handler (a scroll listener)`;
+      default:
+        return `${head} (the page being hidden or shown does not re-evaluate it). No wcstack element gives the page's visibility: keep the value in state and write it from an event handler (a visibilitychange listener)`;
+    }
+  },
   updatedCallbackUnknownPath: (p) => `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
   commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.<method>: ${t}, with <method> the name of that element's method)`,
   writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
@@ -12625,6 +12870,13 @@ var en = {
   radioNameShared: (name, binding) => `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render \u2014 nothing says so. ${binding === "radio" ? "Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it" : "Bind a name that differs per row (attr.name: .<a row field>) \u2014 or, for one choice over all the rows, bind them all to one path: value: .<the row's id>; radio: <path>"}`,
   numberWrittenAsString: (path, left, asNumber) => `"${path}" is a number in the state, but value: writes back what the element holds, a string: after the user enters 5 the state has "5", and "5" + 1 is "51" \u2014 nothing says so. Convert it on the way in: ${asNumber ? `valueAsNumber: ${path}, or ` : ""}an input filter on the left side, ${left}|number: ${path} (also |int, |float)`,
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types \u2014 the caret jumps to the end, an IME composition is cut \u2014 and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}` : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: \u2026), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
+  bodyBinding: (tag, attribute) => `${attribute} on <${tag}> is never bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so the bindings written here do nothing (an event handler never runs; class., attr. and the rest are never written). Move the binding to an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch handler (document.documentElement.lang = \u2026)`,
+  linkHandler: (property, handler) => `"${property}:" on <wcs-link> never runs "${handler}": the <wcs-link> itself is display: none, and what the user clicks is the <a> it generates beside itself, so no event reaches the host. Put the handler on an element inside the link (its children move into the <a>) or on an element around it; to navigate from a handler, write the router's navigateUrl (data-wcs="navigateUrl: \u2026" on <wcs-router>)`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0 ? "it takes one to four values" : `${refused.map((t) => `"${t}"`).join(", ")} ${refused.length === 1 ? "is not a number" : "are not numbers"} with px or %${refused.some(isUnitlessZero) ? " (a 0 needs its unit too)" : ""}`;
+    const effect = tag === "wcs-intersect" ? "the element observes nothing and observing stays false" : "the element observes nothing and no page is loaded";
+    return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? "Write one to four values, each a number with px or %" : `Write root-margin="${suggested}"`}`;
+  },
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") \u2014 write "${c}"`,
   substrRemoved: (rewrite) => `Filter "substr" was removed in 4.0 \u2014 write slice(start, start + length): slice takes the end index, not a length${rewrite === null ? "" : ` (here: ${rewrite})`}`,
@@ -12939,6 +13191,7 @@ var DELEGATED_EVENTS = /* @__PURE__ */ new Set([
   "pointerup"
 ]);
 var CUSTOM_ELEMENT_OWN_EVENTS = /* @__PURE__ */ new Set(["input", "change", "submit"]);
+var LINK_TAG = "wcs-link";
 function collectCurrentTargetHandlers(elements, html, fileReader) {
   const names2 = /* @__PURE__ */ new Set();
   forEachStateMethod(elements, html, fileReader, "currentTarget", (name, params, body) => {
@@ -13065,7 +13318,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
             severity: "error"
           });
         }
-        if (DELEGATED_EVENTS.has(eventName) && !modifiers.includes(DIRECT_MODIFIER) && attr.tagName !== void 0 && !(attr.tagName.includes("-") && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName)) && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler) && getCurrentTargetHandlers().has(handler)) {
+        if (DELEGATED_EVENTS.has(eventName) && !modifiers.includes(DIRECT_MODIFIER) && attr.tagName !== void 0 && attr.tagName !== LINK_TAG && !(attr.tagName.includes("-") && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName)) && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler) && getCurrentTargetHandlers().has(handler)) {
           currentTargetCandidates.push({
             offset: attr.valueStart,
             start: bindingStart + leadingSpace,
@@ -16558,6 +16811,101 @@ function sharedRadioName(html, attr, parsed, bindAttribute) {
   };
 }
 
+// src/service/bindingHostValidator.ts
+var UNBOUND_HOSTS = /* @__PURE__ */ new Set(["body", "html"]);
+var LINK_TAG2 = "wcs-link";
+function validateBindingHosts(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2) {
+  const attrs = findAllBindAttributes(html, bindAttribute).filter((attr) => attr.tagName !== void 0 && (UNBOUND_HOSTS.has(attr.tagName) || attr.tagName === LINK_TAG2));
+  if (attrs.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  const contexts = analyzeElementContexts(html, attrs.map((attr) => attr.valueStart), bindAttribute, stateTagName);
+  const isBound = (attr) => contexts.get(attr.valueStart)?.bound === true;
+  let insideTemplate = null;
+  for (const attr of attrs) {
+    const tagName = attr.tagName;
+    if (UNBOUND_HOSTS.has(tagName)) {
+      if (attr.value.trim() === "" || !isBound(attr) || (insideTemplate ??= createTemplateTester(html))(attr.valueStart)) continue;
+      out.push({
+        code: WcsDiagnosticCode.BodyBinding,
+        start: attributeStart(html, attr, bindAttribute),
+        end: attr.valueStart + attr.value.length + 1,
+        severity: "error",
+        tag: tagName,
+        message: msgs.bodyBinding(tagName, bindAttribute)
+      });
+      continue;
+    }
+    if (!isBound(attr)) continue;
+    let pos = 0;
+    for (const binding of splitBindingExpressions(attr.value)) {
+      const bindingStart = attr.valueStart + pos;
+      pos += binding.length + 1;
+      const parsed = parseBindingExpression(binding);
+      const property = parsed.property.replace(/#.*$/, "").trim();
+      if (!/^on\w/.test(property) || parsed.path === null || parsed.path.trim() === "") continue;
+      const start = bindingStart + (binding.length - binding.trimStart().length);
+      out.push({
+        code: WcsDiagnosticCode.LinkHandler,
+        start,
+        end: start + property.length,
+        severity: "error",
+        tag: LINK_TAG2,
+        message: msgs.linkHandler(property, parsed.path.trim())
+      });
+    }
+  }
+  return out;
+}
+function attributeStart(html, attr, bindAttribute) {
+  const from = attr.attrsStart ?? attr.valueStart;
+  const head = html.slice(from, attr.valueStart);
+  const escaped = bindAttribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const name = new RegExp(`${escaped}\\s*=\\s*["']$`, "i").exec(head);
+  return name === null ? attr.valueStart : from + name.index;
+}
+
+// src/service/ioAttributeValidator.ts
+var ROOT_MARGIN_TAGS = /* @__PURE__ */ new Set(["wcs-intersect", "wcs-infinite-scroll"]);
+var NUMBER = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?`;
+var ROOT_MARGIN_VALUE = new RegExp(`^${NUMBER}(?:px|%)$`, "i");
+var UNITLESS_NUMBER = new RegExp(`^${NUMBER}$`, "i");
+function checkRootMargin(value) {
+  const values = value.split(/\s+/).filter((v) => v !== "");
+  const refused = [...new Set(values.filter((v) => !ROOT_MARGIN_VALUE.test(v)))];
+  if (refused.length === 0 && values.length <= 4) return null;
+  const fixable = values.length <= 4 && refused.every((v) => UNITLESS_NUMBER.test(v));
+  return { refused, suggested: fixable ? values.map((v) => UNITLESS_NUMBER.test(v) ? `${v}px` : v).join(" ") : null };
+}
+function validateIoAttributes(html, bindAttribute = "data-wcs", locale2) {
+  if (!/root-margin/i.test(html)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const region of findStartTagRegions(html)) {
+    if (!ROOT_MARGIN_TAGS.has(region.tagName)) continue;
+    const content = html.slice(region.start, region.end);
+    const span = extractAttributeSpan(content, "root-margin", region.start);
+    if (span === null) continue;
+    const value = html.slice(span.valueStart, span.valueEnd);
+    if (value.includes("{{") || bindsRootMargin(extractAttribute(content, bindAttribute))) continue;
+    const problem = checkRootMargin(value);
+    if (problem === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.RootMarginUnit,
+      start: span.valueStart,
+      end: span.valueEnd,
+      severity: "warning",
+      tag: region.tagName,
+      message: msgs.rootMarginUnit(region.tagName, value, problem.refused, problem.suggested)
+    });
+  }
+  return out;
+}
+function bindsRootMargin(bindings) {
+  if (bindings === null) return false;
+  return splitBindingExpressions(bindings).some((binding) => parseBindingExpression(binding).property.replace(/#.*$/, "").trim().replace(/^\./, "") === "rootMargin");
+}
+
 // src/service/documentEnvValidator.ts
 function validateDocumentEnv(html, locale2) {
   const diagnostics = [];
@@ -16898,11 +17246,11 @@ function findMisplacedOutlets(html) {
   });
   return routerWithoutOutlet ? misplaced : [];
 }
-var LINK_TAG = "wcs-link";
+var LINK_TAG3 = "wcs-link";
 function findLinksIgnoringOwnQuery(html) {
   const found = [];
   for (const region of findStartTagRegions(html)) {
-    if (region.tagName !== LINK_TAG) continue;
+    if (region.tagName !== LINK_TAG3) continue;
     const content = html.slice(region.start, region.end);
     const to = extractAttribute(content, "to");
     const span = extractAttributeSpan(content, "query-keys", region.start);
@@ -18711,6 +19059,25 @@ function validateGetterClockReads(script, scriptStart, locale2) {
   }
   return out;
 }
+function validateGetterAmbientReads(script, scriptStart, locale2) {
+  if (!AMBIENT_READ_SPELLING.test(script)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  let moduleNames = null;
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== "getter" || getter.accessor !== "get" || !AMBIENT_READ_SPELLING.test(getter.body)) continue;
+    const read = findAmbientRead(getter.body, moduleNames ??= moduleBindingNames(script));
+    if (read === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.start,
+      end: scriptStart + getter.bodyStart + read.end,
+      message: msgs.getterReadsAmbient(read.text, read.kind),
+      severity: "warning"
+    });
+  }
+  return out;
+}
 function onHandlerStateParam(script, handler) {
   if (handler.kind === "body") {
     const head = script.slice(Math.max(0, handler.start - 400), handler.start);
@@ -19082,6 +19449,7 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
     ));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale2));
     out.push(...validateGetterClockReads(block.content, block.contentStart, locale2));
+    out.push(...validateGetterAmbientReads(block.content, block.contentStart, locale2));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));
     out.push(...validateInPlaceChanges(block.content, block.contentStart, locale2));
   }
@@ -19951,6 +20319,8 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateAriaAttributes(text3, bindAttribute, locale2));
   out.push(...validateLiveRegions(text3, bindAttribute, stateTagName, locale2));
   out.push(...validateFormInputs(text3, bindAttribute, stateTagName, locale2, fileReader, applicationSchema));
+  out.push(...validateBindingHosts(text3, bindAttribute, stateTagName, locale2));
+  out.push(...validateIoAttributes(text3, bindAttribute, locale2));
   out.push(...validateDocumentEnv(text3, locale2));
   out.push(...validatePackageLoads(text3, locale2, fileReader));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));

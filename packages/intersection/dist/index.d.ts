@@ -290,6 +290,8 @@ declare class WcsIntersect extends HTMLElement {
     private _connectedCallbackPromise;
     private _internals;
     private _observePending;
+    private _warnedRoot;
+    private _warnedMargin;
     constructor();
     get debugStates(): string[];
     private _initInternals;
@@ -326,6 +328,13 @@ declare class WcsIntersect extends HTMLElement {
      * observe(): an unresolvable target tears down any stale observation.
      */
     reobserve(): void;
+    /**
+     * The observation did not start although there is something to observe: the browser refused the options, and
+     * with the threshold cleaned (_parseThreshold) only the margin is left — a length with no unit (`"200"`,
+     * `"0 0 900 0"`). `observing` stays false as before (never-throw); what was silent is said once per value
+     * (docs/mistake-catalogue.md, "root-margin-unit").
+     */
+    private _warnRefused;
     unobserve(): void;
     disconnect(): void;
     reset(): void;

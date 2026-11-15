@@ -132,7 +132,7 @@ The three new rules are warnings: `--strict` fails on them, `--errors-only` does
 
 ## What a long list's page is told
 
-Since 4.24 (not released yet), from the town-archive seam app — an archive of 12,000 photos: a long list with infinite scroll. What its page got wrong and this lint did not say:
+Since 4.24, from the town-archive seam app — an archive of 12,000 photos: a long list with infinite scroll. What its page got wrong and this lint did not say:
 
 - **`wcs/body-binding`** (error) — `data-wcs` on `<body>` or `<html>` (`<body data-wcs="onkeydown: onKey; class.dark: dark">`). `<wcs-state>` binds what is inside `<body>`, not `<body>` or `<html>` themselves, so nothing written there does anything: the handler never runs, `class.` and `attr.` are never written. Move the binding to an element inside `<body>` (a wrapper, `<main>`), or write the value from `$connectedCallback` or a `$watch` handler (`document.documentElement.lang = …`).
 - **`wcs/link-handler`** (error) — an `on*:` binding on a `<wcs-link>` (`<wcs-link data-wcs="attr.to: .href; onclick: openPhoto">`). The link's host is `display: none`, and what the user clicks is the `<a>` the link generates beside itself, so the handler never runs. Put it on an element inside the link (its children move into the `<a>`) or on one around it; to navigate from a handler, write the router's `navigateUrl`.

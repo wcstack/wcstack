@@ -319,7 +319,7 @@ Behavior rules:
 
 - The sentinel coming on screen runs the target's request — also for the `url` it ran last: a user who scrolls away and back tries a failed request again.
 - It does not run a request while the target `<wcs-fetch>` is `loading`.
-- **With the sentinel still on screen, it runs the next request by itself** (since 4.24 (not released yet)):
+- **With the sentinel still on screen, it runs the next request by itself** (since 4.24):
   - when the target's `url` is written or changed while no request is in flight — the first page (the sentinel usually reports before state has written `url`) and a filter that empties the list;
   - when a request ends and the `url` changed while it was in flight — a filter typed meanwhile — or it ended with no answer (aborted) and the `url` is another one;
   - when a request ends, the page has added rows and moved the `url` on — a tall window, a zoomed-out page, a short page: it goes on until the sentinel is off screen.
@@ -343,8 +343,8 @@ Behavior rules:
 Attributes:
 
 - `target`: `id` of the `<wcs-fetch>` to run
-- `root`: the scroll container — its `id`, or (since 4.24 (not released yet)) a selector, as `<wcs-intersect root>` takes. Defaults to the viewport. Since 4.24 (not released yet), a root that is not found, or one that does not scroll (`overflow: visible` — everything inside it counts as on screen, and page after page is loaded), warns `[wcs/infinite-scroll-root]` once per value; before, the viewport took the place of a root that was not found without a word
-- `root-margin`: preload distance. Passed to `IntersectionObserver.rootMargin`: each length with `px` or `%`. A length with no unit (`200`, `0 0 900 0` — a bare `0` too) is refused by the browser and nothing is loaded: since 4.24 (not released yet) the element warns `[wcs/root-margin-unit]` (the lint's code); before, the browser's exception came out of the element uncaught
+- `root`: the scroll container — its `id`, or (since 4.24) a selector, as `<wcs-intersect root>` takes. Defaults to the viewport. Since 4.24, a root that is not found, or one that does not scroll (`overflow: visible` — everything inside it counts as on screen, and page after page is loaded), warns `[wcs/infinite-scroll-root]` once per value; before, the viewport took the place of a root that was not found without a word
+- `root-margin`: preload distance. Passed to `IntersectionObserver.rootMargin`: each length with `px` or `%`. A length with no unit (`200`, `0 0 900 0` — a bare `0` too) is refused by the browser and nothing is loaded: since 4.24 the element warns `[wcs/root-margin-unit]` (the lint's code); before, the browser's exception came out of the element uncaught
 - `threshold`: intersection threshold, `0` to `1`. Defaults to `0`
 - `disabled`: stops observing
 - `once`: disconnects after the first execution and does not re-arm afterwards
@@ -388,7 +388,7 @@ These properties control request execution from HTML, JS, or `@wcstack/state` bi
 
 ### A url with the command
 
-`fetch(url, init)` runs one request with what it is given, and leaves the element's attributes as they are. It is what a command token carries (since 4.24 (not released yet)):
+`fetch(url, init)` runs one request with what it is given, and leaves the element's attributes as they are. It is what a command token carries (since 4.24):
 
 ```html
 <wcs-fetch manual data-wcs="command.fetch: $command.loadUsers; value: users"></wcs-fetch>
@@ -673,7 +673,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 
 | Method | Description |
 |--------|-------------|
-| `fetch(url?, init?)` | Execute the HTTP request. With no argument, the element's own. Since 4.24 (not released yet), `url` and `init` (`{ method?, headers?, body? }`) are for that request only — see [A url with the command](#a-url-with-the-command) |
+| `fetch(url?, init?)` | Execute the HTTP request. With no argument, the element's own. Since 4.24, `url` and `init` (`{ method?, headers?, body? }`) are for that request only — see [A url with the command](#a-url-with-the-command) |
 | `abort()` | Cancel the in-flight request |
 
 ### `<wcs-fetch-header>`

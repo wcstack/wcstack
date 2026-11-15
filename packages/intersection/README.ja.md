@@ -131,7 +131,7 @@ export default {
 | 属性           | 型      | 既定値     | 説明 |
 |----------------|---------|------------|-------------|
 | `target`       | string  | *(省略)*   | 何を観測するか: 省略 → 最初の子、セレクタ → その要素、`self` → この要素。 |
-| `root`         | string  | *(viewport)* | スクロールルートのセレクタ。4.24（未リリース）から、セレクタとして何にも一致しない値は id として探し（`<wcs-infinite-scroll root>` の書き方）、見つからなければ値ごとに 1 回 `[wcs/intersect-root]` で警告します —— それまでは黙って viewport が使われました。中身を切り取らない root（`root="main"` は `<main>` に一致します）は、中にあるものをすべて交差中として数えます。 |
+| `root`         | string  | *(viewport)* | スクロールルートのセレクタ。4.24 から、セレクタとして何にも一致しない値は id として探し（`<wcs-infinite-scroll root>` の書き方）、見つからなければ値ごとに 1 回 `[wcs/intersect-root]` で警告します —— それまでは黙って viewport が使われました。中身を切り取らない root（`root="main"` は `<main>` に一致します）は、中にあるものをすべて交差中として数えます。 |
 | `root-margin`  | string  | `0px`      | ルート周りのマージン（CSS の margin 構文）。 |
 | `threshold`    | string  | `0`        | 単一の比率（`0.5`）またはカンマ区切りリスト（`0,0.5,1`）の `0..1` の閾値。不正 / 範囲外の値は捨てられる。 |
 | `once`         | boolean | `false`    | 最初の交差した観測の後に切断する。 |
@@ -260,7 +260,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 
 - **4.8 から、観測は接続の 1 マイクロタスク後に始まる。** そのときの `manual`・`target`・`root`・オプションで観測し、その後のオプションの変化も次のマイクロタスクで 1 回にまとめて観測し直す（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `unobserve()` / `disconnect()` はそれを取り消し、`observe()` / `reobserve()` はその場で動く。
 - **単一ターゲット。** 各 `<wcs-intersect>` はちょうど 1 つの要素を観測するので、状態は単一の値面にマップします。多数のターゲットには多数の要素を使ってください。
-- **決して throw しない。** 非対応環境（`IntersectionObserver` が無い）や不正なオプションは no-op です。throw せず、`observing` は `false` のままです。ブラウザが拒む `root-margin` —— 単位の無い長さ: `200`、`0 0 900 0`、`0` だけでも。`px` か `%` を付けます —— では何も観測しません。4.24（未リリース）から、要素が値ごとに 1 回そう知らせます（`[wcs/root-margin-unit]`。lint と同じ code）。4.23 までは無言でした。
+- **決して throw しない。** 非対応環境（`IntersectionObserver` が無い）や不正なオプションは no-op です。throw せず、`observing` は `false` のままです。ブラウザが拒む `root-margin` —— 単位の無い長さ: `200`、`0 0 900 0`、`0` だけでも。`px` か `%` を付けます —— では何も観測しません。4.24 から、要素が値ごとに 1 回そう知らせます（`[wcs/root-margin-unit]`。lint と同じ code）。4.23 までは無言でした。
 - **パーミッションゲート / セキュアコンテキスト要件は無い**（`@wcstack/geolocation` と異なります）。
 
 ## ライセンス

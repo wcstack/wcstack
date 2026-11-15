@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.23.0";
+var version = "4.24.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -4156,6 +4156,18 @@ class Link extends HTMLElement {
         return this._uuid;
     }
     /**
+     * The destination, as a property: it writes the `to` attribute (`null` removes it, `undefined` puts back what
+     * the markup had). A binding that writes the property — `data-wcs="to: .href"` in place of `attr.to:` — left an
+     * own property on the element that nothing read: the `<a>` had no `href`, and nothing said so
+     * (docs/seam-apps.md, town-archive).
+     */
+    get to() {
+        return this.getAttribute("to") ?? "";
+    }
+    set to(value) {
+        reflectAttribute(this, "to", value);
+    }
+    /**
      * 最寄りの Router を返す。
      *
      * 注意: この getter は DOM 走査で Router を探すため、
@@ -4275,6 +4287,13 @@ class Link extends HTMLElement {
         return null;
     }
     _connect() {
+        // a `to` assigned before the element was defined (state loaded before the router) is an own property that
+        // hides the accessor: take it in through the setter
+        if (Object.prototype.hasOwnProperty.call(this, "to")) {
+            const value = this.to;
+            delete this.to;
+            this.to = value;
+        }
         if (!this._initialized) {
             this._initialize();
         }

@@ -132,7 +132,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 ## 長いリストのページに言うこと
 
-4.24（未リリース）から、継ぎ目アプリ town-archive — 写真 12,000 枚のアーカイブ。長いリストと無限スクロールのページ — から。そのページの誤りのうち、この lint が言わなかったもの:
+4.24 から、継ぎ目アプリ town-archive — 写真 12,000 枚のアーカイブ。長いリストと無限スクロールのページ — から。そのページの誤りのうち、この lint が言わなかったもの:
 
 - **`wcs/body-binding`**（error） — `<body>` / `<html>` に書いた `data-wcs`（`<body data-wcs="onkeydown: onKey; class.dark: dark">`）。`<wcs-state>` が束ねるのは `<body>` の中で、`<body>` と `<html>` そのものは束ねないので、そこに書いた束縛は何もしません: ハンドラは走らず、`class.` も `attr.` も書かれません。束縛を `<body>` の中の要素（包む要素・`<main>`）へ移すか、値を `$connectedCallback` や `$watch` のハンドラから書いてください（`document.documentElement.lang = …`）。
 - **`wcs/link-handler`**（error） — `<wcs-link>` の束縛に書いた `on*:`（`<wcs-link data-wcs="attr.to: .href; onclick: openPhoto">`）。リンクのホストは `display: none` で、利用者がクリックするのはリンクが自分の隣に作る `<a>` なので、ハンドラは走りません。ハンドラはリンクの中の要素（子は `<a>` の中へ移ります）か、リンクを囲む要素に書いてください。ハンドラから遷移するなら、router の `navigateUrl` に書きます。

@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/screen-orientation","version":"4.23.0"};
+var pkg = {"name":"@wcstack/screen-orientation","version":"4.24.0"};
 
 /**
  * screenOrientationCapabilities.ts

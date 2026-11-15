@@ -131,7 +131,7 @@ Point `target` at a section elsewhere in the document; bind `intersecting` to hi
 | Attribute      | Type    | Default    | Description |
 |----------------|---------|------------|-------------|
 | `target`       | string  | *(omitted)*| What to observe: omitted → first child, a selector → that element, `self` → this element. |
-| `root`         | string  | *(viewport)* | Selector for the scroll root. Since 4.24 (not released yet), a value that matches nothing as a selector is tried as an id (the way `<wcs-infinite-scroll root>` spells it), and one that is not found warns `[wcs/intersect-root]` once per value — before, the viewport took its place without a word. A root that does not clip its content (`root="main"` matches `<main>`) counts everything inside it as intersecting. |
+| `root`         | string  | *(viewport)* | Selector for the scroll root. Since 4.24, a value that matches nothing as a selector is tried as an id (the way `<wcs-infinite-scroll root>` spells it), and one that is not found warns `[wcs/intersect-root]` once per value — before, the viewport took its place without a word. A root that does not clip its content (`root="main"` matches `<main>`) counts everything inside it as intersecting. |
 | `root-margin`  | string  | `0px`      | Margin around the root (CSS-margin syntax). |
 | `threshold`    | string  | `0`        | A single ratio (`0.5`) or comma list (`0,0.5,1`) of `0..1` thresholds. Invalid / out-of-range values are dropped. |
 | `once`         | boolean | `false`    | Disconnect after the first intersecting observation. |
@@ -264,7 +264,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 
 - **Since 4.8, observing starts one microtask after connect**, with `manual`, `target`, `root` and the options as they are then, and a later option change re-observes in the next microtask, folded into one ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `unobserve()` / `disconnect()` in the same task cancel it; `observe()` / `reobserve()` act at once.
 - **Single target.** Each `<wcs-intersect>` observes exactly one element so the state maps to a single value surface. For many targets, use many elements.
-- **Never throws.** Unsupported environments (no `IntersectionObserver`) and invalid options are no-ops: `observing` stays `false` rather than throwing. A `root-margin` the browser refuses — a length with no unit: `200`, `0 0 900 0`, a bare `0` too; write `px` or `%` — observes nothing; since 4.24 (not released yet) the element says so once per value (`[wcs/root-margin-unit]`, the lint's code). Up to 4.23 it was silent.
+- **Never throws.** Unsupported environments (no `IntersectionObserver`) and invalid options are no-ops: `observing` stays `false` rather than throwing. A `root-margin` the browser refuses — a length with no unit: `200`, `0 0 900 0`, a bare `0` too; write `px` or `%` — observes nothing; since 4.24 the element says so once per value (`[wcs/root-margin-unit]`, the lint's code). Up to 4.23 it was silent.
 - **No permission gate / secure context requirement** (unlike `@wcstack/geolocation`).
 
 ## License
