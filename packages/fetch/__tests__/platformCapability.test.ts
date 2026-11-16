@@ -164,6 +164,25 @@ describe("platformCapability — featureUnavailable（このページで使え�
     expect(allowsFeature).not.toHaveBeenCalled();
   });
 
+  it("ポリシーが知らない名前は allowsFeature に聞かない（Chromium はコンソールに警告を出す）", () => {
+    vi.stubGlobal("isSecureContext", true);
+    const allowsFeature = vi.fn(() => false);
+    (document as any).featurePolicy = { allowsFeature, features: () => ["camera", "accelerometer"] };
+    expect(featureUnavailable("ambient-light-sensor")).toBeNull();
+    expect(featureUnavailable("web-share")).toBeNull();
+    expect(allowsFeature).not.toHaveBeenCalled();
+    expect(featureUnavailable("accelerometer")).toBe("policy-blocked");
+    expect(allowsFeature).toHaveBeenCalledWith("accelerometer");
+  });
+
+  it("permission の無い機能（fullscreen・picture-in-picture・web-share）もポリシーに聞く", () => {
+    vi.stubGlobal("isSecureContext", true);
+    (document as any).featurePolicy = { allowsFeature: (f: string) => f === "web-share" };
+    expect(featureUnavailable("fullscreen")).toBe("policy-blocked");
+    expect(featureUnavailable("picture-in-picture")).toBe("policy-blocked");
+    expect(featureUnavailable("web-share")).toBeNull();
+  });
+
   it("ポリシーの API が無い、または投げるときは判断しない", () => {
     vi.stubGlobal("isSecureContext", true);
     expect(featureUnavailable("camera")).toBeNull();

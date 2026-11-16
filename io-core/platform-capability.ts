@@ -146,14 +146,17 @@ export function requiredCapabilitiesAvailable(assessment: PlatformAssessment, re
  */
 export type FeatureUnavailableReason = "insecure-context" | "policy-blocked";
 
-/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+/**
+ * Permissions-Policy が制御する機能。permission 名と同じ文字列と、permission の無い機能
+ * (`fullscreen`・`picture-in-picture`・`web-share`: 要素が「このページで使えるか」を言うために聞く)。
+ */
 const POLICY_CONTROLLED = new Set([
   "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
   "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
-  "ambient-light-sensor", "display-capture",
+  "ambient-light-sensor", "display-capture", "fullscreen", "picture-in-picture", "web-share",
 ]);
 
-interface PolicyLike { allowsFeature(feature: string): boolean }
+interface PolicyLike { allowsFeature(feature: string): boolean; features?(): string[] }
 
 export function featureUnavailable(feature: string): FeatureUnavailableReason | null {
   const g = globalThis as { isSecureContext?: unknown; document?: { permissionsPolicy?: PolicyLike; featurePolicy?: PolicyLike } };
@@ -162,6 +165,10 @@ export function featureUnavailable(feature: string): FeatureUnavailableReason | 
   const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
   if (policy === undefined || typeof policy.allowsFeature !== "function") return null;
   try {
+    // このブラウザのポリシーが知らない名前は聞かない: Chromium は知らない名前の allowsFeature に
+    // false を返したうえでコンソールに「Unrecognized feature」を出す(フラグの無い
+    // `ambient-light-sensor`、デスクトップの `web-share`)。知らない機能は切られてもいない。
+    if (typeof policy.features === "function" && !policy.features().includes(feature)) return null;
     return policy.allowsFeature(feature) ? null : "policy-blocked";
   } catch {
     return null;
