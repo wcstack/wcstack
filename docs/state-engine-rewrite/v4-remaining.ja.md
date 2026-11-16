@@ -1912,3 +1912,36 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - worktree の残骸（著者に削除を頼む）: `ext-2.18.0`、`agent-adb32aebb8b16c9d4`、`agent-a859fd1943ce54c04`（2.19.0 の公開の確認は済んだ）。
   - 止める目安には当たっていない。3 巡目の次は 5 本目「画面とセンサーの API」。
   - ほかは 4.24.0 の「残り」のまま。
+
+### 4.24.2 の公開（2026-11-16）
+
+- **中身**: patch。外部からの初めての不具合報告、issue #694（trackoor、credit: UCSB PLSE）への対応。`@wcstack/router` は、ルートの静的セグメントを書かれたまま正規表現にし、URL のパスをパーセントエンコードされたまま比べていた。
+  - 再現（4.24.1。報告のスクリプトは happy-dom でそのまま再現し、Chromium・Firefox・WebKit でも同じ）: `path="/v1.0"` が `/v1x0` に一致する。`path="/c++"` があると `SyntaxError` で router ごと止まり、どのルートも出ない。`path="/café"` はどの URL にも一致しない（`location.pathname` は `/caf%C3%A9`）。`/users/€` の `id` が `%E2%82%AC`。
+  - 報告に無く、調べる中で見つけたもの（同じ 2 つの原因から）: `<wcs-link to="/users/€">` がそのページで現在のページにならない。Navigation API の無い経路では `navigate("/café")` を書かれたままの文字列で比べるので、ルートは出るが `path` は `/café` で、再読み込みすると fallback になる。
+- **著者の決定（2026-11-16）**: 3 つの問いを推奨の案に決めた。
+  1. `params` はデコードする。比べた案: 照合だけデコードして `params` はエンコードのまま残す（報告の 3 点目が残る）。影響を受けるのは、パラメータを自分で `decodeURIComponent` しているページ（二重デコードになり、`%` を含む値で例外）。React Router・Vue Router・Express と同じで、この router の `searchParams` はすでにデコードしている。
+  2. 静的セグメントは書かれた文字そのもの。正規表現として効くことはどの文書にも書いていなかった。リポジトリの `<wcs-route path>` 376 件に、正規表現の文字や ASCII でない文字を持つ静的セグメントは無かった。
+  3. patch で出す（`/c++` のようなパスで router が丸ごと止まるため）。issue へのコメントも。
+- **実装**: PR #696（merge commit bdd7187c。マージで issue は閉じた）。
+  - 静的セグメントはエスケープする（`RouteCore.parsePath`）。エンコードして書かれた `path="/caf%C3%A9"` もデコードしておくので、どちらの書き方でも一致する。
+  - URL のパスは、セグメントに分けた後でそれぞれデコードする（`matchRoutes`、`decodeSegment`）。エンコードされたスラッシュは値の中の `/` になる。`params['*']` は残りのセグメントをそれぞれデコードして `/` でつなぐ。型付きのパラメータはデコードした値で判定する。UTF-8 として正しくないエスケープのあるセグメントは、そのまま渡す。
+  - アプリが書いたパス（`navigate()`、`<wcs-link to>`、`basename` 属性）は、比べる前に `location.pathname` の形にする（`normalizePathname` / `normalizeBasename` の中の `encodePathname`。URL のパーサを通す。素の文字だけのパスは通さない — リンクが千個ある一覧は、ナビゲーションのたびに 2 千回正規化する）。これで、どちらの経路でも `router.path` が同じになり、正しいリンクが現在のページになる。
+  - `router.path` とガードの `toPath` / `fromPath` は URL の形のまま。デコードすると `/users/a%2Fb` と `/users/a/b` を区別できず、`navigate()` に渡し直せない。
+  - `any` のパラメータと catch-all は、デコードした後の改行（`%0A`）も受ける（以前はエスケープのまま受けていた）。
+  - 単体テスト `encodedPaths.test.ts` 21 件（修正なしでは落ちる）。router は 1,012 件、カバレッジ 100 / 99.7 / 100 / 100。e2e `router-encoded-paths.spec.ts` 4 件（Chromium と Firefox。4.24.1 の dist では 4 件とも落ちる。深いリンクは `page.route` で fixture を返す）。e2e 全体 614 件。
+  - 文書: router の README §3.6「文字とパーセントエンコード」（日英）、`path` と `params` の行、CHANGELOG（Upgrading 4 行と Fixed。報告者の credit を書いた）。
+- **準備**: PR #697（merge commit 37840c2d）。CHANGELOG を `[4.24.2] — 2026-11-16` として締めた。README は `4.25（未リリース）` の印で書いてあったので、4.24.2 に書き換えた（patch は別の minor の印を外せない。4.10.1 と同じ）。docs/upgrading-4x.md（日英）に 4.24.2 の節と、要らなくなった回避策。固定版 18 か所。版を 4.24.2 にしたローカルのビルドで、core は 20,474 B のまま。
+- **main で `patch`（run 43864719986）**: 成功した（25 分）。版を上げたコミット 138bef20、タグ `v4.24.2`、GitHub Release（`sri.json` 付き。本文の先頭に要約を足した）。
+  - 検証は 1 回目で済んだ: npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・文書の固定 URL 8/8。
+  - 公開された版で確かめた: npm から入れた `@wcstack/router@4.24.2` で、報告のスクリプトは期待どおりの 3 行を出す（最後の `/c++` の行は `SyntaxError` ではなく、`/` に一致するルートが無いという router 自身のエラー。そのページは `/` で開かれ、`/` のルートも fallback も無い）。ブラウザ 3 つで、読み込み・リンク・`navigate()` とも同じ結果。日本語のパス（`/お知らせ`）と、`encodeURIComponent` した値の往復も。
+- **公開後の作業**:
+  - PR #698（merge commit 0bb8bc31）: サイズの基準値を 4.24.2 の dist で取り直した。動いたのは版の文字列の分だけ（分割の core 24,802 → 24,801 B、`devtools` 2,511 → 2,512 B、`ssr` 5,781 → 5,782 B）。`core.min.js` は 20,474 B（残り 6 B）。CLAUDE.md / AGENTS.md を更新した（ルーターがパスを比べる形の 1 行を足した）。
+  - 拡張は出さない（lint にルートの照合は無い）。2.19.0 のまま。
+  - wcstack-skill: PR #69（merge commit 352f7fc）。`references/router-and-scaffold.md` に「パスの文字」（静的セグメント、どの文字のパスも書ける、`params` はデコード済み、`path` は URL の形、パスに入れる値は `encodeURIComponent`、4.24.1 までの振る舞い）、落とし穴の表に 1 行、刻印と固定 URL。注釈付きタグ `v4.24.2`。
+  - LP（wcstack.github.io 1cbc4d3）: リリースの表示、v4.24.2 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-tICBuS…`、gzip 84,853 B ＝約 83 KB のまま）、llms。ローカルの検査 7/7、本番 8/9（落ちる 1 件はこれまでと同じ `/product-card.js`）。
+  - issue #694 にコメントした（直した内容、調べる中で見つけた 2 点、4.24.2 での報告のスクリプトの出力、パラメータを自分でデコードしているページへの注意）。
+- **残り**:
+  - core の残りは 6 B。
+  - worktree の残骸（著者に削除を頼んだ）: `ext-2.18.0`、`agent-adb32aebb8b16c9d4`、`agent-a859fd1943ce54c04`。
+  - 止める目安には当たっていない。3 巡目の次は 5 本目「画面とセンサーの API」。
+  - ほかは 4.24.0 の「残り」のまま。
