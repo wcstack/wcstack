@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Upgrading
+
+- `@wcstack/router`: **`params` and `typedParams` hold percent-decoded values.** At `/users/%E2%82%AC`, `params.id` is `"€"`; it was `"%E2%82%AC"`. A page that decodes a param itself (`decodeURIComponent(params.id)`) decodes twice now: remove the call — a value with a `%` in it (`100%`) makes it throw. An encoded slash is a `/` inside the value (`/users/a%2Fb` gives `"a/b"`), and `params['*']` is the remaining segments, each decoded, joined with `/`. `path`, and a guard's `toPath` / `fromPath`, stay in the URL's form.
+- `@wcstack/router`: **a static segment of a route's `path` is matched as the characters written.** A `path` that leaned on being a regular expression — `path="/(en|ja)"`, `path="/v\d+"`, `path="/item.*"` — matches only that text now: use a parameter (`/:lang`) or a catch-all (`/*`) and look at the value. `path="/v1.0"` no longer matches `/v1x0`.
+- `@wcstack/router`: a route whose `path` has a character outside ASCII, or a space (`path="/café"`), matches its URL, and a `<wcs-link>` to such a path is `aria-current="page"` there. Such a route never matched before: where a fallback route showed for those URLs, the route shows now.
+- `@wcstack/router`: without the Navigation API, `navigate("/users/€")` gives `path` in the URL's form (`/users/%E2%82%AC`), as a load of that URL does. It was the string as written.
+
+### Fixed
+
+- `@wcstack/router`: a route's static segments were compiled as regular expressions as written, and the URL's path was compared still percent-encoded. Reported in #694 by trackoor (credit: [UCSB PLSE](https://ucsbplse.github.io/)); reproduced in Chromium, Firefox and WebKit, where it showed in five ways:
+  - `path="/v1.0"` matched `/v1x0`. `path="/c++"` threw a `SyntaxError` out of the router: with that route in the page, no route was shown at all.
+  - `path="/café"` matched no URL — the browser's `location.pathname` is `/caf%C3%A9` — on a load, from a link and from `navigate()`.
+  - The `id` of `/users/€` was `"%E2%82%AC"`.
+  - A `<wcs-link to="/users/€">` was not the current page on that page.
+  - Without the Navigation API, the string given to `navigate()` was compared as written: `navigate("/café")` showed the route, with `path` `"/café"`, and a reload of the same URL showed the fallback route.
+
+  A static segment is escaped. A URL's path is split into segments, and each is decoded before it is compared with a route's and before it becomes a param; an escape that is not valid UTF-8 leaves its segment as it is. A path the app writes — `navigate()`, `<wcs-link to>`, the `basename` attribute — is put in the form `location.pathname` has before it is compared with the URL's (router README §3.6).
+
 ## [4.24.1] — 2026-11-15
 
 A patch with what landing the `town-archive` seam app in `examples/` found ([docs/seam-apps.md](./docs/seam-apps.md), "Landing town-archive"): `<wcs-infinite-scroll>` asked for one page the window did not need when the user was scrolling as a page landed. Only `@wcstack/fetch`'s source changed (the `wcstack/auto` bundle carries it); every package is published at 4.24.1, as always.
