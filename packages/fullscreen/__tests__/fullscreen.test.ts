@@ -8,6 +8,9 @@ import {
   removeRequestFullscreen,
   setFullscreenElement,
   clearFullscreenElement,
+  dispatchFullscreenChange,
+  dispatchFullscreenError,
+  installFullscreenSupport,
   resetFullscreenEnvironment,
 } from "./mocks";
 
@@ -313,8 +316,8 @@ describe("<wcs-fullscreen>", () => {
     });
   });
 
-  describe("ライフサイクル", () => {
-    it("disconnectedCallback で dispose される（再接続後に fullscreenchange が反映される）", async () => {
+  describe("ライフサイクル — 文書を離れるとき（timing contract §22）", () => {
+    async function activeEl(): Promise<{ el: WcsFullscreen; hero: HTMLElement; events: any[] }> {
       const hero = document.createElement("div");
       hero.id = "hero";
       document.body.appendChild(hero);
@@ -323,14 +326,159 @@ describe("<wcs-fullscreen>", () => {
       document.body.appendChild(el);
       await el.requestFullscreen();
       expect(el.active).toBe(true);
+      const events: any[] = [];
+      el.addEventListener("wcs-fullscreen:change", (e) => events.push((e as CustomEvent).detail));
+      return { el, hero, events };
+    }
 
-      document.body.removeChild(el);
-      // dispose 済みなので document への fullscreenchange リスナーは外れている。
+    it("active 中に切断すると change を false で発火し、active は false（:state(active) も外れる）。fullscreen は抜けない", async () => {
+      const { el, hero, events } = await activeEl();
+      const exit = vi.fn(async () => {});
+      (document as any).exitFullscreen = exit;
+      expect(el.debugStates).toEqual(["active"]);
+
+      el.remove();
+
+      expect(events).toEqual([{ active: false }]);
+      expect(el.active).toBe(false);
+      expect(el.debugStates).toEqual([]);
+      expect(exit).not.toHaveBeenCalled();
+      expect((document as any).fullscreenElement).toBe(hero);
+    });
+
+    it("切断中は fullscreenchange を聞かない（リスナーは外れている）", async () => {
+      const { el, events } = await activeEl();
+      el.remove();
+      events.length = 0;
+
       clearFullscreenElement();
-      document.dispatchEvent(new Event("fullscreenchange"));
-      // active はリスナー解除後の値のまま変化しない（内部 _resolvedTarget と比較する
-      // 経路自体が動いていないことの確認）。
+      dispatchFullscreenChange();
+
+      expect(events).toEqual([]);
+      expect(el.active).toBe(false);
+    });
+
+    it("target がまだ fullscreen のまま再接続すると true を公開し直す", async () => {
+      const { el, events } = await activeEl();
+      el.remove();
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([{ active: false }, { active: true }]);
       expect(el.active).toBe(true);
+    });
+
+    it("切断のあいだに fullscreen が終わっていれば、再接続しても false のまま", async () => {
+      const { el, events } = await activeEl();
+      el.remove();
+      clearFullscreenElement();
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([{ active: false }]);
+      expect(el.active).toBe(false);
+    });
+
+    it("active でないときの切断は何も発火しない", () => {
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+      const events: any[] = [];
+      el.addEventListener("wcs-fullscreen:change", (e) => events.push((e as CustomEvent).detail));
+
+      el.remove();
+
+      expect(events).toEqual([]);
+      expect(el.active).toBe(false);
+    });
+
+    it("移動（切断 → 接続）は false、true の順に 2 回", async () => {
+      const { el, events } = await activeEl();
+      const host = document.createElement("section");
+      document.body.appendChild(host);
+
+      host.appendChild(el); // moveBefore の無いブラウザの移動: 切断してから接続
+
+      expect(events).toEqual([{ active: false }, { active: true }]);
+      expect(el.active).toBe(true);
+    });
+  });
+
+  describe("fullscreenerror — イベントで届く拒否", () => {
+    it("promise を返さない要求（レガシー API）の拒否が error / errorInfo に載る", async () => {
+      const hero = document.createElement("div");
+      hero.id = "hero";
+      document.body.appendChild(hero);
+      (hero as any).webkitRequestFullscreen = () => undefined;
+      const el = makeEl({ target: "#hero" });
+      document.body.appendChild(el);
+
+      await el.requestFullscreen();
+      expect(el.error).toBeNull();
+      dispatchFullscreenError();
+
+      expect(el.error.name).toBe("NotAllowedError");
+      expect(el.errorInfo?.code).toBe("not-allowed");
+      expect(el.errorInfo?.recoverable).toBe(true);
+    });
+
+    it("要求していないインスタンスは、他のインスタンスの拒否を自分の error にしない", async () => {
+      const a = document.createElement("div");
+      a.id = "a";
+      const b = document.createElement("div");
+      b.id = "b";
+      document.body.append(a, b);
+      (a as any).webkitRequestFullscreen = () => undefined;
+      const elA = makeEl({ target: "#a" });
+      const elB = makeEl({ target: "#b" });
+      document.body.append(elA, elB);
+
+      await elA.requestFullscreen();
+      dispatchFullscreenError();
+
+      expect(elA.error).not.toBeNull();
+      expect(elB.error).toBeNull();
+    });
+  });
+
+  describe("supported", () => {
+    it("Core の値をそのまま返す（呼ぶたびに調べ直す）", () => {
+      const el = makeEl({ target: "self" });
+      expect(el.supported).toBe(false);
+      const restore = installFullscreenSupport();
+      try {
+        expect(el.supported).toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
+    it("使えるページでは、接続時に supported-changed を true で 1 回発火する（再接続では出ない）", () => {
+      const restore = installFullscreenSupport();
+      try {
+        const el = makeEl({ target: "#none" });
+        const events: unknown[] = [];
+        el.addEventListener("wcs-fullscreen:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+        document.body.appendChild(el);
+        expect(events).toEqual([true]);
+
+        el.remove();
+        document.body.appendChild(el);
+        expect(events).toEqual([true]);
+      } finally {
+        restore();
+      }
+    });
+
+    it("使えないページでは接続しても発火しない（最後に発火した値の初期値は false）", () => {
+      const el = makeEl({ target: "self" });
+      const events: unknown[] = [];
+      el.addEventListener("wcs-fullscreen:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([]);
+      expect(el.supported).toBe(false);
     });
   });
 });

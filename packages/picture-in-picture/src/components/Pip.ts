@@ -123,6 +123,13 @@ export class WcsPip extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Whether this page can use Picture-in-Picture — probed at call time by the
+  // Core (never cached), so a state binding that reads it when it attaches gets
+  // the right value without waiting for `wcs-pip:supported-changed`.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   // --- Commands ---
 
   async requestPictureInPicture(): Promise<void> {
@@ -195,6 +202,10 @@ export class WcsPip extends HTMLElement {
     this._observe();
   }
 
+  // dispose() publishes `active: false` when it was true (timing contract §22):
+  // out of the document this element hears no leavepictureinpicture. The small
+  // window is not closed here; the next connectedCallback re-reads the truth
+  // through _observe().
   disconnectedCallback(): void {
     this._core.dispose();
   }

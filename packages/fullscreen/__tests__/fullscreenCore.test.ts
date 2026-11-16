@@ -9,14 +9,19 @@ import {
   setFullscreenElement,
   clearFullscreenElement,
   dispatchFullscreenChange,
+  dispatchFullscreenError,
+  setFullscreenEnabled,
+  installFullscreenSupport,
   resetFullscreenEnvironment,
   withoutOnfullscreenchange,
+  withoutDocumentHandlers,
 } from "./mocks";
 
 describe("FullscreenCore", () => {
   afterEach(() => {
     resetFullscreenEnvironment();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe("初期状態", () => {
@@ -33,10 +38,10 @@ describe("FullscreenCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties に active / error / errorInfo、active getter が detail.active を取り出す", () => {
-      expect(FullscreenCore.wcBindable.properties).toHaveLength(3);
+    it("properties に active / error / errorInfo / supported、active getter が detail.active を取り出す", () => {
+      expect(FullscreenCore.wcBindable.properties).toHaveLength(4);
       const names = FullscreenCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["active", "error", "errorInfo"]);
+      expect(names).toEqual(["active", "error", "errorInfo", "supported"]);
       const prop = FullscreenCore.wcBindable.properties[0];
       expect(prop.name).toBe("active");
       expect(prop.event).toBe("wcs-fullscreen:change");
@@ -45,6 +50,8 @@ describe("FullscreenCore", () => {
       // error / errorInfo は observable な失敗出力(event 付き)。
       expect(FullscreenCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-fullscreen:error", semantics: "state" });
       expect(FullscreenCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-fullscreen:error-info-changed", semantics: "state" });
+      // supported は getter なし: イベントの detail が boolean そのもの。
+      expect(FullscreenCore.wcBindable.properties[3]).toEqual({ name: "supported", event: "wcs-fullscreen:supported-changed", semantics: "state" });
     });
 
     it("commands に requestFullscreen/exitFullscreen が async 宣言される", () => {
@@ -539,6 +546,14 @@ describe("FullscreenCore", () => {
       core.observe();
       await core.requestFullscreen(el);
 
+      // 先に error を立てておく。dispose() は active を false で公開するので
+      // （§22）、active では世代ガードの有無を区別できない。stale な resolve の
+      // 成功パスが _setError(null) で error を消さないことで確認する。
+      const failure = new Error("first exit failed");
+      stubExitFullscreen({ rejectWith: failure });
+      await core.exitFullscreen();
+      expect(core.error).toBe(failure);
+
       let resolveFn: (() => void) | undefined;
       (document as any).exitFullscreen = () => new Promise<void>((resolve) => { resolveFn = resolve; });
 
@@ -548,9 +563,7 @@ describe("FullscreenCore", () => {
       resolveFn!();
       await p;
 
-      // dispose() 後は active の書き換えが起きない = fullscreenchange リスナーも
-      // 解除済みなので直前の true のままであることを確認する。
-      expect(core.active).toBe(true);
+      expect(core.error).toBe(failure);
     });
 
     it("dispose 後に exitFullscreen() の Promise が reject しても状態を書き換えない", async () => {
@@ -687,6 +700,492 @@ describe("FullscreenCore", () => {
       });
       // ヘルパの finally が復元済みであることを確認する。
       expect("onfullscreenchange" in document).toBe(true);
+    });
+  });
+
+  describe("dispose() — active を false で公開する（timing contract §22）", () => {
+    it("active 中の dispose は change を false で発火し、active は false になる（fullscreen は抜けない）", async () => {
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const exit = vi.fn(async () => {});
+      (document as any).exitFullscreen = exit;
+      const core = new FullscreenCore();
+      core.observe();
+      await core.requestFullscreen(el);
+      const events: any[] = [];
+      core.addEventListener("wcs-fullscreen:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+
+      expect(events).toEqual([{ active: false }]);
+      expect(core.active).toBe(false);
+      // 抜けるのはブラウザ（か利用者）で、dispose ではない。
+      expect(exit).not.toHaveBeenCalled();
+      expect((document as any).fullscreenElement).toBe(el);
+    });
+
+    it("dispose のあと target がまだ fullscreen なら、setTarget() が true を公開し直す", async () => {
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const core = new FullscreenCore();
+      core.observe();
+      await core.requestFullscreen(el);
+      const events: any[] = [];
+      core.addEventListener("wcs-fullscreen:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+      core.setTarget(el); // Shell の再接続（_reresolve）に相当
+      core.observe();
+
+      expect(events).toEqual([{ active: false }, { active: true }]);
+      expect(core.active).toBe(true);
+    });
+
+    it("dispose のあいだに fullscreen が終わっていれば、再接続しても false のまま（イベントも出ない）", async () => {
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const core = new FullscreenCore();
+      core.observe();
+      await core.requestFullscreen(el);
+      core.dispose();
+      const events: any[] = [];
+      core.addEventListener("wcs-fullscreen:change", (e) => events.push((e as CustomEvent).detail));
+
+      setFullscreenElement(null);
+      dispatchFullscreenChange(); // 購読していないので届かない
+      core.setTarget(el);
+      core.observe();
+
+      expect(events).toEqual([]);
+      expect(core.active).toBe(false);
+    });
+
+    it("active でない dispose は change を発火しない（二重の dispose も同じ）", async () => {
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const core = new FullscreenCore();
+      core.observe();
+      const events: any[] = [];
+      core.addEventListener("wcs-fullscreen:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+      expect(events).toEqual([]);
+
+      core.observe();
+      await core.requestFullscreen(el);
+      core.dispose();
+      core.dispose();
+      expect(events).toEqual([{ active: true }, { active: false }]);
+    });
+  });
+
+  describe("fullscreenerror — イベントで届く拒否", () => {
+    // promise を返さない呼び出し（接頭辞付きのレガシー API）。答えは document の
+    // fullscreenchange / fullscreenerror で届く。
+    function stubSilentRequest(el: Element): void {
+      (el as any).webkitRequestFullscreen = () => undefined;
+    }
+
+    function collectErrors(core: FullscreenCore): any[] {
+      const errors: any[] = [];
+      core.addEventListener("wcs-fullscreen:error", (e) => errors.push((e as CustomEvent).detail));
+      return errors;
+    }
+
+    it("promise を返さない要求が保留中にイベントが来ると error が立つ（not-allowed / recoverable）", async () => {
+      const el = document.createElement("div");
+      stubSilentRequest(el);
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      await core.requestFullscreen(el);
+      expect(core.error).toBeNull();
+
+      dispatchFullscreenError();
+
+      expect(core.error).toBeInstanceOf(DOMException);
+      expect(core.error.name).toBe("NotAllowedError");
+      expect(core.errorInfo).toEqual({
+        code: "not-allowed", phase: "execute", recoverable: true,
+        message: "The browser refused the fullscreen request.",
+      });
+      expect(errors).toHaveLength(1);
+
+      // 答えの出た要求は保留ではない: 続けて来たイベントは重ねて報告しない。
+      dispatchFullscreenError();
+      expect(errors).toHaveLength(1);
+    });
+
+    it("reject された promise の後にイベントが来ても、報告は 1 回だけ（promise の例外が残る）", async () => {
+      const el = document.createElement("div");
+      const gestureError = new TypeError("needs a user gesture");
+      stubRequestFullscreen(el, { rejectWith: gestureError });
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      await core.requestFullscreen(el);
+      dispatchFullscreenError();
+
+      expect(errors).toEqual([gestureError]);
+      expect(core.error).toBe(gestureError);
+    });
+
+    it("promise を返した要求は promise だけが答える: 決着前に来たイベントでは error を立てず、reject の例外を 1 回だけ報告する", async () => {
+      // イベントが reject より先に来るブラウザがある（WebKit の pointer lock で実測）。
+      // 理由を持っているのは reject の例外のほう。
+      const el = document.createElement("div");
+      let rejectFn: ((e: any) => void) | undefined;
+      (el as any).requestFullscreen = () => new Promise<void>((_resolve, reject) => { rejectFn = reject; });
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      const p = core.requestFullscreen(el);
+      dispatchFullscreenError();
+      expect(errors).toEqual([]);
+      expect(core.error).toBeNull();
+
+      const gestureError = new TypeError("needs a user gesture");
+      rejectFn!(gestureError);
+      await p;
+
+      expect(errors).toEqual([gestureError]);
+      expect(core.error).toBe(gestureError);
+    });
+
+    it("promise を返した要求の決着前に来たイベント（他のインスタンスの拒否）は無視し、fulfil で active になる", async () => {
+      const el = document.createElement("div");
+      let resolveFn: (() => void) | undefined;
+      (el as any).requestFullscreen = () => new Promise<void>((resolve) => { resolveFn = resolve; });
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      const p = core.requestFullscreen(el);
+      dispatchFullscreenError();
+
+      setFullscreenElement(el);
+      resolveFn!();
+      await p;
+
+      expect(errors).toEqual([]);
+      expect(core.error).toBeNull();
+      expect(core.active).toBe(true);
+    });
+
+    it("promise を返す呼び出しの中で同期的にイベントが発火しても、答えるのは promise", async () => {
+      const el = document.createElement("div");
+      const gestureError = new TypeError("needs a user gesture");
+      (el as any).requestFullscreen = () => {
+        dispatchFullscreenError();
+        return Promise.reject(gestureError);
+      };
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      await core.requestFullscreen(el);
+
+      expect(errors).toEqual([gestureError]);
+    });
+
+    it("promise を返さない要求は、呼んだ時点で前の error を消す（答えはその後のイベント）", async () => {
+      const el = document.createElement("div");
+      stubSilentRequest(el);
+      const core = new FullscreenCore();
+      core.observe();
+      await core.requestFullscreen(null);
+      expect(core.error).not.toBeNull();
+
+      const p = core.requestFullscreen(el);
+      expect(core.error).toBeNull(); // await を待たずに消えている
+      dispatchFullscreenError(); // コマンドの promise が決着する前でも答えになる
+      await p;
+
+      expect(core.error.name).toBe("NotAllowedError");
+    });
+
+    it("要求が保留中でなければイベントを無視する（他のインスタンスの要求）", async () => {
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      dispatchFullscreenError(); // 一度も要求していない
+      expect(core.error).toBeNull();
+
+      await core.requestFullscreen(el); // promise が fulfil して決着
+      dispatchFullscreenError();
+
+      expect(core.error).toBeNull();
+      expect(errors).toEqual([]);
+    });
+
+    it("promise を返さない要求が fullscreenchange で成功したら、その後のイベントは無視する", async () => {
+      const el = document.createElement("div");
+      stubSilentRequest(el);
+      const core = new FullscreenCore();
+      core.observe();
+
+      await core.requestFullscreen(el);
+      setFullscreenElement(el);
+      dispatchFullscreenChange();
+      expect(core.active).toBe(true);
+
+      dispatchFullscreenError();
+
+      expect(core.error).toBeNull();
+    });
+
+    it("fullscreenchange が来ても自分の target が fullscreen でなければ、要求は保留のまま", async () => {
+      const el = document.createElement("div");
+      const other = document.createElement("div");
+      stubSilentRequest(el);
+      const core = new FullscreenCore();
+      core.observe();
+
+      await core.requestFullscreen(el);
+      setFullscreenElement(other);
+      dispatchFullscreenChange();
+      expect(core.active).toBe(false);
+
+      dispatchFullscreenError();
+
+      expect(core.error.name).toBe("NotAllowedError");
+    });
+
+    it("呼び出しの中で同期的にイベントが発火しても、error は消えない", async () => {
+      const el = document.createElement("div");
+      (el as any).webkitRequestFullscreen = () => { dispatchFullscreenError(); };
+      const core = new FullscreenCore();
+      core.observe();
+      const errors = collectErrors(core);
+
+      await core.requestFullscreen(el);
+
+      expect(core.error.name).toBe("NotAllowedError");
+      expect(errors).toHaveLength(1);
+    });
+
+    it("後から呼んだ requestFullscreen() は前の保留を引き継がない", async () => {
+      const el = document.createElement("div");
+      stubSilentRequest(el);
+      const core = new FullscreenCore();
+      core.observe();
+
+      await core.requestFullscreen(el); // 保留
+      await core.requestFullscreen(null); // target 未解決: 同期の失敗で、保留は無い
+      const unresolved = core.error;
+      expect(unresolved).toEqual({ message: "Fullscreen target could not be resolved." });
+
+      dispatchFullscreenError();
+
+      expect(core.error).toBe(unresolved);
+    });
+
+    it("実行された exitFullscreen() は保留中の要求を追い越す（その後のイベントは無視）", async () => {
+      const el = document.createElement("div");
+      const other = document.createElement("div");
+      stubSilentRequest(el);
+      stubExitFullscreen();
+      const core = new FullscreenCore();
+      core.observe();
+
+      await core.requestFullscreen(el); // 保留
+      setFullscreenElement(other); // 別の要素が fullscreen: exit は no-op にならない
+      await core.exitFullscreen();
+      dispatchFullscreenError();
+
+      expect(core.error).toBeNull();
+    });
+
+    it("observe() で 1 回だけ購読し、dispose() で外す（外した後のイベントは届かない）", async () => {
+      const el = document.createElement("div");
+      stubSilentRequest(el);
+      const addSpy = vi.spyOn(document, "addEventListener");
+      const removeSpy = vi.spyOn(document, "removeEventListener");
+      const core = new FullscreenCore();
+
+      core.observe();
+      core.observe();
+      expect(addSpy.mock.calls.filter((c) => c[0] === "fullscreenerror")).toHaveLength(1);
+
+      await core.requestFullscreen(el); // 保留
+      core.dispose();
+      expect(removeSpy.mock.calls.filter((c) => c[0] === "fullscreenerror")).toHaveLength(1);
+
+      dispatchFullscreenError();
+      expect(core.error).toBeNull();
+
+      // 再購読しても、dispose で捨てた保留は戻らない。
+      core.observe();
+      dispatchFullscreenError();
+      expect(core.error).toBeNull();
+    });
+
+    it("標準の onfullscreenerror が無ければ webkitfullscreenerror を購読する", async () => {
+      await withoutDocumentHandlers(["onfullscreenchange", "onfullscreenerror"], async () => {
+        expect("onfullscreenerror" in document).toBe(false);
+
+        const el = document.createElement("div");
+        stubSilentRequest(el);
+        const addSpy = vi.spyOn(document, "addEventListener");
+        const removeSpy = vi.spyOn(document, "removeEventListener");
+        const core = new FullscreenCore();
+
+        core.observe();
+        expect(addSpy).toHaveBeenCalledWith("webkitfullscreenerror", expect.any(Function));
+
+        await core.requestFullscreen(el);
+        dispatchFullscreenError(); // 標準名は聞いていない
+        expect(core.error).toBeNull();
+        dispatchFullscreenError({ legacy: true });
+        expect(core.error.name).toBe("NotAllowedError");
+
+        core.dispose();
+        expect(removeSpy).toHaveBeenCalledWith("webkitfullscreenerror", expect.any(Function));
+      });
+      expect("onfullscreenerror" in document).toBe(true);
+    });
+  });
+
+  describe("supported — このページで fullscreen を使えるか", () => {
+    it("API が無い環境（happy-dom の既定）では false", () => {
+      expect(new FullscreenCore().supported).toBe(false);
+    });
+
+    it("fullscreenEnabled が true で Element.prototype に requestFullscreen があれば true", () => {
+      const restore = installFullscreenSupport();
+      try {
+        expect(new FullscreenCore().supported).toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
+    it("レガシー名だけ（webkitFullscreenEnabled / webkitRequestFullscreen）でも true", () => {
+      const restore = installFullscreenSupport({ legacy: true });
+      try {
+        expect(new FullscreenCore().supported).toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
+    it("fullscreenEnabled が false なら false（レガシー名へは落ちない）", () => {
+      const restore = installFullscreenSupport({ legacy: true });
+      try {
+        setFullscreenEnabled(false);
+        expect(new FullscreenCore().supported).toBe(false);
+      } finally {
+        restore();
+      }
+    });
+
+    it("fullscreenEnabled が true でも要素に request メソッドが無ければ false", () => {
+      setFullscreenEnabled(true);
+      expect(new FullscreenCore().supported).toBe(false);
+    });
+
+    it("要素にメソッドがあっても fullscreenEnabled が無ければ false（iPhone 相当: 要素の fullscreen が無い）", () => {
+      const restore = stubRequestFullscreenOnElementPrototype({ legacy: true });
+      try {
+        expect(new FullscreenCore().supported).toBe(false);
+      } finally {
+        restore();
+      }
+    });
+
+    it("Permissions-Policy が fullscreen を切っていれば false。fullscreenEnabled は読まない", () => {
+      const restore = installFullscreenSupport();
+      try {
+        vi.stubGlobal("isSecureContext", true);
+        (document as any).permissionsPolicy = { allowsFeature: (f: string) => f !== "fullscreen" };
+        const read = vi.fn(() => true);
+        Object.defineProperty(document, "fullscreenEnabled", { get: read, configurable: true });
+
+        expect(new FullscreenCore().supported).toBe(false);
+        // WebKit は、ポリシーが禁じたフレームで読むとページのエラーとして報告する。
+        expect(read).not.toHaveBeenCalled();
+
+        (document as any).permissionsPolicy = { allowsFeature: () => true };
+        expect(new FullscreenCore().supported).toBe(true);
+        expect(read).toHaveBeenCalled();
+      } finally {
+        restore();
+      }
+    });
+
+    it("安全なコンテキストでなくても true（fullscreen は安全なコンテキストを要らない: http: のページでも使える）", () => {
+      const restore = installFullscreenSupport();
+      try {
+        vi.stubGlobal("isSecureContext", false);
+        expect(new FullscreenCore().supported).toBe(true);
+
+        // ポリシーが切ったフレームでは fullscreenEnabled が false を返す: それが答えになる。
+        setFullscreenEnabled(false);
+        expect(new FullscreenCore().supported).toBe(false);
+      } finally {
+        restore();
+      }
+    });
+
+    it("値はキャッシュしない: 呼ぶたびに調べ直す", () => {
+      const core = new FullscreenCore();
+      expect(core.supported).toBe(false);
+      const restore = installFullscreenSupport();
+      try {
+        expect(core.supported).toBe(true);
+      } finally {
+        restore();
+      }
+      expect(core.supported).toBe(false);
+    });
+
+    it("observe() は、最後に発火した値（初期値 false）と違うときだけ supported-changed を発火する", () => {
+      const core = new FullscreenCore();
+      const events: Array<{ detail: unknown; bubbles: boolean }> = [];
+      core.addEventListener("wcs-fullscreen:supported-changed", (e) => {
+        events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles });
+      });
+
+      core.observe(); // 使えない: 初期値 false と同じなので発火しない
+      expect(events).toEqual([]);
+      core.dispose();
+
+      const restore = installFullscreenSupport();
+      try {
+        core.observe();
+        expect(events).toEqual([{ detail: true, bubbles: true }]);
+        core.observe(); // 同値: 発火しない
+        core.dispose();
+        core.observe(); // 再接続しても同値
+        expect(events).toHaveLength(1);
+        core.dispose();
+      } finally {
+        restore();
+      }
+
+      core.observe(); // 使えなくなった
+      expect(events).toEqual([{ detail: true, bubbles: true }, { detail: false, bubbles: true }]);
+    });
+
+    it("target を渡すとそこへ supported-changed を dispatch する", () => {
+      const restore = installFullscreenSupport();
+      try {
+        const target = new EventTarget();
+        const events: unknown[] = [];
+        target.addEventListener("wcs-fullscreen:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+        new FullscreenCore(target).observe();
+
+        expect(events).toEqual([true]);
+      } finally {
+        restore();
+      }
     });
   });
 });

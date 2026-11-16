@@ -80,6 +80,38 @@ export function removeExitPictureInPicture(): void {
   delete (document as any).exitPictureInPicture;
 }
 
+/**
+ * Install `document.pictureInPictureEnabled` (happy-dom does not define it).
+ * `removePipSupport()` removes it.
+ */
+export function setPictureInPictureEnabled(value: unknown): void {
+  Object.defineProperty(document, "pictureInPictureEnabled", {
+    value,
+    configurable: true,
+    writable: true,
+  });
+}
+
+/**
+ * Make the page one that can use Picture-in-Picture: `document.pictureInPictureEnabled`
+ * true and `requestPictureInPicture` on `HTMLVideoElement.prototype` (where a
+ * browser defines it). Undo with `removePipSupport()` (afterEach).
+ */
+export function installPipSupport(): void {
+  setPictureInPictureEnabled(true);
+  (HTMLVideoElement.prototype as any).requestPictureInPicture = function (): Promise<PictureInPictureWindow> {
+    return Promise.resolve({} as PictureInPictureWindow);
+  };
+}
+
+/** Remove everything `installPipSupport()` / the policy stubs put in place. */
+export function removePipSupport(): void {
+  delete (document as any).pictureInPictureEnabled;
+  delete (HTMLVideoElement.prototype as any).requestPictureInPicture;
+  delete (document as any).permissionsPolicy;
+  delete (document as any).featurePolicy;
+}
+
 /** Manually dispatch `enterpictureinpicture` on `video` (as the platform would). */
 export function emitEnter(video: HTMLVideoElement): void {
   video.dispatchEvent(new Event("enterpictureinpicture"));

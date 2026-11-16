@@ -128,6 +128,13 @@ export class WcsFullscreen extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Whether this page can use element fullscreen — probed at call time by the
+  // Core (never cached), so a state binding that reads it when it attaches gets
+  // the right value without waiting for `wcs-fullscreen:supported-changed`.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   // --- Commands ---
 
   /**
@@ -188,6 +195,10 @@ export class WcsFullscreen extends HTMLElement {
     this._connectedCallbackPromise = this._core.observe();
   }
 
+  // dispose() publishes `active: false` when it was true (timing contract §22):
+  // out of the document this element hears no fullscreenchange, and the browser
+  // ends the fullscreen when the target leaves with it. Nothing is exited here;
+  // the next connectedCallback re-reads the truth through _reresolve().
   disconnectedCallback(): void {
     this._core.dispose();
   }

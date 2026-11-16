@@ -192,25 +192,199 @@ describe("PointerLock (Shell)", () => {
     });
   });
 
-  describe("disconnectedCallback", () => {
-    it("切断で購読が解除され、以後の pointerlockchange に追従しない", async () => {
+  describe("disconnectedCallback — 文書を離れるとき（timing contract §22）", () => {
+    async function lockedEl(): Promise<{ el: WcsPointerLock; canvas: HTMLElement; events: unknown[]; doc: ReturnType<typeof installPointerLockDoc> }> {
       const doc = installPointerLockDoc();
+      const canvas = document.createElement("canvas");
+      canvas.id = "scene";
+      document.body.appendChild(canvas);
       const el = createPointerLock();
-      el.target = "self";
+      el.target = "#scene";
       document.body.appendChild(el);
       await el.requestPointerLock();
       expect(el.active).toBe(true);
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+      return { el, canvas, events, doc };
+    }
 
+    it("ロック中に切断すると change を false で発火し、active は false（:state(active) も外れる）。ロックは解かない", async () => {
+      const { el, canvas, events, doc } = await lockedEl();
+      expect(el.debugStates).toEqual(["active"]);
+
+      el.remove();
+
+      expect(events).toEqual([false]);
+      expect(el.active).toBe(false);
+      expect(el.debugStates).toEqual([]);
+      expect(doc.getLockedElement()).toBe(canvas);
+    });
+
+    it("切断中は pointerlockchange を聞かない（購読は外れている）", async () => {
+      const { el, canvas, events, doc } = await lockedEl();
+      el.remove();
+      events.length = 0;
+
+      doc.setLockedElement(null);
+      doc.setLockedElement(canvas);
+
+      expect(events).toEqual([]);
+      expect(el.active).toBe(false);
+    });
+
+    it("target がまだロックされたまま再接続すると true を公開し直す", async () => {
+      const { el, events } = await lockedEl();
+      el.remove();
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([false, true]);
+      expect(el.active).toBe(true);
+    });
+
+    it("切断のあいだにロックが解けていれば、再接続しても false のまま", async () => {
+      const { el, events, doc } = await lockedEl();
       el.remove();
       doc.setLockedElement(null);
 
-      expect(el.active).toBe(true); // 切断後は追従しない
+      document.body.appendChild(el);
+
+      expect(events).toEqual([false]);
+      expect(el.active).toBe(false);
+    });
+
+    it("ロックしていないときの切断は何も発火しない", () => {
+      installPointerLockDoc();
+      const el = createPointerLock();
+      el.target = "self";
+      document.body.appendChild(el);
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+
+      el.remove();
+
+      expect(events).toEqual([]);
+      expect(el.active).toBe(false);
+    });
+
+    it("移動（切断 → 接続）は false、true の順に 2 回", async () => {
+      const { el, events } = await lockedEl();
+      const host = document.createElement("section");
+      document.body.appendChild(host);
+
+      host.appendChild(el); // moveBefore の無いブラウザの移動: 切断してから接続
+
+      expect(events).toEqual([false, true]);
+      expect(el.active).toBe(true);
+    });
+  });
+
+  describe("pointerlockerror — イベントで届く拒否（Firefox）", () => {
+    // Firefox の requestPointerLock() は何も返さない。拒否は document の
+    // pointerlockerror でだけ届く。
+    const silentRequest = function (this: Element): Promise<void> {
+      return undefined as unknown as Promise<void>;
+    };
+
+    it("promise を返さない要求の拒否が error / errorInfo に載る（コマンドの promise が決着した後に届く）", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = createPointerLock();
+      el.target = "self";
+      document.body.appendChild(el);
+      const errors: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:error", (e) => errors.push((e as CustomEvent).detail));
+
+      await el.requestPointerLock();
+      expect(el.error).toBeNull(); // この時点ではまだ答えが無い
+
+      doc.fireError();
+
+      expect(el.error.name).toBe("NotAllowedError");
+      expect(el.error.message).toBe("The browser refused the pointer lock request.");
+      expect(el.errorInfo?.code).toBe("not-allowed");
+      expect(el.errorInfo?.recoverable).toBe(true);
+      expect(errors).toHaveLength(1);
+    });
+
+    it("要求していないインスタンスは、他のインスタンスの拒否を自分の error にしない", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const a = document.createElement("div");
+      a.id = "a";
+      const b = document.createElement("div");
+      b.id = "b";
+      document.body.append(a, b);
+      const pl1 = createPointerLock();
+      pl1.target = "#a";
+      const pl2 = createPointerLock();
+      pl2.target = "#b";
+      document.body.append(pl1, pl2);
+
+      await pl1.requestPointerLock();
+      doc.fireError();
+
+      expect(pl1.error).not.toBeNull();
+      expect(pl2.error).toBeNull();
+    });
+
+    it("reject された promise の後のイベントは重ねて報告しない", async () => {
+      const rejection = new DOMException("nope", "NotAllowedError");
+      const doc = installPointerLockDoc({}, function () {
+        return Promise.reject(rejection);
+      });
+      const el = createPointerLock();
+      el.target = "self";
+      document.body.appendChild(el);
+      const errors: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:error", (e) => errors.push((e as CustomEvent).detail));
+
+      await el.requestPointerLock();
+      doc.fireError();
+
+      expect(errors).toEqual([rejection]);
+      expect(el.error).toBe(rejection);
+    });
+  });
+
+  describe("supported", () => {
+    it("Core の値をそのまま返す（呼ぶたびに調べ直す）", () => {
+      const el = createPointerLock();
+      expect(el.supported).toBe(false);
+      installPointerLockDoc();
+      expect(el.supported).toBe(true);
+    });
+
+    it("API のあるページでは、接続時に supported-changed を true で 1 回発火する（再接続や target の変更では出ない）", () => {
+      installPointerLockDoc();
+      const el = createPointerLock();
+      el.target = "self";
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+
+      el.target = "#elsewhere";
+      el.remove();
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+    });
+
+    it("API の無いページでは接続しても発火しない（最後に発火した値の初期値は false）", () => {
+      const el = createPointerLock();
+      el.target = "self";
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([]);
+      expect(el.supported).toBe(false);
     });
   });
 
   describe("wcBindable", () => {
     it("Core の properties/commands を継承する", () => {
-      expect(WcsPointerLock.wcBindable.properties.map((p) => p.name)).toEqual(["active", "error", "errorInfo"]);
+      expect(WcsPointerLock.wcBindable.properties.map((p) => p.name)).toEqual(["active", "error", "errorInfo", "supported"]);
       expect(WcsPointerLock.wcBindable.commands).toEqual([
         { name: "requestPointerLock", async: true },
         { name: "exitPointerLock" },

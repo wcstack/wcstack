@@ -21,7 +21,7 @@ export default defineConfig({
         // deliberate decision rather than a file silently missing from the report.
         'src/raiseError.ts',
         // Generated copy of the shared io-core capability layer (byte-identical to
-        // fetch's, which tests it fully); pip uses only the WcsIoErrorInfo type.
+        // fetch's, which tests it fully); pip uses its WcsIoErrorInfo type and featureUnavailable().
         'src/core/platformCapability.ts'
       ],
       thresholds: {

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { PointerLockCore } from "../src/core/PointerLockCore";
-import { installPointerLockDoc, removePointerLockDoc } from "./mocks";
+import { installPointerLockDoc, removePointerLockDoc, withoutDocumentHandlers } from "./mocks";
 
 function makeElement(): HTMLElement {
   const el = document.createElement("div");
@@ -367,7 +367,7 @@ describe("PointerLockCore", () => {
       const names = PointerLockCore.wcBindable.properties.map((p) => p.name);
       expect(names).not.toContain("movementX");
       expect(names).not.toContain("movementY");
-      expect(names).toEqual(["active", "error", "errorInfo"]);
+      expect(names).toEqual(["active", "error", "errorInfo", "supported"]);
     });
   });
 
@@ -388,9 +388,418 @@ describe("PointerLockCore", () => {
     });
 
     it("error / errorInfo が observable な失敗出力(event 付き)として宣言される", () => {
-      expect(PointerLockCore.wcBindable.properties).toHaveLength(3);
+      expect(PointerLockCore.wcBindable.properties).toHaveLength(4);
       expect(PointerLockCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pointer-lock:error", semantics: "state" });
       expect(PointerLockCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pointer-lock:error-info-changed", semantics: "state" });
+    });
+
+    it("supported が state 出力として宣言される（getter なし: detail が boolean そのもの）", () => {
+      expect(PointerLockCore.wcBindable.properties[3]).toEqual({ name: "supported", event: "wcs-pointer-lock:supported-changed", semantics: "state" });
+    });
+  });
+
+  describe("dispose() — active を false で公開する（timing contract §22）", () => {
+    it("ロック中の dispose は change を false で発火し、active は false になる（ロックは解かない）", async () => {
+      const doc = installPointerLockDoc();
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      await core.requestPointerLock(el);
+      const events: any[] = [];
+      core.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+
+      expect(events).toEqual([false]);
+      expect(core.active).toBe(false);
+      // 解くのはブラウザ（か利用者）で、dispose ではない: exitPointerLock は呼ばれて
+      // おらず、document.pointerLockElement はそのまま。
+      expect(doc.getLockedElement()).toBe(el);
+    });
+
+    it("dispose のあと target がまだロック中なら、observe() が true を公開し直す", async () => {
+      installPointerLockDoc();
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      await core.requestPointerLock(el);
+      const events: any[] = [];
+      core.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+      core.observe(el); // Shell の再接続に相当
+
+      expect(events).toEqual([false, true]);
+      expect(core.active).toBe(true);
+    });
+
+    it("dispose のあいだにロックが解けていれば、再接続しても false のまま（イベントも出ない）", async () => {
+      const doc = installPointerLockDoc();
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      await core.requestPointerLock(el);
+      core.dispose();
+      const events: any[] = [];
+      core.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+
+      doc.setLockedElement(null); // 購読していないので届かない
+      core.observe(el);
+
+      expect(events).toEqual([]);
+      expect(core.active).toBe(false);
+    });
+
+    it("ロックしていない dispose は change を発火しない（二重の dispose も同じ）", async () => {
+      installPointerLockDoc();
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const events: any[] = [];
+      core.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+      expect(events).toEqual([]);
+
+      core.observe(el);
+      await core.requestPointerLock(el);
+      core.dispose();
+      core.dispose();
+      expect(events).toEqual([true, false]);
+    });
+  });
+
+  describe("pointerlockerror — イベントで届く拒否（Firefox）", () => {
+    // Firefox の requestPointerLock() は何も返さない（reject する promise が無い）。
+    // 答えは document の pointerlockchange / pointerlockerror で届く。
+    const silentRequest = function (this: Element): Promise<void> {
+      return undefined as unknown as Promise<void>;
+    };
+
+    function collectErrors(core: PointerLockCore): any[] {
+      const errors: any[] = [];
+      core.addEventListener("wcs-pointer-lock:error", (e) => errors.push((e as CustomEvent).detail));
+      return errors;
+    }
+
+    it("promise を返さない要求が保留中にイベントが来ると error が立つ（not-allowed / recoverable）", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      await core.requestPointerLock(el);
+      expect(core.error).toBeNull();
+
+      doc.fireError();
+
+      expect(core.error).toBeInstanceOf(DOMException);
+      expect(core.error.name).toBe("NotAllowedError");
+      expect(core.errorInfo).toEqual({
+        code: "not-allowed", phase: "execute", recoverable: true,
+        message: "The browser refused the pointer lock request.",
+      });
+      expect(core.active).toBe(false);
+      expect(errors).toHaveLength(1);
+
+      // 答えの出た要求は保留ではない: 続けて来たイベントは重ねて報告しない。
+      doc.fireError();
+      expect(errors).toHaveLength(1);
+    });
+
+    it("reject された promise の後にイベントが来ても、報告は 1 回だけ（promise の例外が残る）", async () => {
+      // Chromium と WebKit: promise が reject し、同じ拒否のイベントも後から来る。
+      const rejection = new DOMException("gesture required", "NotAllowedError");
+      const doc = installPointerLockDoc({}, function () {
+        return Promise.reject(rejection);
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      await core.requestPointerLock(el);
+      doc.fireError();
+
+      expect(errors).toEqual([rejection]);
+      expect(core.error).toBe(rejection);
+    });
+
+    it("promise を返した要求は promise だけが答える: 決着前に来たイベントでは error を立てず、reject の例外を 1 回だけ報告する", async () => {
+      // WebKit はブラウザが後から断るとき（ウィンドウにフォーカスが無い、など）、
+      // pointerlockerror を先に発火してから promise を reject する（実測）。理由
+      // （WrongDocumentError: Pointer lock requires the window to have focus.）を
+      // 持っているのは reject の例外のほう。
+      let rejectFn!: (e: unknown) => void;
+      const doc = installPointerLockDoc({}, function () {
+        return new Promise<void>((_resolve, reject) => {
+          rejectFn = reject;
+        });
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      const p = core.requestPointerLock(el);
+      doc.fireError();
+      expect(errors).toEqual([]);
+      expect(core.error).toBeNull();
+
+      const rejection = new DOMException("Pointer lock requires the window to have focus.", "WrongDocumentError");
+      rejectFn(rejection);
+      await p;
+
+      expect(errors).toEqual([rejection]);
+      expect(core.error).toBe(rejection);
+      expect(core.errorInfo?.code).toBe("pointer-lock-error");
+    });
+
+    it("promise を返した要求の決着前に来たイベント（他のインスタンスの拒否）は無視し、fulfil で active になる", async () => {
+      let resolveFn!: () => void;
+      const doc = installPointerLockDoc({}, function () {
+        return new Promise<void>((resolve) => {
+          resolveFn = resolve;
+        });
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      const p = core.requestPointerLock(el);
+      doc.fireError();
+
+      doc.setLockedElement(el);
+      resolveFn();
+      await p;
+
+      expect(errors).toEqual([]);
+      expect(core.error).toBeNull();
+      expect(core.active).toBe(true);
+    });
+
+    it("promise を返す呼び出しの中で同期的にイベントが発火しても、答えるのは promise", async () => {
+      const rejection = new DOMException("gesture required", "NotAllowedError");
+      const doc = installPointerLockDoc({}, function () {
+        doc.fireError();
+        return Promise.reject(rejection);
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      await core.requestPointerLock(el);
+
+      expect(errors).toEqual([rejection]);
+    });
+
+    it("promise を返さない要求は、呼んだ時点で前の error を消す（答えはその後のイベント）", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      await core.requestPointerLock(null);
+      expect(core.error).not.toBeNull();
+
+      const p = core.requestPointerLock(el);
+      expect(core.error).toBeNull(); // await を待たずに消えている
+      doc.fireError(); // コマンドの promise が決着する前でも答えになる
+      await p;
+
+      expect(core.error.name).toBe("NotAllowedError");
+    });
+
+    it("要求が保留中でなければイベントを無視する（他のインスタンスの要求）", async () => {
+      const doc = installPointerLockDoc();
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      doc.fireError(); // 一度も要求していない
+      expect(core.error).toBeNull();
+
+      await core.requestPointerLock(el); // promise が fulfil して決着
+      doc.fireError();
+
+      expect(core.error).toBeNull();
+      expect(errors).toEqual([]);
+    });
+
+    it("promise を返さない要求が pointerlockchange で成功したら、その後のイベントは無視する", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+
+      await core.requestPointerLock(el);
+      doc.setLockedElement(el);
+      expect(core.active).toBe(true);
+
+      doc.fireError();
+
+      expect(core.error).toBeNull();
+    });
+
+    it("pointerlockchange が来ても自分の target がロックされていなければ、要求は保留のまま", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = makeElement();
+      const other = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+
+      await core.requestPointerLock(el);
+      doc.setLockedElement(other);
+      expect(core.active).toBe(false);
+
+      doc.fireError();
+
+      expect(core.error.name).toBe("NotAllowedError");
+    });
+
+    it("呼び出しの中で同期的にイベントが発火しても、error は消えない", async () => {
+      const doc = installPointerLockDoc({}, function () {
+        doc.fireError();
+        return undefined as unknown as Promise<void>;
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+      const errors = collectErrors(core);
+
+      await core.requestPointerLock(el);
+
+      expect(core.error.name).toBe("NotAllowedError");
+      expect(errors).toHaveLength(1);
+    });
+
+    it("後から呼んだ requestPointerLock() は前の保留を引き継がない", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = makeElement();
+      const core = new PointerLockCore();
+      core.observe(el);
+
+      await core.requestPointerLock(el); // 保留
+      await core.requestPointerLock(null); // target 未解決: 同期の失敗で、保留は無い
+      const unresolved = core.error;
+      expect(unresolved).toEqual({ message: "Pointer Lock target could not be resolved." });
+
+      doc.fireError();
+
+      expect(core.error).toBe(unresolved);
+    });
+
+    it("observe() で 1 回だけ購読し、dispose() で外す（外した後のイベントは届かない）", async () => {
+      const doc = installPointerLockDoc({}, silentRequest);
+      const el = makeElement();
+      const addSpy = vi.spyOn(document, "addEventListener");
+      const removeSpy = vi.spyOn(document, "removeEventListener");
+      const core = new PointerLockCore();
+
+      core.observe(el);
+      core.observe(el);
+      expect(addSpy.mock.calls.filter(([type]) => type === "pointerlockerror")).toHaveLength(1);
+
+      await core.requestPointerLock(el); // 保留
+      core.dispose();
+      expect(removeSpy.mock.calls.filter(([type]) => type === "pointerlockerror")).toHaveLength(1);
+
+      doc.fireError();
+      expect(core.error).toBeNull();
+
+      // 再購読しても、dispose で捨てた保留は戻らない。
+      core.observe(el);
+      doc.fireError();
+      expect(core.error).toBeNull();
+    });
+
+    it("標準の onpointerlockerror が無ければ webkitpointerlockerror を購読する", async () => {
+      await withoutDocumentHandlers(["onpointerlockchange", "onpointerlockerror"], async () => {
+        expect("onpointerlockerror" in document).toBe(false);
+
+        const doc = installPointerLockDoc({ standard: false, legacy: true }, silentRequest);
+        const el = makeElement();
+        const addSpy = vi.spyOn(document, "addEventListener");
+        const removeSpy = vi.spyOn(document, "removeEventListener");
+        const core = new PointerLockCore();
+
+        core.observe(el);
+        expect(addSpy).toHaveBeenCalledWith("webkitpointerlockerror", expect.any(Function));
+
+        await core.requestPointerLock(el);
+        document.dispatchEvent(new Event("pointerlockerror")); // 標準名は聞いていない
+        expect(core.error).toBeNull();
+        doc.fireError();
+        expect(core.error.name).toBe("NotAllowedError");
+
+        core.dispose();
+        expect(removeSpy).toHaveBeenCalledWith("webkitpointerlockerror", expect.any(Function));
+      });
+      expect("onpointerlockerror" in document).toBe(true);
+    });
+  });
+
+  describe("supported — このページに Pointer Lock API があるか", () => {
+    it("API が無い環境では false", () => {
+      removePointerLockDoc();
+      expect(new PointerLockCore().supported).toBe(false);
+    });
+
+    it("Element.prototype に requestPointerLock があれば true", () => {
+      installPointerLockDoc();
+      expect(new PointerLockCore().supported).toBe(true);
+    });
+
+    it("レガシー名（webkitRequestPointerLock）だけでも true", () => {
+      installPointerLockDoc({ standard: false, legacy: true });
+      expect(new PointerLockCore().supported).toBe(true);
+    });
+
+    it("値はキャッシュしない: 呼ぶたびに調べ直す", () => {
+      const core = new PointerLockCore();
+      expect(core.supported).toBe(false);
+      installPointerLockDoc();
+      expect(core.supported).toBe(true);
+      removePointerLockDoc();
+      expect(core.supported).toBe(false);
+    });
+
+    it("observe() は、最後に発火した値（初期値 false）と違うときだけ supported-changed を発火する", () => {
+      const el = makeElement();
+      const core = new PointerLockCore();
+      const events: Array<{ detail: unknown; bubbles: boolean }> = [];
+      core.addEventListener("wcs-pointer-lock:supported-changed", (e) => {
+        events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles });
+      });
+
+      core.observe(el); // API が無い: 初期値 false と同じなので発火しない
+      expect(events).toEqual([]);
+
+      installPointerLockDoc();
+      core.observe(el);
+      expect(events).toEqual([{ detail: true, bubbles: true }]);
+      core.observe(el); // 同値: 発火しない
+      core.dispose();
+      core.observe(el); // 再接続しても同値
+      expect(events).toHaveLength(1);
+
+      removePointerLockDoc();
+      core.observe(el); // API が無くなった
+      expect(events).toEqual([{ detail: true, bubbles: true }, { detail: false, bubbles: true }]);
+    });
+
+    it("target に指定した EventTarget へ supported-changed を dispatch する", () => {
+      installPointerLockDoc();
+      const target = new EventTarget();
+      const events: unknown[] = [];
+      target.addEventListener("wcs-pointer-lock:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      new PointerLockCore(target).observe(makeElement());
+
+      expect(events).toEqual([true]);
     });
   });
 

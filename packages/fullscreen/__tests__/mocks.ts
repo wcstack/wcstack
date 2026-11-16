@@ -126,25 +126,59 @@ export function dispatchFullscreenChange(opts: { legacy?: boolean } = {}): void 
   document.dispatchEvent(new Event(name));
 }
 
+/** Manually dispatch fullscreenerror (or webkitfullscreenerror) on document. */
+export function dispatchFullscreenError(opts: { legacy?: boolean } = {}): void {
+  const name = opts.legacy ? "webkitfullscreenerror" : "fullscreenerror";
+  document.dispatchEvent(new Event(name));
+}
+
+/**
+ * Install `document.fullscreenEnabled` (or the legacy `webkitFullscreenEnabled`),
+ * which happy-dom does not define. `resetFullscreenEnvironment()` removes both.
+ */
+export function setFullscreenEnabled(value: unknown, opts: { legacy?: boolean } = {}): void {
+  const key = opts.legacy ? "webkitFullscreenEnabled" : "fullscreenEnabled";
+  Object.defineProperty(document, key, {
+    value,
+    configurable: true,
+    writable: true,
+  });
+}
+
+/**
+ * Make the page one that can use element fullscreen: `document.fullscreenEnabled`
+ * true and `requestFullscreen` on `Element.prototype` (or the legacy names).
+ * Returns a restore function for the prototype stub — always call it
+ * (try/finally); `resetFullscreenEnvironment()` removes the document field.
+ */
+export function installFullscreenSupport(opts: { legacy?: boolean } = {}): () => void {
+  setFullscreenEnabled(true, opts);
+  return stubRequestFullscreenOnElementPrototype(opts);
+}
+
 /** Reset all fullscreen-related fields/methods installed by these helpers. */
 export function resetFullscreenEnvironment(): void {
   clearFullscreenElement();
   removeExitFullscreen();
   delete (document as any).onfullscreenchange;
+  delete (document as any).fullscreenEnabled;
+  delete (document as any).webkitFullscreenEnabled;
+  delete (document as any).permissionsPolicy;
+  delete (document as any).featurePolicy;
 }
 
 /**
- * Find the prototype-chain link that actually owns `onfullscreenchange` as an
- * own property (mirroring what the `in` operator checks), rather than
- * assuming it sits exactly one level up. happy-dom defines it on `Document`'s
+ * Find the prototype-chain link that actually owns `name` as an own property
+ * (mirroring what the `in` operator checks), rather than assuming it sits
+ * exactly one level up. happy-dom defines the `on…` handlers on `Document`'s
  * prototype, which is *not* `Object.getPrototypeOf(document)` (that one level
  * up is `HTMLDocument.prototype`) — walking the chain keeps this helper
  * correct even if that depth shifts in a future happy-dom version.
  */
-function findOnfullscreenchangeOwner(): object | null {
+function findDocumentPropertyOwner(name: string): object | null {
   let proto: object | null = document as unknown as object;
   while (proto) {
-    if (Object.prototype.hasOwnProperty.call(proto, "onfullscreenchange")) {
+    if (Object.prototype.hasOwnProperty.call(proto, name)) {
       return proto;
     }
     proto = Object.getPrototypeOf(proto);
@@ -153,24 +187,35 @@ function findOnfullscreenchangeOwner(): object | null {
 }
 
 /**
- * Temporarily remove `onfullscreenchange` from wherever it actually lives on
- * `document`'s prototype chain, run `fn` (sync or async), then always restore
- * it — so a test can force `_fullscreenChangeEventName()`'s legacy branch
- * without depending on a fixed prototype depth.
+ * Temporarily remove the named `on…` handler properties from wherever they
+ * actually live on `document`'s prototype chain, run `fn` (sync or async), then
+ * always restore them — so a test can force the legacy branch of
+ * `_fullscreenChangeEventName()` / `_fullscreenErrorEventName()` without
+ * depending on a fixed prototype depth. A name that is already absent (e.g. a
+ * future happy-dom without the property at all) is skipped: its legacy branch
+ * is already reachable, there is nothing to remove or restore.
  */
-export async function withoutOnfullscreenchange(fn: () => void | Promise<void>): Promise<void> {
-  const owner = findOnfullscreenchangeOwner();
-  if (!owner) {
-    // Already absent (e.g. a future happy-dom without this property at all) —
-    // the legacy branch is already reachable, nothing to remove/restore.
-    await fn();
-    return;
+export async function withoutDocumentHandlers(names: string[], fn: () => void | Promise<void>): Promise<void> {
+  const removed: Array<{ owner: object; name: string; descriptor: PropertyDescriptor }> = [];
+  for (const name of names) {
+    const owner = findDocumentPropertyOwner(name);
+    if (!owner) continue;
+    removed.push({ owner, name, descriptor: Object.getOwnPropertyDescriptor(owner, name)! });
+    delete (owner as any)[name];
   }
-  const descriptor = Object.getOwnPropertyDescriptor(owner, "onfullscreenchange")!;
-  delete (owner as any).onfullscreenchange;
   try {
     await fn();
   } finally {
-    Object.defineProperty(owner, "onfullscreenchange", descriptor);
+    for (const { owner, name, descriptor } of removed) {
+      Object.defineProperty(owner, name, descriptor);
+    }
   }
+}
+
+/**
+ * `withoutDocumentHandlers(["onfullscreenchange"], fn)` — forces
+ * `_fullscreenChangeEventName()`'s legacy branch.
+ */
+export async function withoutOnfullscreenchange(fn: () => void | Promise<void>): Promise<void> {
+  await withoutDocumentHandlers(["onfullscreenchange"], fn);
 }

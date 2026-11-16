@@ -10,14 +10,19 @@ import {
   removeExitPictureInPicture,
   emitEnter,
   emitLeave,
+  setPictureInPictureEnabled,
+  installPipSupport,
+  removePipSupport,
 } from "./mocks";
 
 describe("PipCore", () => {
   afterEach(() => {
     removePictureInPictureElement();
     removeExitPictureInPicture();
+    removePipSupport();
     document.body.innerHTML = "";
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe("初期状態", () => {
@@ -631,14 +636,182 @@ describe("PipCore", () => {
     });
   });
 
+  describe("dispose() — active を false で公開する（timing contract §22）", () => {
+    it("PiP 中の dispose は change を false で発火し、active は false になる（小窓は閉じない）", () => {
+      const video = makeVideo();
+      installPictureInPictureElement(video);
+      const exit = vi.fn(() => Promise.resolve());
+      installExitPictureInPicture(exit);
+      const core = new PipCore();
+      core.observe(video);
+      expect(core.active).toBe(true);
+      const events: any[] = [];
+      core.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+
+      expect(events).toEqual([{ active: false }]);
+      expect(core.active).toBe(false);
+      // 閉じるのはブラウザ（か利用者）で、dispose ではない。
+      expect(exit).not.toHaveBeenCalled();
+      expect((document as any).pictureInPictureElement).toBe(video);
+    });
+
+    it("dispose のあと video がまだ PiP 中なら、observe() が true を公開し直す", () => {
+      const video = makeVideo();
+      installPictureInPictureElement(video);
+      const core = new PipCore();
+      core.observe(video);
+      const events: any[] = [];
+      core.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+      core.observe(video); // Shell の再接続に相当
+
+      expect(events).toEqual([{ active: false }, { active: true }]);
+      expect(core.active).toBe(true);
+    });
+
+    it("dispose のあいだに PiP が終わっていれば、再接続しても false のまま（イベントも出ない）", () => {
+      const video = makeVideo();
+      installPictureInPictureElement(video);
+      const core = new PipCore();
+      core.observe(video);
+      core.dispose();
+      const events: any[] = [];
+      core.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+
+      setPictureInPictureElement(null);
+      emitLeave(video); // 購読していないので届かない
+      core.observe(video);
+
+      expect(events).toEqual([]);
+      expect(core.active).toBe(false);
+    });
+
+    it("PiP 中でない dispose は change を発火しない（二重の dispose も同じ）", () => {
+      const video = makeVideo();
+      installPictureInPictureElement(null);
+      const core = new PipCore();
+      core.observe(video);
+      const events: any[] = [];
+      core.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+
+      core.dispose();
+      expect(events).toEqual([]);
+
+      core.observe(video);
+      setPictureInPictureElement(video);
+      emitEnter(video);
+      core.dispose();
+      core.dispose();
+      expect(events).toEqual([{ active: true }, { active: false }]);
+    });
+  });
+
+  describe("supported — このページで Picture-in-Picture を使えるか", () => {
+    it("API が無い環境（happy-dom の既定、Firefox 相当）では false", () => {
+      expect(new PipCore().supported).toBe(false);
+    });
+
+    it("pictureInPictureEnabled が true で <video> に requestPictureInPicture があれば true", () => {
+      installPipSupport();
+      expect(new PipCore().supported).toBe(true);
+    });
+
+    it("pictureInPictureEnabled が false なら false", () => {
+      installPipSupport();
+      setPictureInPictureEnabled(false);
+      expect(new PipCore().supported).toBe(false);
+    });
+
+    it("pictureInPictureEnabled が true でも <video> にメソッドが無ければ false", () => {
+      setPictureInPictureEnabled(true);
+      expect(new PipCore().supported).toBe(false);
+    });
+
+    it("Permissions-Policy が picture-in-picture を切っていれば false。pictureInPictureEnabled は読まない", () => {
+      installPipSupport();
+      vi.stubGlobal("isSecureContext", true);
+      (document as any).permissionsPolicy = { allowsFeature: (f: string) => f !== "picture-in-picture" };
+      const read = vi.fn(() => true);
+      Object.defineProperty(document, "pictureInPictureEnabled", { get: read, configurable: true });
+
+      expect(new PipCore().supported).toBe(false);
+      // Chromium は、ポリシーが禁じた文書で読むだけでコンソールにエラーを出す。
+      expect(read).not.toHaveBeenCalled();
+
+      (document as any).permissionsPolicy = { allowsFeature: () => true };
+      expect(new PipCore().supported).toBe(true);
+      expect(read).toHaveBeenCalled();
+    });
+
+    it("安全なコンテキストでなくても true（Picture-in-Picture は安全なコンテキストを要らない: http: のページでも使える）", () => {
+      installPipSupport();
+      vi.stubGlobal("isSecureContext", false);
+      expect(new PipCore().supported).toBe(true);
+
+      // ポリシーが切った文書では pictureInPictureEnabled が false を返す: それが答えになる。
+      setPictureInPictureEnabled(false);
+      expect(new PipCore().supported).toBe(false);
+    });
+
+    it("値はキャッシュしない: 呼ぶたびに調べ直す", () => {
+      const core = new PipCore();
+      expect(core.supported).toBe(false);
+      installPipSupport();
+      expect(core.supported).toBe(true);
+      removePipSupport();
+      expect(core.supported).toBe(false);
+    });
+
+    it("observe() は、最後に発火した値（初期値 false）と違うときだけ supported-changed を発火する", () => {
+      const video = makeVideo();
+      const core = new PipCore();
+      const events: Array<{ detail: unknown; bubbles: boolean }> = [];
+      core.addEventListener("wcs-pip:supported-changed", (e) => {
+        events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles });
+      });
+
+      core.observe(video); // 使えない: 初期値 false と同じなので発火しない
+      expect(events).toEqual([]);
+
+      installPipSupport();
+      core.observe(video); // 同じ video（リスナーの張り替えは無い）でも supported は公開する
+      expect(events).toEqual([{ detail: true, bubbles: true }]);
+      core.observe(video); // 同値: 発火しない
+      core.dispose();
+      core.observe(video); // 再接続しても同値
+      core.observe(null);
+      expect(events).toHaveLength(1);
+
+      removePipSupport();
+      core.observe(null); // 使えなくなった（target が解決しなくても公開する）
+      expect(events).toEqual([{ detail: true, bubbles: true }, { detail: false, bubbles: true }]);
+    });
+
+    it("target を渡すとそこへ supported-changed を dispatch する", () => {
+      installPipSupport();
+      const target = new EventTarget();
+      const events: unknown[] = [];
+      target.addEventListener("wcs-pip:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      new PipCore(target).observe(null);
+
+      expect(events).toEqual([true]);
+    });
+  });
+
   describe("wcBindable プロトコル宣言", () => {
-    it("properties は active / error / errorInfo（error・errorInfo は observable な失敗出力）", () => {
-      expect(PipCore.wcBindable.properties).toHaveLength(3);
+    it("properties は active / error / errorInfo / supported（error・errorInfo は observable な失敗出力）", () => {
+      expect(PipCore.wcBindable.properties).toHaveLength(4);
       const names = PipCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["active", "error", "errorInfo"]);
+      expect(names).toEqual(["active", "error", "errorInfo", "supported"]);
       // error / errorInfo は event 付きで宣言され、data-wcs / bind() で観測できる。
       expect(PipCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pip:error", semantics: "state" });
       expect(PipCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pip:error-info-changed", semantics: "state" });
+      // supported は getter なし: イベントの detail が boolean そのもの。
+      expect(PipCore.wcBindable.properties[3]).toEqual({ name: "supported", event: "wcs-pip:supported-changed", semantics: "state" });
     });
 
     it("active の getter が event.detail.active を読む", () => {
