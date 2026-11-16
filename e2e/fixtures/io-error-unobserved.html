@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: a failure nothing reads ([wcs/io-error-unobserved])</title>
+  <!-- The stamp-rally seam app (docs/seam-apps.md), 4.25. An I/O node never throws: a command that fails ends in
+       its error / errorInfo, and a page that binds neither stayed as it was, without a word. The diagnostics
+       add-on names an element state binds whose data-wcs reads none of error, errorInfo, status, connected.
+
+       #lost: target="viewer" is a selector for <viewer> elements (the author meant "#viewer"), so every request
+       fails with "Fullscreen target could not be resolved." — and nothing is bound to its failure.
+       #read: the same mistake, with errorInfo bound: the page reads it, so nothing is said. -->
+  <script type="module" src="/packages/fullscreen/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        $commandTokens: ["lostGo", "readGo"],
+        lost: false,
+        read: false, readInfo: null,
+        get readCode() { return this["readInfo.code"] ?? ""; },
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-fullscreen id="lost" target="viewer" data-wcs="active: lost; command.requestFullscreen: $command.lostGo"></wcs-fullscreen>
+  <wcs-fullscreen id="read" target="viewer" data-wcs="active: read; errorInfo: readInfo; command.requestFullscreen: $command.readGo"></wcs-fullscreen>
+  <div id="viewer">viewer</div>
+
+  <button id="lostGo" data-wcs="onclick: $command.lostGo">fullscreen (nothing reads the failure)</button>
+  <button id="readGo" data-wcs="onclick: $command.readGo">fullscreen (errorInfo is bound)</button>
+  <output id="readCode" data-wcs="textContent: readCode"></output>
+</body>
+</html>
