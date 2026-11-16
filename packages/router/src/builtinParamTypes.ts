@@ -75,7 +75,8 @@ export const builtinParamTypes = {
 
   "any": {
     typeName: "any",
-    pattern: /^.+$/,
+    // （値はデコード済み: `%0A` の改行も 1 文字として受ける。エンコードされたままだった頃は `.` が受けていた）
+    pattern: /^.+$/s,
     parse(value: string): string | undefined {
       if (!this.pattern.test(value)) {
         return undefined;

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: route paths are literal, URL segments are percent-decoded</title>
+  <!-- Issue #694. Up to 4.24.1 a static segment was compiled as a regular expression as written
+       (path="/v1.0" matched /v1x0, and path="/c++" threw out of the router: no route was shown), and the URL's
+       path was compared still percent-encoded (path="/café" matched no URL, the id of /users/€ was
+       "%E2%82%AC", and a link to /users/€ was not the current page there). -->
+  <base href="/e2e/fixtures/">
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+</head>
+<body>
+  <nav>
+    <wcs-link id="l-home" to="/">home</wcs-link>
+    <wcs-link id="l-v1" to="/v1.0">v1.0</wcs-link>
+    <wcs-link id="l-cafe" to="/café">café</wcs-link>
+    <wcs-link id="l-cpp" to="/c++">c++</wcs-link>
+    <wcs-link id="l-euro" to="/users/€">user €</wcs-link>
+    <wcs-link id="l-space" to="/users/a b">user a b</wcs-link>
+  </nav>
+
+  <wcs-router>
+    <template>
+      <wcs-route path="/" name="home"><h1 id="view">home</h1></wcs-route>
+      <wcs-route path="/v1.0" name="v1"><h1 id="view">v1.0</h1></wcs-route>
+      <wcs-route path="/café" name="cafe"><h1 id="view">café</h1></wcs-route>
+      <wcs-route path="/c++" name="cpp"><h1 id="view">c++</h1></wcs-route>
+      <wcs-route path="/users/:id" name="user"><h1 id="view">user</h1></wcs-route>
+      <wcs-route path="/files/*" name="files"><h1 id="view">files</h1></wcs-route>
+      <wcs-route fallback name="404"><h1 id="view">not found</h1></wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</body>
+</html>

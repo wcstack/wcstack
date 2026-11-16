@@ -38,9 +38,10 @@ export default defineConfig({
     // (fetch-infinite-scroll).
     // And the town-archive seam app: a $watch on a getter over the first width an element hands over, which did not
     // fire in Firefox either, the command that carries its url, and Back to the card (town-archive).
+    // And the router's route paths: a static segment as written, the URL's segments percent-decoded (router-encoded-paths, #694).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

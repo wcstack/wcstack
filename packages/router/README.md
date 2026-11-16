@@ -178,8 +178,8 @@ Define routes and layout slots inside a child template tag. A direct child templ
 
 | Member | Direction | Description |
 |------|------|------|
-| `path` | output only | Current route path (basename already sliced). Fires `wcs-router:path-changed`. |
-| `params` | output only | Merged params of the matched route chain, as strings (`Record<string, string>`). `{}` on a fallback match or before initialization. |
+| `path` | output only | Current route path (basename already sliced), in the URL's form: percent-encoded as `location.pathname` is ([§3.6](#36-characters-and-percent-encoding)). Fires `wcs-router:path-changed`. |
+| `params` | output only | Merged params of the matched route chain, as strings (`Record<string, string>`). Since 4.25 (not released yet) the values are percent-decoded ([§3.6](#36-characters-and-percent-encoding)). `{}` on a fallback match or before initialization. |
 | `typedParams` | output only | The same params, type-converted (`:id(int)` → `number`). Shares `wcs-router:params-changed` with `params` (the event detail is `{ params, typedParams }`). |
 | `searchParams` | output only | Current URL query as `Record<string, string>`. Duplicate keys (`?tag=a&tag=b`) are **last-wins** (`<wcs-link>` compares every value of a repeated key — see its active state); values are decoded by `URLSearchParams` (including `+` → space). `{}` when there is no query. Fires `wcs-router:search-changed`. |
 | `routeName` | output only | `name` attribute of the deepest matched route. On a fallback match, the fallback route's `name` (so a 404 view can key off `routeName` too). `""` when unnamed or before initialization. Fires `wcs-router:route-name-changed`. |
@@ -822,6 +822,20 @@ Specify `*` at the end of a path to match the entire remaining path.
 | `/other` | `/*` | Top-level catch-all |
 
 The matched remaining path is accessible via `params['*']`.
+
+### 3.6 Characters and percent-encoding
+
+Since 4.25 (not released yet):
+
+* **A static segment is the characters as written.** `path="/v1.0"` matches `/v1.0` and nothing else; `.`, `+`, `(`, `[`, `|`, `?` and the like have no special meaning. Up to 4.24 a static segment was compiled as a regular expression as written: `/v1.0` also matched `/v1x0`, and `path="/c++"` threw a `SyntaxError` that stopped the whole router.
+* **The URL's segments are percent-decoded before they are compared.** The browser writes `/café` as `/caf%C3%A9` in `location.pathname`. `path="/café"` matches it, and so does `path="/caf%C3%A9"`. Up to 4.24 a route with a character outside ASCII, or a space, matched no URL, and a `<wcs-link>` to such a path was never the current page.
+* **`params` holds the decoded strings.** At `/users/%E2%82%AC`, `path="/users/:id"` gives `params.id === "€"` (it was `"%E2%82%AC"`). Do not decode a param again: `decodeURIComponent("100%")` throws.
+	* The path is split into segments first and each is decoded after, so an encoded slash stays inside the value: `/users/a%2Fb` gives `id: "a/b"`.
+	* `params['*']` is the remaining segments, each decoded, joined with `/`.
+	* A typed param (`:id(int)`) is checked against the decoded value.
+	* A segment whose escapes are not valid UTF-8 (`%E0%A4%A`) is passed as it is.
+* **`path` stays in the URL's form** — the router's `path` output, and the `toPath` / `fromPath` a guard receives: `/users/%E2%82%AC`, whichever way the page got there (a load, a link, `navigate()`, with or without the Navigation API), so it can be given back to `navigate()`. Up to 4.24, without the Navigation API, `navigate("/users/€")` left `path` as it was written.
+* `navigate()` / `replace()`, `<wcs-link to>` and the `basename` attribute take a path written either way: `"/users/€"` or `"/users/%E2%82%AC"`.
 
 ---
 

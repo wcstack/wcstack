@@ -4,6 +4,7 @@ import { raiseError } from "../raiseError.js";
 import { config } from "../config.js";
 import { ISegmentInfo, SegmentType, IRouteMatchResult, GuardHandler, GuardData } from "../components/types.js";
 import { createGuardContext } from "../guardContext.js";
+import { decodeSegment } from "../normalizePathname.js";
 import { BuiltinParamTypes } from "../types.js";
 
 const weights: Record<SegmentType, number> = {
@@ -253,7 +254,8 @@ export class RouteCore extends EventTarget {
           type: 'catch-all',
           segmentText: segment,
           paramName: '*',
-          pattern: new RegExp('^(.*)$')
+          // （セグメントはデコード済み: `%0A` の改行も受ける）
+          pattern: new RegExp('^(.*)$', 's')
         });
         // Catch-all: matches remaining path segments
         break; // Ignore subsequent segments
@@ -279,11 +281,15 @@ export class RouteCore extends EventTarget {
         });
       } else if (segment !== '' || !options.isIndex) {
         // 空セグメントはindex以外の場合のみ追加（絶対パスの先頭 '' など）
+        // 静的セグメントは書かれた文字そのもの: 正規表現の文字はエスケープする。そのまま正規表現にしていたので、
+        // path="/v1.0" は /v1x0 に一致し、path="/c++" は SyntaxError で router ごと止まった（#694）。
+        // 比べる相手はデコード済みの URL のセグメントなので（matchRoutes）、エンコードして書かれた path
+        // （"/caf%C3%A9"）もデコードしておく
         this._segmentInfos.push({
           type: 'static',
           segmentText: segment,
           paramName: null,
-          pattern: new RegExp(`^${segment}$`)
+          pattern: new RegExp(`^${decodeSegment(segment).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
         });
       }
     }

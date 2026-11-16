@@ -178,8 +178,8 @@ router は、スタンプしたルート本文の終わりにコメントの印 
 
 | メンバー | 方向 | 説明 |
 |------|------|------|
-| `path` | output のみ | 現在のルートパス（basename スライス後）。`wcs-router:path-changed` を発火 |
-| `params` | output のみ | マッチしたルートチェーンのマージ済みパラメータ（文字列、`Record<string, string>`）。fallback マッチ・初期化前は `{}` |
+| `path` | output のみ | 現在のルートパス（basename スライス後）。URL の形で、`location.pathname` と同じにパーセントエンコードされている（[§3.6](#36-文字とパーセントエンコード)）。`wcs-router:path-changed` を発火 |
+| `params` | output のみ | マッチしたルートチェーンのマージ済みパラメータ（文字列、`Record<string, string>`）。4.25（未リリース）から、値はパーセントデコードされている（[§3.6](#36-文字とパーセントエンコード)）。fallback マッチ・初期化前は `{}` |
 | `typedParams` | output のみ | 同パラメータの型変換済み値（`:id(int)` → `number`）。イベントは `params` と共有（detail は `{ params, typedParams }`） |
 | `searchParams` | output のみ | 現在 URL のクエリ（`Record<string, string>`）。キー重複（`?tag=a&tag=b`）は **last-wins**（`<wcs-link>` は重複するキーの値をすべて比べる — そのアクティブ状態を参照）、デコードは `URLSearchParams` に委ねる（`+` → 空白を含む）。クエリ無しは `{}`。`wcs-router:search-changed` を発火 |
 | `routeName` | output のみ | 最深マッチルートの `name` 属性値。fallback マッチ時は fallback ルートの `name`（404 画面も `routeName` 分岐で書ける）。無名・初期化前は `""`。`wcs-router:route-name-changed` を発火 |
@@ -815,6 +815,20 @@ internalPath は常に **絶対パス形式**で扱う。
 | `/other` | `/*` | トップレベルcatch-all |
 
 マッチした残りパスは `params['*']` で取得できます。
+
+### 3.6 文字とパーセントエンコード
+
+4.25（未リリース）から:
+
+* **静的セグメントは、書かれた文字そのものです。** `path="/v1.0"` は `/v1.0` だけに一致します。`.`、`+`、`(`、`[`、`|`、`?` などに特別な意味はありません。4.24 までは静的セグメントを書かれたまま正規表現にしていたので、`/v1.0` は `/v1x0` にも一致し、`path="/c++"` は `SyntaxError` でルーター全体を止めました。
+* **URL のセグメントは、パーセントデコードしてから比べます。** ブラウザは `/café` を `location.pathname` に `/caf%C3%A9` と書きます。`path="/café"` はこれに一致し、`path="/caf%C3%A9"` も一致します。4.24 までは、ASCII でない文字や空白のあるルートはどの URL にも一致せず、そのパスへの `<wcs-link>` は現在のページになりませんでした。
+* **`params` はデコードされた文字列です。** `/users/%E2%82%AC` で `path="/users/:id"` は `params.id === "€"` になります（以前は `"%E2%82%AC"`）。パラメータをもう一度デコードしないでください: `decodeURIComponent("100%")` は例外になります。
+	* パスを先にセグメントに分け、その後でセグメントごとにデコードするので、エンコードされたスラッシュは値の中に残ります: `/users/a%2Fb` は `id: "a/b"`。
+	* `params['*']` は、残りのセグメントをそれぞれデコードして `/` でつないだものです。
+	* 型付きのパラメータ（`:id(int)`）は、デコードした値で判定します。
+	* UTF-8 として正しくないエスケープのあるセグメント（`%E0%A4%A`）は、そのまま渡します。
+* **`path` は URL の形のままです** — ルーターの `path` の出力と、ガードが受け取る `toPath` / `fromPath`: どの経路で着いても（読み込み、リンク、`navigate()`、Navigation API の有無）`/users/%E2%82%AC` なので、そのまま `navigate()` に渡せます。4.24 までは、Navigation API の無い環境で `navigate("/users/€")` をすると、`path` は書かれたままの文字列でした。
+* `navigate()` / `replace()`、`<wcs-link to>`、`basename` 属性には、どちらの書き方でも渡せます: `"/users/€"` でも `"/users/%E2%82%AC"` でも。
 
 ---
 
