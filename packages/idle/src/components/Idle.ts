@@ -145,8 +145,10 @@ export class WcsIdle extends HTMLElement {
     return this._core.requestPermission();
   }
 
-  start(threshold?: number): Promise<void> {
-    return this._core.start(threshold ?? this.threshold);
+  // Anything that is not a number in `threshold`'s place — the event an `on…: $command.x` binding emits
+  // first — is not a threshold: a "Start" button wired straight to the token starts with the attribute's.
+  start(threshold?: unknown): Promise<void> {
+    return this._core.start(typeof threshold === "number" ? threshold : this.threshold);
   }
 
   stop(): void {

@@ -117,6 +117,15 @@ describe("Idle (Shell)", () => {
     expect(instances[0].start).toHaveBeenCalledWith({ threshold: 70000, signal: expect.any(AbortSignal) });
   });
 
+  it("ボタンに直結したトークンが渡すイベントは threshold にしない（属性の値で始める）", async () => {
+    const { instances } = installIdleDetector();
+    const el = createIdle({ threshold: "90000" });
+    document.body.appendChild(el);
+
+    await (el as any).start(new Event("click"));
+    expect(instances[0].start).toHaveBeenCalledWith({ threshold: 90000, signal: expect.any(AbortSignal) });
+  });
+
   it("切断で dispose される", async () => {
     const { instances } = installIdleDetector();
     const el = createIdle();

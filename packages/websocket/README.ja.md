@@ -408,7 +408,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 |----------|------|
 | `connect()` | WebSocket 接続を開く |
 | `sendMessage(data)` | 接続経由でデータを送信 |
-| `close(code?, reason?)` | 接続を閉じる |
+| `close(code?, reason?)` | 接続を閉じる。4.25（未リリース）から、`code` の位置にある数でないもの —— `on…: $command.x` の束縛が最初に渡すイベント —— は無視し、`reason` も一緒に無視します: トークンに直結した「切断」ボタンで接続が閉じます（以前はイベントが `WebSocket.close()` に届いて例外になり、ソケットは開いたままでした） |
 
 ## wc-bindable-protocol
 
