@@ -1,10 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapGyroscope } from "../src/bootstrapGyroscope";
 import { setConfig } from "../src/config";
 import { WcsGyroscope } from "../src/components/Gyroscope";
-import { installSensor, installThrowingSensor, removeSensor } from "./mocks";
+import {
+  installSensor, installThrowingSensor, removeSensor,
+  installDeviceMotionEvent, removeDeviceMotionEvent, restoreDeviceMotionEvent, emitDeviceMotion,
+} from "./mocks";
 
 const GLOBAL_NAME = "Gyroscope";
+
+// devicemotion の rotationRate は度/秒、Gyroscope（と x/y/z）はラジアン/秒。
+const RAD = Math.PI / 180;
 
 function createGyroscope(): WcsGyroscope {
   return document.createElement("wcs-gyroscope") as WcsGyroscope;
@@ -14,11 +20,15 @@ describe("Gyroscope (Shell)", () => {
   beforeEach(() => {
     setConfig({ tagNames: { gyroscope: "wcs-gyroscope" } });
     bootstrapGyroscope();
+    // happy-dom は DeviceMotionEvent を持つ。既定では外し、フォールバックのテストだけが入れる。
+    removeDeviceMotionEvent();
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
     removeSensor(GLOBAL_NAME);
+    vi.restoreAllMocks();
+    restoreDeviceMotionEvent();
   });
 
   it("接続時に display:none になる", () => {
@@ -210,8 +220,188 @@ describe("Gyroscope (Shell)", () => {
     expect(handle.current?.started).toBe(true);
   });
 
-  it("inputs は frequency のみ、commands は start/stop", () => {
+  it("inputs は frequency のみ、commands は requestPermission/start/stop", () => {
     expect(WcsGyroscope.wcBindable.inputs).toEqual([{ name: "frequency" }]);
-    expect(WcsGyroscope.wcBindable.commands).toEqual([{ name: "start" }, { name: "stop" }]);
+    expect(WcsGyroscope.wcBindable.commands).toEqual([
+      { name: "requestPermission", async: true }, { name: "start" }, { name: "stop" },
+    ]);
+  });
+
+  describe("devicemotion フォールバック（Gyroscope クラスの無いブラウザ）", () => {
+    it("start() コマンドで devicemotion を購読し、x/y/z が要素の値に伝わる。frequency 属性は間引きになる", () => {
+      installDeviceMotionEvent();
+      const el = createGyroscope();
+      el.frequency = 10;
+      document.body.appendChild(el);
+
+      el.start();
+      emitDeviceMotion({ rotationRate: { alpha: 3, beta: 1, gamma: 2 }, timeStamp: 1000 });
+      emitDeviceMotion({ rotationRate: { alpha: 6, beta: 4, gamma: 5 }, timeStamp: 1050 });
+      expect(el.x).toBe(1 * RAD);
+      expect(el.y).toBe(2 * RAD);
+      expect(el.z).toBe(3 * RAD);
+      emitDeviceMotion({ rotationRate: { alpha: 9, beta: 7, gamma: 8 }, timeStamp: 1100 });
+      expect(el.x).toBe(7 * RAD);
+      expect(el.error).toBeNull();
+    });
+
+    it("stop() コマンドと切断で購読を外し、再接続後の start() で再開できる", () => {
+      installDeviceMotionEvent();
+      const el = createGyroscope();
+      document.body.appendChild(el);
+
+      el.start();
+      el.stop();
+      emitDeviceMotion({ rotationRate: { alpha: 1, beta: 1, gamma: 1 } });
+      expect(el.x).toBeNull();
+
+      el.start();
+      el.remove();
+      emitDeviceMotion({ rotationRate: { alpha: 2, beta: 2, gamma: 2 } });
+      expect(el.x).toBeNull();
+
+      document.body.appendChild(el);
+      el.start();
+      emitDeviceMotion({ rotationRate: { alpha: 3, beta: 3, gamma: 3 } });
+      expect(el.x).toBe(3 * RAD);
+    });
+  });
+
+  describe("requestPermission コマンドと permissionState", () => {
+    it("接続前の permissionState は 'unknown'", () => {
+      expect(createGyroscope().permissionState).toBe("unknown");
+    });
+
+    it("requestPermission() が Core に委譲され、permissionState と wcs-gyroscope:permission-changed に出る", async () => {
+      const ask = installDeviceMotionEvent(() => Promise.resolve("granted"))!;
+      const el = createGyroscope();
+      document.body.appendChild(el);
+      const events: any[] = [];
+      el.addEventListener("wcs-gyroscope:permission-changed", (e) => events.push((e as CustomEvent).detail));
+
+      await expect(el.requestPermission()).resolves.toBe("granted");
+
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(el.permissionState).toBe("granted");
+      expect(events).toEqual(["granted"]);
+    });
+
+    it("reject では permissionState は変わらず、error / errorInfo（recoverable=true）に出る", async () => {
+      const refusal = new Error("needs a user gesture");
+      refusal.name = "NotAllowedError";
+      installDeviceMotionEvent(() => Promise.reject(refusal));
+      const el = createGyroscope();
+      document.body.appendChild(el);
+
+      await expect(el.requestPermission()).resolves.toBe("unknown");
+
+      expect(el.permissionState).toBe("unknown");
+      expect(el.error).toEqual({ error: "NotAllowedError", message: "needs a user gesture" });
+      expect(el.errorInfo?.recoverable).toBe(true);
+    });
+  });
+
+  describe("supported", () => {
+    it("接続前から getter が今の値を返し、接続時に wcs-gyroscope:supported-changed を出す（再接続では出さない）", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const el = createGyroscope();
+      expect(el.supported).toBe(true);
+      const events: any[] = [];
+      el.addEventListener("wcs-gyroscope:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+
+      el.remove();
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+    });
+
+    it("フォールバックだけがある環境でも true", () => {
+      installDeviceMotionEvent();
+      const el = createGyroscope();
+      document.body.appendChild(el);
+      expect(el.supported).toBe(true);
+    });
+
+    it("どちらの API も無い環境では false のままで、接続しても何も出さない", () => {
+      const el = createGyroscope();
+      const events: any[] = [];
+      el.addEventListener("wcs-gyroscope:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      document.body.appendChild(el);
+      expect(el.supported).toBe(false);
+      expect(events).toEqual([]);
+    });
+
+    it("接続してもセンサーは開始しない（supported を出すだけ）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      installDeviceMotionEvent();
+      const addSpy = vi.spyOn(window, "addEventListener");
+      const el = createGyroscope();
+      document.body.appendChild(el);
+      expect(handle.current).toBeUndefined();
+      expect(addSpy).not.toHaveBeenCalledWith("devicemotion", expect.anything());
+    });
+  });
+
+  describe("使えない frequency の警告（[wcs/frequency-invalid]）", () => {
+    it("正の数にならない frequency 属性で start() すると、要素ごとに 1 回だけ警告する（開始は既定の頻度で続く）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createGyroscope();
+      el.setAttribute("frequency", "60hz");
+      document.body.appendChild(el);
+
+      el.start();
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        '[@wcstack/gyroscope] [wcs/frequency-invalid] <wcs-gyroscope> frequency="60hz" is not a positive ' +
+          "number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency=\"30\".",
+        el,
+      );
+      expect(handle.current?.started).toBe(true);
+      expect(handle.current?.options).toBeUndefined();
+
+      el.stop();
+      el.start();
+      el.setAttribute("frequency", "0");
+      el.stop();
+      el.start();
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    it("\"0\"・負の数も警告する。別の要素は別に 1 回", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      for (const value of ["0", "-5"]) {
+        const el = createGyroscope();
+        el.setAttribute("frequency", value);
+        document.body.appendChild(el);
+        el.start();
+        expect(warn).toHaveBeenLastCalledWith(expect.stringContaining(`frequency="${value}" is not a positive number of Hz`), el);
+      }
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+
+    it("属性が無い・空・正の数のときは警告しない", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      for (const value of [null, "", "   ", "30", "0.5"]) {
+        const el = createGyroscope();
+        if (value !== null) el.setAttribute("frequency", value);
+        document.body.appendChild(el);
+        el.start();
+      }
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("start() するまでは警告しない（属性を書いただけ・接続しただけでは言わない）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createGyroscope();
+      el.setAttribute("frequency", "fast");
+      document.body.appendChild(el);
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 });

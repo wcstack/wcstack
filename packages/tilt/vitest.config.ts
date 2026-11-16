@@ -17,7 +17,7 @@ export default defineConfig({
         'src/exports.ts',
         'src/types.ts',
         // Generated copy of the shared io-core capability layer (byte-identical to
-        // fetch's, which tests it fully); tilt uses only the WcsIoErrorInfo type.
+        // fetch's, which tests it fully); tilt uses its WcsIoErrorInfo type and featureUnavailable().
         'src/core/platformCapability.ts'
       ],
       thresholds: {

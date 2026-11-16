@@ -57,6 +57,8 @@ const DEVIATIONS = {
   fullscreen: { "DOM-independent": "fullscreenchange fires on document and document.fullscreenElement/exitFullscreen() are document-scoped; subscription on document is normative (fullscreen-tag-design.md §2/§5)" },
   "pointer-lock": { "DOM-independent": "pointerlockchange fires on document and document.pointerLockElement/exitPointerLock() are document-scoped; same normative pattern as fullscreen (pointer-lock-tag-design.md §1/§5)" },
   tilt: { "stale-async guard": "requestPermission()'s post-await write is a benign permissionState/error value set with no subscription/resource management to race; _gen ruled unnecessary (device-orientation-tag-design.md §4, corrected rationale)" },
+  accelerometer: { "stale-async guard": "requestPermission()'s post-await write is a benign permissionState/error value set with no subscription/resource management to race; the same shape as tilt (timing-and-firing-contract.md §8.2, §9.7)" },
+  gyroscope: { "stale-async guard": "requestPermission()'s post-await write is a benign permissionState/error value set with no subscription/resource management to race; the same shape as tilt (timing-and-firing-contract.md §8.2, §9.7)" },
 };
 
 // ---- comment/string-aware blanker (preserves line numbers) ----

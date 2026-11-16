@@ -1,3 +1,5 @@
+import { vi } from "vitest";
+
 /**
  * Shared Fake double for the Generic Sensor API family (Accelerometer /
  * Gyroscope / Magnetometer / AmbientLightSensor). Parameterized by
@@ -83,4 +85,57 @@ export function installThrowingSensor(globalName: string, name = "SecurityError"
 /** Remove `globalThis.<GlobalClassName>` so the "unsupported" branch can be tested. */
 export function removeSensor(globalName: string): void {
   delete (globalThis as any)[globalName];
+}
+
+// --- DeviceMotionEvent (the `devicemotion` fallback) ---
+//
+// happy-dom has a global `DeviceMotionEvent` (with no `requestPermission`, the
+// Android / desktop shape), so a test that removes only the sensor class would
+// take the fallback. The suites remove it before each test and put it back
+// after, and a test of the fallback installs its own.
+
+const ORIGINAL_DEVICE_MOTION_EVENT = Object.getOwnPropertyDescriptor(globalThis, "DeviceMotionEvent");
+
+/** Remove the global `DeviceMotionEvent`: a browser with no fallback. */
+export function removeDeviceMotionEvent(): void {
+  delete (globalThis as any).DeviceMotionEvent;
+}
+
+/**
+ * Install a global `DeviceMotionEvent`. Without an argument it has no
+ * `requestPermission` (Android, desktop); with one it has iOS Safari's static,
+ * tap-gated method, answering as `requestPermission` does. Returns the mock of
+ * that method (undefined without an argument).
+ */
+export function installDeviceMotionEvent(
+  requestPermission?: () => Promise<string>,
+): ReturnType<typeof vi.fn> | undefined {
+  const Ctor = function DeviceMotionEvent() {} as any;
+  const fn = requestPermission ? vi.fn(requestPermission) : undefined;
+  if (fn) Ctor.requestPermission = fn;
+  Object.defineProperty(globalThis, "DeviceMotionEvent", { value: Ctor, configurable: true, writable: true });
+  return fn;
+}
+
+/** Put happy-dom's own `DeviceMotionEvent` back. */
+export function restoreDeviceMotionEvent(): void {
+  Object.defineProperty(globalThis, "DeviceMotionEvent", ORIGINAL_DEVICE_MOTION_EVENT!);
+}
+
+/**
+ * Dispatch a `devicemotion` event on `window`. `timeStamp` (ms) is set on the
+ * event when given, so a test decides how far apart two events are.
+ */
+export function emitDeviceMotion(fields: {
+  accelerationIncludingGravity?: { x: number | null; y: number | null; z: number | null } | null;
+  rotationRate?: { alpha: number | null; beta: number | null; gamma: number | null } | null;
+  timeStamp?: number;
+} = {}): void {
+  const event = new Event("devicemotion") as any;
+  event.accelerationIncludingGravity = fields.accelerationIncludingGravity ?? null;
+  event.rotationRate = fields.rotationRate ?? null;
+  if (fields.timeStamp !== undefined) {
+    Object.defineProperty(event, "timeStamp", { value: fields.timeStamp, configurable: true });
+  }
+  window.dispatchEvent(event);
 }

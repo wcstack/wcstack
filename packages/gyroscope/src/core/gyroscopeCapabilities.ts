@@ -15,9 +15,9 @@ import type { WcsIoErrorInfo } from "./platformCapability.js";
 
 /** 安定した gyroscope error code(taxonomy)。値は公開キーとして固定。 */
 export const WCS_GYROSCOPE_ERROR_CODE = {
-  /** Sensor API 非対応(`globalThis.Gyroscope` 不在)。 */
+  /** Sensor API 非対応(`globalThis.Gyroscope` も `DeviceMotionEvent` も不在)。 */
   CapabilityMissing: "capability-missing",
-  /** `SecurityError` / `NotAllowedError` — 権限拒否・feature-policy ブロック。 */
+  /** `SecurityError` / `NotAllowedError` — 権限拒否・feature-policy ブロック、または質問を出せなかった `requestPermission()`。 */
   NotAllowed: "not-allowed",
   /** `NotReadableError` — センサーハードウェアを読めない。 */
   NotReadable: "not-readable",
@@ -31,17 +31,20 @@ export const WCS_GYROSCOPE_ERROR_CODE = {
  *
  * - "unsupported" は開始前の能力欠如 → phase="probe" / capability-missing。
  * - `SecurityError` / `NotAllowedError` は sensor 構築時の権限拒否 → phase="start" /
- *   not-allowed。いずれも retry で回復しない(recoverable=false)。
+ *   not-allowed。retry で回復しない(recoverable=false)。
+ *   ただし `askRefused`(`requestPermission()` の reject)のときは recoverable=true:
+ *   iOS はタップの外から呼ばれると質問を出さずに `NotAllowedError` で reject する。
+ *   利用者の拒否ではなく、タップから呼び直せば質問が出る。
  * - `NotReadableError` は稼働中のハードウェア読取失敗 → phase="execute" / not-readable。
  * - それ以外(SensorErrorEvent の他 name / "error" fallback)は phase="execute" /
  *   sensor-error。
  */
-export function deriveGyroscopeErrorInfo(name: string, message: string): WcsIoErrorInfo {
+export function deriveGyroscopeErrorInfo(name: string, message: string, askRefused = false): WcsIoErrorInfo {
   if (name === "unsupported") {
     return { code: WCS_GYROSCOPE_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
   }
   if (name === "SecurityError" || name === "NotAllowedError") {
-    return { code: WCS_GYROSCOPE_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message };
+    return { code: WCS_GYROSCOPE_ERROR_CODE.NotAllowed, phase: "start", recoverable: askRefused, message };
   }
   if (name === "NotReadableError") {
     return { code: WCS_GYROSCOPE_ERROR_CODE.NotReadable, phase: "execute", recoverable: false, message };

@@ -1,8 +1,10 @@
 import { IWcBindable, WcsAmbientLightSensorReading, WcsAmbientLightSensorErrorDetail } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import { WcsIoErrorInfo, featureUnavailable } from "./platformCapability.js";
 import { deriveAmbientLightSensorErrorInfo } from "./ambientLightSensorCapabilities.js";
 
 const NULL_READING: WcsAmbientLightSensorReading = Object.freeze({ illuminance: null });
+
+type SensorLike = EventTarget & { start(): void; stop(): void };
 
 /**
  * Headless AmbientLightSensor primitive. A thin, framework-agnostic wrapper around
@@ -50,6 +52,10 @@ export class AmbientLightSensorCore extends EventTarget {
       // "unsupported"); the existing `error` property/event are unchanged. Fires
       // wcs-ambient-light-sensor:error-info-changed. No lane — the sensor is a monitor.
       { name: "errorInfo", event: "wcs-ambient-light-sensor:error-info-changed", semantics: "state" },
+      // This page can use the sensor: the `AmbientLightSensor` class is there and neither a
+      // Permissions-Policy nor an insecure context forbids it. Not whether the
+      // device has a sensor, and not whether the user will allow it.
+      { name: "supported", event: "wcs-ambient-light-sensor:supported-changed", semantics: "state" },
     ],
     commands: [{ name: "start" }, { name: "stop" }],
   };
@@ -58,12 +64,14 @@ export class AmbientLightSensorCore extends EventTarget {
   private _reading: WcsAmbientLightSensorReading = NULL_READING;
   private _error: WcsAmbientLightSensorErrorDetail | null = null;
   private _errorInfo: WcsIoErrorInfo | null = null;
+  // The value the last wcs-ambient-light-sensor:supported-changed carried (none yet: false).
+  private _supportedPublished = false;
 
   // The live sensor instance while started (null otherwise), kept so stop()
   // can remove its listeners precisely and so start() can detect "already
   // started" without a separate boolean (docs/async-io-node-guidelines.md §3.5
   // idempotency).
-  private _sensor: (EventTarget & { start(): void; stop(): void }) | null = null;
+  private _sensor: SensorLike | null = null;
 
   constructor(target?: EventTarget) {
     super();
@@ -86,6 +94,16 @@ export class AmbientLightSensorCore extends EventTarget {
    */
   get errorInfo(): WcsIoErrorInfo | null {
     return this._errorInfo;
+  }
+
+  /**
+   * Whether this page can use the sensor: the `AmbientLightSensor` class is there, and
+   * neither an insecure context nor a Permissions-Policy that forbids
+   * `ambient-light-sensor` is in the way. Read at call time, never cached. It cannot
+   * say whether the device has a sensor.
+   */
+  get supported(): boolean {
+    return typeof (globalThis as any).AmbientLightSensor === "function" && featureUnavailable("ambient-light-sensor") === null;
   }
 
   /** No asynchronous probe to await: start()/stop() are synchronous
@@ -140,6 +158,22 @@ export class AmbientLightSensorCore extends EventTarget {
   // --- Public API ---
 
   /**
+   * Dispatch `wcs-ambient-light-sensor:supported-changed` when `supported` differs
+   * from the value last dispatched (false before the first). The Shell calls it
+   * on connect, so a listener other than a binding — which reads the property
+   * when it binds — learns the value too.
+   */
+  publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-ambient-light-sensor:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
+  }
+
+  /**
    * Start the sensor at the given `frequency` (Hz), or the platform default
    * when omitted. Idempotent while already started: a redundant start() does
    * not construct a second sensor instance (which would leak the first).
@@ -164,7 +198,7 @@ export class AmbientLightSensorCore extends EventTarget {
       // (failures surface via the 'error' event), but never-throw is a hard
       // requirement here, so guard against a non-conformant implementation
       // too.
-      this._teardownSensor();
+      this._teardownSensor(sensor);
       this._setError({ error: e?.name ?? "error", message: e?.message ?? String(e) });
     }
   }
@@ -172,13 +206,14 @@ export class AmbientLightSensorCore extends EventTarget {
   /** Stop the sensor and detach its listeners. Safe to call when not started. */
   stop(): void {
     if (!this._sensor) return;
+    const sensor = this._sensor;
     try {
-      this._sensor.stop();
+      sensor.stop();
     } catch {
       // Never-throw defensive guard, symmetric with start(). Teardown below
       // still runs so listeners are detached regardless.
     }
-    this._teardownSensor();
+    this._teardownSensor(sensor);
   }
 
   /** Lifecycle alias for start(), so the Shell's connectedCallback can drive
@@ -196,13 +231,16 @@ export class AmbientLightSensorCore extends EventTarget {
 
   // --- Internal ---
 
-  // Both call sites (start()'s catch, stop()) only ever invoke this once
-  // `this._sensor` is already known non-null, so there is no null-guard here
-  // (nothing to defend against).
-  private _teardownSensor(): void {
-    this._sensor!.removeEventListener("reading", this._onReading as EventListener);
-    this._sensor!.removeEventListener("error", this._onError as EventListener);
-    this._sensor = null;
+  // Detach a sensor that is finished: stopped, failed in start(), or reported
+  // an `error` event. A sensor whose `error` event arrives while its start()
+  // is still running, and whose start() then throws, is torn down twice: the
+  // second time its listeners are already off, which removeEventListener
+  // takes — and a start() from an `error` listener may have put a newer
+  // sensor in its place by then, which stays.
+  private _teardownSensor(sensor: SensorLike | null): void {
+    sensor?.removeEventListener("reading", this._onReading as EventListener);
+    sensor?.removeEventListener("error", this._onError as EventListener);
+    if (this._sensor === sensor) this._sensor = null;
   }
 
   /**
@@ -214,7 +252,7 @@ export class AmbientLightSensorCore extends EventTarget {
    * re-checked on every start(), never cached, so tests can install/remove the
    * global freely and an unsupported environment is always reported correctly.
    */
-  private _createSensor(frequency?: number): (EventTarget & { start(): void; stop(): void }) | null {
+  private _createSensor(frequency?: number): SensorLike | null {
     const Ctor = (globalThis as any).AmbientLightSensor;
     if (typeof Ctor !== "function") {
       this._setError({ error: "unsupported", message: "AmbientLightSensor is not supported" });
@@ -239,6 +277,11 @@ export class AmbientLightSensorCore extends EventTarget {
 
   private _onError = (event: Event): void => {
     const err = (event as any).error as { name?: string; message?: string } | undefined;
+    // The sensor that reported the error is finished (the platform deactivates
+    // it): detach it before publishing, so the next start() builds a fresh one
+    // instead of taking this one for "already started". It is `_sensor`: this
+    // listener is on a sensor only while that sensor is the current one.
+    this._teardownSensor(this._sensor);
     // Fallback is a meaningful constant, NOT String(err): a SensorErrorEvent
     // without an `error` field would otherwise stringify `undefined` into the
     // literal message "undefined" (aligned across the sensor family).

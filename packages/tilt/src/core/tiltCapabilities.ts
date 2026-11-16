@@ -13,22 +13,27 @@
  * - tilt の error detail は `{ error: <生の rejection reason> }`(TiltCore._setError が
  *   `requestPermission()` の catch で `{ error: e }` を渡す。`e` は生の Error/reason)。
  *
- * したがって derive は「wrap された生の値」から name/message を取り出す。また tilt は
- * "unsupported"(capability-missing)経路を **持たない**: `DeviceOrientationEvent` や
- * その `requestPermission` が無い環境では error にせず `"granted"` に倒して error を
- * クリアする(docs/device-orientation-tag-design.md §3)。よって capability-missing の
- * code / branch は生成しない(到達不能・dead code を避ける)。error として _setError に
- * 届くのは iOS の `requestPermission()` reject だけで、その name は実権限拒否なら
- * `NotAllowedError`、gesture 文脈外等なら汎用 `Error` になる。
+ * したがって derive は「wrap された生の値」から name/message を取り出す。error として
+ * _setError に届くのは 2 種類:
+ * - iOS の `requestPermission()` の reject。タップ(user gesture)の外から呼ぶと iOS は
+ *   質問を出さずに `NotAllowedError` で reject する。利用者の拒否ではない(利用者が
+ *   拒否したときは reject ではなく `"denied"` で resolve する)。
+ * - `DeviceOrientationEvent` そのものが無い環境(一部のデスクトップ、Windows 上の
+ *   Playwright の WebKit)。`requestPermission()` / `start()` が `{ error: { name:
+ *   "unsupported", message } }` を渡す → capability-missing。`DeviceOrientationEvent` は
+ *   あるが `requestPermission` が無い環境(Android・デスクトップ)は error にせず
+ *   `"granted"` に倒す(docs/device-orientation-tag-design.md §3)。
  */
 
 import type { WcsIoErrorInfo } from "./platformCapability.js";
 
 /** 安定した tilt error code(taxonomy)。値は公開キーとして固定。 */
 export const WCS_TILT_ERROR_CODE = {
-  /** `NotAllowedError` — iOS の Device Orientation 権限拒否。 */
+  /** `DeviceOrientationEvent` がこのブラウザに無い。 */
+  CapabilityMissing: "capability-missing",
+  /** `NotAllowedError` — iOS が質問を出さなかった(タップの外からの `requestPermission()`)。 */
   NotAllowed: "not-allowed",
-  /** その他の `requestPermission()` reject(gesture 文脈外 / 想定外の失敗)。 */
+  /** その他の `requestPermission()` reject(想定外の失敗)。 */
   TiltError: "tilt-error",
 } as const;
 
@@ -37,18 +42,19 @@ export const WCS_TILT_ERROR_CODE = {
  * taxonomy に写す。name は wrap された reason の `Error.name`、message はその `.message`
  * (無ければ `String(...)`)。
  *
- * - `NotAllowedError` は iOS の権限拒否 → phase="start" / not-allowed。retry で回復しない。
- * - それ以外(gesture 文脈外の汎用 `Error`、非 Error reason 等)→ phase="execute" /
- *   tilt-error。
- *
- * capability-missing 経路は無い(上のヘッダ参照): 非対応環境は error ではなく
- * `"granted"` へ倒れるため、ここには到達しない。
+ * - "unsupported" は API の欠如 → phase="probe" / capability-missing。回復しない。
+ * - `NotAllowedError` は iOS が質問を出さなかった → phase="start" / not-allowed。タップから
+ *   呼び直せば質問が出るので recoverable=true。
+ * - それ以外(汎用 `Error`、非 Error reason 等)→ phase="execute" / tilt-error。
  */
 export function deriveTiltErrorInfo(detail: { error?: any }): WcsIoErrorInfo {
   const name: string | undefined = detail.error?.name;
   const message: string = detail.error?.message ?? String(detail.error);
+  if (name === "unsupported") {
+    return { code: WCS_TILT_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+  }
   if (name === "NotAllowedError") {
-    return { code: WCS_TILT_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message };
+    return { code: WCS_TILT_ERROR_CODE.NotAllowed, phase: "start", recoverable: true, message };
   }
   return { code: WCS_TILT_ERROR_CODE.TiltError, phase: "execute", recoverable: false, message };
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapAmbientLightSensor } from "../src/bootstrapAmbientLightSensor";
 import { setConfig } from "../src/config";
 import { WcsAmbientLightSensor } from "../src/components/AmbientLightSensor";
@@ -19,6 +19,7 @@ describe("AmbientLightSensor (Shell)", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     removeSensor(GLOBAL_NAME);
+    vi.restoreAllMocks();
   });
 
   it("接続時に display:none になる", () => {
@@ -196,5 +197,99 @@ describe("AmbientLightSensor (Shell)", () => {
   it("inputs は frequency のみ、commands は start/stop", () => {
     expect(WcsAmbientLightSensor.wcBindable.inputs).toEqual([{ name: "frequency" }]);
     expect(WcsAmbientLightSensor.wcBindable.commands).toEqual([{ name: "start" }, { name: "stop" }]);
+  });
+
+  describe("supported", () => {
+    it("接続前から getter が今の値を返し、接続時に wcs-ambient-light-sensor:supported-changed を出す（再接続では出さない）", () => {
+      installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const el = createAmbientLightSensor();
+      expect(el.supported).toBe(true);
+      const events: any[] = [];
+      el.addEventListener("wcs-ambient-light-sensor:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+
+      el.remove();
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+    });
+
+    it("AmbientLightSensor クラスの無い環境では false のままで、接続しても何も出さない", () => {
+      const el = createAmbientLightSensor();
+      const events: any[] = [];
+      el.addEventListener("wcs-ambient-light-sensor:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      document.body.appendChild(el);
+      expect(el.supported).toBe(false);
+      expect(events).toEqual([]);
+    });
+
+    it("接続してもセンサーは開始しない（supported を出すだけ）", () => {
+      const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const el = createAmbientLightSensor();
+      document.body.appendChild(el);
+      expect(handle.current).toBeUndefined();
+    });
+  });
+
+  describe("使えない frequency の警告（[wcs/frequency-invalid]）", () => {
+    it("正の数にならない frequency 属性で start() すると、要素ごとに 1 回だけ警告する（開始は既定の頻度で続く）", () => {
+      const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createAmbientLightSensor();
+      el.setAttribute("frequency", "60hz");
+      document.body.appendChild(el);
+
+      el.start();
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        '[@wcstack/ambient-light-sensor] [wcs/frequency-invalid] <wcs-ambient-light-sensor> frequency="60hz" is not a positive ' +
+          "number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency=\"30\".",
+        el,
+      );
+      expect(handle.current?.started).toBe(true);
+      expect(handle.current?.options).toBeUndefined();
+
+      el.stop();
+      el.start();
+      el.setAttribute("frequency", "0");
+      el.stop();
+      el.start();
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    it("\"0\"・負の数も警告する。別の要素は別に 1 回", () => {
+      installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      for (const value of ["0", "-5"]) {
+        const el = createAmbientLightSensor();
+        el.setAttribute("frequency", value);
+        document.body.appendChild(el);
+        el.start();
+        expect(warn).toHaveBeenLastCalledWith(expect.stringContaining(`frequency="${value}" is not a positive number of Hz`), el);
+      }
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+
+    it("属性が無い・空・正の数のときは警告しない", () => {
+      installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      for (const value of [null, "", "   ", "30", "0.5"]) {
+        const el = createAmbientLightSensor();
+        if (value !== null) el.setAttribute("frequency", value);
+        document.body.appendChild(el);
+        el.start();
+      }
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("start() するまでは警告しない（属性を書いただけ・接続しただけでは言わない）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createAmbientLightSensor();
+      el.setAttribute("frequency", "fast");
+      document.body.appendChild(el);
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 });

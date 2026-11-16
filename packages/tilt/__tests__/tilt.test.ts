@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bootstrapTilt } from "../src/bootstrapTilt";
 import { setConfig } from "../src/config";
 import { WcsTilt } from "../src/components/Tilt";
-import { installRequestPermission, removeRequestPermission, emitDeviceOrientation } from "./mocks";
+import {
+  installRequestPermission, removeRequestPermission, removeDeviceOrientationEventCtor,
+  emitDeviceOrientation, emitDeviceOrientationAbsolute,
+} from "./mocks";
 
 function createTilt(): WcsTilt {
   return document.createElement("wcs-tilt") as WcsTilt;
@@ -101,7 +104,52 @@ describe("Tilt (Shell)", () => {
 
     expect(el.errorInfo).toBeNull();
     await el.requestPermission();
-    expect(el.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "Permission denied" });
+    expect(el.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: true, message: "Permission denied" });
+    // 質問が出なかっただけで、利用者は拒否していない
+    expect(el.permissionState).toBe("unknown");
+  });
+
+  it("heading の getter が Core の値に委譲される", () => {
+    const el = createTilt();
+    document.body.appendChild(el);
+    expect(el.heading).toBeNull();
+
+    el.start();
+    emitDeviceOrientationAbsolute({ alpha: 90 });
+    expect(el.heading).toBe(270);
+    emitDeviceOrientation({ alpha: 1, beta: 2, gamma: 3, webkitCompassHeading: 42 });
+    expect(el.heading).toBe(42);
+  });
+
+  it("supported: 接続前から getter が今の値を返し、接続時に wcs-tilt:supported-changed を出す（再接続では出さない）", () => {
+    const el = createTilt();
+    expect(el.supported).toBe(true);
+    const events: any[] = [];
+    el.addEventListener("wcs-tilt:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+
+    el.remove();
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+  });
+
+  it("supported: DeviceOrientationEvent が無い環境では false のままで、接続しても何も出さない。start() は error にする", () => {
+    const restore = removeDeviceOrientationEventCtor();
+    try {
+      const el = createTilt();
+      const events: any[] = [];
+      el.addEventListener("wcs-tilt:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      document.body.appendChild(el);
+      expect(el.supported).toBe(false);
+      expect(events).toEqual([]);
+
+      el.start();
+      expect(el.errorInfo?.code).toBe("capability-missing");
+    } finally {
+      restore();
+    }
   });
 
   it("切断で dispose される", () => {

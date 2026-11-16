@@ -1,5 +1,5 @@
 import { IWcBindable, TiltPermissionState } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import { WcsIoErrorInfo, featureUnavailable } from "./platformCapability.js";
 import { deriveTiltErrorInfo } from "./tiltCapabilities.js";
 
 interface DeviceOrientationEventCtor {
@@ -20,10 +20,22 @@ const UNSUPPORTED_SNAPSHOT: WcsTiltSnapshot = Object.freeze({
   absolute: null,
 });
 
+// The browser has no `DeviceOrientationEvent` at all (some desktop browsers,
+// Playwright's WebKit on Windows): nothing can be asked and no event can come.
+// One shared object, so the `===` guard in _setError says it once however often
+// requestPermission() / start() are called there (the shape screen-orientation
+// uses for its "unsupported", docs/timing-and-firing-contract.md §7.4).
+const UNSUPPORTED_ERROR = Object.freeze({
+  error: Object.freeze({
+    name: "unsupported",
+    message: "DeviceOrientationEvent is not supported in this browser.",
+  }),
+});
+
 /**
  * Headless Device Orientation primitive. A thin, framework-agnostic wrapper
- * around `window`'s `deviceorientation` event exposed through the wc-bindable
- * protocol.
+ * around `window`'s `deviceorientation` event (and `deviceorientationabsolute`,
+ * for `heading`) exposed through the wc-bindable protocol.
  *
  * The batch2 sibling of `@wcstack/idle` (docs/device-orientation-tag-design.md).
  * Unlike Idle Detection, there is no matching Permissions API entry for this
@@ -50,6 +62,11 @@ export class TiltCore extends EventTarget {
       { name: "beta", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.beta },
       { name: "gamma", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.gamma },
       { name: "absolute", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.absolute },
+      // Degrees clockwise from north of the direction the top of the device
+      // points, or null until an event says it. Its own event: north comes from
+      // `deviceorientationabsolute` (Android Chrome) or `webkitCompassHeading`
+      // (iOS Safari), not from the fields of wcs-tilt:change.
+      { name: "heading", event: "wcs-tilt:heading-changed", semantics: "state" },
       { name: "permissionState", event: "wcs-tilt:permission-changed", semantics: "state" },
       // never-throw (§3.6): requestPermission() failures land here instead of
       // rejecting/throwing. Mirrors idle (same batch2) and the accelerometer
@@ -60,6 +77,10 @@ export class TiltCore extends EventTarget {
       // Error.name); the existing `error` property/event are unchanged. Fires
       // wcs-tilt:error-info-changed. No lane — this is a monitor node.
       { name: "errorInfo", event: "wcs-tilt:error-info-changed", semantics: "state" },
+      // This page can use Device Orientation: the API is there and neither a
+      // Permissions-Policy nor an insecure context forbids it. Not whether the
+      // device has a sensor, and not whether the user will allow it.
+      { name: "supported", event: "wcs-tilt:supported-changed", semantics: "state" },
     ],
     commands: [
       { name: "requestPermission", async: true },
@@ -70,10 +91,13 @@ export class TiltCore extends EventTarget {
 
   private _target: EventTarget;
   private _snapshot: WcsTiltSnapshot = UNSUPPORTED_SNAPSHOT;
+  private _heading: number | null = null;
   private _permissionState: TiltPermissionState = "unknown";
   private _error: any = null;
   private _errorInfo: WcsIoErrorInfo | null = null;
   private _subscribed = false;
+  // The value the last wcs-tilt:supported-changed carried (none yet: false).
+  private _supportedPublished = false;
 
   // SSR (§3.8): never auto-starts on connect, so there is no probe to await —
   // readiness is always immediate.
@@ -104,6 +128,14 @@ export class TiltCore extends EventTarget {
     return this._snapshot.absolute;
   }
 
+  /**
+   * Degrees clockwise from north of the direction the top of the device points
+   * (0 = north, 90 = east), or null until an event says it.
+   */
+  get heading(): number | null {
+    return this._heading;
+  }
+
   get permissionState(): TiltPermissionState {
     return this._permissionState;
   }
@@ -122,10 +154,41 @@ export class TiltCore extends EventTarget {
     return this._errorInfo;
   }
 
-  // Lifecycle (§3.5). observe() is a synchronous no-op: like `<wcs-idle>`,
+  /**
+   * Whether this page can use Device Orientation: `DeviceOrientationEvent` is
+   * there, and neither an insecure context nor a Permissions-Policy that
+   * forbids `accelerometer` / `gyroscope` (Chromium sends no
+   * `deviceorientation` under one) is in the way. Read at call time, never
+   * cached. It cannot say whether the device has a sensor.
+   */
+  get supported(): boolean {
+    return this._deviceOrientationEventCtor() !== undefined &&
+      featureUnavailable("accelerometer") === null &&
+      featureUnavailable("gyroscope") === null;
+  }
+
+  /**
+   * Dispatch `wcs-tilt:supported-changed` when `supported` differs from the
+   * value last dispatched (false before the first). The Shell calls it on
+   * connect (through observe()), so a listener other than a binding — which
+   * reads the property when it binds — learns the value too.
+   */
+  publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-tilt:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
+  }
+
+  // Lifecycle (§3.5). observe() subscribes to nothing: like `<wcs-idle>`,
   // this Core deliberately does NOT auto-start on connect (§6) on platforms
-  // that gate deviceorientation behind requestPermission().
+  // that gate deviceorientation behind requestPermission(). It only publishes
+  // `supported`.
   observe(): Promise<void> {
+    this.publishSupported();
     return this._ready;
   }
 
@@ -135,7 +198,17 @@ export class TiltCore extends EventTarget {
 
   private _deviceOrientationEventCtor(): DeviceOrientationEventCtor | undefined {
     const g = globalThis as any;
-    return typeof g.DeviceOrientationEvent !== "undefined" ? g.DeviceOrientationEvent : undefined;
+    return typeof g.DeviceOrientationEvent === "function" ? g.DeviceOrientationEvent : undefined;
+  }
+
+  // Same-value guard (§3.3 MUST).
+  private _setHeading(heading: number): void {
+    if (this._heading === heading) return;
+    this._heading = heading;
+    this._target.dispatchEvent(new CustomEvent("wcs-tilt:heading-changed", {
+      detail: heading,
+      bubbles: true,
+    }));
   }
 
   private _setPermissionState(state: TiltPermissionState): void {
@@ -180,15 +253,26 @@ export class TiltCore extends EventTarget {
    * one `requestPermission()` → `start()` flow that works everywhere
    * (docs/device-orientation-tag-design.md §3).
    *
-   * never-throw (§3.6): a gesture-context rejection resolves to `"denied"`
-   * and the raw error lands in `error` instead of propagating. Mirrors
-   * `<wcs-idle>`'s `requestPermission()` (docs/idle-detection-tag-design.md
-   * §4.1) — any settled (non-throwing) outcome supersedes a stale `error`
-   * from an earlier attempt.
+   * `permissionState` changes only when the browser answers. A rejection is
+   * not an answer: iOS rejects (`NotAllowedError`) when the call does not come
+   * from a tap, without showing the question, and a later call from a tap can
+   * still be granted. So a rejection leaves `permissionState` as it was, puts
+   * the raw error in `error` (never-throw, §3.6) and resolves to the unchanged
+   * state. Where the browser has no `DeviceOrientationEvent` at all it is the
+   * same: `error` says so (`capability-missing`) and the state stays.
+   *
+   * Any answer — granted, a plain denied, the immediate granted of a platform
+   * without the gate — supersedes a stale `error` from an earlier attempt, as
+   * in `<wcs-idle>`'s `requestPermission()` (docs/idle-detection-tag-design.md
+   * §4.1).
    */
   async requestPermission(): Promise<TiltPermissionState> {
     const Ctor = this._deviceOrientationEventCtor();
-    if (typeof Ctor?.requestPermission !== "function") {
+    if (Ctor === undefined) {
+      this._setError(UNSUPPORTED_ERROR);
+      return this._permissionState;
+    }
+    if (typeof Ctor.requestPermission !== "function") {
       this._setError(null);
       this._setPermissionState("granted");
       return "granted";
@@ -200,25 +284,41 @@ export class TiltCore extends EventTarget {
       this._setPermissionState(state);
       return state;
     } catch (e) {
-      // never-throw: a gesture-context rejection resolves to "denied".
+      // never-throw. The browser refused to ask: the user was not asked, so
+      // nothing is known about the permission that was not known before.
       this._setError({ error: e });
-      this._setPermissionState("denied");
-      return "denied";
+      return this._permissionState;
     }
   }
 
-  /** Subscribe to `deviceorientation`. Idempotent — a second start() while already subscribed is a no-op. */
+  /**
+   * Subscribe to `deviceorientation`, and to `deviceorientationabsolute` where
+   * the browser has it (the event Android Chrome carries north in). Idempotent
+   * — a second start() while already subscribed is a no-op. Where the browser
+   * has no `DeviceOrientationEvent`, no event can come: `error` says so and
+   * nothing is subscribed.
+   */
   start(): void {
     if (this._subscribed) return;
+    if (this._deviceOrientationEventCtor() === undefined) {
+      this._setError(UNSUPPORTED_ERROR);
+      return;
+    }
     this._subscribed = true;
-    globalThis.window?.addEventListener("deviceorientation", this._onOrientation as EventListener);
+    const win = globalThis.window;
+    win?.addEventListener("deviceorientation", this._onOrientation as EventListener);
+    if (win && "ondeviceorientationabsolute" in win) {
+      win.addEventListener("deviceorientationabsolute", this._onAbsoluteOrientation as EventListener);
+    }
   }
 
-  /** Unsubscribe from `deviceorientation`. Safe to call when not started. */
+  /** Unsubscribe from both events. Safe to call when not started. */
   stop(): void {
     if (!this._subscribed) return;
     this._subscribed = false;
-    globalThis.window?.removeEventListener("deviceorientation", this._onOrientation as EventListener);
+    const win = globalThis.window;
+    win?.removeEventListener("deviceorientation", this._onOrientation as EventListener);
+    win?.removeEventListener("deviceorientationabsolute", this._onAbsoluteOrientation as EventListener);
   }
 
   private _onOrientation = (event: DeviceOrientationEvent): void => {
@@ -228,7 +328,31 @@ export class TiltCore extends EventTarget {
       gamma: event.gamma,
       absolute: event.absolute,
     });
+    // North. iOS Safari: `alpha` is relative and the compass is the
+    // non-standard `webkitCompassHeading`, already clockwise from north.
+    // Elsewhere only an event that says it is absolute carries north.
+    const compass = (event as { webkitCompassHeading?: unknown }).webkitCompassHeading;
+    if (typeof compass === "number" && Number.isFinite(compass)) {
+      this._setHeading(compass);
+    } else if (event.absolute === true) {
+      this._applyAbsoluteAlpha(event.alpha);
+    }
   };
+
+  // `deviceorientationabsolute` (Android Chrome, where `deviceorientation` is
+  // relative): north only. alpha / beta / gamma / absolute keep coming from
+  // `deviceorientation`, so this event writes none of them.
+  private _onAbsoluteOrientation = (event: DeviceOrientationEvent): void => {
+    this._applyAbsoluteAlpha(event.alpha);
+  };
+
+  // An absolute `alpha` grows counter-clockwise from north; a compass heading
+  // grows clockwise. An event without a finite `alpha` says nothing about north.
+  private _applyAbsoluteAlpha(alpha: number | null): void {
+    if (typeof alpha === "number" && Number.isFinite(alpha)) {
+      this._setHeading((360 - alpha) % 360);
+    }
+  }
 
   // Same-value guard (§3.3 MUST).
   private _apply(next: WcsTiltSnapshot): void {

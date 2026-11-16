@@ -16,9 +16,10 @@ import { reflectAttribute } from "../protocol/inputAttribute.js";
  * (docs/sensor-tag-design.md §1.2). The getter normalizes it: a non-finite or
  * non-positive value (NaN, 0, negative) reads back as `null` — meaning "no
  * frequency specified" — so start() falls back to the platform default rather
- * than forwarding a value the sensor would reject. Any positive finite value is
- * passed through verbatim (no upper-bound clamping — an out-of-range-but-positive
- * rate is still left to the browser/sensor to reject via `error`).
+ * than forwarding a value the sensor would reject, and says so once
+ * (`[wcs/frequency-invalid]`). Any positive finite value is passed through
+ * verbatim (no upper-bound clamping — the browser caps a rate above what it
+ * allows).
  *
  * Permission handling is intentionally NOT implemented here. Compose with
  * `<wcs-permission name="ambient-light-sensor">` instead (see the README's permission
@@ -37,6 +38,7 @@ export class WcsAmbientLightSensor extends HTMLElement {
   private _core: AmbientLightSensorCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
+  private _frequencyWarned = false;
 
   constructor() {
     super();
@@ -131,6 +133,11 @@ export class WcsAmbientLightSensor extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Computed at call time: a binding reads it when it binds, with no event.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   get connectedCallbackPromise(): Promise<void> {
     return this._connectedCallbackPromise;
   }
@@ -138,11 +145,27 @@ export class WcsAmbientLightSensor extends HTMLElement {
   // --- Commands ---
 
   start(): void {
+    this._warnUnusableFrequency();
     this._core.start(this.frequency ?? undefined);
   }
 
   stop(): void {
     this._core.stop();
+  }
+
+  // A `frequency` that is written but is not a positive number ("60hz", "0")
+  // reads back as null, and the sensor then runs at the browser's default rate
+  // with nothing else saying so. Said once per element.
+  private _warnUnusableFrequency(): void {
+    if (this._frequencyWarned) return;
+    const attr = this.getAttribute("frequency");
+    if (attr === null || attr.trim() === "" || this.frequency !== null) return;
+    this._frequencyWarned = true;
+    console.warn(
+      `[@wcstack/ambient-light-sensor] [wcs/frequency-invalid] <${this.localName}> frequency="${attr}" is not a ` +
+        `positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".`,
+      this,
+    );
   }
 
   // --- Lifecycle ---
@@ -163,6 +186,8 @@ export class WcsAmbientLightSensor extends HTMLElement {
     // No asynchronous probe to await (§3.8); kept for SSR uniformity with
     // other IO nodes.
     this._connectedCallbackPromise = this._core.ready;
+    // Starts nothing: publishes `supported` when it differs from the value last dispatched.
+    this._core.publishSupported();
   }
 
   // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it

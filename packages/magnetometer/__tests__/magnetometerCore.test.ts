@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { MagnetometerCore } from "../src/core/MagnetometerCore";
 import { FakeSensor, installSensor, installThrowingSensor, removeSensor } from "./mocks";
 
@@ -7,6 +7,9 @@ const GLOBAL_NAME = "Magnetometer";
 describe("MagnetometerCore", () => {
   afterEach(() => {
     removeSensor(GLOBAL_NAME);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    delete (document as { featurePolicy?: unknown }).featurePolicy;
   });
 
   describe("初期状態（start 前）", () => {
@@ -198,6 +201,8 @@ describe("MagnetometerCore", () => {
       expect(bubbles).toBe(true);
     });
 
+    // error イベントを出したセンサーは片付けられる（下の「error イベントの後の start()」）ので、
+    // 2 回目の error は start() し直した新しいセンサーから出す。
     it("同値の error は同値ガードで再 dispatch しない", () => {
       const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
       const core = new MagnetometerCore();
@@ -206,6 +211,7 @@ describe("MagnetometerCore", () => {
 
       core.start();
       handle.current!.emitError("NotReadableError", "msg");
+      core.start();
       handle.current!.emitError("NotReadableError", "msg");
 
       expect(events).toHaveLength(1);
@@ -219,6 +225,7 @@ describe("MagnetometerCore", () => {
 
       core.start();
       handle.current!.emitError("NotReadableError", "first message");
+      core.start();
       handle.current!.emitError("NotReadableError", "second message");
 
       expect(events).toHaveLength(2);
@@ -237,6 +244,7 @@ describe("MagnetometerCore", () => {
 
       core.start();
       handle.current!.emitError("NotReadableError", "same message");
+      core.start();
       handle.current!.emitError("SecurityError", "same message");
 
       expect(events).toHaveLength(2);
@@ -279,6 +287,183 @@ describe("MagnetometerCore", () => {
 
       // The prior error stays put — a successful start does not clear it.
       expect(core.error).toEqual({ error: "unsupported", message: "Magnetometer is not supported" });
+    });
+  });
+
+  describe("error イベントの後の start()", () => {
+    it("error イベントを出したセンサーは片付けられ、次の start() が新しいセンサーを作る（stop() を挟まなくてよい）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      const readings: any[] = [];
+      core.addEventListener("wcs-magnetometer:reading", (e) => readings.push((e as CustomEvent).detail));
+
+      core.start();
+      const failed = handle.current!;
+      failed.emitError("NotReadableError", "could not read from the sensor");
+
+      core.start();
+      const fresh = handle.current!;
+      expect(fresh).not.toBe(failed);
+      expect(fresh.started).toBe(true);
+
+      fresh.emitReading({ x: 1, y: 2, z: 3 });
+      expect(readings).toEqual([{ x: 1, y: 2, z: 3 }]);
+
+      // 片付けたセンサーの listener は外れている: 後から何が来ても届かない
+      failed.emitReading({ x: 9, y: 9, z: 9 });
+      failed.emitError("SecurityError", "late");
+      expect(core.x).toBe(1);
+      // error は据え置き（成功した再開では消えない）
+      expect(core.error).toEqual({ error: "NotReadableError", message: "could not read from the sensor" });
+    });
+
+    it("wcs-magnetometer:error のリスナーの中からの start() も新しいセンサーを作る（片付けは dispatch の前）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      let restarted = false;
+      core.addEventListener("wcs-magnetometer:error", () => {
+        if (restarted) return;
+        restarted = true;
+        core.start();
+      });
+
+      core.start();
+      const failed = handle.current!;
+      failed.emitError("NotReadableError", "x");
+
+      expect(handle.current).not.toBe(failed);
+      expect(handle.current!.started).toBe(true);
+    });
+
+    it("error イベントの後の stop() は安全な no-op（片付け済み）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      core.start();
+      const failed = handle.current!;
+      failed.emitError("NotReadableError", "x");
+
+      expect(() => core.stop()).not.toThrow();
+      expect(failed.stopped).toBe(false);
+    });
+
+    it("start() の最中に error イベントが来て、さらに start() が throw しても never-throw（二重の片付け）", () => {
+      const constructed: FakeSensor[] = [];
+      (globalThis as any)[GLOBAL_NAME] = function (this: any, options?: { frequency?: number }) {
+        const sensor = new FakeSensor({ x: 0, y: 0, z: 0 }, options);
+        if (constructed.length === 0) {
+          sensor.start = () => {
+            sensor.emitError("NotReadableError", "during start");
+            throw new Error("boom");
+          };
+        }
+        constructed.push(sensor);
+        return sensor;
+      };
+      const core = new MagnetometerCore();
+
+      expect(() => core.start()).not.toThrow();
+      expect(core.error).toEqual({ error: "Error", message: "boom" });
+
+      core.start();
+      expect(constructed).toHaveLength(2);
+      expect(constructed[1].started).toBe(true);
+    });
+
+    it("start() の最中の error イベントのリスナーが start() し直し、その後で元の start() が throw しても、新しいセンサーは現役のまま", () => {
+      const constructed: FakeSensor[] = [];
+      (globalThis as any)[GLOBAL_NAME] = function (this: any, options?: { frequency?: number }) {
+        const sensor = new FakeSensor({ x: 0, y: 0, z: 0 }, options);
+        if (constructed.length === 0) {
+          sensor.start = () => {
+            sensor.emitError("NotReadableError", "during start");
+            throw new Error("boom");
+          };
+        }
+        constructed.push(sensor);
+        return sensor;
+      };
+      const core = new MagnetometerCore();
+      const readings: any[] = [];
+      core.addEventListener("wcs-magnetometer:reading", (e) => readings.push((e as CustomEvent).detail));
+      let restarted = false;
+      core.addEventListener("wcs-magnetometer:error", () => {
+        if (restarted) return;
+        restarted = true;
+        core.start();
+      });
+
+      expect(() => core.start()).not.toThrow();
+      expect(constructed).toHaveLength(2);
+
+      // 2 つ目が現役: もう一度 start() しても 3 つ目は作られず、読み取りは 1 回ずつ届き、stop() で止まる
+      core.start();
+      expect(constructed).toHaveLength(2);
+      constructed[1].emitReading({ x: 1, y: 2, z: 3 });
+      expect(readings).toEqual([{ x: 1, y: 2, z: 3 }]);
+      core.stop();
+      expect(constructed[1].stopped).toBe(true);
+    });
+  });
+
+  describe("supported（このページでセンサーを使えるか）", () => {
+    function policy(blocked: string[]): void {
+      (document as any).featurePolicy = { allowsFeature: (f: string) => !blocked.includes(f) };
+    }
+
+    it("Magnetometer クラスがあれば true", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      expect(new MagnetometerCore().supported).toBe(true);
+    });
+
+    it("クラスが無ければ false（呼ぶたびに判定する）。フォールバックは無い", () => {
+      const core = new MagnetometerCore();
+      expect(core.supported).toBe(false);
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      expect(core.supported).toBe(true);
+    });
+
+    it("Permissions-Policy が magnetometer を切っていれば、クラスがあっても false", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      policy(["magnetometer"]);
+      expect(core.supported).toBe(false);
+      policy(["gyroscope"]);
+      expect(core.supported).toBe(true);
+    });
+
+    it("安全でないコンテキストでは false", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      vi.stubGlobal("isSecureContext", false);
+      expect(new MagnetometerCore().supported).toBe(false);
+    });
+
+    it("publishSupported() は、最後に dispatch した値（初めは false）と違うときだけ wcs-magnetometer:supported-changed を出す", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      const events: any[] = [];
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-magnetometer:supported-changed", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
+
+      core.publishSupported();
+      expect(events).toEqual([true]);
+      expect(bubbles).toBe(true);
+      core.publishSupported();
+      expect(events).toEqual([true]);
+
+      policy(["magnetometer"]);
+      core.publishSupported();
+      expect(events).toEqual([true, false]);
+    });
+
+    it("使えない環境では、初めの値（false）と同じなので何も dispatch しない", () => {
+      const core = new MagnetometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-magnetometer:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      core.publishSupported();
+      expect(events).toEqual([]);
     });
   });
 
@@ -450,6 +635,15 @@ describe("MagnetometerCore", () => {
   describe("wcBindable プロトコル宣言", () => {
     it("commands は start/stop", () => {
       expect(MagnetometerCore.wcBindable.commands).toEqual([{ name: "start" }, { name: "stop" }]);
+    });
+
+    it("properties は x/y/z/error/errorInfo/supported（すべて semantics: state）", () => {
+      const props = MagnetometerCore.wcBindable.properties;
+      expect(props.map((p) => p.name)).toEqual(["x", "y", "z", "error", "errorInfo", "supported"]);
+      expect(props.every((p) => p.semantics === "state")).toBe(true);
+      const supported = props.find((p) => p.name === "supported")!;
+      expect(supported.event).toBe("wcs-magnetometer:supported-changed");
+      expect(supported.getter).toBeUndefined();
     });
 
     it("x/y/z の getter が reading イベントの detail から値を取り出す", () => {

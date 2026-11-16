@@ -57,6 +57,8 @@ export interface WcsMagnetometerCoreValues extends WcsMagnetometerReading {
   error: WcsMagnetometerErrorDetail | null;
   /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
   errorInfo: WcsIoErrorInfo | null;
+  /** This page can use the sensor (the API is there and the page is not forbidden to use it). */
+  supported: boolean;
 }
 
 /**
