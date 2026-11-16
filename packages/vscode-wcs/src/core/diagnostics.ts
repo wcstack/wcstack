@@ -45,11 +45,19 @@ export const WcsDiagnosticCode = {
   PathTypeMismatch: "wcs/path-type-mismatch",
   // 書き戻す束縛（`value:` / `checked:` / `radio:` / `checkbox:`、`#ro` なし）が、setter の無い getter を指す。ランタイムは
   // 入力のたびに `"<path>" is a getter without a setter` を投げる（code なし — 7GUIs の評価の Temperature）。error。
+  // カスタム要素の出力（`wcBindable.properties` のメンバー — 組み込みタグと、ページが定義して宣言を読める要素）を束ねた
+  // ときも同じ: 出力だけのメンバーは束ねた時点で要素の値を書くので、state の初期化が失敗する（`<wcs-wakelock
+  // data-wcs="held: keepAwake">` — 継ぎ目アプリ stamp-rally。lint は 0 件だった）。要素が書かない形（`#ro,init=none`、
+  // 双方向のメンバーの `#ro`）では出さない（state の dom/wc.ts の attachProperty と同じ条件）。
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
   // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
   // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。値の読めないキー（辿れない名前、
   // 読めない spread を持つオブジェクトリテラルの種 `draft: { ...makeDraft() }`）の下を束ねたときも、キーの上で 1 回言う。
+  // カスタム要素の出力だけのメンバーが書くスロット（`<wcs-contacts data-wcs="value: picked">` の `picked`・`<wcs-fetch>` の
+  // spread が書く `<パス>.value`）の下も同じ: 中身は要素が渡すもので、種（`picked: null`）からは形が読めない。その下の
+  // パスを 1 件ずつ `wcs/binding-path-missing` にしていた（contacts の README の Quick Start そのもの — 継ぎ目アプリ
+  // stamp-rally）。キーに JSDoc の `@type` があれば、その形で検査して何も言わない。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
   // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
   // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
@@ -318,6 +326,31 @@ export const WcsDiagnosticCode = {
   // `rootMargin must be specified in pixels or percent`）。`<wcs-intersect>` は何も監視せず `observing` が false のまま、
   // `<wcs-infinite-scroll>` は次のページを読み込まない。束ねた値（`rootMargin: …`）は検査しない。warning。
   RootMarginUnit: "wcs/root-margin-unit",
+  // センサーのタグ（`<wcs-accelerometer>` / `<wcs-gyroscope>` / `<wcs-magnetometer>` / `<wcs-ambient-light-sensor>`）の
+  // リテラルの `frequency` が正の有限の数値でない（`"60hz"`・`"0"`・`"-5"`）。要素の getter はそれを「指定なし」（null）
+  // として読み、センサーはブラウザの既定の頻度で黙って動く（4.25 からランタイムも同じ code で警告する — 継ぎ目アプリ
+  // stamp-rally）。空の値は指定なし。束ねた値（`frequency: …`）は検査しない。warning。
+  FrequencyInvalid: "wcs/frequency-invalid",
+  // `target` を CSS セレクタとして読むタグ（`<wcs-fullscreen>` / `<wcs-pip>` / `<wcs-pointer-lock>` / `<wcs-intersect>` /
+  // `<wcs-resize>`）のリテラルの `target` が裸の語（`viewer`）で、文書にその id の要素があり、そのタグ名の要素は無い。
+  // `<viewer>` 要素を選ぶセレクタなので何も選ばず、要素は対象を持たない（`#viewer` のつもり — stamp-rally）。全画面などの
+  // コマンドは `error` にだけ失敗を出し、監視の要素は何も監視しない。warning。
+  TargetSelector: "wcs/target-selector",
+  // `on*: $command.x` をボタンに直結すると、トークンは `(event, ...添字)` で emit され、`command.<method>: $command.x` で
+  // 受ける要素のメソッドはイベントを第 1 引数として呼ばれる。データを取るコマンド（組み込みタグの、引数を宣言する
+  // メソッド）ではそれが原因から遠い所で失敗する — `<wcs-screen-orientation>` の `lock(event)` と `<wcs-share>` の
+  // `share(event)` はブラウザの TypeError が `error` に出るだけ、`<wcs-credential>` の `get(event)` は何も言わず null
+  // （stamp-rally）。`on*:` の束縛に出す。`<wcs-fetch>` の `fetch`（4.24 から url の位置の文字列でない値を無視する）と
+  // ネイティブ要素のコマンド（native-commands の後付けは第 1 引数がイベントなら引数なしで呼ぶ）は対象外。warning。
+  CommandEventArgument: "wcs/command-event-argument",
+  // 既知のカスタム要素の出力だけのメンバー（`<wcs-fullscreen>` の `active: viewerFs`）に束ねたパスへ、スクリプトが
+  // リテラルの `true` を代入する（`this.viewerFs = true`）。出力は要素が書くもので、その書き込みは要素に届かない —
+  // 全画面にはならず、ページだけがそうなったことにする（stamp-rally）。わざと狭い: `true` の代入だけ（`false` / `null` /
+  // 値への代入は、使い終えた出力を戻す普通の書き方）。そのパスが、state の値を自分のものとして受け取る束縛 — カスタム要素の
+  // 入力・双方向のメンバー、ネイティブ要素の双方向の束縛（`checked: flag`）、宣言を読めないカスタム要素のメンバー — にも
+  // 束ねてあれば対象外。表示するだけの束縛（`class.`・`attr.`・`textContent:`・`{{ }}`・`if:`）は対象外にしない — 実際の
+  // ページ（m18a）は `class.fullscreen: viewerFs` も持っていた。アクセサのあるパスも対象外。warning。
+  OutputPathWritten: "wcs/output-path-written",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。

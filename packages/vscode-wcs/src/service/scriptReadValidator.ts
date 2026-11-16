@@ -30,7 +30,12 @@
  *   what has them checked (a JSDoc `@type`, or a stateSchema); a key nothing reads under says nothing. The same for a
  *   key seeded with an object literal that spreads what the analyzer cannot read (`draft: { ...makeDraft() }` — a
  *   spread of a module's `const` object literal is read: the homeroom seam app), with its own message naming the
- *   spread.
+ *   spread. And a slot an element's output writes — `value: picked` on `<wcs-contacts>`, the `value` a spread on
+ *   `<wcs-fetch>` puts under its path (elementMembers.ts) — when the document binds paths under it: the slot holds
+ *   whatever the element gives, its seed (`picked: null`) says nothing of that, and each such path was a false
+ *   `wcs/binding-path-missing` (the stamp-rally seam app — the contacts README's own Quick Start). Said once per slot,
+ *   at its key (at the binding when no script of the page declares it); a JSDoc `@type` on the key has its paths
+ *   checked, and then nothing is said.
  *
  * The existence is the bindings' (bindingValidator): the candidates of the document's states with the stateSchema's,
  * a stateSchema deciding where it is declared (`nonexistent` only), silence in a state that could not be read.
@@ -46,6 +51,7 @@ import { accessorRow, analyzeCallableBodies, analyzeDeclarationSpans, analyzeSta
 import { getStatePathIndex, isUnresolvedPath, moduleLocationOf, type FileReader } from './statePathResolver.js';
 import { pathExistsInCandidates, resolveIndexedSchemaPath } from './bindingValidator.js';
 import { collectGetterReads } from './scriptAst.js';
+import { collectOutputSlots, documentMemberBindings } from './elementMembers.js';
 import { hasIndexSegment, toWildcardForm } from './indexPath.js';
 import { getResolvedForListPath } from './forContext.js';
 import { hasRecursionWildcard } from './recursionPaths.js';
@@ -60,15 +66,47 @@ export function validateScriptReads(
   bindAttribute: string = 'data-wcs',
 ): WcsDiagnostic[] {
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
-  if (blocks.length === 0) return [];
+  // (a document with no state script has nothing to read; a state that is not a script — JSON: `json=`, `state=`, a
+  // `.json` file — may still hold a slot an element's output writes. A script in a file of its own is read on the
+  // second pass — core/externalState.ts — which has it as a block)
+  if (blocks.length === 0
+    && (applicationSchema !== undefined || !html.includes('json') && !html.includes('state=')
+      || collectOutputSlots(documentMemberBindings(html, bindAttribute, fileReader)).length === 0)) return [];
   const msgs = getMessages(locale);
-  const index = getStatePathIndex(html, stateTagName, fileReader);
+  const index = getStatePathIndex(html, stateTagName, fileReader, bindAttribute);
   const candidates = mergeSchemaCandidates(index.paths, applicationSchema);
   const candidateSet = new Set(candidates.map((p) => p.path));
   let tree: Map<string, Set<string>> | null = null;
   // the paths the document binds (attributes, mustache, comment bindings), read once when a key's value is unknown
   let bound: string[] | null = null;
+  const boundPaths = (): string[] => (bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences
+    .filter((o) => o.kind === 'path')
+    .map((o) => rowPathOf(o.path, html, o.pathRange.start, bindAttribute))
+    .map((path) => (hasIndexSegment(path) ? toWildcardForm(path) : path)));
   const out: WcsDiagnostic[] = [];
+
+  // --- the lint's limit: a slot an element's output writes, with bindings under it (a stateSchema decides instead)
+  if (applicationSchema === undefined) {
+    for (const slot of index.scopes.outputSlots ?? []) {
+      const count = boundPaths().filter((b) => b.startsWith(`${slot.path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
+      if (count === 0) continue;
+      const at = slotDeclaration(slot.path, blocks)
+        // no script of the page declares it (a JSON state): said at the binding. A script in a file of its own is read
+        // on the second pass (core/externalState.ts), which says it at the key
+        ?? (index.elements.some((element) => element.srcAttr !== undefined && !element.srcAttr.endsWith('.json')) ? null : { start: slot.start, end: slot.end });
+      if (at === null) continue;
+      out.push({
+        code: WcsDiagnosticCode.PathDynamicUnknown,
+        start: at.start,
+        end: at.end,
+        message: msgs.pathDynamicUnknownOutput(slot.path, count, slot.tag, slot.member),
+        severity: 'info',
+        tag: slot.tag,
+        member: slot.member,
+        statePath: slot.path,
+      });
+    }
+  }
 
   for (const block of blocks) {
     // --- the lint's limit: a spread whose keys cannot be read, and no stateSchema to read them from
@@ -92,13 +130,9 @@ export function validateScriptReads(
       const spans = opaque.length === 0 ? [] : analyzeDeclarationSpans(block.content);
       for (const candidate of opaque) {
         const path = prefix + candidate.path;
-        bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences
-          .filter((o) => o.kind === 'path')
-          .map((o) => rowPathOf(o.path, html, o.pathRange.start, bindAttribute))
-          .map((path) => (hasIndexSegment(path) ? toWildcardForm(path) : path));
         // (a path under it that something else declares — a getter `get "items.*.size"()`, a `$recursion`'s rows, a
         // key written beside a spread — is checked: it is not one of those the message counts)
-        const count = bound.filter((b) => b.startsWith(`${path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
+        const count = boundPaths().filter((b) => b.startsWith(`${path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
         const span = spans.find((s) => candidate.path === s.name || candidate.path.startsWith(`${s.name}.`));
         if (count === 0 || span === undefined) continue;
         out.push({
@@ -166,6 +200,25 @@ function rowPathOf(path: string, html: string, offset: number, bindAttribute: st
   const list = getResolvedForListPath(html, offset, bindAttribute);
   if (list === null || list.startsWith('.')) return path;
   return path === '.' ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+}
+
+/**
+ * Where a script of the page declares the slot `path`: the top-level key it is, or is under (`productFetch` for
+ * `productFetch.value`) — a volume's script under its mount path, before the root's. Null when none does.
+ */
+function slotDeclaration(
+  path: string,
+  blocks: readonly { content: string; contentStart: number; mountPath: string | null }[],
+): { start: number; end: number } | null {
+  const ordered = [...blocks].sort((a, b) => (b.mountPath ?? '').length - (a.mountPath ?? '').length);
+  for (const block of ordered) {
+    const prefix = block.mountPath === null || block.mountPath === '' ? '' : `${block.mountPath}.`;
+    if (!path.startsWith(prefix)) continue;
+    const local = path.slice(prefix.length);
+    const span = analyzeDeclarationSpans(block.content).find((s) => local === s.name || local.startsWith(`${s.name}.`));
+    if (span !== undefined) return { start: block.contentStart + span.start, end: block.contentStart + span.end };
+  }
+  return null;
 }
 
 /** Is `path` a list of the state: a list candidate, or one with rows (`items.*`)? */

@@ -1054,6 +1054,13 @@ describe("wcs/input-nested-write — 入力を束ねたパスの下への書き�
     expect(diags[0].statePath).toBe("cart");
     expect(diags[0].message).toContain('"cart.*.quantity"');
     expect(diags[0].message).toContain("<wcs-storage>");
+    // 直し方は wcs/path-readonly にならない形で言う: setter を添えたアクセサペア（value#init=element:）か、一方向の
+    // value#ro:（setter も #ro も無い getter は保存はするが、要素が知らせる値 — 別のタブでのキーの変更 — の書き戻しを
+    // ランタイムが拒む。state の src と <wcs-storage> を動かして確かめた）
+    expect(diags[0].message).toContain("要素の値も受け取るなら、setter を添えたアクセサペアを value#init=element: <getter> で");
+    expect(diags[0].message).toContain("一方向に value#ro: <getter> で（setter も #ro も無いと、要素が知らせる値の書き戻しが getter に拒まれます — wcs/path-readonly）");
+    const en = validateSemantics(html, "wcs-state", "en").filter((d) => d.code === WcsDiagnosticCode.InputNestedWrite);
+    expect(en[0].message).toBe('"cart" is bound to the input "value" of <wcs-storage>, but the page writes below it ("cart.*.quantity"). A binding is re-applied only when "cart" itself is assigned, so those writes never reach <wcs-storage> — bind a getter that reads the fields by path (`this["cart.*.quantity"]`, `$getAll`) and returns a new value: with a setter beside it to take the element\'s value in as well (the accessor pair, value#init=element: <getter>), or one way when the element\'s value is not taken in (value#ro: <getter> — with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "cart" instead of writing below it');
     // 範囲は束縛のパス（`cart`）
     expect(html.slice(diags[0].start, diags[0].end)).toBe("cart");
   });

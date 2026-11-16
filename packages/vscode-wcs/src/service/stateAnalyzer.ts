@@ -62,6 +62,13 @@ export interface PathCandidate {
    * nothing says so: the author declared it (the community-hall seam app).
    */
   openKeys?: true;
+  /**
+   * A JSDoc `@type` declares this data path's shape — on its key, or through the type of a key above it (a field of
+   * `@type {{ value: Product | null }}`). The author says what is there, so the paths under it are checked against the
+   * declaration even where the lint would otherwise not know the value: a slot an element's output writes
+   * (statePathResolver's `StatePathScopes.outputSlots`).
+   */
+  typed?: true;
 }
 
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
@@ -1850,7 +1857,10 @@ function pushDataPropertyPathsAt(
   if (unread !== null && candidate.opaque === undefined && prop.declaredType === undefined) {
     candidate.opaque = { spread: unread.text, ...(unread.from !== undefined ? { from: unread.from } : {}) };
   }
-  if (prop.declaredType !== undefined) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+  if (prop.declaredType !== undefined) {
+    candidate.typed = true;
+    pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+  }
 }
 
 /**
@@ -2178,6 +2188,7 @@ function pushDeclaredShapePaths(
   if (shape.element !== null) {
     if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: 'list' });
     if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
+    markTyped(paths, `${path}.*`);
     if (depth < MAX_OBJECT_NEST_DEPTH) pushDeclaredShapePaths(`${path}.*`, shape.element, paths, depth + 1, typedefs);
   }
   if (depth >= MAX_OBJECT_NEST_DEPTH) return;
@@ -2186,8 +2197,15 @@ function pushDeclaredShapePaths(
     if (!hasPath(paths, fieldPath)) {
       paths.push(withHint({ path: fieldPath, kind: 'data' }, jsDocTypeHint(field.type, typedefs)));
     }
+    markTyped(paths, fieldPath);
     pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
   }
+}
+
+/** Marks the data candidate of `path` as one a JSDoc type declares (`PathCandidate.typed`). */
+function markTyped(paths: PathCandidate[], path: string): void {
+  const candidate = paths.find((p) => p.path === path);
+  if (candidate !== undefined && (candidate.kind === 'data' || candidate.kind === 'list')) candidate.typed = true;
 }
 
 /**

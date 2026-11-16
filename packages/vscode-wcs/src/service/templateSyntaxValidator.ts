@@ -40,7 +40,7 @@ export function validateTemplateSyntax(
   // schema 由来の候補も合流させる（bindingValidator と同じ規則・D12）。mustache は
   // default state のみを検証するので、存在判定の三値化も default の schema に対して行う。
   // Without a stateSchema, nothing is said about a path in a state the validator could not read (as in bindingValidator)
-  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader, bindAttrName);
   const allPaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
   const defaultSchema = applicationSchema;
   /** 存在しなければ code / severity / message を返す（stateSchema 宣言時は三値判定）。 */

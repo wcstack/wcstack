@@ -22,6 +22,8 @@ import { validateLiveRegions } from "../service/liveRegionValidator.js";
 import { validateFormInputs } from "../service/formInputValidator.js";
 import { validateBindingHosts } from "../service/bindingHostValidator.js";
 import { validateIoAttributes } from "../service/ioAttributeValidator.js";
+import { validateCommandArguments } from "../service/commandArgumentValidator.js";
+import { validateOutputPathWrites } from "../service/outputPathValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validatePackageLoads } from "../service/packageLoadValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
@@ -155,8 +157,11 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // bindings on an element where they never take effect: on <body> / <html> (the state binds what is inside <body>),
   // an event handler on a <wcs-link> (its host is display: none)
   out.push(...validateBindingHosts(text, bindAttribute, stateTagName, locale));
-  // a literal attribute of a built-in tag the platform refuses: a root-margin without px or %
+  // a literal attribute of a built-in tag that does not mean what was written: a root-margin without px or %, a
+  // sensor's frequency that is not a positive number, a target that names an id as a tag
   out.push(...validateIoAttributes(text, bindAttribute, locale));
+  // `on*: $command.x` wired straight to a command that takes data: the event lands in the data's place
+  out.push(...validateCommandArguments(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));
   // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
   out.push(...validatePackageLoads(text, locale, fileReader));
@@ -170,6 +175,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // what its getters, setters and methods write: a getter that writes, a getter without a setter written, setters that
   // write each other, a setter whose writes its getter does not read (docs/script-write-checks.md)
   out.push(...validateScriptWrites(text, stateTagName, locale));
+  // a script that writes `true` to a path only an element's output is bound to: the write does not reach the element
+  out.push(...validateOutputPathWrites(text, bindAttribute, stateTagName, locale, fileReader));
   // 4.22's script syntaxes: a malformed key listing several accessor paths, a full path of one list's rows in an
   // accessor declared for several, a path relative to the row where there is none
   out.push(...validateAccessorLists(text, stateTagName, locale));
@@ -177,7 +184,7 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // a session read at the top level of a module evaluated once: a guard's (error), a state's (warning)
   out.push(...validateModuleTopReads(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
-  out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader, bindAttribute));
   // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）
   out.push(...validateScanDeclarations(text, stateTagName, locale));
   // `$recursion` 宣言と `**` の使い方（runtime の recursion/ と同じ診断 code）。

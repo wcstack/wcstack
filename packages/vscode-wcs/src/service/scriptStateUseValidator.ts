@@ -5,7 +5,11 @@
  * 4.2.0 found each of these silent, or a generic TypeError (docs/mistake-catalogue.md):
  *
  * - `wcs/token-undeclared` (error): `this.$command.<name>` whose name `$commandTokens` does not declare. `$command`
- *   holds the declared tokens only, so `.emit()` on it throws a TypeError that names nothing.
+ *   holds the declared tokens only, so `.emit()` on it throws a TypeError that names nothing. Also where the state has
+ *   no `$commandTokens` at all (the stamp-rally seam app: the contacts README's Quick Start as it was — the lint was
+ *   silent on a state without the key, the one case where no token can exist). And a `$on` entry whose name
+ *   `$eventTokens` does not declare, or that a state without `$eventTokens` declares: the runtime refuses the state
+ *   when it loads (`$on entry "<name>" is not declared in $eventTokens`, #23 — a message with no code of its own).
  * - `wcs/command-token-unbound` (warning): a declared token that is emitted — `.emit()` in the script, or
  *   `on*: $command.<name>` in the markup — while no `command.<method>: $command.<name>` binding in the document
  *   receives it. The emit reaches nothing, without a word.
@@ -21,15 +25,17 @@
  *   (`this["items.*.nmae"] = …`, `$setAll` / `$update`) is scriptReadValidator's, which looks paths up as bindings do.
  *
  * Each needs the state to be readable (an `export default { … }` literal); the command checks need its
- * `$commandTokens` (`$eventTokens`) to be a literal list. A volume's `$commandTokens` / `$eventTokens` are ignored by the
- * runtime (`wcs/volume-declaration`), so the token checks read the page's root states only.
+ * `$commandTokens` (`$eventTokens`) to be a literal list — or absent, in a state read in full (tokenDeclarations.ts).
+ * A volume's `$commandTokens` / `$eventTokens` / `$on` are ignored by the runtime (`wcs/volume-declaration`), so the
+ * token checks read the page's root states only.
  */
 
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnosticCode, type WcsDiagnostic } from '../core/diagnostics.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
-import { analyzeOnHandlerSources, analyzeStatePaths, findTopLevelDeclaration, maskCommentsAndStrings } from './stateAnalyzer.js';
+import { analyzeDeclarationEntries, analyzeOnHandlerSources, analyzeStatePaths, findTopLevelDeclaration, maskCommentsAndStrings } from './stateAnalyzer.js';
+import { scriptTokenNames } from './tokenDeclarations.js';
 import { isReadableStateScript } from './statePathResolver.js';
 import { suggestion } from './suggestion.js';
 import { arrayElements, literalKind } from './configDeclarationValidator.js';
@@ -83,7 +89,10 @@ export function validateScriptStateUses(
 
     // --- the command tokens (the root's)
     const declared = paths.filter((p) => p.kind === 'command').map((p) => p.path.slice('$command.'.length));
-    if (block.mountPath === null && declared.length > 0) {
+    // (no token at all — the key is absent, or an empty list — is known only where the list can be read)
+    const noCommands = declared.length === 0 && block.mountPath === null && block.content.includes('$command')
+      && scriptTokenNames(block.content, '$commandTokens')?.length === 0;
+    if (block.mountPath === null && (declared.length > 0 || noCommands)) {
       const emitted = new Map<string, { start: number; end: number }>();
       COMMAND_USE.lastIndex = 0;
       let match: RegExpExecArray | null;
@@ -96,7 +105,9 @@ export function validateScriptStateUses(
             start: block.contentStart + start,
             end: block.contentStart + end,
             // `$command` holds the declared tokens only: `.emit()` on what it lacks is a TypeError
-            message: msgs.commandTokenUndeclared(`$command.${name}`) + suggestion(name, declared, msgs),
+            message: noCommands
+              ? msgs.commandTokensAbsent(`$command.${name}`, name)
+              : msgs.commandTokenUndeclared(`$command.${name}`) + suggestion(name, declared, msgs),
             severity: 'error',
           });
         } else if (!emitted.has(name) && EMIT_AFTER.test(masked.slice(match.index + match[0].length))) {
@@ -134,6 +145,21 @@ export function validateScriptStateUses(
             severity: 'warning',
           });
         }
+      }
+    }
+
+    // --- the `$on` entries (the root's): a name `$eventTokens` does not declare — the state fails to load (#23)
+    if (block.mountPath === null && block.content.includes('$on')) {
+      const listed = scriptTokenNames(block.content, '$eventTokens');
+      for (const entry of listed === null ? [] : analyzeDeclarationEntries(block.content, '$on')) {
+        if (listed!.includes(entry.name)) continue;
+        out.push({
+          code: WcsDiagnosticCode.TokenUndeclared,
+          start: block.contentStart + entry.start,
+          end: block.contentStart + entry.end,
+          message: msgs.onEntryUndeclared(entry.name, listed!.length === 0) + suggestion(entry.name, listed!, msgs),
+          severity: 'error',
+        });
       }
     }
 

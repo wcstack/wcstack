@@ -718,7 +718,7 @@ export default {
     expect(diags[0].message).toContain('$eventTokens に宣言されていません');
   });
 
-  it('$eventTokens 宣言がない場合は eventToken の右辺を検証しない（誤警告回避）', () => {
+  it('$eventTokens の無い state（全部読める）でも eventToken の右辺は未宣言 — warning（ランタイムはイベントのたびに #1301）', () => {
     const html = `
 <wcs-state>
   <script type="module">
@@ -727,7 +727,22 @@ export default { count: 0 };
 </wcs-state>
 <my-input data-wcs="eventToken.value: anything"></my-input>`;
     const diags = validateBindings(html, 'data-wcs');
-    expect(diags).toHaveLength(0);
+    expect(diags.map((d) => [d.code, d.severity, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.TokenUndeclared, 'warning', 'anything']]);
+    expect(diags[0].message).toContain('$eventTokens がありません');
+  });
+
+  it('$eventTokens が読めない state（リストがリテラルでない・トップレベルの spread・src）では eventToken の右辺を検証しない（誤警告回避）', () => {
+    const element = `<my-input data-wcs="eventToken.value: anything"></my-input>`;
+    for (const script of [
+      `const TOKENS = ["anything"];\nexport default { count: 0, $eventTokens: TOKENS };`,
+      `export default { count: 0, ...tokens };`,
+      `export default make();`,
+    ]) {
+      const html = `<wcs-state><script type="module">${script}</script></wcs-state>\n${element}`;
+      expect(validateBindings(html, 'data-wcs')).toEqual([]);
+    }
+    expect(validateBindings(`<wcs-state src="./state.js"></wcs-state>\n${element}`, 'data-wcs')).toEqual([]);
+    expect(validateBindings(`<wcs-state></wcs-state>\n${element}`, 'data-wcs')).toEqual([]);
   });
 
   it('$streamStatus.<宣言済み> のバインディングに警告を出さない', () => {

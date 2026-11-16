@@ -143,6 +143,21 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 新しい 2 つの error は `--errors-only` にも出ます。新しい warning は `--strict` で失敗します。
 
+## 画面とセンサーの要素のページに言うこと
+
+4.25（未リリース）から、継ぎ目アプリ stamp-rally — 画面とセンサーの要素のスタンプラリー: 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止 — から。作者がわざとした 20 の間違いのどれにも、この lint はそれとして報告しませんでした。いま言うこと:
+
+- **`wcs/path-readonly`**（error）は、カスタム要素が書くメンバーを setter の無い getter に束ねた形も報告します — `<wcs-wakelock data-wcs="held: keepAwake">` と `get keepAwake() { … }`。出力だけのメンバーは束ねた時点で書かれるので、state の初期化が失敗し、ページ全体が動きません（`[wcs/path-readonly] "keepAwake" is a getter without a setter`）。lint は 0 件でした。判定はランタイムの配線と同じです: `#ro` でも変わらず、`#init=none` なら要素が値を知らせるたびに失敗し、要素が何も書かないのは `#ro,init=none` だけです。入力でもあるメンバー（`<wcs-storage>` の `value`・`trigger`）は、要素が値を知らせるたび — 要素に渡すだけの getter は `value#ro:` で一方向に束ねます — と、`#init=element` の束ねた時点に書かれます。spread が束ねるメンバーも同じに読みます。組み込みの `wcs-*` タグと、ページがリテラルの `static wcBindable` で定義する要素が対象です。
+- **`wcs/token-undeclared`** は、`$commandTokens` / `$eventTokens` そのものが無い state のトークンも報告します — トークンが 1 つも無い、いちばん確かな場合で、lint が黙っていた場合です（宣言を写し忘れた Quick Start）: `command.select: $command.select`（error — state の初期化が失敗する）、スクリプトの `this.$command.select.emit(…)`（error）、`on*: $command.x` と `eventToken.<member>: name`（warning — イベントのたびに報告される）。`$eventTokens` に無い `$on` のエントリも error です: ランタイムは state の読み込みを拒みます。「無い」と言うのは、宣言を全部読める state だけです — トップレベルに spread の無い `export default { … }` か JSON で、キーが無いか空のリストのとき。未宣言の `on*: $command.x` はこの code になりました（以前は `wcs/binding-path-missing`）。
+- **`wcs/command-event-argument`**（warning） — データを取るコマンドに直結した `on*: $command.x`: `<button data-wcs="onclick: $command.share">` と `<wcs-share data-wcs="command.share: $command.share">`。イベントから emit したトークンはイベントを第 1 引数として運び、コマンドはそれで呼ばれます: `<wcs-screen-orientation>` の `lock(event)` と `<wcs-share>` の `share(event)` はブラウザの TypeError が `error` に出るだけ、`<wcs-credential>` の `get(event)` は何も言わず `null` になります。state のメソッドから emit してください: `onclick: share` と `share() { this.$command.share.emit({ … }) }`。組み込みタグの、メソッドが引数を宣言するコマンドが対象です。引数の無いコマンド（`start`・`requestFullscreen` — ボタンへの直結が短い書き方）、受け取る種類でない第 1 引数を無視する 4 つ — `<wcs-fetch>` の `fetch`・`<wcs-ws>` の `close`・`<wcs-idle>` の `start`・`<wcs-notify>` の `close` — 、ネイティブ要素のコマンドには出しません。
+- **`wcs/frequency-invalid`**（warning） — `<wcs-accelerometer>` / `<wcs-gyroscope>` / `<wcs-magnetometer>` / `<wcs-ambient-light-sensor>` の、正の数値でないリテラルの `frequency`: `frequency="60hz"`・`"0"`・`"-5"`。要素はそれを「指定なし」として読み、センサーはブラウザの既定の頻度で黙って動きます。文面は、値の先頭の数値（`frequency="60"`）を言います。束ねた `frequency:` は検査しません。
+- **`wcs/target-selector`**（warning） — `<wcs-fullscreen>` / `<wcs-pip>` / `<wcs-pointer-lock>` / `<wcs-intersect>` / `<wcs-resize>` の、裸の語で書いたリテラルの `target` で、文書にその id の要素があり、そのタグ名の要素が無いもの: `target="viewer"` は `<viewer>` 要素を選ぶ CSS セレクタで、`#viewer` のつもりです。コマンドは失敗し、それを知らせるのは要素の `error` だけです。監視の 2 つは何も監視しません。
+- **`wcs/output-path-written`**（warning） — 要素の出力に束ねたパスへ、スクリプトが `true` を代入する: `<wcs-fullscreen data-wcs="active: viewerFs">` と `this.viewerFs = true`。出力は要素が書くものなので、全画面にはなりません — そしてその値を表示するもの（`class.fullscreen: viewerFs`・ボタンのラベル）は、そうなったと言います。要素にはコマンドで頼んでください。わざと狭い規則です: `= true` だけ（使い終えた出力を `false` や `null` に戻すのは普通の書き方）で、カスタム要素の入力やネイティブ要素の双方向の束縛（`checked: flag`）にも束ねたパスには言いません。
+- **要素の出力が書くスロットは「分からない」であって「無い」ではありません。** `picked: null` と `<wcs-contacts data-wcs="value: picked">`、`users: []` と `<wcs-fetch data-wcs="value: users">`、spread が書く `<パス>.value`: スロットの中身は要素が渡すものなので、その下に束ねたパス（`picked.0.name.0`・行の `.name`）は検査せず、キーの上の `wcs/path-dynamic-unknown`（info）1 件がそう言います。以前は 1 件ずつ `wcs/binding-path-missing` でした。キーに JSDoc の `@type` を付ければ検査します。
+- **`wcs/input-nested-write`** は、代わりに束ねる形を言います: アクセサペア（`value#init=element: <getter>`）か、一方向の `value#ro: <getter>`。setter も `#ro` も無い getter は保存はしますが、要素が知らせる値の書き戻しを拒まれます。
+
+広がった `wcs/path-readonly` と `wcs/token-undeclared` の error は `--errors-only` にも出ます。新しい 4 つの warning は `--strict` で失敗します。
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。

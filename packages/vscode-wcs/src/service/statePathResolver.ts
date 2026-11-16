@@ -18,6 +18,7 @@ import {
 } from './stateAnalyzer.js';
 import type { ModuleLocation } from './moduleValues.js';
 import { hasIndexSegment, toWildcardForm } from './indexPath.js';
+import { collectOutputSlots, documentMemberBindings, type OutputSlot } from './elementMembers.js';
 
 /**
  * 外部ファイルの内容を読み取るコールバック。
@@ -50,9 +51,17 @@ export interface StatePathScopes {
    * The data paths whose value the validator could not read — a name it could not follow to a literal (`{ t }` with
    * `t` imported and computed, moduleValues.ts), an expression written in place that is not a literal
    * (`team: init.team`, `errs: emptyErrs()`) — and the paths whose JSDoc type has an index signature
-   * (`Record<string, T>`): the path exists, the paths under it are unknown.
+   * (`Record<string, T>`): the path exists, the paths under it are unknown. With the bind attribute given
+   * (`getStatePathIndex`), the document's output slots (`outputSlots`) are among them.
    */
   readonly opaquePaths: readonly string[];
+  /**
+   * The paths an output-only member of a custom element writes (`value: picked` on `<wcs-contacts>`, the `value` a
+   * spread on `<wcs-fetch>` puts under its path — elementMembers.ts): the slot holds whatever the element gives, so
+   * its seed says nothing of what is under it. Not a slot whose shape a JSDoc `@type` declares, nor an accessor.
+   * Only where the index was built with the bind attribute.
+   */
+  readonly outputSlots?: readonly OutputSlot[];
 }
 
 /** The document's state path candidates, and the parts they cannot vouch for. */
@@ -124,8 +133,44 @@ export function getStatePathIndex(
   html: string,
   stateTagName: string = 'wcs-state',
   fileReader?: FileReader,
+  bindAttribute?: string,
 ): StatePathIndex {
-  return resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  const index = resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  if (bindAttribute === undefined) return index;
+  // The slots the document's elements write with an output (read from the bindings, so the attribute's name is needed):
+  // what is under one is the element's to say. The checks that report a missing path are silent there, and
+  // scriptReadValidator says so once per slot (wcs/path-dynamic-unknown)
+  const outputSlots = openOutputSlots(html, bindAttribute, fileReader, index.paths, index.scopes.opaquePaths);
+  if (outputSlots.length === 0) return index;
+  return {
+    ...index,
+    scopes: { ...index.scopes, opaquePaths: [...index.scopes.opaquePaths, ...outputSlots.map((slot) => slot.path)], outputSlots },
+  };
+}
+
+/**
+ * The document's output slots (elementMembers.ts) under which nothing is known: not one whose shape a JSDoc `@type`
+ * declares (`PathCandidate.typed` — its paths are checked against the declaration), not an accessor or a method (a
+ * getter's result is what its bindings read), and not one under a path that is already unknown (`opaque`).
+ */
+export function openOutputSlots(
+  html: string,
+  bindAttribute: string,
+  fileReader: FileReader | undefined,
+  paths: readonly PathCandidate[],
+  opaque: readonly string[],
+): OutputSlot[] {
+  const slots = collectOutputSlots(documentMemberBindings(html, bindAttribute, fileReader));
+  if (slots.length === 0) return slots;
+  const byPath = new Map<string, PathCandidate>();
+  for (const candidate of paths) if (!byPath.has(candidate.path)) byPath.set(candidate.path, candidate);
+  return slots.filter((slot) => {
+    if (opaque.some((o) => slot.path === o || slot.path.startsWith(`${o}.`))) return false;
+    const candidate = byPath.get(slot.path);
+    // (a path the state does not seed — a spread's member — holds only what the element gives)
+    if (candidate === undefined) return true;
+    return (candidate.kind === 'data' || candidate.kind === 'list') && candidate.typed !== true && candidate.openKeys !== true;
+  });
 }
 
 /**
