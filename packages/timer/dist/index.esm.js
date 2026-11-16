@@ -70,7 +70,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/timer","version":"4.24.1"};
+var pkg = {"name":"@wcstack/timer","version":"4.24.2"};
 
 /**
  * Headless timer primitive. A thin, framework-agnostic wrapper around

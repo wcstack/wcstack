@@ -69,7 +69,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/defined","version":"4.24.1"};
+var pkg = {"name":"@wcstack/defined","version":"4.24.2"};
 
 function toAdapter(registry) {
     if (typeof registry !== "object" || registry === null)
