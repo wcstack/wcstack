@@ -120,7 +120,7 @@ npm install @wcstack/timer
 | --------- | ---------------------------------------------------------------- |
 | `start`   | tick を開始（既に動作中なら no-op）。                            |
 | `stop`    | tick を停止。`tick` / `elapsed` は保持されます。                 |
-| `reset`   | 停止し `tick` / `elapsed` を `0` に戻します。                    |
+| `reset`   | 停止し `tick` / `elapsed` を `0` に戻します。この変化は発行されます: `wcs-timer:tick` が `{ count: 0, elapsed: 0 }` で出るので、`eventToken.tick` のハンドラーは reset でも走ります —— 本物の tick でだけ動かしたいときは `event.detail.count > 0` を確かめてください。 |
 | `pause`   | 周期の途中経過と経過時間を保持したまま一時停止します。           |
 | `resume`  | `pause` から、周期の残り時間を尊重して再開します。               |
 

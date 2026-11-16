@@ -123,28 +123,29 @@ Why not bind `value` straight to `form`? A binding is re-applied only when its o
 
 This pattern is fixed by `packages/storage/__tests__/integration.accessorPairForm.test.ts` against the real `@wcstack/state`.
 
-#### Saving on demand (`manual` + `trigger`)
+#### Saving on demand
 
-To save at a moment of your choosing instead of on every change, add `manual` and drive `trigger:` from a boolean. The dependency walk is **parent → child only**, so a `settings` binding does not fire when `settings.theme` changes; `$dependOn` lists the fields to watch and `trigger` commits the whole object:
+To save at a moment of your choosing — a Save button — instead of on every change, give the element a slot of its own and assign it when you choose. Assigning the bound path saves; the element writes the same path when it loads the key, and when another tab saves it:
 
 ```html
 <wcs-state>
   <script type="module">
-    export default defineState({
+    export default {
       settings: { theme: "light", lang: "en" },
+      saved: null,   // what the key holds
 
-      get settingsChanged() {
-        this.$dependOn("settings.theme");
-        this.$dependOn("settings.lang");
-        return true;
+      $watch: {
+        // the stored settings arrived: at start, or another tab saved
+        saved(value) { if (value) this.settings = { ...value }; },
       },
-    });
+      save() {
+        this.saved = { ...this.settings };
+      },
+    };
   </script>
 </wcs-state>
 
-<wcs-storage key="app-settings" manual
-  data-wcs="value: settings; trigger: settingsChanged">
-</wcs-storage>
+<wcs-storage key="app-settings" data-wcs="value#init=element: saved"></wcs-storage>
 
 <select data-wcs="value: settings.theme">
   <option value="light">Light</option>
@@ -155,14 +156,19 @@ To save at a moment of your choosing instead of on every change, add `manual` an
   <option value="en">English</option>
   <option value="ja">日本語</option>
 </select>
+
+<button data-wcs="onclick: save">Save</button>
 ```
 
 **Flow:**
 
-1. User changes theme → `settings.theme` updates
-2. Dynamic dependency triggers `settingsChanged` re-evaluation → returns `true`
-3. `trigger: settingsChanged` binding fires → `save()` executes
-4. The entire `settings` object is saved to localStorage
+1. On connection `<wcs-storage>` loads the key; `#init=element` writes the stored object to `saved` (the slot is seeded `null`, so nothing is saved over it) → the `$watch` copies it into `settings` → the selects show it
+2. The user changes the theme → `settings.theme` updates; nothing is saved
+3. Save → `saved` is assigned a copy → its binding applies it to `value` → saved
+4. Another tab saves the key → the element writes `saved` → the `$watch` takes it in
+
+Since 4.25 (not released yet) this section shows this form. The one it showed up to 4.24 — `manual` with `trigger:` bound to a getter that returns `true` — did not work as written: the element writes `trigger` back when it has saved, a getter cannot take the write, so every change logged `[wcs/path-readonly]`; and `manual` loads nothing, so the saved settings never came back after a reload. `wcs-validate` reports that binding (`wcs/path-readonly`). `manual` and `trigger` are for a page that drives the element itself — it calls `load` and `save` when it chooses, and nothing is loaded for it at start ([Element Reference](#element-reference)).
+
 
 ### 3. Using sessionStorage
 

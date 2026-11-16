@@ -124,28 +124,29 @@ npm install @wcstack/storage
 
 このパターンは `packages/storage/__tests__/integration.accessorPairForm.test.ts` が実 `@wcstack/state` に対して固定しています。
 
-#### 任意のタイミングで保存する（`manual` + `trigger`）
+#### 任意のタイミングで保存する
 
-変更のたびではなく自分で選んだ瞬間に保存したい場合は、`manual` を付けて `trigger:` を真偽値で駆動します。依存走査は**親→子方向**のみなので、`settings.theme` が変わっても `settings` へのバインディングは発火しません。`$dependOn` で監視するフィールドを列挙し、`trigger` でオブジェクト全体をコミットします:
+変更のたびではなく、自分で選んだ瞬間 —— 保存ボタン —— に保存したい場合は、要素に専用のスロットを与え、選んだ時点でそこへ代入します。束ねたパスへの代入が保存になります。要素は、キーを読み込んだときと、別のタブがそれを保存したときに、同じパスへ書きます:
 
 ```html
 <wcs-state>
   <script type="module">
-    export default defineState({
+    export default {
       settings: { theme: "light", lang: "ja" },
+      saved: null,   // キーが持っているもの
 
-      get settingsChanged() {
-        this.$dependOn("settings.theme");
-        this.$dependOn("settings.lang");
-        return true;
+      $watch: {
+        // 保存してあった設定が届いた: 開始時、または別のタブが保存したとき
+        saved(value) { if (value) this.settings = { ...value }; },
       },
-    });
+      save() {
+        this.saved = { ...this.settings };
+      },
+    };
   </script>
 </wcs-state>
 
-<wcs-storage key="app-settings" manual
-  data-wcs="value: settings; trigger: settingsChanged">
-</wcs-storage>
+<wcs-storage key="app-settings" data-wcs="value#init=element: saved"></wcs-storage>
 
 <select data-wcs="value: settings.theme">
   <option value="light">ライト</option>
@@ -153,17 +154,22 @@ npm install @wcstack/storage
 </select>
 
 <select data-wcs="value: settings.lang">
-  <option value="ja">日本語</option>
   <option value="en">English</option>
+  <option value="ja">日本語</option>
 </select>
+
+<button data-wcs="onclick: save">保存</button>
 ```
 
 **フロー:**
 
-1. ユーザーがテーマを変更 → `settings.theme` が更新
-2. 動的依存により `settingsChanged` が再評価 → `true` を返す
-3. `trigger: settingsChanged` バインディングが発火 → `save()` 実行
-4. `settings` オブジェクト全体が localStorage に保存
+1. 接続時に `<wcs-storage>` がキーを読み込み、`#init=element` が保存済みのオブジェクトを `saved` に書く（スロットの種は `null` なので、上書き保存は起きない）→ `$watch` がそれを `settings` に写す → select に表示される
+2. ユーザーがテーマを変更 → `settings.theme` が更新される。何も保存されない
+3. 保存 → `saved` に写しが代入される → その束縛が `value` に当たる → 保存される
+4. 別のタブがキーを保存 → 要素が `saved` に書く → `$watch` が取り込む
+
+4.25（未リリース）から、この節はこの形を載せています。4.24 まで載せていた形 —— `manual` と、`true` を返す getter に束ねた `trigger:` —— は、書いてあるとおりには動きませんでした: 要素は保存し終えると `trigger` を書き戻しますが、getter はその書き込みを受け取れないので、変更のたびに `[wcs/path-readonly]` が記録されました。また `manual` は何も読み込まないので、保存した設定は再読み込みの後に戻りませんでした。`wcs-validate` はその束縛を報告します（`wcs/path-readonly`）。`manual` と `trigger` は、要素を自分で動かすページのためのものです —— ページが選んだ時点で `load` と `save` を呼び、開始時には何も読み込まれません（[要素一覧](#要素一覧)）。
+
 
 ### 3. sessionStorage の使用
 

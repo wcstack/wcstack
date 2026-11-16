@@ -72,7 +72,7 @@
 2. **壊れたアプリを直す作者** — 2026-11-10 に ledger-repair として走らせた（§5.17、4.21）。作者の軸。作る代わりに直す: 目録の誤り（黙るものと知らせるもの）を仕込んだ動くアプリを渡し、作者はコンソール・lint・`<wcs-devtools>`・文書だけで直す。4.x の「知らせる」が直し方まで導くか（場所を指しているか、文面から次の手が分かるか）を正面から測る。
 3. **入力の重い業務フォーム** — 2026-11-14 に ekiden-entry として走らせた（§5.18、4.23）。申込のウィザード（日本語）。IME の変換の途中 × 双方向の束縛、フィルタ付きの双方向とキャレット・取り消し、ブラウザの自動入力、入力の行の並べ替え（目録の未確認の候補「束ねていない DOM の状態が元の位置に残る」）、Form-Associated Custom Elements、別のステップの欄を指す 422。
 4. **大きなリストとスクロール** — 2026-11-15 に town-archive として走らせた（§5.19、4.24）。1 万件の一覧と無限スクロール。`<wcs-infinite-scroll>`・`<wcs-intersect>`・`<wcs-resize>`、詳細から戻ったときの位置、絞り込みと読み込み中のページの競合、目録の未確認の候補（`<wcs-intersect>` の端ごとの `page++`、委譲されるイベントと `stopPropagation()`）。signals で書けば 4.18・4.19 の DOM の層を通る。
-5. **画面とセンサーの API** — 未使用の 13 タグ、iOS の DeviceOrientation の許可の流れ、全画面 × 向きの固定の順序、CI に無い WebKit（これまでの既知の制限で何度も「Safari は試していない」）。端末の代役が要り、使う人も少ないので最後（2 巡目の audio / midi と同じ理由）。
+5. **画面とセンサーの API** — 2026-11-17 に stamp-rally として走らせた（§5.20、4.25）。未使用の 13 タグ、iOS の DeviceOrientation の許可の流れ、全画面 × 向きの固定の順序、CI に無い WebKit（これまでの既知の制限で何度も「Safari は試していない」）。端末の代役が要り、使う人も少ないので最後（2 巡目の audio / midi と同じ理由）。
 
 予備に 2 つ:
 
@@ -333,6 +333,37 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
    - lint: 複数の `@typedef`、入れ子の `currentTarget`、ウィンドウと文書を読む getter、`wcs/body-binding`・`wcs/link-handler`（error）、`wcs/root-margin-unit`（warning）。
    - 文書と skill。
 
+
+### 5.20 stamp-rally から決めたこと（2026-11-17、著者）
+
+3 巡目の 5 本目（[seam-apps.ja.md](./seam-apps.ja.md) の「stamp-rally」）。7 つの問いを推奨の案に決めた。core の残りは 6 B なので、どれも core の外に置く。
+
+1. **誰も読まない失敗は、diagnostics が警告する（4.25、`[wcs/io-error-unobserved]`、core 0 B）。** I/O ノードは投げず、失敗を `error` / `errorInfo` に置く。どちらも束ねていないページでは、失敗したコマンドは何も言わない（わざとした間違い 20 個のうち、実行時が何か言ったのは 3 個）。
+   - 対象は、状態が束ねる要素で、クラスが `errorInfo` か `error` を宣言し、その `data-wcs` が `error`・`errorInfo`・`status`・`connected`・`readyState` のどれも読まず、イベントトークンもスプレッドも無いもの。タグと code ごとに 1 回。
+   - リポジトリの e2e 全体に掛けて、正しいページを 2 つ見つけ、条件から外した: `connected` で接続の状態を読んでいるストリームと、遷移が切った要求（`pagehide` 以降は言わない）。
+   - `for:` の行と `if:` の枝の中の要素は見ない（束縛は plan が持つ）。
+   - 比べた案: 13 の要素が自分で `console.warn` する（state を使わないページにも出るが、`error` を正しく束ねたページにも出る）。文書だけ。
+2. **`<wcs-accelerometer>` と `<wcs-gyroscope>` は、Generic Sensor のクラスが無い所で `devicemotion` を読む（4.25）。** iPhone の Safari にはクラスが無く、2 つとも未対応だった。iPhone の問いのために `requestPermission` コマンドと `permissionState` 出力を持つ。タグもパッケージも増えない。
+   - 値は同じ単位に直す（加速度は m/s²、回転は rad/s）。`frequency` は、フォールバックでは値を間引く。
+   - 弱み: `accelerationIncludingGravity` の符号がプラットフォームで違いうることは、実機で確かめていない。README にそう書き、大きさを使うよう勧める。
+   - デスクトップの Firefox のように、イベントはあってセンサーが無いブラウザでは、未対応のエラーではなく「値が来ない」になる。
+   - 比べた案: `@wcstack/tilt` に `<wcs-motion>` を足す（タグが 1 つ増える）。文書だけ。
+3. **`<wcs-tilt>` に出力 `heading` を足す（4.25）。** 北からの時計回りの度。iPhone は `webkitCompassHeading`、Android は `deviceorientationabsolute` から。既存の出力は変えない。画面の向きの補正は要素の中ではしない。比べた案: 文書だけ。
+4. **13 の要素に出力 `supported` を、`<wcs-permission>` に `unsupportedReason` を足す（4.25）。** `supported` は「API があり、このページがそれを使える」。4.5 の決定（使えない機能は `unsupported`）は変えず、理由を別の出力で言う: `policy-blocked`・`insecure-context`・`no-permissions-api`・`unknown-name`。
+   - 実装で決まったこと: 全画面と Picture-in-Picture は安全なコンテキストを要らないので、安全でないコンテキストだけでは `false` にしない。`<wcs-screen-orientation>` の `supported` は監視ができることで、`lock()` が効くことは言わない（試すまで分からない）。連絡先は、最上位のページでだけ `true`（仕様が枠の中を拒む）。
+   - 比べた案: `<wcs-permission>` の理由だけ。文書だけ。
+5. **`<wcs-credential>` は 3 つとも直す（4.25）。** `preventSilentAccess` コマンド（サインアウト）。`store({ id, password })` の素のオブジェクトから要素が `PasswordCredential` を作る。`PasswordCredential` の無いブラウザでは、パスワードの `get` / `store` を `capability-missing` にする。比べた案: `preventSilentAccess` だけ。文書だけ。
+6. **今の振る舞いが変わる直しを、2 件とも入れる（4.25、CHANGELOG の Upgrading に書く）。**
+   - `<wcs-tilt>`: 断られた `requestPermission()` は `permissionState` を変えず、`error` を立てて `recoverable: true` にする。`"denied"` は利用者の答えだけ。
+   - `<wcs-contacts>`: 空の配列での解決を `cancelled: true` にし、`value` は変えない。仕様は、閉じたピッカーを空のリストで解決する。
+   - 比べた案: tilt だけ直し、contacts は README を事実に合わせる。どちらも文書だけ。
+7. **直し方が決まっているものは、この minor で全部入れる。**
+   - 実行時: 全画面・カーソルの捕捉・小窓の要素は、切断で `active: false` を出す（タイミング契約 §16.6）。Firefox の `pointerlockerror`。`DeviceOrientationEvent` の無いブラウザの `<wcs-tilt>`。Permissions-Policy には、それが挙げる機能だけを尋ねる。センサーの `frequency` の警告と、`error` イベントの後の `start()`。
+   - lint: 出力を getter に束ねる、`$commandTokens` の無い state の `$command`、データを受け取るコマンドへの `on…: $command`、`frequency`、出力に束ねたパスへの `true`、`target` の名前、README の例への誤報。
+   - 文書と skill。新しい案内 [device-apis.ja.md](./device-apis.ja.md)。
+   - 比べた案: 実行時だけにして、lint と文書は次の minor。
+
+記録だけにしたもの: ページの可視性の要素（[long-lived-pages.ja.md](./long-lived-pages.ja.md) に書き方がある）、センサーの「動いている」の出力、ポリシーで禁じられたページでの `share()` のエラーの種類。
 
 ## 6. やらないこと
 
