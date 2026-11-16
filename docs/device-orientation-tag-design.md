@@ -100,6 +100,8 @@ async requestPermission(): Promise<string> {
 
 この正確な分岐（関数の有無で「実際に問い合わせる」か「即granted」かを切り替える）が、本ノードの中核ロジックである。
 
+> **4.25 から（2026-11-17、継ぎ目アプリ stamp-rally）**: 上の擬似コードと決定 2 のうち 2 点は現在の挙動ではない。(1) `requestPermission()` の reject は `"denied"` に倒さない——iOS はタップの外からの呼び出しを質問を出さずに `NotAllowedError` で reject するので、これは利用者の拒否ではない。`permissionState` は変えず、`error` だけをセットし（`errorInfo`: `not-allowed`、`recoverable: true`）、変わっていない `permissionState` で resolve する。`permissionState` が変わるのはブラウザが答えたときだけである。(2) `DeviceOrientationEvent` そのものが無い環境は即 `"granted"` にしない——`requestPermission()` も `start()` も `error`（`capability-missing`）をセットし、`start()` は何も購読しない。クラスはあるが `requestPermission` が無い環境（Android・デスクトップ）が即 `"granted"` になるのは変わらない。あわせて `heading`（北からの方角）と `supported` の 2 つの出力が加わった。現在の契約は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §8。
+
 ---
 
 ## 4. `start` / `stop`
@@ -187,7 +189,7 @@ class FakeDeviceOrientationEvent extends Event {
 
 - `typeof DeviceOrientationEvent?.requestPermission !== "function"` の環境（Android Chrome 相当）で `requestPermission()` を呼ぶと、実際には何も問い合わせず即座に `"granted"` を返し `permissionState` が `"granted"` になる（§3 の分岐確認）。
 - `requestPermission` が生えている環境（iOS 相当）で、resolve 値が `permissionState` に正しく反映される（`"granted"`/`"denied"` の両方）。
-- `requestPermission()` の reject（gesture 文脈外呼び出し相当）が never-throw で `"denied"` に倒れる。
+- `requestPermission()` の reject（gesture 文脈外呼び出し相当）が never-throw で `"denied"` に倒れる。（**4.25 から（2026-11-17、継ぎ目アプリ stamp-rally）**: reject は `permissionState` を変えず `error` だけをセットする。`DeviceOrientationEvent` が無い環境は `"granted"` ではなく `capability-missing` の `error` になる——§3 の注記と [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §8。）
 - `deviceorientation` イベント発火で `alpha`/`beta`/`gamma`/`absolute` が更新され、1回のイベントにつき `wcs-tilt:change` が1回だけ dispatch される。
 - `stop()` 後に `deviceorientation` を発火させても状態が変わらない（listener 解除の確認）。
 - `start()` の冪等性（二重呼び出しで listener が二重登録されない）。
@@ -203,7 +205,7 @@ class FakeDeviceOrientationEvent extends Event {
 | §0 permission 状態の追跡 | **`<wcs-tilt>` がローカルに `permissionState` を保持**（対応する Permissions API エントリが無いため合成不可） |
 | §2 `permissionState` の語彙 | 3値 `"granted" \| "denied" \| "unknown"`（geo/permission の4値とは意図的に異なる） |
 | §2 公開 state | `alpha`/`beta`/`gamma`/`absolute` を1つの `wcs-tilt:change` に、`permissionState` は別イベント `wcs-tilt:permission-changed`、`error` は別イベント `wcs-tilt:error`（never-throw、§3.6 MUST） |
-| §3 `requestPermission` フォールバック | `typeof DeviceOrientationEvent?.requestPermission === "function"` で分岐。無ければ即 `"granted"` |
+| §3 `requestPermission` フォールバック | `typeof DeviceOrientationEvent?.requestPermission === "function"` で分岐。無ければ即 `"granted"`（4.25 から（2026-11-17、継ぎ目アプリ stamp-rally）: `DeviceOrientationEvent` そのものが無ければ `error`、reject は `permissionState` を変えない——§3 の注記） |
 | §4 `_gen`世代ガード | **不要**（購読(`start`/`stop`)は完全に同期で対象外。`requestPermission()`はasync probeを実際に持つが、post-await書き込みが購読・リソース管理を伴わないbenignな値設定+dispatchに留まるため同じく不要——`network`の「async probeが一切存在しない」根拠の流用は誤りだったため§4で訂正） |
 | §5 secure context | **必須**（network とは対照的。バッチ横断で普遍的な話ではないことの実例） |
 | §6 connect 時自動 start | **しない**（`<wcs-idle>` と並行の決定）。ただし非iOSでの自動起動の是非は**未決の開いた問題**として残す |

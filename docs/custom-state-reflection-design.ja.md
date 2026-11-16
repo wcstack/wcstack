@@ -245,7 +245,7 @@ this._wireStates({ [`${prefix}:pending-changed`]: (d) => ({ pending: d === true 
 | `wcs-debounce` / `wcs-throttle` | `pending` | eventPrefix 動的（§3.4） |
 | `wcs-clipboard` | `loading` `monitoring` `error` | permission 2系統は getter なし→v1外 |
 | `wcs-contacts` / `wcs-credential` / `wcs-eyedropper` / `wcs-share` | `loading` `cancelled` `error` | picker 系4種同型 |
-| `wcs-fullscreen` | `active` | error 未公開（公開追加はしない） |
+| `wcs-fullscreen` | `active` | `error` / `errorInfo` は専用イベント付きの bindable な出力だが、`:state()` には反映しない。`supported`（4.25）も同じ |
 | `wcs-pointer-lock` | `active` | 同上 |
 | `wcs-pip` | `active` | 同上 |
 | `wcs-network` | `save-data` `supported` | kebab-case 変換の唯一の例 |

@@ -25,6 +25,7 @@
 ## 1. Web Shareとの共通点（再掲しない前提の確認）
 
 - Core骨格・`cancelled`/`error`分離・unsupported判定方針（`supported`フラグ無し、呼び出し時に即`error`）は[web-share-tag-design.md](./web-share-tag-design.md)のとおり。`navigator.contacts.select()`もユーザーがピッカーをキャンセルすると`AbortError`でrejectするため、`cancelled`分離の理由（ユーザーの日常的なキャンセルを真の障害と区別する）がそのまま適用される。
+  - **4.25 から（2026-11-17、継ぎ目アプリ `stamp-rally`）**: 上の「キャンセルは`AbortError`でrejectする」は仕様と合っていなかった。Contact Picker の仕様では、選ばずに閉じたピッカーは**空のリストでresolveし**、`select()`がrejectするのは`InvalidStateError`（最上位のページでない・ピッカーがすでに出ている・ピッカーが失敗した）、`SecurityError`（ユーザー操作が無い）、`TypeError`（プロパティが空・非対応）だけである。そのため`cancelled`は一度も`true`にならず、閉じたピッカーは`value: []`を書いていた。4.25 の`ContactsCore`は、空の配列でのresolveをキャンセルとして扱う（`cancelled: true`、`value`はそのまま、`wcs-contacts:complete`は出さない）。`AbortError`の経路も残している。`cancelled`を`error`から分ける理由は変わらない。同じ 4.25 で`supported`出力も加わった（上の「`supported`フラグ無し」も過去の記述）。契約は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) の §28（キャンセル）と §27（`supported`）。
 - **`abort`コマンドは持たない**。EyeDropper（[eyedropper-tag-design.md](./eyedropper-tag-design.md)）とは異なり、`ContactsManager.select()`にAbortSignalを渡すオプションは存在しない。呼び出し元から進行中のピッカーを中断させる手段がプラットフォームに無いため、Web Shareと同じ理由で`abort`コマンドを宣言しない。
 
 ---
@@ -120,6 +121,7 @@ Web Share・EyeDropperと同じく実質無し。`properties`/`options`は`selec
 - `multiple: false`でも`value`が配列であること（単一選択でも配列を維持する契約の確認）
 - `navigator.contacts`不在環境（デスクトップを模した`FakeDouble`未installのケース）で`select()`が即`error`になること
 - `AbortError`（ユーザーがピッカーをキャンセル）で`cancelled`が`true`になり`error`は変化しないこと
+  - **4.25 から（2026-11-17、継ぎ目アプリ `stamp-rally`）**: 仕様のキャンセルは`AbortError`ではなく、空のリストでのresolveである（§1 の注記）。テストの観点は「空の配列でresolveすると`cancelled`が`true`になり、`value`は変わらず、`wcs-contacts:complete`は出ない」が主で、`AbortError`の観点も残している。契約とテストの場所は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §28。
 
 ---
 
