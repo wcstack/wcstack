@@ -20,8 +20,15 @@ export const WCS_CREDENTIAL_ERROR_CODE = {
 
 /**
  * credential node の capability registry。`navigator.credentials`(CredentialsContainer)
- * の presence を probe する。文字列 ID を global property path として eval しない。
+ * と `PasswordCredential` クラスの presence を probe する。文字列 ID を global property
+ * path として eval しない。
+ *
+ * `web.password-credential`: このノードの対象(password / federated の資格情報)は
+ * `PasswordCredential` クラスを要る。実装しているのは Chromium だけで、Firefox と Safari は
+ * WebAuthn 用の `navigator.credentials` だけを持つ — そこで `get({ password: true })` や
+ * `store()` をブラウザに渡すと、非対応が「失敗」(credential-failed)に見えてしまう。
  */
 export const CREDENTIAL_CAPABILITIES: CapabilityRegistry = new Map<string, CapabilitySpec>([
   ["web.credentials", { probe: () => (globalThis as { navigator?: { credentials?: unknown } }).navigator?.credentials != null, compatKey: "api.CredentialsContainer" }],
+  ["web.password-credential", { probe: () => typeof (globalThis as { PasswordCredential?: unknown }).PasswordCredential === "function", compatKey: "api.PasswordCredential" }],
 ]);

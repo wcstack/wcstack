@@ -44,9 +44,9 @@ export type OrientationLockType =
 /**
  * A single snapshot of `screen.orientation` (Screen Orientation API), or the
  * unsupported default. `type`/`angle` are `null` when the API is absent (see
- * docs/screen-orientation-tag-design.md §7). Unlike `@wcstack/network`, there
- * is no explicit `supported` boolean — `type === null` is the unsupported
- * signal (§7).
+ * docs/screen-orientation-tag-design.md §7). Unlike `@wcstack/network`, the
+ * snapshot carries no `supported` boolean — in it, `type === null` is the
+ * unsupported signal (§7); the `supported` output says it directly.
  */
 export interface WcsScreenOrientationSnapshot {
   type: OrientationType | null;
@@ -72,6 +72,11 @@ export type WcsScreenOrientationCoreValues = WcsScreenOrientationSnapshot & {
   error: any;
   /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
   errorInfo: WcsIoErrorInfo | null;
+  /**
+   * `true` when this page has `screen.orientation` to monitor. It does not say
+   * `lock()` will hold — that is known only by trying it (`error` / `errorInfo`).
+   */
+  supported: boolean;
 };
 
 /**

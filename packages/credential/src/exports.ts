@@ -5,7 +5,7 @@ export { WcsCredential } from "./components/Credential.js";
 
 export type {
   IWritableConfig, IWritableTagNames, CredentialGetOptions, StorableCredential,
-  WcsCredentialCoreValues, WcsCredentialValues,
+  WcsPasswordCredentialData, WcsCredentialCoreValues, WcsCredentialValues,
 } from "./types.js";
 
 // Error taxonomy: `errorInfo` is an additive wc-bindable property, so its value

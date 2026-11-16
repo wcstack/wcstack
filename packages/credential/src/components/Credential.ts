@@ -1,4 +1,4 @@
-import { CredentialGetOptions, IWcBindable, StorableCredential } from "../types.js";
+import { CredentialGetOptions, IWcBindable, StorableCredential, WcsPasswordCredentialData } from "../types.js";
 import { CredentialCore } from "../core/CredentialCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
@@ -9,7 +9,8 @@ import { upgradeProperties } from "../protocol/upgradeProperties.js";
  * WebAuthn scope exclusion).
  *
  * A thin command-only Shell (mirrors `<wcs-share>`): no attributes at all.
- * `get(options)`/`store(credential)`'s arguments are per-call.
+ * `get(options)`/`store(credential)`'s arguments are per-call;
+ * `preventSilentAccess()` (sign-out) takes none.
  */
 export class WcsCredential extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -99,18 +100,28 @@ export class WcsCredential extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Probed at call time by the Core (never cached), so a binding that reads it when
+  // it attaches gets the right value without waiting for an event.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   get connectedCallbackPromise(): Promise<void> {
     return this._connectedCallbackPromise;
   }
 
   // --- Commands ---
 
-  get(options?: CredentialGetOptions): Promise<Credential | null> {
+  get(options?: CredentialGetOptions | null): Promise<Credential | null> {
     return this._core.get(options);
   }
 
-  store(credential: StorableCredential): Promise<Credential | null> {
+  store(credential: StorableCredential | WcsPasswordCredentialData): Promise<Credential | null> {
     return this._core.store(credential);
+  }
+
+  preventSilentAccess(): Promise<void> {
+    return this._core.preventSilentAccess();
   }
 
   // --- Lifecycle ---
@@ -119,6 +130,8 @@ export class WcsCredential extends HTMLElement {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
+    // observe() publishes `supported` (wcs-credential:supported-changed) when it
+    // differs from the last value dispatched.
     this._connectedCallbackPromise = this._core.observe();
   }
 

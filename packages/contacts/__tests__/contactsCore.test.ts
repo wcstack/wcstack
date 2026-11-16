@@ -14,9 +14,16 @@ describe("ContactsCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が value/loading/error/cancelled/errorInfo を宣言している", () => {
+    it("properties が value/loading/error/cancelled/errorInfo/supported を宣言している", () => {
       const names = ContactsCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo"]);
+      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo", "supported"]);
+    });
+
+    it("supported の event が wcs-contacts:supported-changed で getter を持たない（detail が値）・semantics は state", () => {
+      const prop = ContactsCore.wcBindable.properties.find((p) => p.name === "supported")!;
+      expect(prop.event).toBe("wcs-contacts:supported-changed");
+      expect(prop.getter).toBeUndefined();
+      expect(prop.semantics).toBe("state");
     });
 
     it("errorInfo の event が wcs-contacts:error-info-changed で getter を持たない（detail が値）", () => {
@@ -100,14 +107,14 @@ describe("ContactsCore", () => {
     });
 
     it("2つの位置引数（properties, options）がそのまま select() へ渡る", async () => {
-      const fn = installSelect(() => Promise.resolve([]));
+      const fn = installSelect(() => Promise.resolve([{ name: ["A"] }]));
       const core = new ContactsCore();
       await core.select(["name", "email"], { multiple: true });
       expect(fn).toHaveBeenCalledWith(["name", "email"], { multiple: true });
     });
 
     it("options 省略時（1引数呼び出し）でも動作する", async () => {
-      const fn = installSelect(() => Promise.resolve([]));
+      const fn = installSelect(() => Promise.resolve([{ name: ["A"] }]));
       const core = new ContactsCore();
       await core.select(["name"]);
       expect(fn).toHaveBeenCalledWith(["name"], undefined);
@@ -174,7 +181,7 @@ describe("ContactsCore", () => {
     });
 
     it("target 指定時はイベントが target にディスパッチされる", async () => {
-      installSelect(() => Promise.resolve([]));
+      installSelect(() => Promise.resolve([{ name: ["A"] }]));
       const target = new EventTarget();
       const core = new ContactsCore(target);
       const coreEvents: string[] = [];
@@ -186,6 +193,86 @@ describe("ContactsCore", () => {
 
       expect(coreEvents).toEqual([]);
       expect(targetEvents).toEqual(["complete"]);
+    });
+  });
+
+  describe("ピッカーを選ばずに閉じた（空の配列で resolve — 仕様のキャンセル）", () => {
+    it("cancelled が true になり、value は null のまま・complete は流れず・error も立たない", async () => {
+      installSelect(() => Promise.resolve([]));
+      const core = new ContactsCore();
+      const completes: any[] = [];
+      const cancelledEvents: boolean[] = [];
+      const loadingEvents: boolean[] = [];
+      const errorEvents: any[] = [];
+      core.addEventListener("wcs-contacts:complete", (e) => completes.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-contacts:cancelled-changed", (e) => cancelledEvents.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-contacts:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-contacts:error", (e) => errorEvents.push((e as CustomEvent).detail));
+
+      const result = await core.select(["name"]);
+
+      expect(result).toBeNull();
+      expect(core.cancelled).toBe(true);
+      expect(core.value).toBeNull();
+      expect(completes).toEqual([]);
+      expect(cancelledEvents).toEqual([true]);
+      expect(loadingEvents).toEqual([true, false]);
+      expect(core.loading).toBe(false);
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+      expect(errorEvents).toEqual([]);
+    });
+
+    it("前に選んだ value はそのまま残る（空の配列で上書きしない）", async () => {
+      const picked = [{ name: ["山田 花子"], tel: [] }];
+      const fn = installSelect(() => Promise.resolve([]));
+      fn.mockResolvedValueOnce(picked);
+      const core = new ContactsCore();
+      await core.select(["name", "tel"]);
+      expect(core.value).toBe(picked);
+      const completes: any[] = [];
+      core.addEventListener("wcs-contacts:complete", (e) => completes.push((e as CustomEvent).detail));
+
+      await core.select(["name", "tel"]);
+
+      expect(core.cancelled).toBe(true);
+      expect(core.value).toBe(picked);
+      expect(completes).toEqual([]);
+    });
+
+    it("閉じた後にもう一度選ぶと cancelled は false に戻り、value が入る", async () => {
+      const picked = [{ name: ["A"] }];
+      const fn = installSelect(() => Promise.resolve(picked));
+      fn.mockResolvedValueOnce([]);
+      const core = new ContactsCore();
+      const cancelledEvents: boolean[] = [];
+      core.addEventListener("wcs-contacts:cancelled-changed", (e) => cancelledEvents.push((e as CustomEvent).detail));
+
+      await core.select(["name"]);
+      expect(core.cancelled).toBe(true);
+
+      const result = await core.select(["name"]);
+      expect(result).toBe(picked);
+      expect(core.cancelled).toBe(false);
+      expect(core.value).toBe(picked);
+      expect(cancelledEvents).toEqual([true, false]);
+    });
+
+    it("閉じた後は lane が空き、次の select() が始まる（finalize 済み）", async () => {
+      const fn = installSelect(() => Promise.resolve([]));
+      const core = new ContactsCore();
+      await core.select(["name"]);
+      await core.select(["name"]);
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    it("配列でない resolve は、これまでどおり value に入る（空の配列だけがキャンセル）", async () => {
+      installSelect(() => Promise.resolve(undefined as any));
+      const core = new ContactsCore();
+      const result = await core.select(["name"]);
+      expect(result).toBeUndefined();
+      expect(core.cancelled).toBe(false);
+      expect(core.error).toBeNull();
     });
   });
 
@@ -230,6 +317,21 @@ describe("ContactsCore", () => {
       expect(core.loading).toBe(false);
     });
 
+    it("仕様の rejection（フレーム内の InvalidStateError・タップ無しの SecurityError・properties の TypeError）は select-failed で、cancelled にはならない", async () => {
+      for (const e of [
+        new DOMException("The contacts API can only be used in the top frame", "InvalidStateError"),
+        new DOMException("A user gesture is required to call this method", "SecurityError"),
+        new TypeError("At least one property must be provided"),
+      ]) {
+        installSelect(() => Promise.reject(e));
+        const core = new ContactsCore();
+        await core.select(["name"]);
+        expect(core.error).toBe(e);
+        expect(core.errorInfo?.code).toBe("select-failed");
+        expect(core.cancelled).toBe(false);
+      }
+    });
+
     it("name プロパティを持たない一般的な Error でも error に落ちる", async () => {
       installSelect(() => Promise.reject(new TypeError("boom")));
       const core = new ContactsCore();
@@ -244,7 +346,7 @@ describe("ContactsCore", () => {
 
   describe("次回 select() でのリセット", () => {
     it("前回 cancelled が今回成功時にリセットされる", async () => {
-      const fn = installSelect(() => Promise.resolve([]));
+      const fn = installSelect(() => Promise.resolve([{ name: ["A"] }]));
       fn.mockRejectedValueOnce(new DOMException("Picker canceled", "AbortError"));
       const core = new ContactsCore();
 
@@ -256,7 +358,7 @@ describe("ContactsCore", () => {
     });
 
     it("前回 error が今回成功時にリセットされる", async () => {
-      const fn = installSelect(() => Promise.resolve([]));
+      const fn = installSelect(() => Promise.resolve([{ name: ["A"] }]));
       fn.mockRejectedValueOnce(new DOMException("boom", "NotAllowedError"));
       const core = new ContactsCore();
 
@@ -304,7 +406,111 @@ describe("ContactsCore", () => {
     });
   });
 
+  describe("supported（このページで Contact Picker が使えるか）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("navigator.contacts.select があり、最上位のページなら true（呼び出し時に読む・キャッシュしない）", () => {
+      const core = new ContactsCore();
+      expect(core.supported).toBe(false);
+      installSelect(() => Promise.resolve([]));
+      expect(core.supported).toBe(true);
+      removeContacts();
+      expect(core.supported).toBe(false);
+    });
+
+    it("フレームの中（window.top が自分でない）では、API があっても false。select() 自体はブラウザに聞く", async () => {
+      const fn = installSelect(() => Promise.reject(new DOMException("top frame only", "InvalidStateError")));
+      vi.stubGlobal("top", {});
+      const core = new ContactsCore();
+      expect(core.supported).toBe(false);
+      // API はあるので、platformAssessment は ready のまま
+      expect(core.platformAssessment.readiness).toBe("ready");
+
+      await core.select(["name"]);
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(core.errorInfo?.code).toBe("select-failed");
+    });
+
+    it("window.top を読むと投げる環境は「最上位ではない」として false", () => {
+      installSelect(() => Promise.resolve([]));
+      const original = Object.getOwnPropertyDescriptor(globalThis, "top");
+      Object.defineProperty(globalThis, "top", {
+        configurable: true,
+        get() { throw new DOMException("Blocked a frame from accessing a cross-origin frame.", "SecurityError"); },
+      });
+      try {
+        const core = new ContactsCore();
+        expect(core.supported).toBe(false);
+      } finally {
+        if (original) Object.defineProperty(globalThis, "top", original);
+        else delete (globalThis as { top?: unknown }).top;
+      }
+    });
+
+    it("window の無い環境では false", () => {
+      installSelect(() => Promise.resolve([]));
+      vi.stubGlobal("window", undefined);
+      const core = new ContactsCore();
+      expect(core.supported).toBe(false);
+    });
+
+    it("observe() は、最後に知らせた値（初期は false）と違うときだけ supported-changed を流す", async () => {
+      installSelect(() => Promise.resolve([]));
+      const core = new ContactsCore();
+      const events: Array<{ detail: boolean; bubbles: boolean }> = [];
+      core.addEventListener("wcs-contacts:supported-changed", (e) => events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles }));
+
+      await core.observe();
+      expect(events).toEqual([{ detail: true, bubbles: true }]);
+
+      // 同じ値は流さない（dispose をまたいでも）
+      await core.observe();
+      core.dispose();
+      await core.observe();
+      expect(events).toHaveLength(1);
+
+      // 使えなくなったら false を流す
+      removeContacts();
+      await core.observe();
+      expect(events.map((e) => e.detail)).toEqual([true, false]);
+    });
+
+    it("使えないページ（Android Chrome 以外の既定）の observe() は何も流さない", async () => {
+      removeContacts();
+      const core = new ContactsCore();
+      const events: boolean[] = [];
+      core.addEventListener("wcs-contacts:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      await core.observe();
+      expect(events).toEqual([]);
+    });
+
+    it("target 指定時は supported-changed が target に流れる", async () => {
+      installSelect(() => Promise.resolve([]));
+      const target = new EventTarget();
+      const core = new ContactsCore(target);
+      const events: boolean[] = [];
+      target.addEventListener("wcs-contacts:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      await core.observe();
+      expect(events).toEqual([true]);
+    });
+  });
+
   describe("dispose 世代ガード（lane owner generation）", () => {
+    it("dispose 後に空の配列で resolve した stale な select() は cancelled を書かない", async () => {
+      let resolveSelect!: (contacts: any[]) => void;
+      installSelect(() => new Promise<any[]>((resolve) => { resolveSelect = resolve; }));
+      const core = new ContactsCore();
+
+      const promise = core.select(["name"]);
+      core.dispose();
+      resolveSelect([]);
+
+      expect(await promise).toBeNull();
+      expect(core.cancelled).toBe(false);
+    });
+
     it("dispose 後に resolve した stale な select() は状態を書かない", async () => {
       let resolveSelect!: (contacts: any[]) => void;
       installSelect(() => new Promise<any[]>((resolve) => { resolveSelect = resolve; }));

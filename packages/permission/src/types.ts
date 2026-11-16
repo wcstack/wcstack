@@ -29,6 +29,22 @@ export type {
 export type PermissionStateOrUnsupported = "prompt" | "granted" | "denied" | "unsupported";
 
 /**
+ * Why `state` is `"unsupported"` (`null` while it is not):
+ * - `"policy-blocked"` — a Permissions-Policy turns the feature off for this page
+ *   (the server's header, or an `<iframe>` without `allow`).
+ * - `"insecure-context"` — the page is not a secure context.
+ * - `"no-permissions-api"` — the browser has no `navigator.permissions.query`.
+ * - `"unknown-name"` — the browser rejected the permission name, or `name` is empty.
+ *
+ * The last two say that the browser cannot tell, not that the feature is absent.
+ */
+export type WcsPermissionUnsupportedReason =
+  | "policy-blocked"
+  | "insecure-context"
+  | "no-permissions-api"
+  | "unknown-name";
+
+/**
  * Descriptor passed to `navigator.permissions.query()`. `name` is the permission
  * name (e.g. `"geolocation"`, `"notifications"`, `"camera"`). The optional fields
  * cover the descriptors that take extra members:
@@ -61,6 +77,8 @@ export interface WcsPermissionCoreValues {
   denied: boolean;
   prompt: boolean;
   unsupported: boolean;
+  /** Why `state` is `"unsupported"`, or `null` while it is not. */
+  unsupportedReason: WcsPermissionUnsupportedReason | null;
 }
 
 /**

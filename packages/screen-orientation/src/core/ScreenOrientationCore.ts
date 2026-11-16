@@ -60,6 +60,11 @@ export class ScreenOrientationCore extends EventTarget {
       // synchronous subscribe and lock()/unlock() are a single command path, not
       // competing operations.
       { name: "errorInfo", event: "wcs-orientation:error-info-changed", semantics: "state" },
+      // Whether this page has `screen.orientation` to monitor. It says nothing about
+      // `lock()` (which is known only by trying it). Computed at call time; the event
+      // carries the boolean and fires from observe() when it differs from the last
+      // value dispatched.
+      { name: "supported", event: "wcs-orientation:supported-changed", semantics: "state" },
     ],
     commands: [
       { name: "lock", async: true },
@@ -87,6 +92,10 @@ export class ScreenOrientationCore extends EventTarget {
   // every _setError, cleared to null when error clears). Sticky across
   // dispose()/observe() exactly like `_error` — the two transition together.
   private _errorInfo: WcsIoErrorInfo | null = null;
+
+  // `supported` as last dispatched (never the value itself — the getter probes at
+  // call time). Starts at false, so observe() announces a page that has the API.
+  private _supportedPublished = false;
 
   // The live ScreenOrientation object the `change` listener is attached to
   // (kept so dispose() can remove it precisely; not read for anything else).
@@ -149,11 +158,24 @@ export class ScreenOrientationCore extends EventTarget {
     return this._errorInfo;
   }
 
+  /**
+   * Whether this page has `screen.orientation` — that is, whether `type` / `angle`
+   * can be monitored. Probed at call time (never cached). It does NOT say `lock()`
+   * will hold: Safari has no `lock()`, a desktop refuses it, and elsewhere it needs
+   * fullscreen — that is known only by trying it (`error` / `errorInfo`). A
+   * wc-bindable output (event `wcs-orientation:supported-changed`).
+   */
+  get supported(): boolean {
+    return this._api() !== undefined;
+  }
+
   // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
   // is a no-op (no double listener, no redundant dispatch). Synchronous overall
   // (no probe to await), so the returned promise is only for API uniformity
   // with other IO nodes.
   observe(): Promise<void> {
+    // `supported` first, so a listener of the snapshot's event below reads it right.
+    this._publishSupported();
     if (!this._subscribed) {
       this._subscribed = true;
       const api = this._api();
@@ -248,6 +270,20 @@ export class ScreenOrientationCore extends EventTarget {
   private _onChange = (): void => {
     this._apply(this._read());
   };
+
+  // `supported` is probed at call time, so there is no stored value to set: this
+  // dispatches the current one when it differs from the last one dispatched
+  // (same-value guard). A state binding reads the property when it attaches; the
+  // event is for every other listener.
+  private _publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-orientation:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
+  }
 
   // Same-value guard (§3.3 MUST) on `error` itself, mirroring FetchCore's
   // `_setError`-adjacent state fields: a repeated `null` (e.g. a second

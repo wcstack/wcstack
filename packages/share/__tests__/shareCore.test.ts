@@ -14,9 +14,16 @@ describe("ShareCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が value/loading/error/cancelled/errorInfo を宣言している", () => {
+    it("properties が value/loading/error/cancelled/errorInfo/supported を宣言している", () => {
       const names = ShareCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo"]);
+      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo", "supported"]);
+    });
+
+    it("supported の event が wcs-share:supported-changed で getter を持たない（detail が値）・semantics は state", () => {
+      const prop = ShareCore.wcBindable.properties.find((p) => p.name === "supported")!;
+      expect(prop.event).toBe("wcs-share:supported-changed");
+      expect(prop.getter).toBeUndefined();
+      expect(prop.semantics).toBe("state");
     });
 
     it("errorInfo の event が wcs-share:error-info-changed で getter を持たない（detail が値）", () => {
@@ -325,6 +332,91 @@ describe("ShareCore", () => {
       expect(result).toBeNull();
       expect(core.error).toEqual({ message: "Web Share API is not supported in this browser." });
       expect(core.cancelled).toBe(true);
+    });
+  });
+
+  describe("supported（このページで Web Share が使えるか）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { featurePolicy?: unknown }).featurePolicy;
+    });
+
+    it("navigator.share の有無を呼び出し時に読む（キャッシュしない）", () => {
+      const core = new ShareCore();
+      expect(core.supported).toBe(false);
+      installShare(() => Promise.resolve());
+      expect(core.supported).toBe(true);
+      removeShare();
+      expect(core.supported).toBe(false);
+    });
+
+    it("Permissions-Policy が web-share を切っていれば、navigator.share があっても false", () => {
+      installShare(() => Promise.resolve());
+      (document as any).featurePolicy = { features: () => ["web-share"], allowsFeature: (f: string) => f !== "web-share" };
+      const core = new ShareCore();
+      expect(core.supported).toBe(false);
+      // API 自体はあるので、platformAssessment は ready のまま
+      expect(core.platformAssessment.readiness).toBe("ready");
+    });
+
+    it("ポリシーが web-share を知らないブラウザ（デスクトップ）には聞かず、API があれば true", () => {
+      installShare(() => Promise.resolve());
+      const allowsFeature = vi.fn(() => false);
+      (document as any).featurePolicy = { features: () => ["camera"], allowsFeature };
+      const core = new ShareCore();
+      expect(core.supported).toBe(true);
+      expect(allowsFeature).not.toHaveBeenCalled();
+    });
+
+    it("安全なコンテキストでなければ false", () => {
+      installShare(() => Promise.resolve());
+      vi.stubGlobal("isSecureContext", false);
+      const core = new ShareCore();
+      expect(core.supported).toBe(false);
+    });
+
+    it("observe() は、最後に知らせた値（初期は false）と違うときだけ supported-changed を流す", async () => {
+      installShare(() => Promise.resolve());
+      const core = new ShareCore();
+      const events: Array<{ detail: boolean; bubbles: boolean }> = [];
+      core.addEventListener("wcs-share:supported-changed", (e) => events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles }));
+
+      await core.observe();
+      expect(events).toEqual([{ detail: true, bubbles: true }]);
+
+      // 同じ値は流さない
+      await core.observe();
+      expect(events).toHaveLength(1);
+
+      // dispose をまたいでも、変わっていなければ流さない
+      core.dispose();
+      await core.observe();
+      expect(events).toHaveLength(1);
+
+      // 使えなくなったら false を流す
+      removeShare();
+      await core.observe();
+      expect(events.map((e) => e.detail)).toEqual([true, false]);
+    });
+
+    it("使えないページの observe() は何も流さない（初期値 false と同じ）", async () => {
+      removeShare();
+      const core = new ShareCore();
+      const events: boolean[] = [];
+      core.addEventListener("wcs-share:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      await core.observe();
+      expect(events).toEqual([]);
+      expect(core.supported).toBe(false);
+    });
+
+    it("target 指定時は supported-changed が target に流れる", async () => {
+      installShare(() => Promise.resolve());
+      const target = new EventTarget();
+      const core = new ShareCore(target);
+      const events: boolean[] = [];
+      target.addEventListener("wcs-share:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      await core.observe();
+      expect(events).toEqual([true]);
     });
   });
 

@@ -5,6 +5,7 @@ import {
   WcsIoErrorInfo,
   WcsIoErrorPhase,
   assessCapabilities,
+  featureUnavailable,
   requiredCapabilitiesAvailable,
 } from "./platformCapability.js";
 import { SHARE_CAPABILITIES, WCS_SHARE_ERROR_CODE } from "./shareCapabilities.js";
@@ -39,6 +40,11 @@ export class ShareCore extends EventTarget {
       // Fires its own `wcs-share:error-info-changed` event; no getter, so the bound
       // value is the event detail (mirrors `error` / `loading` / `cancelled`).
       { name: "errorInfo", event: "wcs-share:error-info-changed", semantics: "state" },
+      // Whether this page can use the Web Share API (the API is there and no
+      // Permissions-Policy / insecure context forbids it). Computed at call time;
+      // the event carries the boolean and fires from observe() when it differs from
+      // the last value dispatched.
+      { name: "supported", event: "wcs-share:supported-changed", semantics: "state" },
     ],
     commands: [
       { name: "share", async: true },
@@ -55,6 +61,9 @@ export class ShareCore extends EventTarget {
   private _error: any = null;
   private _cancelled: boolean = false;
   private _errorInfo: WcsIoErrorInfo | null = null;
+  // `supported` as last dispatched (never the value itself — the getter probes at
+  // call time). Starts at false, so observe() announces a page that can share.
+  private _supportedPublished: boolean = false;
   // Concurrency lane (io-core). `exhaust`: only one share dialog at a time — a new
   // begin() while active returns null (idempotent no-op). `withSignal: false`:
   // navigator.share() has no AbortSignal. dispose() bumps the owner generation.
@@ -98,11 +107,16 @@ export class ShareCore extends EventTarget {
   }
 
   /**
-   * Whether the required platform capability (`web.share`) is available right now —
-   * decided by call-time feature detection, not User-Agent. Core-only, additive.
+   * Whether this page can use the Web Share API right now: `navigator.share` is a
+   * function (call-time feature detection, not User-Agent) and neither a
+   * Permissions-Policy (`web-share`: the server's header, an `<iframe>` without
+   * `allow="web-share"`) nor an insecure context forbids it. It does not say that
+   * *this* data can be shared (files: `canShare(data)`), nor that the user will
+   * pick a target. A wc-bindable output (event `wcs-share:supported-changed`).
    */
   get supported(): boolean {
-    return requiredCapabilitiesAvailable(this.platformAssessment, ShareCore.REQUIRED_CAPABILITIES);
+    return requiredCapabilitiesAvailable(this.platformAssessment, ShareCore.REQUIRED_CAPABILITIES)
+      && featureUnavailable("web-share") === null;
   }
 
   /**
@@ -118,10 +132,12 @@ export class ShareCore extends EventTarget {
   }
 
   // Lifecycle (§3.5). Share is command-driven with no subscription to establish,
-  // so observe() is an idempotent no-op that resolves once ready; dispose() bumps
+  // so observe() only publishes `supported` (when it differs from the last value
+  // dispatched) and resolves once ready — idempotent; dispose() bumps
   // the lane's owner generation, invalidating any in-flight share() (a late resolve
   // then fails the commit guard). There is nothing to abort or unsubscribe.
   observe(): Promise<void> {
+    this._publishSupported();
     return this._ready;
   }
 
@@ -131,6 +147,20 @@ export class ShareCore extends EventTarget {
     // here (timing-and-firing-contract §22): a route the element leaves keeps its
     // nodes — bindings included — for the next entry, and state would keep `loading`.
     this._setLoading(false);
+  }
+
+  // `supported` is probed at call time, so there is no stored value to set: this
+  // dispatches the current one when it differs from the last one dispatched
+  // (same-value guard). A state binding reads the property when it attaches; the
+  // event is for every other listener.
+  private _publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-share:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
   }
 
   private _setLoading(loading: boolean): void {

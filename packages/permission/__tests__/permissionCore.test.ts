@@ -16,6 +16,7 @@ describe("PermissionCore", () => {
       expect(core.granted).toBe(false);
       expect(core.denied).toBe(false);
       expect(core.unsupported).toBe(false);
+      expect(core.unsupportedReason).toBeNull();
       expect(mock.query).not.toHaveBeenCalled();
     });
 
@@ -117,6 +118,7 @@ describe("PermissionCore", () => {
       const core = new PermissionCore();
       await core.observe({ name: "camera" });
       expect(core.state).toBe("unsupported");
+      expect(core.unsupportedReason).toBe("insecure-context");
       expect(mock.query).not.toHaveBeenCalled();
     });
 
@@ -127,11 +129,183 @@ describe("PermissionCore", () => {
       const camera = new PermissionCore();
       await camera.observe({ name: "camera" });
       expect(camera.state).toBe("unsupported");
+      expect(camera.unsupportedReason).toBe("policy-blocked");
       // ポリシーが許す機能は、これまでどおり問い合わせる
       const mic = new PermissionCore();
       await mic.observe({ name: "microphone" });
       expect(mic.state).toBe("granted");
+      expect(mic.unsupportedReason).toBeNull();
       expect(mock.query).toHaveBeenCalledTimes(1);
+    });
+
+    it("ブラウザのポリシーが知らない名前（features() に無い）は allowsFeature に聞かず、Permissions API に問い合わせる", async () => {
+      // Chromium は知らない名前の allowsFeature に false を返し、コンソールに
+      // 「Unrecognized feature: 'ambient-light-sensor'」を出す。聞かなければ出ない。
+      const mock = installPermissions({ state: "granted" });
+      vi.stubGlobal("isSecureContext", true);
+      const allowsFeature = vi.fn(() => false);
+      (document as any).featurePolicy = { features: () => ["camera", "microphone", "accelerometer"], allowsFeature };
+
+      const light = new PermissionCore();
+      await light.observe({ name: "ambient-light-sensor" });
+      expect(allowsFeature).not.toHaveBeenCalled();
+      expect(light.state).toBe("granted");
+      expect(light.unsupportedReason).toBeNull();
+      expect(mock.descriptors).toEqual([{ name: "ambient-light-sensor" }]);
+
+      // 知っている名前は、これまでどおり聞く
+      const accel = new PermissionCore();
+      await accel.observe({ name: "accelerometer" });
+      expect(allowsFeature.mock.calls).toEqual([["accelerometer"]]);
+      expect(accel.state).toBe("unsupported");
+      expect(accel.unsupportedReason).toBe("policy-blocked");
+    });
+  });
+
+  describe("unsupportedReason（なぜ unsupported か）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { featurePolicy?: unknown }).featurePolicy;
+    });
+
+    it("wcBindable に state として宣言され、専用の event を持つ（detail が値）", () => {
+      const prop = PermissionCore.wcBindable.properties.find((p) => p.name === "unsupportedReason")!;
+      expect(prop.event).toBe("wcs-permission:unsupported-reason-changed");
+      expect(prop.semantics).toBe("state");
+      expect(prop.getter).toBeUndefined();
+      expect(PermissionCore.wcBindable.properties.map((p) => p.name)).toEqual([
+        "state", "granted", "denied", "prompt", "unsupported", "unsupportedReason",
+      ]);
+    });
+
+    it("Permissions API が無ければ no-permissions-api（query が関数でない場合も）", async () => {
+      removePermissions();
+      const core = new PermissionCore();
+      await core.observe({ name: "geolocation" });
+      expect(core.unsupportedReason).toBe("no-permissions-api");
+
+      Object.defineProperty(navigator, "permissions", { value: {}, configurable: true, writable: true });
+      const noQuery = new PermissionCore();
+      await noQuery.observe({ name: "geolocation" });
+      expect(noQuery.unsupportedReason).toBe("no-permissions-api");
+    });
+
+    it("ブラウザが名前を拒否したら unknown-name", async () => {
+      installPermissions({ reject: true });
+      const core = new PermissionCore();
+      await core.observe({ name: "accelerometer" });
+      expect(core.state).toBe("unsupported");
+      expect(core.unsupportedReason).toBe("unknown-name");
+    });
+
+    it("name が空なら unknown-name", async () => {
+      installPermissions({ state: "granted" });
+      const core = new PermissionCore();
+      await core.observe({ name: "" });
+      expect(core.state).toBe("unsupported");
+      expect(core.unsupportedReason).toBe("unknown-name");
+    });
+
+    it("理由の event は state の event より先に流れ、どちらの時点でも state と理由の両方が新しい値になっている", async () => {
+      removePermissions();
+      const core = new PermissionCore();
+      const seen: Array<[string, unknown, string, string | null, boolean]> = [];
+      core.addEventListener("wcs-permission:unsupported-reason-changed", (e) => {
+        seen.push(["reason", (e as CustomEvent).detail, core.state, core.unsupportedReason, e.bubbles]);
+      });
+      core.addEventListener("wcs-permission:change", (e) => {
+        seen.push(["state", (e as CustomEvent).detail, core.state, core.unsupportedReason, e.bubbles]);
+      });
+
+      await core.observe({ name: "geolocation" });
+
+      expect(seen).toEqual([
+        ["reason", "no-permissions-api", "unsupported", "no-permissions-api", true],
+        ["state", "unsupported", "unsupported", "no-permissions-api", true],
+      ]);
+    });
+
+    it("unsupported から抜けると理由は null に戻り、その event も state の event より先に流れる", async () => {
+      const core = new PermissionCore();
+      await core.observe({ name: "" });
+      expect(core.unsupportedReason).toBe("unknown-name");
+      const seen: Array<[string, unknown, string, string | null]> = [];
+      core.addEventListener("wcs-permission:unsupported-reason-changed", (e) => {
+        seen.push(["reason", (e as CustomEvent).detail, core.state, core.unsupportedReason]);
+      });
+      core.addEventListener("wcs-permission:change", (e) => {
+        seen.push(["state", (e as CustomEvent).detail, core.state, core.unsupportedReason]);
+      });
+
+      installPermissions({ state: "granted" });
+      await core.observe({ name: "geolocation" });
+
+      expect(seen).toEqual([
+        ["reason", null, "granted", null],
+        ["state", "granted", "granted", null],
+      ]);
+    });
+
+    it("unsupported のまま理由だけが変わると、理由の event だけが流れる", async () => {
+      installPermissions({ state: "granted" });
+      vi.stubGlobal("isSecureContext", true);
+      (document as any).featurePolicy = { allowsFeature: (f: string) => f !== "camera" };
+      const core = new PermissionCore();
+      await core.observe({ name: "" });
+      const reasons: unknown[] = [];
+      const states: unknown[] = [];
+      core.addEventListener("wcs-permission:unsupported-reason-changed", (e) => reasons.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-permission:change", (e) => states.push((e as CustomEvent).detail));
+
+      await core.observe({ name: "camera" });
+
+      expect(core.state).toBe("unsupported");
+      expect(reasons).toEqual(["policy-blocked"]);
+      expect(states).toEqual([]);
+    });
+
+    it("同じ理由のままなら event を流さない（同値ガード）", async () => {
+      removePermissions();
+      const core = new PermissionCore();
+      const reasons: unknown[] = [];
+      core.addEventListener("wcs-permission:unsupported-reason-changed", (e) => reasons.push((e as CustomEvent).detail));
+      await core.observe({ name: "geolocation" });
+      await core.observe({ name: "geolocation" });
+      expect(reasons).toEqual(["no-permissions-api"]);
+    });
+
+    it("granted / denied / prompt の間の遷移では理由の event を流さない", async () => {
+      const mock = installPermissions({ state: "prompt" });
+      const core = new PermissionCore();
+      const reasons: unknown[] = [];
+      core.addEventListener("wcs-permission:unsupported-reason-changed", (e) => reasons.push((e as CustomEvent).detail));
+      await core.observe({ name: "geolocation" });
+      mock.statuses[0].change("granted");
+      mock.statuses[0].change("denied");
+      expect(reasons).toEqual([]);
+      expect(core.unsupportedReason).toBeNull();
+    });
+
+    it("dispose で無効化された query の reject は理由を書かない", async () => {
+      let rejectQuery!: (e: unknown) => void;
+      const query = vi.fn(() => new Promise((_res, rej) => { rejectQuery = rej; }));
+      Object.defineProperty(navigator, "permissions", { value: { query }, configurable: true, writable: true });
+      const core = new PermissionCore();
+      const ready = core.observe({ name: "geolocation" });
+      core.dispose();
+      rejectQuery(new TypeError("x"));
+      await ready;
+      expect(core.unsupportedReason).toBeNull();
+    });
+
+    it("target を渡すと、理由の event もそこへ流れる", async () => {
+      removePermissions();
+      const target = new EventTarget();
+      const reasons: unknown[] = [];
+      target.addEventListener("wcs-permission:unsupported-reason-changed", (e) => reasons.push((e as CustomEvent).detail));
+      const core = new PermissionCore({ name: "geolocation" }, target);
+      await core.ready;
+      expect(reasons).toEqual(["no-permissions-api"]);
     });
   });
 

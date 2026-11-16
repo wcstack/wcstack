@@ -14,9 +14,16 @@ describe("EyedropperCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が value/loading/error/cancelled/errorInfo を宣言している", () => {
+    it("properties が value/loading/error/cancelled/errorInfo/supported を宣言している", () => {
       const names = EyedropperCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo"]);
+      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo", "supported"]);
+    });
+
+    it("supported の event が wcs-eyedropper:supported-changed で getter を持たない（detail が値）・semantics は state", () => {
+      const prop = EyedropperCore.wcBindable.properties.find((p) => p.name === "supported")!;
+      expect(prop.event).toBe("wcs-eyedropper:supported-changed");
+      expect(prop.getter).toBeUndefined();
+      expect(prop.semantics).toBe("state");
     });
 
     it("errorInfo の event が wcs-eyedropper:error-info-changed で getter を持たない（detail が値）", () => {
@@ -411,6 +418,58 @@ describe("EyedropperCore", () => {
       expect(loadingEvents).toEqual([]);
 
       delete (globalThis as any).EyeDropper;
+    });
+  });
+
+  describe("supported（このページで EyeDropper が使えるか）", () => {
+    it("EyeDropper コンストラクタの有無を呼び出し時に読む（キャッシュしない）", () => {
+      removeEyeDropper();
+      const core = new EyedropperCore();
+      expect(core.supported).toBe(false);
+      installEyeDropper();
+      expect(core.supported).toBe(true);
+      removeEyeDropper();
+      expect(core.supported).toBe(false);
+    });
+
+    it("observe() は、最後に知らせた値（初期は false）と違うときだけ supported-changed を流す", async () => {
+      installEyeDropper();
+      const core = new EyedropperCore();
+      const events: Array<{ detail: boolean; bubbles: boolean }> = [];
+      core.addEventListener("wcs-eyedropper:supported-changed", (e) => events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles }));
+
+      await core.observe();
+      expect(events).toEqual([{ detail: true, bubbles: true }]);
+
+      // 同じ値は流さない（dispose をまたいでも）
+      await core.observe();
+      core.dispose();
+      await core.observe();
+      expect(events).toHaveLength(1);
+
+      // 使えなくなったら false を流す
+      removeEyeDropper();
+      await core.observe();
+      expect(events.map((e) => e.detail)).toEqual([true, false]);
+    });
+
+    it("使えないページの observe() は何も流さない（初期値 false と同じ）", async () => {
+      removeEyeDropper();
+      const core = new EyedropperCore();
+      const events: boolean[] = [];
+      core.addEventListener("wcs-eyedropper:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      await core.observe();
+      expect(events).toEqual([]);
+    });
+
+    it("target 指定時は supported-changed が target に流れる", async () => {
+      installEyeDropper();
+      const target = new EventTarget();
+      const core = new EyedropperCore(target);
+      const events: boolean[] = [];
+      target.addEventListener("wcs-eyedropper:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      await core.observe();
+      expect(events).toEqual([true]);
     });
   });
 

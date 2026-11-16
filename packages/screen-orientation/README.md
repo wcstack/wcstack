@@ -10,7 +10,7 @@ It is an **async primitive node** that turns `screen.orientation` into reactive 
 With `@wcstack/state`, `<wcs-screen-orientation>` can be bound directly through path contracts:
 
 - **input surface**: none — `screen.orientation` is a single global with nothing to configure
-- **output state surface**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`
+- **output state surface**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`, and — since 4.25 (not released yet) — `supported`
 
 ## Why this exists — a monitor/command asymmetry unique in this batch
 
@@ -70,6 +70,34 @@ export default {
 
 In a plain tab like this, clicking the button will not actually lock anything: current browsers reject `lock()` (surfacing in `lockError`) unless the document is fullscreen or running as an installed PWA. To see the lock take hold, pair this with a fullscreen trigger — e.g. `<wcs-fullscreen>` — and call `lock()` after entering fullscreen (see Notes & limitations).
 
+### 3. Offer the lock only where there is an orientation to lock
+
+Since 4.25 (not released yet), the `supported` output says whether the page has `screen.orientation` at all. Where it has not, a lock button can only fail, so hide it:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["lockLandscape"],
+      orientationSupported: false,
+      lockError: null,
+      lockLandscape() {
+        this.$command.lockLandscape.emit("landscape");
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-screen-orientation
+  data-wcs="supported: orientationSupported; command.lock: $command.lockLandscape; error: lockError"
+></wcs-screen-orientation>
+
+<button data-wcs="hidden: orientationSupported|not; onclick: lockLandscape">Lock to landscape</button>
+<p data-wcs="hidden: lockError|falsy">The orientation could not be locked here.</p>
+```
+
+`supported: true` does **not** mean the lock will hold — keep the `lockError` line. See [`supported`](#supported--what-it-says-and-what-it-does-not) below.
+
 ## Observable Properties (outputs)
 
 | Property    | Event                 | Description |
@@ -80,8 +108,15 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 | `landscape` | `wcs-orientation:change` | `true` when `type` starts with `"landscape"`. |
 | `error`     | `wcs-orientation:error`  | The last `lock()`/`unlock()` failure, or `null`. |
 | `errorInfo` | `wcs-orientation:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` shape is unchanged. |
+| `supported` | `wcs-orientation:supported-changed` | Since 4.25 (not released yet). `true` when this page has `screen.orientation` to monitor. It does not say `lock()` will hold — see below. |
 
 `type`/`angle`/`portrait`/`landscape` all derive from the single `wcs-orientation:change` event.
+
+### `supported` — what it says, and what it does not
+
+Since 4.25 (not released yet). `supported` is `true` when `screen.orientation` exists: `type`, `angle`, `portrait` and `landscape` are real values and follow the device. Where it is `false`, they stay `null` / `false` for good, and `lock()` / `unlock()` end as `capability-missing`. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-orientation:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`).
+
+**It does not say `lock()` will hold.** Safari has `screen.orientation` and no `lock()`. A desktop browser has `lock()` and refuses it. On a phone it holds only while the document is fullscreen (or an installed PWA). No property tells these apart ahead of time: whether a lock holds is known only by trying it — in fullscreen — and reading `error` / `errorInfo` afterwards. The [`<wcs-fullscreen>` README](../fullscreen/README.md#locking-the-screen-orientation-while-fullscreen) shows the pairing (enter fullscreen first, then lock once it is active).
 
 ## Commands
 
@@ -89,6 +124,8 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 | -------- | ----- | ------------ |
 | `lock`   | yes   | Request a specific orientation lock (e.g. `"landscape"`, `"portrait-primary"`). Value passed through verbatim — never-throw; an unrecognized string or unsupported environment surfaces via `error`. |
 | `unlock` | no    | Release a previously requested lock. Synchronous, mirroring the platform API. |
+
+> **Wire `lock` through a state method, not straight to a button.** `<button data-wcs="onclick: $command.lockLandscape">` emits the token with the DOM event as its first argument, so the element is called as `lock(event)` — and the browser rejects an `Event` as an orientation with a `TypeError` (`error`, `errorInfo.code: "orientation-error"`). The command takes the orientation: emit it from a method, as `lockLandscape()` does in the Quick Start (`this.$command.lockLandscape.emit("landscape")`). `unlock` takes no argument, so `onclick: $command.unlockOrientation` is fine.
 
 ## Attributes / Inputs
 
@@ -180,6 +217,8 @@ console.log(core.error);
 // later:
 core.dispose();
 ```
+
+Since 4.25 (not released yet), `core.supported` can be read at any time, and `core.observe()` dispatches `wcs-orientation:supported-changed` (before the snapshot's `wcs-orientation:change`) when the value differs from the last one dispatched.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

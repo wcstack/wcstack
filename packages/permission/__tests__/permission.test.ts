@@ -47,6 +47,43 @@ describe("Permission (Shell)", () => {
     expect(el.granted).toBe(false);
     expect(el.denied).toBe(false);
     expect(el.unsupported).toBe(false);
+    expect(el.unsupportedReason).toBeNull();
+  });
+
+  it("unsupportedReason は Core に委譲され、state の event より先に専用の event で流れる", async () => {
+    removePermissions();
+    const el = createPermission({ name: "geolocation" });
+    const seen: Array<[string, unknown, string | null]> = [];
+    el.addEventListener("wcs-permission:unsupported-reason-changed", (e) => seen.push(["reason", (e as CustomEvent).detail, el.unsupportedReason]));
+    el.addEventListener("wcs-permission:change", (e) => seen.push(["state", (e as CustomEvent).detail, el.unsupportedReason]));
+    document.body.appendChild(el);
+    await el.connectedCallbackPromise;
+
+    expect(el.unsupportedReason).toBe("no-permissions-api");
+    expect(seen).toEqual([
+      ["reason", "no-permissions-api", "no-permissions-api"],
+      ["state", "unsupported", "no-permissions-api"],
+    ]);
+  });
+
+  it("name 未指定の要素の unsupportedReason は unknown-name、拒否された名前も unknown-name", async () => {
+    installPermissions({ reject: true });
+    const bare = createPermission();
+    document.body.appendChild(bare);
+    await bare.connectedCallbackPromise;
+    expect(bare.unsupportedReason).toBe("unknown-name");
+
+    const rejected = createPermission({ name: "accelerometer" });
+    document.body.appendChild(rejected);
+    await rejected.connectedCallbackPromise;
+    expect(rejected.state).toBe("unsupported");
+    expect(rejected.unsupportedReason).toBe("unknown-name");
+  });
+
+  it("wcBindable の properties は Core を継承し、unsupportedReason を含む", () => {
+    expect(WcsPermission.wcBindable.properties.map((p) => p.name)).toEqual([
+      "state", "granted", "denied", "prompt", "unsupported", "unsupportedReason",
+    ]);
   });
 
   it("hasConnectedCallbackPromise が true で初回 query を待てる（SSR）", async () => {
