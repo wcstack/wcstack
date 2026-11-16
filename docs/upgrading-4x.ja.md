@@ -441,7 +441,18 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 - `@wcstack/fetch`: `<wcs-infinite-scroll>` は、ページが届く瞬間に利用者がスクロールしていても、ウィンドウに要らないページを取りに行かなくなった（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §26.1）。4.24.0 では、そのとき 1 ページ先を読んでいた — Chromium で、たいていの場合。ページの側で変えることは無い。スクロールの間の要求を数えるテストは、1 回少なく数えることがある。
 
-## 4.24.1 でもまだ要るもの
+### 4.24.2
+
+2026-11-16 — [CHANGELOG](../CHANGELOG.md#4242--2026-11-16)
+
+- `@wcstack/router`: `params` と `typedParams` は、パーセントデコードされた値になった: `/users/%E2%82%AC` で `params.id` は `"€"`（以前は `"%E2%82%AC"`）。パラメータを自分で `decodeURIComponent()` しているなら外す — 二重にデコードすると、`%` を含む値で例外になる。エンコードされたスラッシュは値の中の `/` になり、`params['*']` は残りのセグメントをそれぞれデコードして `/` でつないだもの。`path` と、ガードの `toPath` / `fromPath` は URL の形のまま（router の README §3.6）。
+- `@wcstack/router`: ルートの `path` の静的セグメントは、書かれた文字そのもの。`path="/v1.0"` は `/v1x0` に一致しなくなった。正規表現として効くことに頼っていた `path`（`path="/(en|ja)"`、`path="/v\d+"`）は、その文字列にだけ一致する: パラメータか catch-all にして、値を見る。
+- `@wcstack/router`: `path` に ASCII でない文字や空白のあるルートは、その URL に一致する。そのパスへの `<wcs-link>` は、そこで現在のページになる。そういう URL で fallback のルートが出ていた所は、そのルートが出る。
+- `@wcstack/router`: Navigation API の無い環境で、`navigate("/users/€")` の後の `path` は URL の形（`/users/%E2%82%AC`）になった。その URL を読み込んだときと同じ。
+
+要らなくなった回避策: 読める文字で書くとどこにも一致しないために、パーセントエンコードして書いた、または ASCII に限ったルートのパス。手でデコードしていたパラメータ。`.`・`+`・括弧を避けたルートのパス。
+
+## 4.24.2 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。

@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.24.2] — 2026-11-16
+
+A patch for the first defect reported from outside, #694: `@wcstack/router` compiled a route's static segments as regular expressions as written, and compared the URL's path still percent-encoded. `path="/v1.0"` matched `/v1x0`, a route with `+` or `(` in its path stopped the whole router, a route with a character outside ASCII matched no URL, and params arrived percent-encoded. The author decided on 2026-11-16 that params are decoded and that a static segment is the characters as written. Only `@wcstack/router`'s source changed (the `wcstack/auto` bundle carries it); every package is published at 4.24.2, as always.
 
 ### Upgrading
 
