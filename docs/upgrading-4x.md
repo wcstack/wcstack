@@ -441,7 +441,18 @@ Workarounds became unnecessary: a static `url` for page 1 on the `<wcs-fetch>` a
 
 - `@wcstack/fetch`: `<wcs-infinite-scroll>` no longer asks for a page the window does not need when the user is scrolling as a page lands ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §26.1). In 4.24.0 it was one page ahead then — Chromium, most of the time. Nothing to change in a page; a test that counted requests during a scroll may count one fewer.
 
-## Still needed on 4.24.1
+### 4.24.2
+
+2026-11-16 — [CHANGELOG](../CHANGELOG.md#4242--2026-11-16)
+
+- `@wcstack/router`: `params` and `typedParams` hold percent-decoded values: at `/users/%E2%82%AC`, `params.id` is `"€"` (it was `"%E2%82%AC"`). Remove a `decodeURIComponent()` of your own around a param — decoding twice throws for a value with a `%` in it. An encoded slash is a `/` inside the value, and `params['*']` is the remaining segments, each decoded, joined with `/`. `path`, and a guard's `toPath` / `fromPath`, stay in the URL's form (router README §3.6).
+- `@wcstack/router`: a static segment of a route's `path` is the characters as written. `path="/v1.0"` no longer matches `/v1x0`. A `path` that leaned on being a regular expression (`path="/(en|ja)"`, `path="/v\d+"`) matches only that text: use a parameter or a catch-all and look at the value.
+- `@wcstack/router`: a route whose `path` has a character outside ASCII, or a space, matches its URL, and a `<wcs-link>` to such a path is the current page there. Where a fallback route showed for those URLs, the route shows now.
+- `@wcstack/router`: without the Navigation API, `navigate("/users/€")` gives `path` in the URL's form (`/users/%E2%82%AC`), as a load of that URL does.
+
+Workarounds became unnecessary: a route path written percent-encoded, or kept to ASCII, because the readable one matched nothing; a param decoded by hand; a route path that avoided `.`, `+` and brackets.
+
+## Still needed on 4.24.2
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
