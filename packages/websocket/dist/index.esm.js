@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/websocket","version":"4.24.2"};
+var pkg = {"name":"@wcstack/websocket","version":"4.25.0"};
 
 /**
  * websocketCapabilities.ts
@@ -981,9 +981,13 @@ class WcsWebSocket extends HTMLElement {
     sendMessage(data) {
         this._core.send(data);
     }
+    // Anything that is not a number in `code`'s place — the event an `on…: $command.x` binding emits first — is
+    // not a close code, and `reason` with it: a "Disconnect" button wired straight to the token closes the
+    // connection. WebSocket.close(event) throws InvalidAccessError, and the socket stayed open.
     close(code, reason) {
         this._connectPending = false;
-        this._core.close(code, reason);
+        const given = typeof code === "number";
+        this._core.close(given ? code : undefined, given && typeof reason === "string" ? reason : undefined);
     }
     // --- Lifecycle ---
     attributeChangedCallback(name, oldValue, newValue) {

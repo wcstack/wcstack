@@ -9,8 +9,8 @@
 `@wcstack/state` と組み合わせると、`<wcs-credential>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し — `get(options)`/`store(credential)`の引数は呼び出しごと
-- **command サーフェス**: `get`、`store`、そして 4.25（未リリース）から `preventSilentAccess`（サインアウト）
-- **出力 state サーフェス**: `value`、`loading`、`error`、`cancelled`、そして 4.25（未リリース）から `supported`
+- **command サーフェス**: `get`、`store`、そして 4.25 から `preventSilentAccess`（サインアウト）
+- **出力 state サーフェス**: `value`、`loading`、`error`、`cancelled`、そして 4.25 から `supported`
 
 ## なぜ存在するか — password/federatedのみ、WebAuthnは明示的にスコープ外
 
@@ -28,7 +28,7 @@ npm install @wcstack/credential
 
 ## 対応ブラウザ
 
-4.25（未リリース）から、この要素はどこで動くかを出力 `supported` で言います。
+4.25 から、この要素はどこで動くかを出力 `supported` で言います。
 
 | ブラウザ | パスワード資格情報 | `supported` |
 | -------- | ------------------ | ----------- |
@@ -134,8 +134,8 @@ npm install @wcstack/credential
 それぞれの部分の役割:
 
 - **読み込み時のサイレントサインイン。** パスワード資格情報のあるブラウザでは `supported` が `true` で届き、`$watch` が 1 回走り、`get({ password: true, mediation: "silent" })` が保存済みの資格情報か `null` で resolve します — 何も表示しません。Firefox と Safari では `supported` は `false` のままで、何も求めず、フォームがそこにあるだけです。このコマンドは `$connectedCallback` からではなく、その `$watch` から emit します: `supported` が届くのは要素が定義され束縛された後で、`command.` の束縛が張られる前に emit したコマンドは失われるからです（`[wcs/command-token-unbound]`）。
-- **保存は、サーバーが受け入れた後。** `store()` は `POST /api/session` が成功してから呼び、その前には呼びません: ブラウザは渡されたものをそのまま保存しようとするので、打ち間違えたパスワードを一度保存すると、開くたびにそれが返ってきます。4.25（未リリース）から `store()` は素の `{ id, password }` を取ります。4.24 までは、自分で作った `PasswordCredential` を渡します。
-- **サインアウトは `preventSilentAccess()` を呼ぶ**（4.25（未リリース）から）。これが無いと、ブラウザは次の読み込みでまた資格情報を渡し、サインアウトしたばかりの利用者がサインインし直されます。
+- **保存は、サーバーが受け入れた後。** `store()` は `POST /api/session` が成功してから呼び、その前には呼びません: ブラウザは渡されたものをそのまま保存しようとするので、打ち間違えたパスワードを一度保存すると、開くたびにそれが返ってきます。4.25 から `store()` は素の `{ id, password }` を取ります。4.24 までは、自分で作った `PasswordCredential` を渡します。
+- **サインアウトは `preventSilentAccess()` を呼ぶ**（4.25 から）。これが無いと、ブラウザは次の読み込みでまた資格情報を渡し、サインアウトしたばかりの利用者がサインインし直されます。
 - **パスワードは state のツリーに入らない。** 資格情報はイベント（`eventToken.value`）から受け取り、そのまま渡します。[`value` はパスワードを運ぶ](#value-はパスワードを運ぶ) を参照。
 
 ### `value` はパスワードを運ぶ
@@ -159,11 +159,11 @@ $on: {
 | `error`     | `wcs-credential:error`              | 真のプラットフォーム失敗（正規化された`{ name, message }`）、無ければ`null`。 |
 | `cancelled` | `wcs-credential:cancelled-changed`  | ユーザーがブラウザのアカウント選択UIを閉じたら`true`（Credential Management APIは`NotAllowedError`でrejectする）。`error`には含めない。 |
 | `errorInfo` | `wcs-credential:error-info-changed` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は `capability-missing`（unsupported）・`out-of-scope`（`publicKey`/WebAuthn 試行）・`credential-failed`（真の失敗）。`NotAllowedError` のキャンセルは `cancelled` であり `errorInfo` ではない。 |
-| `supported` | `wcs-credential:supported-changed`  | 4.25（未リリース）から。このページでパスワード資格情報を使えるなら`true`。下記参照。 |
+| `supported` | `wcs-credential:supported-changed`  | 4.25 から。このページでパスワード資格情報を使えるなら`true`。下記参照。 |
 
-**`supported`**（4.25（未リリース）から）は、`navigator.credentials` があり、**かつ** `PasswordCredential` がクラスであるときに `true` です — [対応ブラウザ](#対応ブラウザ)を参照。値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-credential:supported-changed`（`detail` は boolean）を流します。このサイトの資格情報が保存されていることも、利用者がそれを選ぶことも**言いません**: それに答えるのは `get()` です。
+**`supported`**（4.25 から）は、`navigator.credentials` があり、**かつ** `PasswordCredential` がクラスであるときに `true` です — [対応ブラウザ](#対応ブラウザ)を参照。値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-credential:supported-changed`（`detail` は boolean）を流します。このサイトの資格情報が保存されていることも、利用者がそれを選ぶことも**言いません**: それに答えるのは `get()` です。
 
-**非対応は `capability-missing` であって、失敗ではありません。** 4.25（未リリース）から、`PasswordCredential` の無いところでは、`password` か `federated` を求める `get()` と、すべての `store()` が、ブラウザを呼ばずに終わります: `error` は `{ name: "NotSupportedError", message: "Password credentials are not supported in this browser." }`、`errorInfo` は `{ code: "capability-missing", phase: "start", recoverable: false, capabilityId: "web.password-credential", … }` です。4.24 までは、呼び出しがブラウザに渡り、`recoverable: true` の `credential-failed` として返っていました — 決してできないブラウザで、ページがやり直そうとする失敗です。`navigator.credentials` 自体が無いところでは、これまでどおり `error` は `{ message: "Credential Management API is not supported in this browser." }`（`capabilityId: "web.credentials"`）です。
+**非対応は `capability-missing` であって、失敗ではありません。** 4.25 から、`PasswordCredential` の無いところでは、`password` か `federated` を求める `get()` と、すべての `store()` が、ブラウザを呼ばずに終わります: `error` は `{ name: "NotSupportedError", message: "Password credentials are not supported in this browser." }`、`errorInfo` は `{ code: "capability-missing", phase: "start", recoverable: false, capabilityId: "web.password-credential", … }` です。4.24 までは、呼び出しがブラウザに渡り、`recoverable: true` の `credential-failed` として返っていました — 決してできないブラウザで、ページがやり直そうとする失敗です。`navigator.credentials` 自体が無いところでは、これまでどおり `error` は `{ message: "Credential Management API is not supported in this browser." }`（`capabilityId: "web.credentials"`）です。
 
 **並行制御。** `get()` と `store()` は 1 つの io-core lane を `latest` policy で共有する:
 後発の呼び出しが先発を **supersede** する（実際の認証フローでは順次利用される — ログイン後に
@@ -173,11 +173,11 @@ store、その前に get — 並行ではない）。並行実行時は後発の
 
 | コマンド | 非同期 | 説明 |
 | -------- | ------ | ---- |
-| `get`    | はい   | `get(options)` — `options.publicKey`はスコープ違反として拒否（転送しない、上記参照）。never-throw: `NotAllowedError`（ユーザーがアカウント選択UIを閉じた）は`cancelled`へ、それ以外は`error`へ。資格情報、無ければ`null`でresolveします。4.25（未リリース）から、`get(null)`と`get()`は投げずに、何も求めない呼び出しになります。 |
-| `store`  | はい   | `store(credential)` — `Credential`のインスタンス、または 4.25（未リリース）から素の`{ id, password, name?, iconURL? }`。後者からは、与えられたメンバーで要素が`new PasswordCredential(...)`を作ります。`value`は保存した資格情報をエコーバック（`navigator.credentials.store()`自体は`Promise<void>`でresolveするため）。 |
-| `preventSilentAccess` | はい | 4.25（未リリース）から。サインアウト: `navigator.credentials.preventSilentAccess()`を呼びます。以後、利用者がもう一度サインインするまで、`get({ mediation: "silent" })`は資格情報を渡しません。引数無し。成功すると`error`を消し、rejectは`error` / `errorInfo`（`credential-failed`）に入ります。ブラウザにこのメソッドが無いところでは、何もせずにresolveします — サインアウトはどこでも動きます。`value`にも`loading`にも触れず、laneも通りません: 進行中の`get()` / `store()`を追い越さず、追い越されもしません。 |
+| `get`    | はい   | `get(options)` — `options.publicKey`はスコープ違反として拒否（転送しない、上記参照）。never-throw: `NotAllowedError`（ユーザーがアカウント選択UIを閉じた）は`cancelled`へ、それ以外は`error`へ。資格情報、無ければ`null`でresolveします。4.25 から、`get(null)`と`get()`は投げずに、何も求めない呼び出しになります。 |
+| `store`  | はい   | `store(credential)` — `Credential`のインスタンス、または 4.25 から素の`{ id, password, name?, iconURL? }`。後者からは、与えられたメンバーで要素が`new PasswordCredential(...)`を作ります。`value`は保存した資格情報をエコーバック（`navigator.credentials.store()`自体は`Promise<void>`でresolveするため）。 |
+| `preventSilentAccess` | はい | 4.25 から。サインアウト: `navigator.credentials.preventSilentAccess()`を呼びます。以後、利用者がもう一度サインインするまで、`get({ mediation: "silent" })`は資格情報を渡しません。引数無し。成功すると`error`を消し、rejectは`error` / `errorInfo`（`credential-failed`）に入ります。ブラウザにこのメソッドが無いところでは、何もせずにresolveします — サインアウトはどこでも動きます。`value`にも`loading`にも触れず、laneも通りません: 進行中の`get()` / `store()`を追い越さず、追い越されもしません。 |
 
-**`store()` と素のデータ**（4.25（未リリース）から）。state のメソッドが持っているのは文字列の id とパスワードであって、`PasswordCredential` — Chromium にしか無いクラス — ではありません。そこで `store({ id, password })` がそれを作ります: 引数が `Credential` のインスタンスではなく、`id` と `password` が文字列なら、要素は `new PasswordCredential({ id, password })` を保存し、`name` と `iconURL` は与えられていれば足します。それ以外のものは、そのままブラウザに渡します。コンストラクタが投げた場合（空の `id`）は、ほかの失敗と同じく `error` で終わります。
+**`store()` と素のデータ**（4.25 から）。state のメソッドが持っているのは文字列の id とパスワードであって、`PasswordCredential` — Chromium にしか無いクラス — ではありません。そこで `store({ id, password })` がそれを作ります: 引数が `Credential` のインスタンスではなく、`id` と `password` が文字列なら、要素は `new PasswordCredential({ id, password })` を保存し、`name` と `iconURL` は与えられていれば足します。それ以外のものは、そのままブラウザに渡します。コンストラクタが投げた場合（空の `id`）は、ほかの失敗と同じく `error` で終わります。
 
 > **`get` と `store` はボタンに直結せず、state のメソッドを通して配線してください。** `<button data-wcs="onclick: $command.getCredential">` は DOM イベントを第 1 引数にしてトークンを emit するので、要素は `get(event)` として呼ばれ — 何も求めない options なので `null` で resolve します — `store(event)` はブラウザが `TypeError` で拒否します。これらのコマンドが取るのはデータです。メソッドから emit してください（`this.$command.getCredential.emit({ password: true })`）。`preventSilentAccess` は引数を取らないので、`onclick: $command.forgetSignIn` で構いません。
 
@@ -257,7 +257,7 @@ const credential = await core.get({ password: true });
 core.dispose();
 ```
 
-4.25（未リリース）から: `core.supported` はいつでも読めます。`core.observe()` は、最後に流した値と違っていれば `wcs-credential:supported-changed` を流します。`core.store({ id, password })` は `PasswordCredential` を作り、`await core.preventSilentAccess()` がサインアウトです。
+4.25 から: `core.supported` はいつでも読めます。`core.observe()` は、最後に流した値と違っていれば `wcs-credential:supported-changed` を流します。`core.store({ id, password })` は `PasswordCredential` を作り、`await core.preventSilentAccess()` がサインアウトです。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

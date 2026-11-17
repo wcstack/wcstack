@@ -10,7 +10,7 @@ It is an **async primitive node** that turns `screen.orientation` into reactive 
 With `@wcstack/state`, `<wcs-screen-orientation>` can be bound directly through path contracts:
 
 - **input surface**: none — `screen.orientation` is a single global with nothing to configure
-- **output state surface**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`, and — since 4.25 (not released yet) — `supported`
+- **output state surface**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`, and — since 4.25 — `supported`
 
 ## Why this exists — a monitor/command asymmetry unique in this batch
 
@@ -72,7 +72,7 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 
 ### 3. Offer the lock only where there is an orientation to lock
 
-Since 4.25 (not released yet), the `supported` output says whether the page has `screen.orientation` at all. Where it has not, a lock button can only fail, so hide it:
+Since 4.25, the `supported` output says whether the page has `screen.orientation` at all. Where it has not, a lock button can only fail, so hide it:
 
 ```html
 <wcs-state>
@@ -108,13 +108,13 @@ Since 4.25 (not released yet), the `supported` output says whether the page has 
 | `landscape` | `wcs-orientation:change` | `true` when `type` starts with `"landscape"`. |
 | `error`     | `wcs-orientation:error`  | The last `lock()`/`unlock()` failure, or `null`. |
 | `errorInfo` | `wcs-orientation:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` shape is unchanged. |
-| `supported` | `wcs-orientation:supported-changed` | Since 4.25 (not released yet). `true` when this page has `screen.orientation` to monitor. It does not say `lock()` will hold — see below. |
+| `supported` | `wcs-orientation:supported-changed` | Since 4.25. `true` when this page has `screen.orientation` to monitor. It does not say `lock()` will hold — see below. |
 
 `type`/`angle`/`portrait`/`landscape` all derive from the single `wcs-orientation:change` event.
 
 ### `supported` — what it says, and what it does not
 
-Since 4.25 (not released yet). `supported` is `true` when `screen.orientation` exists: `type`, `angle`, `portrait` and `landscape` are real values and follow the device. Where it is `false`, they stay `null` / `false` for good, and `lock()` / `unlock()` end as `capability-missing`. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-orientation:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`).
+Since 4.25. `supported` is `true` when `screen.orientation` exists: `type`, `angle`, `portrait` and `landscape` are real values and follow the device. Where it is `false`, they stay `null` / `false` for good, and `lock()` / `unlock()` end as `capability-missing`. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-orientation:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`).
 
 **It does not say `lock()` will hold.** Safari has `screen.orientation` and no `lock()`. A desktop browser has `lock()` and refuses it. On a phone it holds only while the document is fullscreen (or an installed PWA). No property tells these apart ahead of time: whether a lock holds is known only by trying it — in fullscreen — and reading `error` / `errorInfo` afterwards. The [`<wcs-fullscreen>` README](../fullscreen/README.md#locking-the-screen-orientation-while-fullscreen) shows the pairing (enter fullscreen first, then lock once it is active).
 
@@ -218,7 +218,7 @@ console.log(core.error);
 core.dispose();
 ```
 
-Since 4.25 (not released yet), `core.supported` can be read at any time, and `core.observe()` dispatches `wcs-orientation:supported-changed` (before the snapshot's `wcs-orientation:change`) when the value differs from the last one dispatched.
+Since 4.25, `core.supported` can be read at any time, and `core.observe()` dispatches `wcs-orientation:supported-changed` (before the snapshot's `wcs-orientation:change`) when the value differs from the last one dispatched.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

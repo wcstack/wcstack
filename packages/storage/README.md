@@ -167,7 +167,7 @@ To save at a moment of your choosing — a Save button — instead of on every c
 3. Save → `saved` is assigned a copy → its binding applies it to `value` → saved
 4. Another tab saves the key → the element writes `saved` → the `$watch` takes it in
 
-Since 4.25 (not released yet) this section shows this form. The one it showed up to 4.24 — `manual` with `trigger:` bound to a getter that returns `true` — did not work as written: the element writes `trigger` back when it has saved, a getter cannot take the write, so every change logged `[wcs/path-readonly]`; and `manual` loads nothing, so the saved settings never came back after a reload. `wcs-validate` reports that binding (`wcs/path-readonly`). `manual` and `trigger` are for a page that drives the element itself — it calls `load` and `save` when it chooses, and nothing is loaded for it at start ([Element Reference](#element-reference)).
+Since 4.25 this section shows this form. The one it showed up to 4.24 — `manual` with `trigger:` bound to a getter that returns `true` — did not work as written: the element writes `trigger` back when it has saved, a getter cannot take the write, so every change logged `[wcs/path-readonly]`; and `manual` loads nothing, so the saved settings never came back after a reload. `wcs-validate` reports that binding (`wcs/path-readonly`). `manual` and `trigger` are for a page that drives the element itself — it calls `load` and `save` when it chooses, and nothing is loaded for it at start ([Element Reference](#element-reference)).
 
 
 ### 3. Using sessionStorage

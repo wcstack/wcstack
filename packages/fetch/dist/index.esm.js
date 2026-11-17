@@ -68,7 +68,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/fetch","version":"4.24.2"};
+var pkg = {"name":"@wcstack/fetch","version":"4.25.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

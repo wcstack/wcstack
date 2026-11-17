@@ -83,7 +83,7 @@ Every bound state path must be declared up front — `locked: false` here; bindi
 
 ### A refusal that arrives as an event (`pointerlockerror`)
 
-Since 4.25 (not released yet). Browsers do not report a refused request the same way:
+Since 4.25. Browsers do not report a refused request the same way:
 
 - **Chromium and WebKit** return a promise from `requestPointerLock()` and reject it. The rejection is the `error`, with the browser's own reason — a `SecurityError` in a sandboxed `<iframe>` without `allow-pointer-lock`, WebKit's `WrongDocumentError` (`"Pointer lock requires the window to have focus."`).
 - **Firefox** returns nothing from `requestPointerLock()`. A refusal reaches the page only as the document's `pointerlockerror` event. `<wcs-pointer-lock>` listens for it while connected (and for `webkitpointerlockerror` where that is the name the browser has), and when it fires for a request this element made with a call that returned no promise, `error` becomes a `NotAllowedError` `DOMException` — `"The browser refused the pointer lock request."`, `errorInfo.code` `not-allowed`, `recoverable: true`. The event carries no reason (Firefox writes it to the console), so the message says no more, whatever made the browser refuse.
@@ -96,10 +96,10 @@ A request whose call returned a promise is answered by that promise alone — Ch
 
 | Property    | Event                                 | Description |
 | ----------- | -------------------------------------- | ------------ |
-| `active`    | `wcs-pointer-lock:change`             | `true` when `document.pointerLockElement` is this instance's resolved target, `false` otherwise. Since 4.25 (not released yet), also `false` while the element is out of the document (see [When the element leaves the document](#when-the-element-leaves-the-document)). |
-| `error`     | `wcs-pointer-lock:error`              | The most recent failure, or `null`. One of: a rejected promise (e.g. `NotAllowedError` for a gesture-less call), `{ message: "Pointer Lock API is not supported." }` when the platform API is missing, `{ message: "Pointer Lock target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet. Since 4.25 (not released yet), also a `NotAllowedError` `DOMException` (`"The browser refused the pointer lock request."`) for a refusal the browser reports only as an event — Firefox (see above). |
+| `active`    | `wcs-pointer-lock:change`             | `true` when `document.pointerLockElement` is this instance's resolved target, `false` otherwise. Since 4.25, also `false` while the element is out of the document (see [When the element leaves the document](#when-the-element-leaves-the-document)). |
+| `error`     | `wcs-pointer-lock:error`              | The most recent failure, or `null`. One of: a rejected promise (e.g. `NotAllowedError` for a gesture-less call), `{ message: "Pointer Lock API is not supported." }` when the platform API is missing, `{ message: "Pointer Lock target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet. Since 4.25, also a `NotAllowedError` `DOMException` (`"The browser refused the pointer lock request."`) for a refusal the browser reports only as an event — Firefox (see above). |
 | `errorInfo` | `wcs-pointer-lock:error-info-changed` | Additive serializable failure taxonomy derived from `error` — `{ code, phase, recoverable, message }` — or `null`. See below. |
-| `supported` | `wcs-pointer-lock:supported-changed`  | Since 4.25 (not released yet). `true` when the browser has the Pointer Lock API; `false` otherwise. The event's `detail` is the boolean. See below. |
+| `supported` | `wcs-pointer-lock:supported-changed`  | Since 4.25. `true` when the browser has the Pointer Lock API; `false` otherwise. The event's `detail` is the boolean. See below. |
 
 `error` and `errorInfo` are **both observable, event-backed `wcBindable` properties**. (`error` was historically an imperative getter with no event of its own — that is no longer the case.) A wc-bindable binding core now delivers a request/exit failure reactively, so you can bind it with `data-wcs` / `bind()` rather than polling `element.error` after each command settles. The `error` **value shape is unchanged**; `errorInfo` is the additive serializable classification.
 
@@ -111,14 +111,14 @@ A request whose call returned a promise is answered by that promise alone — Ch
 | -------------------- | --------- | ------------- | ----- |
 | `capability-missing` | `probe`   | `false`       | Pointer Lock API is unsupported (neither standard nor legacy name present) |
 | `invalid-argument`   | `start`   | `false`       | `target` did not resolve to an element |
-| `not-allowed`        | `execute` | `true`        | `NotAllowedError` / `TypeError` — called outside a user gesture; retrying inside a real gesture can succeed. Since 4.25 (not released yet), also every refusal that arrived as a `pointerlockerror` event (Firefox), whose reason is not known |
+| `not-allowed`        | `execute` | `true`        | `NotAllowedError` / `TypeError` — called outside a user gesture; retrying inside a real gesture can succeed. Since 4.25, also every refusal that arrived as a `pointerlockerror` event (Firefox), whose reason is not known |
 | `pointer-lock-error` | `execute` | `false`       | any other caught exception |
 
 The stable `code` values are exported as `WCS_POINTER_LOCK_ERROR_CODE`; the shared `WcsIoErrorInfo` / `WcsIoErrorPhase` types are re-exported from this package.
 
 ### `supported` — does this page have pointer lock?
 
-Since 4.25 (not released yet). `supported` is `true` when the browser has the Pointer Lock API: an element has `requestPointerLock()` (or the prefixed `webkitRequestPointerLock()`). It is `false` otherwise — Safari on an iPhone, for one.
+Since 4.25. `supported` is `true` when the browser has the Pointer Lock API: an element has `requestPointerLock()` (or the prefixed `webkitRequestPointerLock()`). It is `false` otherwise — Safari on an iPhone, for one.
 
 It does not say that a request will succeed, nor that a mouse is attached. A request still needs a user gesture, and a sandboxed `<iframe>` needs `allow-pointer-lock`: no Permissions-Policy covers pointer lock, so there is nothing the element could ask beforehand, and such a frame reports `true` and then refuses the request (`error`).
 
@@ -215,7 +215,7 @@ DevTools open; it is not a supported styling hook.
 
 ## When the element leaves the document
 
-Since 4.25 (not released yet). `<wcs-pointer-lock>` listens to the document only while it is connected. When it is disconnected while `active` is `true` — an `if:` branch that goes away, a route's content that `@wcstack/router` takes out — it publishes `active: false`, with its `wcs-pointer-lock:change` event, so a bound state path and `:state(active)` follow: an element that is out of the document can no longer vouch for the value. It does **not** release the lock. When it is connected again it reads the truth: if its target is still locked, `active` goes back to `true`, with the event. An element that is moved (taken out and put back) therefore reports `false`, then `true`. Up to 4.24 a disconnect left `active` as it was, and state kept showing `true` after the lock was gone.
+Since 4.25. `<wcs-pointer-lock>` listens to the document only while it is connected. When it is disconnected while `active` is `true` — an `if:` branch that goes away, a route's content that `@wcstack/router` takes out — it publishes `active: false`, with its `wcs-pointer-lock:change` event, so a bound state path and `:state(active)` follow: an element that is out of the document can no longer vouch for the value. It does **not** release the lock. When it is connected again it reads the truth: if its target is still locked, `active` goes back to `true`, with the event. An element that is moved (taken out and put back) therefore reports `false`, then `true`. Up to 4.24 a disconnect left `active` as it was, and state kept showing `true` after the lock was gone.
 
 What the browser does with the lock is its own: **when the locked element is removed from the document, the browser releases the lock.** A target inside a route's content leaves with the route, and the lock ends there. To keep the pointer locked across a navigation, put the target — and its `<wcs-pointer-lock>` — outside the router, next to the layout that stays ([router README — Where route content lives](../router/README.md#where-route-content-lives)). With only the target outside and the `<wcs-pointer-lock>` inside a route, the lock goes on, but `active` is `false` while that route is away and `true` again when it comes back.
 
@@ -254,7 +254,7 @@ lock.exitPointerLock();  // synchronous
 lock.dispose();          // detach the document listeners
 ```
 
-Since 4.25 (not released yet), `dispose()` publishes `active: false` when it was `true` (a disposed Core no longer hears the document) and the next `observe(element)` reads it again. `lock.supported`, and the `wcs-pointer-lock:supported-changed` event `observe()` dispatches, say whether the browser has the API. In Firefox `lock.error` is set by the document's `pointerlockerror` event, after `requestPointerLock()` has resolved.
+Since 4.25, `dispose()` publishes `active: false` when it was `true` (a disposed Core no longer hears the document) and the next `observe(element)` reads it again. `lock.supported`, and the `wcs-pointer-lock:supported-changed` event `observe()` dispatches, say whether the browser has the API. In Firefox `lock.error` is set by the document's `pointerlockerror` event, after `requestPointerLock()` has resolved.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

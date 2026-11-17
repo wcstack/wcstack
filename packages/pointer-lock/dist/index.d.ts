@@ -68,6 +68,8 @@ interface IWritableConfig {
  * `:error` / `:error-info-changed`), so a wc-bindable binding core delivers a
  * request/exit failure. `errorInfo` is the additive serializable failure
  * taxonomy derived from `error` (docs/pointer-lock-tag-design.md §2, README).
+ * `supported` (`wcs-pointer-lock:supported-changed`) says whether this page has
+ * the Pointer Lock API at all.
  *
  * @example
  * ```typescript
@@ -80,10 +82,12 @@ interface WcsPointerLockCoreValues {
     error: any;
     /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
     errorInfo: WcsIoErrorInfo | null;
+    /** Whether this page has the Pointer Lock API (an element has `requestPointerLock()`). */
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-pointer-lock>`) — identical value surface
- * to the Core (`active` / `error` / `errorInfo` all observable). The Shell
+ * to the Core (`active` / `error` / `errorInfo` / `supported` all observable). The Shell
  * additionally accepts a `target` attribute
  * (see docs/pointer-lock-tag-design.md / docs/fullscreen-tag-design.md §1).
  */
@@ -131,6 +135,8 @@ declare class PointerLockCore extends EventTarget {
     private _resolvedTarget;
     private _subscribed;
     private _gen;
+    private _request;
+    private _supportedPublished;
     private _ready;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
@@ -143,6 +149,16 @@ declare class PointerLockCore extends EventTarget {
      * `error` value shape is unchanged.
      */
     get errorInfo(): WcsIoErrorInfo | null;
+    /**
+     * Whether this page has the Pointer Lock API right now: an element has
+     * `requestPointerLock()` (or the prefixed `webkitRequestPointerLock()`). Probed
+     * at call time, never cached. No Permissions-Policy feature governs pointer
+     * lock, so there is no policy to ask. It does not say that a request will
+     * succeed (that needs a user gesture, and a sandboxed `<iframe>` needs
+     * `allow-pointer-lock`). A wc-bindable output (event
+     * `wcs-pointer-lock:supported-changed`).
+     */
+    get supported(): boolean;
     observe(target: Element | null): Promise<void>;
     dispose(): void;
     /**
@@ -172,7 +188,10 @@ declare class PointerLockCore extends EventTarget {
     private _exitPointerLockFn;
     private _pointerLockElement;
     private _pointerLockChangeEventName;
+    private _pointerLockErrorEventName;
     private _onChange;
+    private _onLockError;
+    private _publishSupported;
     private _applyActive;
     private _setActive;
     private _setError;
@@ -222,6 +241,7 @@ declare class WcsPointerLock extends HTMLElement {
     get active(): boolean;
     get error(): any;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     /**
      * Resolve `target` and request pointer lock on it. Requires a user-gesture
      * context. never-throw: an unresolvable target or an unsupported/rejected

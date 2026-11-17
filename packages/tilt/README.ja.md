@@ -9,7 +9,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-tilt>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し
-- **出力 state サーフェス**: `alpha`、`beta`、`gamma`、`absolute`、`permissionState`、`error`、`errorInfo`、そして 4.25（未リリース）から `heading`、`supported`
+- **出力 state サーフェス**: `alpha`、`beta`、`gamma`、`absolute`、`permissionState`、`error`、`errorInfo`、そして 4.25 から `heading`、`supported`
 
 ## なぜ存在するか — `@wcstack/idle`の兄弟、iOSのgesture-gateを吸収する
 
@@ -58,7 +58,7 @@ npm install @wcstack/tilt
 
 ### コンパス（`heading`）
 
-4.25（未リリース）から、`heading` は端末の上端が向いている方角です。北からの時計回りの度数（0 = 北、90 = 東）で、ブラウザが知らせるまでは `null` です。
+4.25 から、`heading` は端末の上端が向いている方角です。北からの時計回りの度数（0 = 北、90 = 東）で、ブラウザが知らせるまでは `null` です。
 
 ```html
 <wcs-state>
@@ -115,11 +115,11 @@ npm install @wcstack/tilt
 | `beta`            | `wcs-tilt:change`             | X軸回転。 |
 | `gamma`           | `wcs-tilt:change`             | Y軸回転。 |
 | `absolute`        | `wcs-tilt:change`             | 地磁気に対する絶対方位かどうか。ブラウザにより信頼性が異なるため実機で確認してください。 |
-| `heading`         | `wcs-tilt:heading-changed`    | 4.25（未リリース）から。端末の上端が向いている方角（北からの時計回りの度数）、分かるまでは`null`。イベントの`detail`はその数。[コンパス](#コンパスheading)を参照。 |
+| `heading`         | `wcs-tilt:heading-changed`    | 4.25 から。端末の上端が向いている方角（北からの時計回りの度数）、分かるまでは`null`。イベントの`detail`はその数。[コンパス](#コンパスheading)を参照。 |
 | `permissionState` | `wcs-tilt:permission-changed` | `"granted"` \| `"denied"` \| `"unknown"`。`requestPermission()`へのブラウザの答え。答えるまでは`"unknown"`。 |
 | `error`           | `wcs-tilt:error`              | 直近の`requestPermission()` / `start()`の失敗（タップの外からの呼び出しのreject、このブラウザに`DeviceOrientationEvent`が無い、など）、無ければ`null`。never-throw: 失敗はreject/throwせず、ここに流れます。 |
 | `errorInfo`       | `wcs-tilt:error-info-changed` | `error`から派生した、失敗のserializableなtaxonomy（`WcsIoErrorInfo`: 安定した`code` / `phase` / `recoverable`）、無ければ`null`。additive —— `error`の形状は不変。 |
-| `supported`       | `wcs-tilt:supported-changed`  | 4.25（未リリース）から。このページでDevice Orientationを使えるなら`true`。イベントの`detail`はそのboolean。[`supported`](#supported--このページで使えるか)を参照。 |
+| `supported`       | `wcs-tilt:supported-changed`  | 4.25 から。このページでDevice Orientationを使えるなら`true`。イベントの`detail`はそのboolean。[`supported`](#supported--このページで使えるか)を参照。 |
 
 `heading` と `wcs-tilt:change` は別のイベントです: 北を運ぶイベントが新しい角度を運ぶとは限らず、逆も同じです。どちらも同値ガードされます。
 
@@ -127,13 +127,13 @@ npm install @wcstack/tilt
 
 | コマンド            | 非同期 | 説明 |
 | -------------------- | ------ | ---- |
-| `requestPermission`  | はい   | iOSではgesture-gatedな静的メソッドを呼ぶ（**実際のuser gestureハンドラ内から呼ぶ必要があります**）。`DeviceOrientationEvent`にそのメソッドが無い環境（Android、デスクトップ）では即座に`"granted"`でresolve。呼び出しの後の`permissionState`でresolveします。4.25（未リリース）から: rejectは`permissionState`を変えず、`DeviceOrientationEvent`そのものが無いブラウザは`"granted"`ではなく`error`（`capability-missing`）になります。 |
-| `start`              | いいえ | `deviceorientation`を購読（4.25（未リリース）から、ブラウザにあれば`deviceorientationabsolute`も）。冪等。許可は確かめません。4.25（未リリース）から: `DeviceOrientationEvent`の無いブラウザでは何も購読せず、`error`（`capability-missing`）にします。 |
+| `requestPermission`  | はい   | iOSではgesture-gatedな静的メソッドを呼ぶ（**実際のuser gestureハンドラ内から呼ぶ必要があります**）。`DeviceOrientationEvent`にそのメソッドが無い環境（Android、デスクトップ）では即座に`"granted"`でresolve。呼び出しの後の`permissionState`でresolveします。4.25 から: rejectは`permissionState`を変えず、`DeviceOrientationEvent`そのものが無いブラウザは`"granted"`ではなく`error`（`capability-missing`）になります。 |
+| `start`              | いいえ | `deviceorientation`を購読（4.25 から、ブラウザにあれば`deviceorientationabsolute`も）。冪等。許可は確かめません。4.25 から: `DeviceOrientationEvent`の無いブラウザでは何も購読せず、`error`（`capability-missing`）にします。 |
 | `stop`               | いいえ | 購読解除。未開始でも安全に呼べます。出力は最後の値のままです。 |
 
 ## `supported` — このページで使えるか
 
-4.25（未リリース）から。`supported` は、このページで Device Orientation を使えるときに `true` です: `DeviceOrientationEvent` があり、ページが secure context で、Permissions-Policy が `accelerometer` と `gyroscope` のどちらも切っていない（サーバーのヘッダ、または `allow="accelerometer; gyroscope"` の無い `<iframe>` —— Chromium はそのポリシーの下では `deviceorientation` を送りません）。`false` のところでは値は決して来ず、タップしても変わりません: 機能を出さないでください。
+4.25 から。`supported` は、このページで Device Orientation を使えるときに `true` です: `DeviceOrientationEvent` があり、ページが secure context で、Permissions-Policy が `accelerometer` と `gyroscope` のどちらも切っていない（サーバーのヘッダ、または `allow="accelerometer; gyroscope"` の無い `<iframe>` —— Chromium はそのポリシーの下では `deviceorientation` を送りません）。`false` のところでは値は決して来ず、タップしても変わりません: 機能を出さないでください。
 
 利用者が許可するかどうかは**言いません**（それは `permissionState`）。そして**端末にセンサーがあるかどうかは言えません**: デスクトップ PC には API があってセンサーが無く、`supported: true` です。ページは待つことでそれを知ります: `start()` から 2 秒ほど経っても——iOS では `permissionState` が `"granted"` になってから——`beta` が `null` のままなら、センサーはありません（PC の Chromium は角度がすべて `null` のイベントを 1 回出し、その後は何も出しません）。同じコマンドトークンで始める `<wcs-timer interval="2000" once manual>` が、その時点をページに知らせます。
 
@@ -150,11 +150,11 @@ npm install @wcstack/tilt
 
 **タップから聞く。** iPhone / iPad の Safari が動作と方向の質問を出すのは、`DeviceOrientationEvent.requestPermission()` をタップ（クリックのハンドラ。上の例はそうしています）から呼んだときだけです。それ以外——ページの読み込み時、タイマーから——の呼び出しは、iOS が `NotAllowedError` で reject し、何も表示しません。
 
-**質問を出せなかったことは、利用者の拒否ではありません。** 4.25（未リリース）から、この reject は `permissionState` を変えません——変わるのはブラウザが答えたときだけです: `"granted"`、それ以外の答えは `"denied"`。reject は `error` に入り、`errorInfo.code: "not-allowed"`・`recoverable: true` になります（タップからの呼び出しなら許可されうるため）。コマンドの promise は、変わっていない `permissionState` で resolve します。4.24 までは reject が `permissionState: "denied"`・`recoverable: false` にしていたので、ページは、聞かれてもいない利用者に「拒否しました」と告げていました。「拒否されました」と書くのは `permissionState: "denied"` のときだけにし、`recoverable: true` の `error` にはボタンをもう一度出してください。
+**質問を出せなかったことは、利用者の拒否ではありません。** 4.25 から、この reject は `permissionState` を変えません——変わるのはブラウザが答えたときだけです: `"granted"`、それ以外の答えは `"denied"`。reject は `error` に入り、`errorInfo.code: "not-allowed"`・`recoverable: true` になります（タップからの呼び出しなら許可されうるため）。コマンドの promise は、変わっていない `permissionState` で resolve します。4.24 までは reject が `permissionState: "denied"`・`recoverable: false` にしていたので、ページは、聞かれてもいない利用者に「拒否しました」と告げていました。「拒否されました」と書くのは `permissionState: "denied"` のときだけにし、`recoverable: true` の `error` にはボタンをもう一度出してください。
 
 **2 回目の訪問。** 再読み込みの後、`permissionState` はまた `"unknown"` です。要素はページの読み込みをまたいで何も覚えず、iOS が答えをページに教えるのはページが聞いたときだけで、聞くにはタップが要ります。つまり、戻ってきた利用者も同じボタンから始まります。「この利用者は前に許可した」ことを覚えておきたいページは、自分で控えを持ち（たとえば `<wcs-storage>`）、文言の出し分けに使ってください。その場合も、値を期待する前にタップから `requestPermission()` を呼びます。
 
-**ゲートは 2 つ。** iOS は方向と動きを 2 つのメソッドでゲートします: `<wcs-tilt>` が呼ぶ `DeviceOrientationEvent.requestPermission()` と、4.25（未リリース）から `<wcs-accelerometer>` / `<wcs-gyroscope>` が呼ぶ `DeviceMotionEvent.requestPermission()`。要素はそれぞれ自分の分だけを聞き、それぞれの `permissionState` を持ちます。両方を使うページは 1 回のタップで両方を聞きます——1 つのハンドラが両方のコマンドを emit できます:
+**ゲートは 2 つ。** iOS は方向と動きを 2 つのメソッドでゲートします: `<wcs-tilt>` が呼ぶ `DeviceOrientationEvent.requestPermission()` と、4.25 から `<wcs-accelerometer>` / `<wcs-gyroscope>` が呼ぶ `DeviceMotionEvent.requestPermission()`。要素はそれぞれ自分の分だけを聞き、それぞれの `permissionState` を持ちます。両方を使うページは 1 回のタップで両方を聞きます——1 つのハンドラが両方のコマンドを emit できます:
 
 ```html
 <wcs-tilt data-wcs="command.requestPermission: $command.ask; command.start: $command.start"></wcs-tilt>
@@ -231,7 +231,7 @@ form:has(wcs-tilt:state(error)) .banner { display: block; }
 
 - **connect時に自動startしません。**
 - **`@wcstack/permission`とは合成しません**（対応するPermissions APIエントリが存在しないため）——`permissionState`はローカルで追跡します。
-- **`errorInfo` taxonomy（additive）。** `error`と並んで、`<wcs-tilt>`は*同一の*失敗を安定した`WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類したserializableな`errorInfo`（`wcs-tilt:error-info-changed`）を公開します。`error`の形状（`{ error: <rejectの理由> }`）は変えません。rejectされた`requestPermission()`は理由の`Error.name`で分類されます: `NotAllowedError`（呼び出しがタップの中でなかったので、iOSが質問を出さなかった）→ `not-allowed`（phase `start`、4.25（未リリース）から`recoverable: true`——タップからの呼び出しなら成功しうる）、それ以外（別の失敗、非`Error`のreason）→ `tilt-error`（phase `execute`、`recoverable: false`）。4.25（未リリース）から、`DeviceOrientationEvent`そのものが無いブラウザ（一部のデスクトップブラウザ）は、`requestPermission()`でも`start()`でも`capability-missing`（phase `probe`、`recoverable: false`）になり、`error`は`{ error: { name: "unsupported", message: "DeviceOrientationEvent is not supported in this browser." } }`です。4.24までは、そこで`requestPermission()`が`"granted"`と答え、`start()`は来るはずのないイベントを待っていました。`DeviceOrientationEvent`はあるが`requestPermission`が無い環境（Android、デスクトップ）が即`"granted"`になるのは変わりません。`errorInfo`は`error`とまったく同じタイミングで遷移し（ブラウザが答えたときに`null`へクリア）、共有の`WcsIoErrorInfo`型と`WCS_TILT_ERROR_CODE`定数はexportされています。
+- **`errorInfo` taxonomy（additive）。** `error`と並んで、`<wcs-tilt>`は*同一の*失敗を安定した`WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類したserializableな`errorInfo`（`wcs-tilt:error-info-changed`）を公開します。`error`の形状（`{ error: <rejectの理由> }`）は変えません。rejectされた`requestPermission()`は理由の`Error.name`で分類されます: `NotAllowedError`（呼び出しがタップの中でなかったので、iOSが質問を出さなかった）→ `not-allowed`（phase `start`、4.25 から`recoverable: true`——タップからの呼び出しなら成功しうる）、それ以外（別の失敗、非`Error`のreason）→ `tilt-error`（phase `execute`、`recoverable: false`）。4.25 から、`DeviceOrientationEvent`そのものが無いブラウザ（一部のデスクトップブラウザ）は、`requestPermission()`でも`start()`でも`capability-missing`（phase `probe`、`recoverable: false`）になり、`error`は`{ error: { name: "unsupported", message: "DeviceOrientationEvent is not supported in this browser." } }`です。4.24までは、そこで`requestPermission()`が`"granted"`と答え、`start()`は来るはずのないイベントを待っていました。`DeviceOrientationEvent`はあるが`requestPermission`が無い環境（Android、デスクトップ）が即`"granted"`になるのは変わりません。`errorInfo`は`error`とまったく同じタイミングで遷移し（ブラウザが答えたときに`null`へクリア）、共有の`WcsIoErrorInfo`型と`WCS_TILT_ERROR_CODE`定数はexportされています。
 - `_gen`世代ガードは無し: 購読は完全に同期的です。
 - **非secure context（素のHTTP）では`deviceorientation`は一切発火しません**——ブラウザがネイティブに抑止するため、傾き値は`null`のまま・`wcs-tilt:change`は飛ばず・`permissionState`も（`requestPermission()`を呼ばない限り）`"unknown"`のまま変化しません。`requestPermission()`では検出できません: gatingの無いプラットフォームでは何も問い合わせずに`"granted"`を返します。`supported`なら分かります——非secure originでは`false`です。何も起きないときは、まず配信元（HTTPS/localhost）を確認してください。
 - **Permissions-Policyでゲートされます。** `deviceorientation`イベントは`accelerometer`と`gyroscope`のPermissions-Policyディレクティブが許可されている場合にのみ発火します（既定allowlist: `self`、Device Orientation Events仕様§4準拠）。クロスオリジンの`<iframe>`内で`<wcs-tilt>`を使うには、その`<iframe>`要素に`allow="accelerometer; gyroscope"`が必要です——無いとイベントは無音のまま一切発火しません。上記の非secure originのケースと同じ失敗モードです。ページが自分のポリシーを読めるブラウザ（Chromium）では、そこで`supported`が`false`になります。
@@ -257,7 +257,7 @@ core.start();
 core.dispose();
 ```
 
-4.25（未リリース）から、`core.supported` はいつでも読め、`core.observe()`（または `core.publishSupported()`）は、最後に dispatch した値と違うときに `wcs-tilt:supported-changed` を dispatch します。
+4.25 から、`core.supported` はいつでも読め、`core.observe()`（または `core.publishSupported()`）は、最後に dispatch した値と違うときに `wcs-tilt:supported-changed` を dispatch します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

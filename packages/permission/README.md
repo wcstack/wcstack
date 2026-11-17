@@ -10,7 +10,7 @@ It is an **async primitive node** that turns a browser permission grant into rea
 With `@wcstack/state`, `<wcs-permission>` can be bound directly through path contracts:
 
 - **input surface**: `name`, `user-visible-only`, `sysex`
-- **output state surface**: `state`, `granted`, `denied`, `prompt`, `unsupported`, and — since 4.25 (not released yet) — `unsupportedReason`
+- **output state surface**: `state`, `granted`, `denied`, `prompt`, `unsupported`, and — since 4.25 — `unsupportedReason`
 
 This means permission-aware UI — banners, gates, capability hints — can be expressed declaratively in HTML, without writing `navigator.permissions.query()` or `change`-listener glue in your UI layer.
 
@@ -28,7 +28,7 @@ So `<wcs-permission>` is a pure **element → state** producer: it *watches*, it
 
 A permission change becomes a **state transition**, not a `change`-listener subscription.
 
-> **A feature this page cannot use is `"unsupported"`.** Where the Permissions API is absent, or the browser rejects the requested permission name (support varies widely: Firefox has no `clipboard-read`, Safari omits several names), `<wcs-permission>` reports `state = "unsupported"` instead of throwing. Since 4.5 it does so for a page that cannot use the feature, too: a page that is not a secure context (HTTPS, or `localhost`), and a feature a Permissions-Policy turns off (the server's `Permissions-Policy` header, or an `<iframe>` without `allow="camera"`). The Permissions API itself does not tell these apart from a refusal: Chromium answers `"denied"` on an insecure origin and `"granted"` in a policy-blocked frame. So up to 4.4 a page told its user to allow the camera in the site settings, where it already was allowed, or could not be. `"denied"` now means a refusal the site settings can change, and the element that acquires the feature (`<wcs-camera>`, `<wcs-geo>`, `<wcs-listen>`, `<wcs-notify>`) reports `"unsupported"` in the same cases. Since 4.25 (not released yet), [`unsupportedReason`](#unsupportedreason--why-it-is-unsupported) says which of them it is.
+> **A feature this page cannot use is `"unsupported"`.** Where the Permissions API is absent, or the browser rejects the requested permission name (support varies widely: Firefox has no `clipboard-read`, Safari omits several names), `<wcs-permission>` reports `state = "unsupported"` instead of throwing. Since 4.5 it does so for a page that cannot use the feature, too: a page that is not a secure context (HTTPS, or `localhost`), and a feature a Permissions-Policy turns off (the server's `Permissions-Policy` header, or an `<iframe>` without `allow="camera"`). The Permissions API itself does not tell these apart from a refusal: Chromium answers `"denied"` on an insecure origin and `"granted"` in a policy-blocked frame. So up to 4.4 a page told its user to allow the camera in the site settings, where it already was allowed, or could not be. `"denied"` now means a refusal the site settings can change, and the element that acquires the feature (`<wcs-camera>`, `<wcs-geo>`, `<wcs-listen>`, `<wcs-notify>`) reports `"unsupported"` in the same cases. Since 4.25, [`unsupportedReason`](#unsupportedreason--why-it-is-unsupported) says which of them it is.
 
 ## Install
 
@@ -92,7 +92,7 @@ See `examples/state-permission-banner` for the full demo.
 
 ### 5. Say why it is unsupported
 
-Since 4.25 (not released yet), `unsupportedReason` tells the four meanings of `"unsupported"` apart, so the page can say something the user can act on:
+Since 4.25, `unsupportedReason` tells the four meanings of `"unsupported"` apart, so the page can say something the user can act on:
 
 ```html
 <wcs-state>
@@ -128,13 +128,13 @@ Since 4.25 (not released yet), `unsupportedReason` tells the four meanings of `"
 | `denied`      | `wcs-permission:change`| `true` when `state === "denied"`.                                       |
 | `prompt`      | `wcs-permission:change`| `true` when `state === "prompt"`.                                       |
 | `unsupported` | `wcs-permission:change`| `true` when the permission cannot be queried in this environment.       |
-| `unsupportedReason` | `wcs-permission:unsupported-reason-changed` | Since 4.25 (not released yet). Why `state` is `"unsupported"` — `"policy-blocked"` / `"insecure-context"` / `"no-permissions-api"` / `"unknown-name"` — or `null` while it is not. See below. |
+| `unsupportedReason` | `wcs-permission:unsupported-reason-changed` | Since 4.25. Why `state` is `"unsupported"` — `"policy-blocked"` / `"insecure-context"` / `"no-permissions-api"` / `"unknown-name"` — or `null` while it is not. See below. |
 
 The first five derive from the single `wcs-permission:change` event (the booleans change in lockstep with `state`). `unsupportedReason` has its own event, with the reason as `detail`.
 
 ### `unsupportedReason` — why it is `unsupported`
 
-Since 4.25 (not released yet). `"unsupported"` folds four different situations into one state (a decision of 4.5 that stays: for a gate, "cannot be used here" is one answer). They call for different words to the user, so `unsupportedReason` says which one it is:
+Since 4.25. `"unsupported"` folds four different situations into one state (a decision of 4.5 that stays: for a gate, "cannot be used here" is one answer). They call for different words to the user, so `unsupportedReason` says which one it is:
 
 | `unsupportedReason` | What happened | What the page can tell the user |
 | ------------------- | ------------- | ------------------------------- |
@@ -157,7 +157,7 @@ The last two are about the *question*, not the feature: the browser cannot say, 
 - **Attributes are read at connect time, not observed.** `<wcs-permission>` does not implement `observedAttributes` / `attributeChangedCallback`. The descriptor (`name` + extras) is fixed when the element connects — since 4.8, one microtask after it, with the attributes as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23), so an element `@wcstack/router` puts back with the next route's `name` queries that permission, not the previous one; changing `name` imperatively after connect does not re-query. To watch a different permission, use a separate element (or re-connect).
 - **Reconnect re-queries.** Removing and re-inserting the element runs `connectedCallback` again, re-issuing the query and re-subscribing to `change` (matching how it tears the subscription down on disconnect). A query still in flight when the element disconnects is invalidated: if it resolves afterwards it neither updates `state` nor attaches a `change` listener, so a rapid disconnect→reconnect cannot leak a stale subscription.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, so the server renderer waits for the connect-time query to settle before snapshotting.
-- **Silent failure handling (zero-log).** Consistent with the rest of wcstack's zero-dependency philosophy, `<wcs-permission>` never logs or throws. A missing Permissions API, a browser that rejects the requested permission name, or a missing/empty `name` attribute all silently resolve to `state = "unsupported"`. Bind `unsupported` (or `state`) to react, and `unsupportedReason` (since 4.25 (not released yet)) to say why. Since 4.25 (not released yet) "never logs" covers the browser's own console too: the element asks the page's Permissions-Policy only about a feature that policy lists. Up to 4.24, asking about a name the browser's policy does not know — `ambient-light-sensor` without its flag — made Chromium print `Unrecognized feature: 'ambient-light-sensor'`.
+- **Silent failure handling (zero-log).** Consistent with the rest of wcstack's zero-dependency philosophy, `<wcs-permission>` never logs or throws. A missing Permissions API, a browser that rejects the requested permission name, or a missing/empty `name` attribute all silently resolve to `state = "unsupported"`. Bind `unsupported` (or `state`) to react, and `unsupportedReason` (since 4.25) to say why. Since 4.25 "never logs" covers the browser's own console too: the element asks the page's Permissions-Policy only about a feature that policy lists. Up to 4.24, asking about a name the browser's policy does not know — `ambient-light-sensor` without its flag — made Chromium print `Unrecognized feature: 'ambient-light-sensor'`.
 
 ## CSS styling with `:state()`
 
@@ -230,7 +230,7 @@ perm.addEventListener("wcs-permission:change", (e) => {
 
 await perm.ready;        // first query has settled
 console.log(perm.granted);
-console.log(perm.unsupportedReason); // since 4.25 (not released yet): null, or why state is "unsupported"
+console.log(perm.unsupportedReason); // since 4.25: null, or why state is "unsupported"
 
 // later, when done:
 perm.dispose();          // detach the live `change` listener

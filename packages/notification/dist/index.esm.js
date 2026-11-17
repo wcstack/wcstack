@@ -71,18 +71,21 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/notification","version":"4.24.2"};
+var pkg = {"name":"@wcstack/notification","version":"4.25.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
 // Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
 // Run `node scripts/sync-io-core.mjs` after editing the source.
 // ===========================================================================
-/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+/**
+ * Permissions-Policy が制御する機能。permission 名と同じ文字列と、permission の無い機能
+ * (`fullscreen`・`picture-in-picture`・`web-share`: 要素が「このページで使えるか」を言うために聞く)。
+ */
 const POLICY_CONTROLLED = new Set([
     "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
     "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
-    "ambient-light-sensor", "display-capture",
+    "ambient-light-sensor", "display-capture", "fullscreen", "picture-in-picture", "web-share",
 ]);
 function featureUnavailable(feature) {
     const g = globalThis;
@@ -94,6 +97,11 @@ function featureUnavailable(feature) {
     if (policy === undefined || typeof policy.allowsFeature !== "function")
         return null;
     try {
+        // このブラウザのポリシーが知らない名前は聞かない: Chromium は知らない名前の allowsFeature に
+        // false を返したうえでコンソールに「Unrecognized feature」を出す(フラグの無い
+        // `ambient-light-sensor`、デスクトップの `web-share`)。知らない機能は切られてもいない。
+        if (typeof policy.features === "function" && !policy.features().includes(feature))
+            return null;
         return policy.allowsFeature(feature) ? null : "policy-blocked";
     }
     catch {

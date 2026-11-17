@@ -9,13 +9,13 @@
 `@wcstack/state` と組み合わせると、`<wcs-accelerometer>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `frequency`（サンプリングレート、Hz）
-- **出力 state サーフェス**: `x`、`y`、`z`、`error`、`errorInfo`、そして 4.25（未リリース）から `permissionState`、`supported`
+- **出力 state サーフェス**: `x`、`y`、`z`、`error`、`errorInfo`、そして 4.25 から `permissionState`、`supported`
 
 `@wcstack/accelerometer` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
 - **Core**（`AccelerometerCore`）がプラットフォームの`Accelerometer`を構築し、live な`reading`/`error`イベントを追従
 - **Shell**（`<wcs-accelerometer>`）がその state を DOM ライフサイクルに接続
-- **Binding Contract**（`static wcBindable`）が観測可能な`properties`と`start`/`stop`の`commands`（4.25（未リリース）から`requestPermission`も）を宣言
+- **Binding Contract**（`static wcBindable`）が観測可能な`properties`と`start`/`stop`の`commands`（4.25 から`requestPermission`も）を宣言
 
 ## なぜ存在するか — プラットフォームAPI自体がnever-throwと最初から一致する稀な例
 
@@ -23,7 +23,7 @@ Generic Sensor API の`Accelerometer`/`Gyroscope`/`Magnetometer`/`AmbientLightSe
 
 > **`@wcstack/permission`との合成を推奨。** `navigator.permissions.query({name:"accelerometer"})`が既に存在するため、`<wcs-accelerometer>`は`<wcs-permission name="accelerometer">`と併置して`granted`/`denied`/`prompt`状態を得てください（権限状態はこのノード自身では重複実装しません、`docs/sensor-tag-design.md`参照）。
 
-> **Chromium/Android中心の対応。** デスクトップでは`Accelerometer`クラスが存在しても`SecurityError`になりがちです。unsupported/deniedを既定状態として設計してください。4.25（未リリース）から、`Accelerometer`クラスは無いが`devicemotion`のあるブラウザ（iPhone / iPad の Safari、Android の Firefox）では、そのイベントから読みます: [どこで動くか](#どこで動くか--センサーのクラスまたは-devicemotion)を参照。
+> **Chromium/Android中心の対応。** デスクトップでは`Accelerometer`クラスが存在しても`SecurityError`になりがちです。unsupported/deniedを既定状態として設計してください。4.25 から、`Accelerometer`クラスは無いが`devicemotion`のあるブラウザ（iPhone / iPad の Safari、Android の Firefox）では、そのイベントから読みます: [どこで動くか](#どこで動くか--センサーのクラスまたは-devicemotion)を参照。
 
 ## インストール
 
@@ -86,11 +86,11 @@ npm install @wcstack/accelerometer
 <button data-wcs="onclick: $command.startAccel; disabled: accelGranted|not">開始</button>
 ```
 
-バインドする state パスは事前にすべて宣言する必要があります — 未宣言のパスへのバインドは初期化時に例外を投げます。`data-wcs`パス内の否定は先頭`!`ではなく`|not`フィルタ(`accelGranted|not`)で行います。この例が待つのは Generic Sensor の許可で、これは `Accelerometer` クラスのものです。要素が代わりに `devicemotion` を読むところ（iPhone）では、その許可は何も教えません: 4.25（未リリース）から、そこでは例 3 を使ってください。
+バインドする state パスは事前にすべて宣言する必要があります — 未宣言のパスへのバインドは初期化時に例外を投げます。`data-wcs`パス内の否定は先頭`!`ではなく`|not`フィルタ(`accelGranted|not`)で行います。この例が待つのは Generic Sensor の許可で、これは `Accelerometer` クラスのものです。要素が代わりに `devicemotion` を読むところ（iPhone）では、その許可は何も教えません: 4.25 から、そこでは例 3 を使ってください。
 
 ### 3. 振った回数を数える — iPhone でも
 
-4.25（未リリース）から。1 回のタップで（聞くことがあるところでは）許可を聞いて開始します。読み取りは event token で state のハンドラへ届き、ハンドラは加速度の向きではなく大きさを見ます:
+4.25 から。1 回のタップで（聞くことがあるところでは）許可を聞いて開始します。読み取りは event token で state のハンドラへ届き、ハンドラは加速度の向きではなく大きさを見ます:
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
@@ -139,7 +139,7 @@ npm install @wcstack/accelerometer
 
 | 属性        | 型     | 既定値 | 説明 |
 | ----------- | ------ | ------ | ---- |
-| `frequency` | number | —      | サンプリングレート（Hz）。`Accelerometer`コンストラクタへそのまま渡る。4.25（未リリース）から: `devicemotion` のフォールバックでは頻度を決める代わりに読み取りを間引き（[どこで動くか](#どこで動くか--センサーのクラスまたは-devicemotion)）、正の数でない値は `start()` のときにコンソールへ 1 回言います（`[wcs/frequency-invalid]`、注意・制限を参照）。 |
+| `frequency` | number | —      | サンプリングレート（Hz）。`Accelerometer`コンストラクタへそのまま渡る。4.25 から: `devicemotion` のフォールバックでは頻度を決める代わりに読み取りを間引き（[どこで動くか](#どこで動くか--センサーのクラスまたは-devicemotion)）、正の数でない値は `start()` のときにコンソールへ 1 回言います（`[wcs/frequency-invalid]`、注意・制限を参照）。 |
 
 **`null` と `undefined`。** 属性に対応する入力（`frequency`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（プラットフォームのサンプリングレート）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
 
@@ -152,8 +152,8 @@ npm install @wcstack/accelerometer
 | `z`        | `wcs-accelerometer:reading` | z軸方向の加速度。 |
 | `error`    | `wcs-accelerometer:error`   | 正規化された`{ error, message }`、無ければ`null`。 |
 | `errorInfo` | `wcs-accelerometer:error-info-changed` | シリアライズ可能な失敗分類（`WcsIoErrorInfo` — 安定した `code` / `phase` / `recoverable`）、無ければ`null`。`error`から派生する追加的な出力で、既存の`error`の形状は不変。 |
-| `permissionState` | `wcs-accelerometer:permission-changed` | 4.25（未リリース）から。`"granted"` \| `"denied"` \| `"unknown"`——`requestPermission()`へのブラウザの答え。答えるまでは`"unknown"`。Generic Sensor の許可ではありません（それは`<wcs-permission name="accelerometer">`）。 |
-| `supported` | `wcs-accelerometer:supported-changed` | 4.25（未リリース）から。このページでセンサーを使えるなら`true`。[`supported`](#supported--このページで使えるか)を参照。 |
+| `permissionState` | `wcs-accelerometer:permission-changed` | 4.25 から。`"granted"` \| `"denied"` \| `"unknown"`——`requestPermission()`へのブラウザの答え。答えるまでは`"unknown"`。Generic Sensor の許可ではありません（それは`<wcs-permission name="accelerometer">`）。 |
+| `supported` | `wcs-accelerometer:supported-changed` | 4.25 から。このページでセンサーを使えるなら`true`。[`supported`](#supported--このページで使えるか)を参照。 |
 
 `x`/`y`/`z`は単一の`wcs-accelerometer:reading`イベントから派生します（ネイティブの1回の`reading`イベントで3軸が同時に更新される）。
 
@@ -161,13 +161,13 @@ npm install @wcstack/accelerometer
 
 | コマンド | 非同期 | 説明 |
 | -------- | ------ | ---- |
-| `requestPermission` | はい | 4.25（未リリース）から。要素が`devicemotion`を読み、ブラウザに`DeviceMotionEvent.requestPermission()`がある（iPhone / iPad の Safari）とき、それを呼ぶ——**タップから**。センサーを開始できるほかの環境では聞くことが無く、即`"granted"`でresolveする。呼び出しの後の`permissionState`でresolveし、rejectしない。 |
-| `start`  | いいえ | センサーを構築（never-throw: コンストラクタの同期例外はキャッチし`error`へ）し読み取りを開始する。4.25（未リリース）から: ブラウザに`Accelerometer`クラスが無ければ代わりに`devicemotion`を購読し、センサー自身の`error`イベントの後は次の`start()`が新しいセンサーを作る。 |
+| `requestPermission` | はい | 4.25 から。要素が`devicemotion`を読み、ブラウザに`DeviceMotionEvent.requestPermission()`がある（iPhone / iPad の Safari）とき、それを呼ぶ——**タップから**。センサーを開始できるほかの環境では聞くことが無く、即`"granted"`でresolveする。呼び出しの後の`permissionState`でresolveし、rejectしない。 |
+| `start`  | いいえ | センサーを構築（never-throw: コンストラクタの同期例外はキャッチし`error`へ）し読み取りを開始する。4.25 から: ブラウザに`Accelerometer`クラスが無ければ代わりに`devicemotion`を購読し、センサー自身の`error`イベントの後は次の`start()`が新しいセンサーを作る。 |
 | `stop`   | いいえ | センサーを停止しリスナーを解除する。未開始でも安全に呼べる。 |
 
 ## `supported` — このページで使えるか
 
-4.25（未リリース）から。`supported` は、このページでセンサーを使えるときに `true` です: ブラウザに `Accelerometer` クラスか `DeviceMotionEvent` があり、ページが secure context で、Permissions-Policy が `accelerometer` を切っていない（サーバーのヘッダ、または `allow="accelerometer"` の無い `<iframe>`——ページが自分のポリシーを読めるブラウザ、つまり Chromium で分かります）。`false` のところでは `start()` は動かず、タップしても変わりません: 機能を出さないでください。
+4.25 から。`supported` は、このページでセンサーを使えるときに `true` です: ブラウザに `Accelerometer` クラスか `DeviceMotionEvent` があり、ページが secure context で、Permissions-Policy が `accelerometer` を切っていない（サーバーのヘッダ、または `allow="accelerometer"` の無い `<iframe>`——ページが自分のポリシーを読めるブラウザ、つまり Chromium で分かります）。`false` のところでは `start()` は動かず、タップしても変わりません: 機能を出さないでください。
 
 利用者が許可するかどうかは**言いません**（`permissionState`、センサーのクラスについては `<wcs-permission name="accelerometer">`）。そして**端末にセンサーがあるかどうかは言えません**: PC には API があってセンサーがありません。そこでは読み取りが来ないだけか、センサーが `error` で知らせます。
 
@@ -182,7 +182,7 @@ npm install @wcstack/accelerometer
 
 ## どこで動くか — センサーのクラス、または `devicemotion`
 
-4.25（未リリース）から。`start()` は、ブラウザに Generic Sensor の `Accelerometer` クラスがあればそれを、無ければ `window` の `devicemotion` イベントを使います。どちらを使うかは `start()` のたびに決めます。
+4.25 から。`start()` は、ブラウザに Generic Sensor の `Accelerometer` クラスがあればそれを、無ければ `window` の `devicemotion` イベントを使います。どちらを使うかは `start()` のたびに決めます。
 
 | ブラウザ | `start()` が読むもの | `requestPermission()` |
 | --- | --- | --- |
@@ -203,7 +203,7 @@ npm install @wcstack/accelerometer
 
 ## iPhone では
 
-4.25（未リリース）から。iPhone / iPad の Safari には `Accelerometer` クラスが無いので、`<wcs-accelerometer>` はそこでは `devicemotion` を読みます。iOS はこのイベントを `DeviceMotionEvent.requestPermission()` でゲートします:
+4.25 から。iPhone / iPad の Safari には `Accelerometer` クラスが無いので、`<wcs-accelerometer>` はそこでは `devicemotion` を読みます。iOS はこのイベントを `DeviceMotionEvent.requestPermission()` でゲートします:
 
 - **タップから聞く。** iOS が質問を出すのは、このメソッドをタップから呼んだときだけです。振る例のように、`requestPermission` と `start` を同じタップのハンドラから emit してください。`start()` は許可を確かめません: すぐに購読し、読み取りは利用者が許可してから届き始めます。
 - **質問を出せなかったことは、利用者の拒否ではありません。** タップの外から呼ぶと、iOS は何も表示せずに reject します。そのとき `permissionState` は変わりません——変わるのはブラウザが答えたときだけです: `"granted"`、それ以外の答えは `"denied"`。reject は `error` に入り、`errorInfo.code: "not-allowed"`・`recoverable: true` になります（タップからの呼び出しなら許可されうるため）。「拒否されました」と書くのは `permissionState: "denied"` のときだけにしてください。
@@ -212,13 +212,13 @@ npm install @wcstack/accelerometer
 
 ## 注意・制限
 
-- **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。`requestPermission()`（4.25（未リリース）から）はブラウザを待ちますが、その後に書くのは`permissionState` / `error`の値だけで、切断とレースするものはありません。
-- **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。4.25（未リリース）から例外が 1 つあります: ブラウザが`requestPermission()`に答えると、それまでの`error`は消えます（`<wcs-tilt>`と同じ）。
-- **`error`イベントの後、`start()`はまた動きます。** 4.25（未リリース）から、センサーが自分の`error`イベント（たとえば`NotReadableError`）を出すと、失敗したセンサーは片付けられ、次の`start()`が新しいセンサーを作ります。4.24までは、そのエラーの後の`start()`は`stop()`を呼ぶまで何もせず、それを知らせるものもありませんでした。`error`そのものは上記のとおり残ります。
-- **`errorInfo` 分類（taxonomy）。** 同じ失敗をシリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-accelerometer:error-info-changed`）で、`error`の形状は変更しません。正規化された error 名に応じて対応づけます: `unsupported` → `capability-missing`（phase `probe`）、`SecurityError` / `NotAllowedError` → `not-allowed`（phase `start`）、`NotReadableError` → `not-readable`（phase `execute`）、その他のセンサー失敗 → `sensor-error`（phase `execute`）。いずれも `recoverable: false` ですが、4.25（未リリース）から例外が 1 つあります: reject された `requestPermission()`（`NotAllowedError`——呼び出しがタップの中でなかったので、iOS が質問を出さなかった）は `not-allowed` で `recoverable: true` です（タップからの呼び出しなら成功しうるため）。`errorInfo` は `error` と完全に同じタイミングで遷移するため、同様に **sticky** で、`error` が `null` に戻るときにのみ `null` に戻ります。共有の `WcsIoErrorInfo` 型と `WCS_ACCELEROMETER_ERROR_CODE` 定数はエクスポートされます。
-- **使えない`frequency`は知らせます。** 4.25（未リリース）から、空でなく正の数でもない`frequency`属性（`frequency="60hz"`、`frequency="0"`）で`start()`が走ると、コンソールに要素ごとに 1 回警告が出ます: `[@wcstack/accelerometer] [wcs/frequency-invalid] <wcs-accelerometer> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` センサーは既定の頻度で開始します——これまでも同じでしたが、何も言いませんでした。ブラウザが許す上限を超える頻度はブラウザが丸め、それを知らせるものはありません。
+- **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。`requestPermission()`（4.25 から）はブラウザを待ちますが、その後に書くのは`permissionState` / `error`の値だけで、切断とレースするものはありません。
+- **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。4.25 から例外が 1 つあります: ブラウザが`requestPermission()`に答えると、それまでの`error`は消えます（`<wcs-tilt>`と同じ）。
+- **`error`イベントの後、`start()`はまた動きます。** 4.25 から、センサーが自分の`error`イベント（たとえば`NotReadableError`）を出すと、失敗したセンサーは片付けられ、次の`start()`が新しいセンサーを作ります。4.24までは、そのエラーの後の`start()`は`stop()`を呼ぶまで何もせず、それを知らせるものもありませんでした。`error`そのものは上記のとおり残ります。
+- **`errorInfo` 分類（taxonomy）。** 同じ失敗をシリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-accelerometer:error-info-changed`）で、`error`の形状は変更しません。正規化された error 名に応じて対応づけます: `unsupported` → `capability-missing`（phase `probe`）、`SecurityError` / `NotAllowedError` → `not-allowed`（phase `start`）、`NotReadableError` → `not-readable`（phase `execute`）、その他のセンサー失敗 → `sensor-error`（phase `execute`）。いずれも `recoverable: false` ですが、4.25 から例外が 1 つあります: reject された `requestPermission()`（`NotAllowedError`——呼び出しがタップの中でなかったので、iOS が質問を出さなかった）は `not-allowed` で `recoverable: true` です（タップからの呼び出しなら成功しうるため）。`errorInfo` は `error` と完全に同じタイミングで遷移するため、同様に **sticky** で、`error` が `null` に戻るときにのみ `null` に戻ります。共有の `WcsIoErrorInfo` 型と `WCS_ACCELEROMETER_ERROR_CODE` 定数はエクスポートされます。
+- **使えない`frequency`は知らせます。** 4.25 から、空でなく正の数でもない`frequency`属性（`frequency="60hz"`、`frequency="0"`）で`start()`が走ると、コンソールに要素ごとに 1 回警告が出ます: `[@wcstack/accelerometer] [wcs/frequency-invalid] <wcs-accelerometer> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` センサーは既定の頻度で開始します——これまでも同じでしたが、何も言いませんでした。ブラウザが許す上限を超える頻度はブラウザが丸め、それを知らせるものはありません。
 - **生の`new Accelerometer(...)`は唯一のガード付き構築ヘルパー以外では呼ばない。** 権限拒否・Permissions-Policyブロックは同期的に例外を投げます。
-- 権限状態（`granted`/`denied`/`prompt`）は意図的にこのノードでは重複実装していません — `<wcs-permission name="accelerometer">`と合成してください。`permissionState`（4.25（未リリース）から）は、iOS の`DeviceMotionEvent.requestPermission()`への答えだけです。これを知らせる Permissions API のエントリはありません。
+- 権限状態（`granted`/`denied`/`prompt`）は意図的にこのノードでは重複実装していません — `<wcs-permission name="accelerometer">`と合成してください。`permissionState`（4.25 から）は、iOS の`DeviceMotionEvent.requestPermission()`への答えだけです。これを知らせる Permissions API のエントリはありません。
 
 ## `:state()` による CSS スタイリング
 
@@ -287,7 +287,7 @@ core.start();
 core.dispose();
 ```
 
-4.25（未リリース）から、`core.supported` はいつでも読め、`core.publishSupported()` は最後に dispatch した値と違うときに `wcs-accelerometer:supported-changed` を dispatch し、`await core.requestPermission()` は聞くことがあるところで聞き、`core.start(frequency)` は `Accelerometer` クラスが無ければ `devicemotion` を読みます。
+4.25 から、`core.supported` はいつでも読め、`core.publishSupported()` は最後に dispatch した値と違うときに `wcs-accelerometer:supported-changed` を dispatch し、`await core.requestPermission()` は聞くことがあるところで聞き、`core.start(frequency)` は `Accelerometer` クラスが無ければ `devicemotion` を読みます。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

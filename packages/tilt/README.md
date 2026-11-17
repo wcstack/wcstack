@@ -10,7 +10,7 @@ It is an **async primitive node** that turns device tilt (`deviceorientation`) i
 With `@wcstack/state`, `<wcs-tilt>` can be bound directly through path contracts:
 
 - **input surface**: none
-- **output state surface**: `alpha`, `beta`, `gamma`, `absolute`, `permissionState`, `error`, `errorInfo`, and — since 4.25 (not released yet) — `heading`, `supported`
+- **output state surface**: `alpha`, `beta`, `gamma`, `absolute`, `permissionState`, `error`, `errorInfo`, and — since 4.25 — `heading`, `supported`
 
 ## Why this exists — the iOS gesture-gate absorption sibling to `@wcstack/idle`
 
@@ -59,7 +59,7 @@ Every path referenced by `data-wcs` (`tiltBeta`, `tiltGamma`, `tiltTransform`) m
 
 ### A compass (`heading`)
 
-Since 4.25 (not released yet), `heading` is the direction the top of the device points, in degrees clockwise from north (0 = north, 90 = east), or `null` until the browser has said it.
+Since 4.25, `heading` is the direction the top of the device points, in degrees clockwise from north (0 = north, 90 = east), or `null` until the browser has said it.
 
 ```html
 <wcs-state>
@@ -116,11 +116,11 @@ Where `heading` comes from, per event, in this order:
 | `beta`            | `wcs-tilt:change`           | X-axis rotation. |
 | `gamma`           | `wcs-tilt:change`           | Y-axis rotation. |
 | `absolute`        | `wcs-tilt:change`           | Whether the reading is relative to the Earth's frame. Reliability varies by browser — verify on your target devices. |
-| `heading`         | `wcs-tilt:heading-changed`  | Since 4.25 (not released yet). Degrees clockwise from north of the direction the top of the device points, or `null` until known. The event's `detail` is the number. See [A compass](#a-compass-heading). |
+| `heading`         | `wcs-tilt:heading-changed`  | Since 4.25. Degrees clockwise from north of the direction the top of the device points, or `null` until known. The event's `detail` is the number. See [A compass](#a-compass-heading). |
 | `permissionState` | `wcs-tilt:permission-changed` | `"granted"` \| `"denied"` \| `"unknown"`. What the browser answered to `requestPermission()`; `"unknown"` until it answers. |
 | `error`           | `wcs-tilt:error`            | The last `requestPermission()` / `start()` failure (e.g. a rejection outside a tap, or no `DeviceOrientationEvent` in this browser), or `null`. never-throw: failures never reject/throw, they land here instead. |
 | `errorInfo`       | `wcs-tilt:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` shape is unchanged. |
-| `supported`       | `wcs-tilt:supported-changed` | Since 4.25 (not released yet). `true` when this page can use Device Orientation. The event's `detail` is the boolean. See [`supported`](#supported--can-this-page-use-it). |
+| `supported`       | `wcs-tilt:supported-changed` | Since 4.25. `true` when this page can use Device Orientation. The event's `detail` is the boolean. See [`supported`](#supported--can-this-page-use-it). |
 
 `heading` and `wcs-tilt:change` are separate events: an event that carries north does not always carry new angles, and the other way round. Each is same-value guarded.
 
@@ -128,13 +128,13 @@ Where `heading` comes from, per event, in this order:
 
 | Command            | Async | Description |
 | ------------------- | ----- | ------------ |
-| `requestPermission` | yes   | On iOS, calls the gesture-gated static method (**must be invoked from within a real user gesture handler**). Where `DeviceOrientationEvent` has no such method (Android, desktop), resolves to `"granted"` immediately. Resolves to `permissionState` as it is after the call. Since 4.25 (not released yet): a rejection leaves `permissionState` unchanged, and a browser with no `DeviceOrientationEvent` at all is an `error` (`capability-missing`), not `"granted"`. |
-| `start`             | no    | Subscribe to `deviceorientation` (and, since 4.25 (not released yet), to `deviceorientationabsolute` where the browser has it). Idempotent. It does not check the permission. Since 4.25 (not released yet): in a browser with no `DeviceOrientationEvent` it subscribes to nothing and sets `error` (`capability-missing`). |
+| `requestPermission` | yes   | On iOS, calls the gesture-gated static method (**must be invoked from within a real user gesture handler**). Where `DeviceOrientationEvent` has no such method (Android, desktop), resolves to `"granted"` immediately. Resolves to `permissionState` as it is after the call. Since 4.25: a rejection leaves `permissionState` unchanged, and a browser with no `DeviceOrientationEvent` at all is an `error` (`capability-missing`), not `"granted"`. |
+| `start`             | no    | Subscribe to `deviceorientation` (and, since 4.25, to `deviceorientationabsolute` where the browser has it). Idempotent. It does not check the permission. Since 4.25: in a browser with no `DeviceOrientationEvent` it subscribes to nothing and sets `error` (`capability-missing`). |
 | `stop`              | no    | Unsubscribe. Safe to call when not started. The outputs keep their last values. |
 
 ## `supported` — can this page use it
 
-Since 4.25 (not released yet). `supported` is `true` when this page can use Device Orientation: `DeviceOrientationEvent` exists, the page is a secure context, and no Permissions-Policy turns `accelerometer` or `gyroscope` off for it (the server's header, or an `<iframe>` without `allow="accelerometer; gyroscope"` — Chromium sends no `deviceorientation` under one). Where it is `false`, no reading will ever come, and no tap can change that: do not offer the feature.
+Since 4.25. `supported` is `true` when this page can use Device Orientation: `DeviceOrientationEvent` exists, the page is a secure context, and no Permissions-Policy turns `accelerometer` or `gyroscope` off for it (the server's header, or an `<iframe>` without `allow="accelerometer; gyroscope"` — Chromium sends no `deviceorientation` under one). Where it is `false`, no reading will ever come, and no tap can change that: do not offer the feature.
 
 It does **not** say that the user will allow it (that is `permissionState`), and it **cannot say whether the device has a sensor**: a desktop PC has the API and no sensor, and is `supported: true`. A page finds that out by waiting: if `beta` is still `null` a couple of seconds after `start()` — on iOS, after `permissionState` became `"granted"` — there is no sensor (Chromium on a PC fires one event whose angles are all `null`, and then nothing). A `<wcs-timer interval="2000" once manual>` started by the same command token gives the page that moment.
 
@@ -151,11 +151,11 @@ The value is read from the browser each time it is asked for, so a binding gets 
 
 **Ask from a tap.** Safari on an iPhone or iPad shows the motion question only when `DeviceOrientationEvent.requestPermission()` is called from a tap (a click handler; the examples above do that). Called from anywhere else — at page load, from a timer — iOS rejects the call with a `NotAllowedError` and shows nothing.
 
-**A refusal to ask is not a refusal by the user.** Since 4.25 (not released yet), such a rejection leaves `permissionState` as it was — it changes only when the browser answers: `"granted"`, or `"denied"` for any other answer. The rejection lands in `error`, with `errorInfo.code: "not-allowed"` and `recoverable: true`, because a call from a tap can still be granted; the command's promise resolves to the unchanged `permissionState`. Up to 4.24 the rejection set `permissionState: "denied"` and `recoverable: false`, so a page told the user they had refused when they had never been asked. Write "you refused" only for `permissionState: "denied"`; for an `error` with `recoverable: true`, offer the button again.
+**A refusal to ask is not a refusal by the user.** Since 4.25, such a rejection leaves `permissionState` as it was — it changes only when the browser answers: `"granted"`, or `"denied"` for any other answer. The rejection lands in `error`, with `errorInfo.code: "not-allowed"` and `recoverable: true`, because a call from a tap can still be granted; the command's promise resolves to the unchanged `permissionState`. Up to 4.24 the rejection set `permissionState: "denied"` and `recoverable: false`, so a page told the user they had refused when they had never been asked. Write "you refused" only for `permissionState: "denied"`; for an `error` with `recoverable: true`, offer the button again.
 
 **The second visit.** After a reload `permissionState` is `"unknown"` again. The element keeps nothing between page loads, and iOS tells a page its answer only when the page asks — which needs a tap. So a returning user starts at the same button. A page that wants to remember that this user has already allowed keeps its own note (for example with `<wcs-storage>`) to choose its wording, and still calls `requestPermission()` from a tap before it expects readings.
 
-**Two gates.** iOS gates orientation and motion with two methods: `DeviceOrientationEvent.requestPermission()`, which `<wcs-tilt>` calls, and `DeviceMotionEvent.requestPermission()`, which `<wcs-accelerometer>` and `<wcs-gyroscope>` call since 4.25 (not released yet). Each element asks only for its own, and each has its own `permissionState`. A page that uses both asks both from one tap — one handler can emit both commands:
+**Two gates.** iOS gates orientation and motion with two methods: `DeviceOrientationEvent.requestPermission()`, which `<wcs-tilt>` calls, and `DeviceMotionEvent.requestPermission()`, which `<wcs-accelerometer>` and `<wcs-gyroscope>` call since 4.25. Each element asks only for its own, and each has its own `permissionState`. A page that uses both asks both from one tap — one handler can emit both commands:
 
 ```html
 <wcs-tilt data-wcs="command.requestPermission: $command.ask; command.start: $command.start"></wcs-tilt>
@@ -235,7 +235,7 @@ DevTools open; it is not a supported styling hook.
 
 - **Does not auto-start on connect.**
 - **Does not compose with `@wcstack/permission`** (no matching Permissions API entry exists) — `permissionState` is tracked locally.
-- **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-tilt>` publishes a serializable `errorInfo` (`wcs-tilt:error-info-changed`) that classifies the *same* failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape (`{ error: <the rejection reason> }`). A rejected `requestPermission()` is classified by the reason's `Error.name`: a `NotAllowedError` (iOS did not ask, because the call was not in a tap) → `not-allowed` (phase `start`, `recoverable: true` since 4.25 (not released yet) — a call from a tap can succeed); anything else (another failure, a non-`Error` reason) → `tilt-error` (phase `execute`, `recoverable: false`). Since 4.25 (not released yet), a browser with no `DeviceOrientationEvent` at all — some desktop browsers — is `capability-missing` (phase `probe`, `recoverable: false`) from both `requestPermission()` and `start()`, with `error` as `{ error: { name: "unsupported", message: "DeviceOrientationEvent is not supported in this browser." } }`; up to 4.24 `requestPermission()` answered `"granted"` there and `start()` listened for an event that could not come. Where `DeviceOrientationEvent` exists without `requestPermission` (Android, desktop), `"granted"` at once is unchanged. `errorInfo` transitions exactly when `error` does (cleared to `null` when the browser answers); the shared `WcsIoErrorInfo` type and the `WCS_TILT_ERROR_CODE` constants are exported.
+- **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-tilt>` publishes a serializable `errorInfo` (`wcs-tilt:error-info-changed`) that classifies the *same* failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape (`{ error: <the rejection reason> }`). A rejected `requestPermission()` is classified by the reason's `Error.name`: a `NotAllowedError` (iOS did not ask, because the call was not in a tap) → `not-allowed` (phase `start`, `recoverable: true` since 4.25 — a call from a tap can succeed); anything else (another failure, a non-`Error` reason) → `tilt-error` (phase `execute`, `recoverable: false`). Since 4.25, a browser with no `DeviceOrientationEvent` at all — some desktop browsers — is `capability-missing` (phase `probe`, `recoverable: false`) from both `requestPermission()` and `start()`, with `error` as `{ error: { name: "unsupported", message: "DeviceOrientationEvent is not supported in this browser." } }`; up to 4.24 `requestPermission()` answered `"granted"` there and `start()` listened for an event that could not come. Where `DeviceOrientationEvent` exists without `requestPermission` (Android, desktop), `"granted"` at once is unchanged. `errorInfo` transitions exactly when `error` does (cleared to `null` when the browser answers); the shared `WcsIoErrorInfo` type and the `WCS_TILT_ERROR_CODE` constants are exported.
 - No `_gen` generation guard: subscribing is fully synchronous.
 - **On a non-secure origin (plain HTTP), `deviceorientation` never fires** — the browser suppresses it natively, so tilt values stay `null`, `wcs-tilt:change` never dispatches, and `permissionState` stays `"unknown"` (until you call `requestPermission()`). Calling `requestPermission()` cannot detect this: on gate-less platforms it resolves `"granted"` without probing anything. `supported` can — it is `false` on a non-secure origin. If nothing seems to happen, check your origin first.
 - **Permissions-Policy gate.** The `deviceorientation` event is only dispatched when the `accelerometer` and `gyroscope` Permissions-Policy directives are allowed (default allowlist: `self`, per the Device Orientation Events spec §4). Using `<wcs-tilt>` inside a cross-origin `<iframe>` requires `allow="accelerometer; gyroscope"` on that `<iframe>` element — otherwise the event silently never fires, the same failure mode as the non-secure-origin case above. `supported` is `false` there where the browser lets a page read its policy (Chromium).
@@ -261,7 +261,7 @@ core.start();
 core.dispose();
 ```
 
-Since 4.25 (not released yet), `core.supported` can be read at any time, and `core.observe()` (or `core.publishSupported()`) dispatches `wcs-tilt:supported-changed` when the value differs from the last one dispatched.
+Since 4.25, `core.supported` can be read at any time, and `core.observe()` (or `core.publishSupported()`) dispatches `wcs-tilt:supported-changed` when the value differs from the last one dispatched.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

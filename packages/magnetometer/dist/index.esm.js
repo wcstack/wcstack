@@ -58,7 +58,43 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/magnetometer","version":"4.24.2"};
+var pkg = {"name":"@wcstack/magnetometer","version":"4.25.0"};
+
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/**
+ * Permissions-Policy が制御する機能。permission 名と同じ文字列と、permission の無い機能
+ * (`fullscreen`・`picture-in-picture`・`web-share`: 要素が「このページで使えるか」を言うために聞く)。
+ */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture", "fullscreen", "picture-in-picture", "web-share",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        // このブラウザのポリシーが知らない名前は聞かない: Chromium は知らない名前の allowsFeature に
+        // false を返したうえでコンソールに「Unrecognized feature」を出す(フラグの無い
+        // `ambient-light-sensor`、デスクトップの `web-share`)。知らない機能は切られてもいない。
+        if (typeof policy.features === "function" && !policy.features().includes(feature))
+            return null;
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
 
 /**
  * magnetometerCapabilities.ts
@@ -157,6 +193,10 @@ class MagnetometerCore extends EventTarget {
             // "unsupported"); the existing `error` property/event are unchanged. Fires
             // wcs-magnetometer:error-info-changed. No lane — the sensor is a monitor.
             { name: "errorInfo", event: "wcs-magnetometer:error-info-changed", semantics: "state" },
+            // This page can use the sensor: the `Magnetometer` class is there and neither a
+            // Permissions-Policy nor an insecure context forbids it. Not whether the
+            // device has a sensor, and not whether the user will allow it.
+            { name: "supported", event: "wcs-magnetometer:supported-changed", semantics: "state" },
         ],
         commands: [{ name: "start" }, { name: "stop" }],
     };
@@ -164,6 +204,8 @@ class MagnetometerCore extends EventTarget {
     _reading = NULL_READING;
     _error = null;
     _errorInfo = null;
+    // The value the last wcs-magnetometer:supported-changed carried (none yet: false).
+    _supportedPublished = false;
     // The live sensor instance while started (null otherwise), kept so stop()
     // can remove its listeners precisely and so start() can detect "already
     // started" without a separate boolean (docs/async-io-node-guidelines.md
@@ -193,6 +235,15 @@ class MagnetometerCore extends EventTarget {
      */
     get errorInfo() {
         return this._errorInfo;
+    }
+    /**
+     * Whether this page can use the sensor: the `Magnetometer` class is there, and
+     * neither an insecure context nor a Permissions-Policy that forbids
+     * `magnetometer` is in the way. Read at call time, never cached. It cannot
+     * say whether the device has a sensor.
+     */
+    get supported() {
+        return typeof globalThis.Magnetometer === "function" && featureUnavailable("magnetometer") === null;
     }
     /** No asynchronous probe to await: start()/stop() are synchronous
      *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
@@ -241,6 +292,22 @@ class MagnetometerCore extends EventTarget {
     }
     // --- Public API ---
     /**
+     * Dispatch `wcs-magnetometer:supported-changed` when `supported` differs
+     * from the value last dispatched (false before the first). The Shell calls it
+     * on connect, so a listener other than a binding — which reads the property
+     * when it binds — learns the value too.
+     */
+    publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-magnetometer:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
+    }
+    /**
      * Start the sensor at the given `frequency` (Hz), or the platform default
      * when omitted. Idempotent while already started: a redundant start() does
      * not construct a second sensor instance (which would leak the first).
@@ -268,7 +335,7 @@ class MagnetometerCore extends EventTarget {
             // (failures surface via the 'error' event), but never-throw is a hard
             // requirement here, so guard against a non-conformant implementation
             // too.
-            this._teardownSensor();
+            this._teardownSensor(sensor);
             this._setError({ error: e?.name ?? "error", message: e?.message ?? String(e) });
         }
     }
@@ -276,14 +343,15 @@ class MagnetometerCore extends EventTarget {
     stop() {
         if (!this._sensor)
             return;
+        const sensor = this._sensor;
         try {
-            this._sensor.stop();
+            sensor.stop();
         }
         catch {
             // Never-throw defensive guard, symmetric with start(). Teardown below
             // still runs so listeners are detached regardless.
         }
-        this._teardownSensor();
+        this._teardownSensor(sensor);
     }
     /** Lifecycle alias for start(), so the Shell's connectedCallback can drive
      *  this Core the same way as other IO nodes' observe()/dispose() pair. No
@@ -297,13 +365,17 @@ class MagnetometerCore extends EventTarget {
         this.stop();
     }
     // --- Internal ---
-    // Both call sites (start()'s catch, stop()) only ever invoke this once
-    // `this._sensor` is already known non-null, so there is no null-guard here
-    // (nothing to defend against).
-    _teardownSensor() {
-        this._sensor.removeEventListener("reading", this._onReading);
-        this._sensor.removeEventListener("error", this._onError);
-        this._sensor = null;
+    // Detach a sensor that is finished: stopped, failed in start(), or reported
+    // an `error` event. A sensor whose `error` event arrives while its start()
+    // is still running, and whose start() then throws, is torn down twice: the
+    // second time its listeners are already off, which removeEventListener
+    // takes — and a start() from an `error` listener may have put a newer
+    // sensor in its place by then, which stays.
+    _teardownSensor(sensor) {
+        sensor?.removeEventListener("reading", this._onReading);
+        sensor?.removeEventListener("error", this._onError);
+        if (this._sensor === sensor)
+            this._sensor = null;
     }
     /**
      * Construct the platform `Magnetometer`, guarding both non-support and a
@@ -339,6 +411,11 @@ class MagnetometerCore extends EventTarget {
     };
     _onError = (event) => {
         const err = event.error;
+        // The sensor that reported the error is finished (the platform deactivates
+        // it): detach it before publishing, so the next start() builds a fresh one
+        // instead of taking this one for "already started". It is `_sensor`: this
+        // listener is on a sensor only while that sensor is the current one.
+        this._teardownSensor(this._sensor);
         // Fallback is a meaningful constant, NOT String(err): a SensorErrorEvent
         // without an `error` field would otherwise stringify `undefined` into the
         // literal message "undefined" (aligned across the sensor family).
@@ -467,9 +544,10 @@ function reflectAttribute(el, name, value) {
  * (docs/sensor-tag-design.md §1.2). The getter normalizes it: a non-finite or
  * non-positive value (NaN, 0, negative) reads back as `null` — meaning "no
  * frequency specified" — so start() falls back to the platform default rather
- * than forwarding a value the sensor would reject. Any positive finite value is
- * passed through verbatim (no upper-bound clamping — an out-of-range-but-positive
- * rate is still left to the browser/sensor to reject via `error`).
+ * than forwarding a value the sensor would reject, and says so once
+ * (`[wcs/frequency-invalid]`). Any positive finite value is passed through
+ * verbatim (no upper-bound clamping — the browser caps a rate above what it
+ * allows).
  *
  * Permission handling is intentionally NOT implemented here. Compose with
  * `<wcs-permission name="magnetometer">` instead (see the README's permission
@@ -486,6 +564,7 @@ class WcsMagnetometer extends HTMLElement {
     _core;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
+    _frequencyWarned = false;
     constructor() {
         super();
         this._core = new MagnetometerCore(this);
@@ -592,15 +671,33 @@ class WcsMagnetometer extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Computed at call time: a binding reads it when it binds, with no event.
+    get supported() {
+        return this._core.supported;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
     // --- Commands ---
     start() {
+        this._warnUnusableFrequency();
         this._core.start(this.frequency ?? undefined);
     }
     stop() {
         this._core.stop();
+    }
+    // A `frequency` that is written but is not a positive number ("60hz", "0")
+    // reads back as null, and the sensor then runs at the browser's default rate
+    // with nothing else saying so. Said once per element.
+    _warnUnusableFrequency() {
+        if (this._frequencyWarned)
+            return;
+        const attr = this.getAttribute("frequency");
+        if (attr === null || attr.trim() === "" || this.frequency !== null)
+            return;
+        this._frequencyWarned = true;
+        console.warn(`[@wcstack/magnetometer] [wcs/frequency-invalid] <${this.localName}> frequency="${attr}" is not a ` +
+            `positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".`, this);
     }
     // --- Lifecycle ---
     // Deliberately does NOT auto-start the sensor on connect. Unlike
@@ -619,6 +716,8 @@ class WcsMagnetometer extends HTMLElement {
         // No asynchronous probe to await (docs/async-io-node-guidelines.md §3.8);
         // kept for SSR uniformity with other IO nodes.
         this._connectedCallbackPromise = this._core.ready;
+        // Starts nothing: publishes `supported` when it differs from the value last dispatched.
+        this._core.publishSupported();
     }
     // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it
     // does, so nothing stops and nothing starts again. With no connectedMoveCallback the browser calls

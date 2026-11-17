@@ -145,7 +145,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 ## 画面とセンサーの要素のページに言うこと
 
-4.25（未リリース）から、継ぎ目アプリ stamp-rally — 画面とセンサーの要素のスタンプラリー: 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止 — から。作者がわざとした 20 の間違いのどれにも、この lint はそれとして報告しませんでした。いま言うこと:
+4.25 から、継ぎ目アプリ stamp-rally — 画面とセンサーの要素のスタンプラリー: 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止 — から。作者がわざとした 20 の間違いのどれにも、この lint はそれとして報告しませんでした。いま言うこと:
 
 - **`wcs/path-readonly`**（error）は、カスタム要素が書くメンバーを setter の無い getter に束ねた形も報告します — `<wcs-wakelock data-wcs="held: keepAwake">` と `get keepAwake() { … }`。出力だけのメンバーは束ねた時点で書かれるので、state の初期化が失敗し、ページ全体が動きません（`[wcs/path-readonly] "keepAwake" is a getter without a setter`）。lint は 0 件でした。判定はランタイムの配線と同じです: `#ro` でも変わらず、`#init=none` なら要素が値を知らせるたびに失敗し、要素が何も書かないのは `#ro,init=none` だけです。入力でもあるメンバー（`<wcs-storage>` の `value`・`trigger`）は、要素が値を知らせるたび — 要素に渡すだけの getter は `value#ro:` で一方向に束ねます — と、`#init=element` の束ねた時点に書かれます。spread が束ねるメンバーも同じに読みます。組み込みの `wcs-*` タグと、ページがリテラルの `static wcBindable` で定義する要素が対象です。
 - **`wcs/token-undeclared`** は、`$commandTokens` / `$eventTokens` そのものが無い state のトークンも報告します — トークンが 1 つも無い、いちばん確かな場合で、lint が黙っていた場合です（宣言を写し忘れた Quick Start）: `command.select: $command.select`（error — state の初期化が失敗する）、スクリプトの `this.$command.select.emit(…)`（error）、`on*: $command.x` と `eventToken.<member>: name`（warning — イベントのたびに報告される）。`$eventTokens` に無い `$on` のエントリも error です: ランタイムは state の読み込みを拒みます。「無い」と言うのは、宣言を全部読める state だけです — トップレベルに spread の無い `export default { … }` か JSON で、キーが無いか空のリストのとき。未宣言の `on*: $command.x` はこの code になりました（以前は `wcs/binding-path-missing`）。

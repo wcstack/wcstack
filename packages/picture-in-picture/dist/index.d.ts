@@ -67,7 +67,9 @@ interface IWritableConfig {
  * `wcBindable.properties` with change events: `wcs-pip:change` / `:error` /
  * `:error-info-changed`), so a wc-bindable binding core delivers a request/exit
  * failure. `errorInfo` is the additive serializable failure taxonomy derived
- * from `error` (README "Output state").
+ * from `error` (README "Output state"). `supported`
+ * (`wcs-pip:supported-changed`) says whether this page can use
+ * Picture-in-Picture at all.
  *
  * @example
  * ```typescript
@@ -80,10 +82,12 @@ interface WcsPipCoreValues {
     error: any;
     /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
     errorInfo: WcsIoErrorInfo | null;
+    /** Whether this page can use Picture-in-Picture (API present, not forbidden by a policy). */
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-pip>`) — identical value surface to the
- * Core (`active` / `error` / `errorInfo` all observable). The Shell adds the
+ * Core (`active` / `error` / `errorInfo` / `supported` all observable). The Shell adds the
  * `target` input (attribute-mirrored) and no additional observable
  * properties.
  */
@@ -127,6 +131,7 @@ declare class PipCore extends EventTarget {
     private _errorInfo;
     private _video;
     private _gen;
+    private _supportedPublished;
     private _ready;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
@@ -140,11 +145,23 @@ declare class PipCore extends EventTarget {
      */
     get errorInfo(): WcsIoErrorInfo | null;
     /**
+     * Whether this page can use Picture-in-Picture right now: the document says it
+     * is enabled, a `<video>` has `requestPictureInPicture()`, and no
+     * Permissions-Policy (`picture-in-picture`: the server's header, an `<iframe>`
+     * whose `allow` turns it off) forbids it. Probed at call time, never cached.
+     * It does not say that a request will succeed (that still needs a user gesture
+     * and a video that can be shown, and a `<video disablepictureinpicture>`
+     * refuses). Firefox has no Picture-in-Picture API for pages, so this is
+     * `false` there. A wc-bindable output (event `wcs-pip:supported-changed`).
+     */
+    get supported(): boolean;
+    /**
      * (Re-)subscribe to `enterpictureinpicture`/`leavepictureinpicture` on
      * `element` (the Shell's resolved `<video>` target). Idempotent when called
      * again with the same element; re-wires the listeners when the element
      * changes (e.g. the `target` attribute was changed), detaching from the
-     * previous element first so no stale listener lingers.
+     * previous element first so no stale listener lingers. Also publishes
+     * `supported` when it differs from the last value dispatched.
      */
     observe(element: HTMLVideoElement | null): Promise<void>;
     dispose(): void;
@@ -169,6 +186,7 @@ declare class PipCore extends EventTarget {
     private _onLeave;
     private _syncActive;
     private _detach;
+    private _publishSupported;
     private _setActive;
     private _setError;
     private _commitErrorInfo;
@@ -208,6 +226,7 @@ declare class WcsPip extends HTMLElement {
     get active(): boolean;
     get error(): any;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     requestPictureInPicture(): Promise<void>;
     exitPictureInPicture(): Promise<void>;
     /**

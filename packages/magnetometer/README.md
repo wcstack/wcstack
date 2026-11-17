@@ -10,7 +10,7 @@ It is an **async primitive node** that turns device magnetic field readings into
 With `@wcstack/state`, `<wcs-magnetometer>` can be bound directly through path contracts:
 
 - **input surface**: `frequency` (sampling rate in Hz)
-- **output state surface**: `x`, `y`, `z`, `error`, `errorInfo`, and — since 4.25 (not released yet) — `supported`
+- **output state surface**: `x`, `y`, `z`, `error`, `errorInfo`, and — since 4.25 — `supported`
 
 This means compass/magnetic-field-driven UI can be expressed declaratively in HTML, without writing `Magnetometer`/`reading`/`error`-listener glue in your UI layer.
 
@@ -95,7 +95,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 
 | Attribute   | Type   | Default | Description |
 | ----------- | ------ | ------- | ------------ |
-| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Magnetometer` constructor. Read only when `start()` runs — changing it while already started has no effect until `stop()` + `start()` (see Notes). Since 4.25 (not released yet): a value that is not a positive number is said once in the console when `start()` runs (`[wcs/frequency-invalid]`, see Notes). |
+| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Magnetometer` constructor. Read only when `start()` runs — changing it while already started has no effect until `stop()` + `start()` (see Notes). Since 4.25: a value that is not a positive number is said once in the console when `start()` runs (`[wcs/frequency-invalid]`, see Notes). |
 
 **`null` and `undefined`.** The input backed by an attribute (`frequency`) takes `null` as "clear": the attribute is removed and the input falls back to its default (the platform's sampling rate). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
 
@@ -108,7 +108,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `z`      | `wcs-magnetometer:reading` | Magnetic flux density along the z-axis. |
 | `error`  | `wcs-magnetometer:error`   | Normalized `{ error, message }`, or `null`. |
 | `errorInfo` | `wcs-magnetometer:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo` — stable `code` / `phase` / `recoverable`), or `null`. Additive, derived from `error`; the existing `error` shape is unchanged. |
-| `supported` | `wcs-magnetometer:supported-changed` | Since 4.25 (not released yet). `true` when this page can use the sensor. See [`supported`](#supported--can-this-page-use-it). |
+| `supported` | `wcs-magnetometer:supported-changed` | Since 4.25. `true` when this page can use the sensor. See [`supported`](#supported--can-this-page-use-it). |
 
 `x`/`y`/`z` all derive from the single `wcs-magnetometer:reading` event (one native `reading` event updates all three axes together).
 
@@ -116,12 +116,12 @@ Every bound state path must be declared up front — binding an undeclared path 
 
 | Command | Async | Description |
 | ------- | ----- | ------------ |
-| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). Since 4.25 (not released yet): after the sensor's own `error` event the next `start()` builds a fresh sensor. |
+| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). Since 4.25: after the sensor's own `error` event the next `start()` builds a fresh sensor. |
 | `stop`  | no    | Stop the sensor and detach its listeners. Safe to call when not started. |
 
 ## `supported` — can this page use it
 
-Since 4.25 (not released yet). `supported` is `true` when this page can use the sensor: the browser has the `Magnetometer` class, the page is a secure context, and no Permissions-Policy turns `magnetometer` off for it (the server's header, or an `<iframe>` without `allow="magnetometer"` — read where the browser lets a page see its policy, which is Chromium). Where it is `false`, `start()` cannot work and no tap changes that: do not offer the feature.
+Since 4.25. `supported` is `true` when this page can use the sensor: the browser has the `Magnetometer` class, the page is a secure context, and no Permissions-Policy turns `magnetometer` off for it (the server's header, or an `<iframe>` without `allow="magnetometer"` — read where the browser lets a page see its policy, which is Chromium). Where it is `false`, `start()` cannot work and no tap changes that: do not offer the feature.
 
 It does **not** say that the user will allow it (`<wcs-permission name="magnetometer">` watches that), and it **cannot say whether the device has the sensor**: a PC has the API and no sensor. There the readings simply never come, or the sensor reports it through `error`.
 
@@ -136,7 +136,7 @@ The value is read from the browser each time it is asked for, so a binding gets 
 
 ## On an iPhone
 
-Safari on an iPhone or iPad has no `Magnetometer` class, and no other event carries these readings, so `<wcs-magnetometer>` has no fallback there. Since 4.25 (not released yet), `supported` is `false` on an iPhone, which a page can read before it offers anything; `start()` ends as `unsupported` (`errorInfo.code: "capability-missing"`), as before. `<wcs-accelerometer>` and `<wcs-gyroscope>` do work on an iPhone since 4.25 (not released yet), through `devicemotion`; for a compass direction, use `<wcs-tilt>`'s `heading`.
+Safari on an iPhone or iPad has no `Magnetometer` class, and no other event carries these readings, so `<wcs-magnetometer>` has no fallback there. Since 4.25, `supported` is `false` on an iPhone, which a page can read before it offers anything; `start()` ends as `unsupported` (`errorInfo.code: "capability-missing"`), as before. `<wcs-accelerometer>` and `<wcs-gyroscope>` do work on an iPhone since 4.25, through `devicemotion`; for a compass direction, use `<wcs-tilt>`'s `heading`.
 
 ## CSS styling with `:state()`
 
@@ -191,9 +191,9 @@ DevTools open; it is not a supported styling hook.
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
 - **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
-- **After an `error` event, `start()` works again.** Since 4.25 (not released yet), when the sensor reports its own `error` event (a `NotReadableError`, say), the failed sensor is torn down, so the next `start()` builds a fresh one. Up to 4.24 `start()` did nothing after such an error until `stop()` had been called, and nothing said so. `error` itself stays, as above.
+- **After an `error` event, `start()` works again.** Since 4.25, when the sensor reports its own `error` event (a `NotReadableError`, say), the failed sensor is torn down, so the next `start()` builds a fresh one. Up to 4.24 `start()` did nothing after such an error until `stop()` had been called, and nothing said so. `error` itself stays, as above.
 - **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-magnetometer:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. The mapping keys off the normalized error name: `unsupported` → `capability-missing` (phase `probe`); `SecurityError` / `NotAllowedError` → `not-allowed` (phase `start`); `NotReadableError` → `not-readable` (phase `execute`); any other sensor failure → `sensor-error` (phase `execute`). All are `recoverable: false`. `errorInfo` transitions exactly when `error` does, so it is **sticky** in the same way and only returns to `null` when `error` does. The shared `WcsIoErrorInfo` type and the `WCS_MAGNETOMETER_ERROR_CODE` constants are exported.
-- **An unusable `frequency` is said.** Since 4.25 (not released yet), when `start()` runs with a `frequency` attribute that is not empty and is not a positive number (`frequency="60hz"`, `frequency="0"`), the console gets one warning per element: `[@wcstack/magnetometer] [wcs/frequency-invalid] <wcs-magnetometer> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` The sensor still starts, at the default rate — as it did before, without a word. A rate above what the browser allows is capped by the browser, and nothing says so.
+- **An unusable `frequency` is said.** Since 4.25, when `start()` runs with a `frequency` attribute that is not empty and is not a positive number (`frequency="60hz"`, `frequency="0"`), the console gets one warning per element: `[@wcstack/magnetometer] [wcs/frequency-invalid] <wcs-magnetometer> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` The sensor still starts, at the default rate — as it did before, without a word. A rate above what the browser allows is capped by the browser, and nothing says so.
 - **`frequency` is read only at `start()`.** There is no `attributeChangedCallback`, and `start()` is idempotent while already started (a redundant call is a no-op — see Commands above), so changing the `frequency` attribute/property on a running sensor has no effect. To apply a new sampling rate, `stop()` then `start()` again.
 - **Reparenting stops the sensor and does not resume it.** Moving a connected `<wcs-magnetometer>` element to a different parent runs `disconnectedCallback` → `connectedCallback`; since the Shell does not auto-start on connect (see Quick Start above), this is effectively a stop with no automatic restart. `x`/`y`/`z` freeze at their last sample, and no `error` is raised — the sensor stays inert until `start` is invoked again.
 - **Never call the raw `new Magnetometer(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
@@ -214,7 +214,7 @@ core.start();
 core.dispose();
 ```
 
-Since 4.25 (not released yet), `core.supported` can be read at any time, and `core.publishSupported()` dispatches `wcs-magnetometer:supported-changed` when the value differs from the last one dispatched.
+Since 4.25, `core.supported` can be read at any time, and `core.publishSupported()` dispatches `wcs-magnetometer:supported-changed` when the value differs from the last one dispatched.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

@@ -10,7 +10,7 @@ It turns `new EyeDropper().open()` — the browser's native color-picking cursor
 With `@wcstack/state`, `<wcs-eyedropper>` can be bound directly through path contracts:
 
 - **command surface**: `open()` — invoke via `command.open:` / `$command.<name>`; `abort()` — invoke via `command.abort:` / `$command.<name>`
-- **output state surface**: `value` (the picked color), `loading`, `error`, `cancelled`, and — since 4.25 (not released yet) — `supported`
+- **output state surface**: `value` (the picked color), `loading`, `error`, `cancelled`, and — since 4.25 — `supported`
 
 `@wcstack/eyedropper` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
@@ -28,7 +28,7 @@ Both the user dismissing the picker with <kbd>Escape</kbd> and the caller invoki
 
 ## Chromium-only, desktop-oriented
 
-As of 2026, the EyeDropper API is implemented only in Chromium-based browsers (Chrome, Edge, Opera, ...) — Firefox and Safari do not support it. Picking an arbitrary on-screen pixel is also not meaningful in a touch context (precise pixel-level pointing is impractical with a finger, and mobile Chrome does not implement the API). Design your UI around this as a **desktop-only, progressive-enhancement feature**: hide the "pick a color" button (or offer a fallback `<input type="color">`) where `supported` is `false` (since 4.25 (not released yet); up to 4.24, where `typeof EyeDropper` is not `"function"`), rather than assuming the API is universally available.
+As of 2026, the EyeDropper API is implemented only in Chromium-based browsers (Chrome, Edge, Opera, ...) — Firefox and Safari do not support it. Picking an arbitrary on-screen pixel is also not meaningful in a touch context (precise pixel-level pointing is impractical with a finger, and mobile Chrome does not implement the API). Design your UI around this as a **desktop-only, progressive-enhancement feature**: hide the "pick a color" button (or offer a fallback `<input type="color">`) where `supported` is `false` (since 4.25; up to 4.24, where `typeof EyeDropper` is not `"function"`), rather than assuming the API is universally available.
 
 ## Install
 
@@ -101,7 +101,7 @@ npm install @wcstack/eyedropper
 
 ### 3. Hiding the button on unsupported browsers
 
-Since 4.25 (not released yet), the `supported` output says whether this page has the EyeDropper API. Bind it, offer the button only where it is `true`, and a plain `<input type="color">` elsewhere:
+Since 4.25, the `supported` output says whether this page has the EyeDropper API. Bind it, offer the button only where it is `true`, and a plain `<input type="color">` elsewhere:
 
 ```html
 <wcs-state>
@@ -134,9 +134,9 @@ Up to 4.24 there is no such output: check `typeof EyeDropper === "function"` you
 | `error`     | `wcs-eyedropper:error`              | A true platform failure (anything other than the picker being dismissed). `null` when there has been no failure yet, or after the next `open()` call resets it. |
 | `cancelled` | `wcs-eyedropper:cancelled-changed`  | `true` when the pick did not complete — either the user pressed Escape, or the caller invoked `abort()`. Both surface as the same `AbortError` and are not distinguished. |
 | `errorInfo` | `wcs-eyedropper:error-info-changed` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` when unsupported or `pick-failed` on a genuine failure. Cancellation is `cancelled`, not `errorInfo`. |
-| `supported` | `wcs-eyedropper:supported-changed`  | Since 4.25 (not released yet). `true` when this page can use the EyeDropper API. See below. |
+| `supported` | `wcs-eyedropper:supported-changed`  | Since 4.25. `true` when this page can use the EyeDropper API. See below. |
 
-**`supported`** (since 4.25 (not released yet)) is `true` when the `EyeDropper` constructor exists (`typeof EyeDropper === "function"`) — the same check `open()` makes. Browsers expose the constructor in secure contexts only, so a page that is not one (plain `http:` other than `localhost`) reads `false` like a browser without the API. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-eyedropper:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`). It does **not** say a pick will complete: the user can still press <kbd>Escape</kbd> (`cancelled`), and `open()` still needs a user gesture.
+**`supported`** (since 4.25) is `true` when the `EyeDropper` constructor exists (`typeof EyeDropper === "function"`) — the same check `open()` makes. Browsers expose the constructor in secure contexts only, so a page that is not one (plain `http:` other than `localhost`) reads `false` like a browser without the API. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-eyedropper:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`). It does **not** say a pick will complete: the user can still press <kbd>Escape</kbd> (`cancelled`), and `open()` still needs a user gesture.
 
 `cancelled` and `error` are both reset (`false` / `null`) at the **start** of the next `open()` call, so a stale outcome from a previous call never lingers into the next one's result.
 
@@ -162,7 +162,7 @@ the `abort()` command cancels the active pick.
 - **`abort()` cancels an in-flight `open()`.** Both a user pressing Escape and a caller-invoked `abort()` resolve to the same `cancelled` outcome — there is no way (and no need) to distinguish them.
 - **One eyedropper at a time (platform-global).** The spec's `InvalidStateError` is a global exclusion — if another eye dropper is already open (a second `<wcs-eyedropper>` instance, or another tab), `open()` rejects with it and lands on `error` (not `cancelled`). Within a single instance this never fires: a new `open()` first aborts the previous in-flight pick.
 - **Fast `abort()` → `open()` sequences do not cross-wire `AbortController`s.** A new `open()` call aborts any previous in-flight call and issues a fresh `AbortController`; the previous call's cleanup only clears the field it still owns (mirrors `FetchCore`'s identity check).
-- **Unsupported detection.** `supported` (since 4.25 (not released yet)) says it ahead of time. `open()` makes the same check — `typeof EyeDropper === "function"`, at call time — and, if absent, sets `error` immediately (`errorInfo.code: "capability-missing"`; the call never enters the operation lane — no asynchronous work is started, and `new EyeDropper()` is never constructed).
+- **Unsupported detection.** `supported` (since 4.25) says it ahead of time. `open()` makes the same check — `typeof EyeDropper === "function"`, at call time — and, if absent, sets `error` immediately (`errorInfo.code: "capability-missing"`; the call never enters the operation lane — no asynchronous work is started, and `new EyeDropper()` is never constructed).
 - **A completion after `dispose()` is dropped.** `dispose()` aborts the in-flight `open()` and invalidates it on the operation lane (its owner generation), so an `open()` call that settles afterwards (e.g. a fast disconnect while the picker is active) is stale and does not write state to a torn-down element.
 - **No `autoTrigger`.** Like `@wcstack/share`, `open()` must be invoked from within a user-gesture context; wire the click handler directly to `$command.open.emit()`.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`; since there is no asynchronous probe to await, it always settles immediately.
@@ -244,7 +244,7 @@ const result = await eyedropper.open();
 eyedropper.abort();
 ```
 
-Since 4.25 (not released yet), `eyedropper.supported` can be read at any time, and `eyedropper.observe()` dispatches `wcs-eyedropper:supported-changed` when the value differs from the last one dispatched.
+Since 4.25, `eyedropper.supported` can be read at any time, and `eyedropper.observe()` dispatches `wcs-eyedropper:supported-changed` when the value differs from the last one dispatched.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

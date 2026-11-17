@@ -127,6 +127,7 @@ interface WcsEyedropperCoreValues {
     error: any;
     cancelled: boolean;
     errorInfo: WcsIoErrorInfo | null;
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-eyedropper>`) — identical observable
@@ -165,6 +166,7 @@ declare class EyedropperCore extends EventTarget {
     private _error;
     private _cancelled;
     private _errorInfo;
+    private _supportedPublished;
     private _lane;
     private _ready;
     constructor(target?: EventTarget);
@@ -182,9 +184,11 @@ declare class EyedropperCore extends EventTarget {
      */
     get errorInfo(): WcsIoErrorInfo | null;
     /**
-     * Whether the required platform capability (`web.eyedropper`) is available right
-     * now — decided by call-time feature detection, not User-Agent. Core-only,
-     * additive.
+     * Whether this page can use the EyeDropper API right now: the `EyeDropper`
+     * constructor is there (call-time feature detection, not User-Agent — browsers
+     * expose the constructor in secure contexts only, so an insecure page reads
+     * false). It does not say the user will pick a color. A wc-bindable output
+     * (event `wcs-eyedropper:supported-changed`).
      */
     get supported(): boolean;
     /**
@@ -195,6 +199,7 @@ declare class EyedropperCore extends EventTarget {
     observe(): Promise<void>;
     dispose(): void;
     private _commitStep;
+    private _publishSupported;
     private _setLoading;
     private _setValue;
     private _setError;
@@ -234,6 +239,7 @@ declare class WcsEyedropper extends HTMLElement {
     get error(): any;
     get cancelled(): boolean;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
     open(): Promise<WcsEyedropperData | null>;
     abort(): void;

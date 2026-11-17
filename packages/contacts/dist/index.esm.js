@@ -64,7 +64,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/contacts","version":"4.24.2"};
+var pkg = {"name":"@wcstack/contacts","version":"4.25.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -431,6 +431,19 @@ const CONTACTS_CAPABILITIES = new Map([
     ["web.contacts", { probe: () => typeof globalThis.navigator?.contacts?.select === "function", compatKey: "api.ContactsManager.select" }],
 ]);
 
+// The Contact Picker specification refuses every document that is not top-level
+// (`select()` rejects with `InvalidStateError` inside an <iframe>), so a framed page
+// cannot use the picker even where `navigator.contacts` exists. Read at call time.
+// A throw (a cross-origin parent on some accesses) counts as "not top-level".
+function isTopLevelPage() {
+    try {
+        const w = globalThis.window;
+        return w !== undefined && w.top === w;
+    }
+    catch {
+        return false;
+    }
+}
 /**
  * Headless Contact Picker primitive. A thin, framework-agnostic wrapper around
  * `navigator.contacts.select(properties, options)` exposed through the
@@ -450,6 +463,13 @@ const CONTACTS_CAPABILITIES = new Map([
  * (`properties`, `options`) rather than one — the command-token argument
  * pass-through does not special-case argument count, so this requires no protocol
  * change.
+ *
+ * A picker closed without a choice **resolves with an empty list** — the
+ * specification has no `AbortError` for it ("return an empty list"); `select()`
+ * rejects only with `InvalidStateError` (not a top-level page, a picker already
+ * showing, the picker failed), `SecurityError` (no user activation) and `TypeError`
+ * (empty or unsupported properties). So an empty result is the cancellation: it
+ * sets `cancelled`, leaves `value` as it was and fires no `wcs-contacts:complete`.
  */
 class ContactsCore extends EventTarget {
     static wcBindable = {
@@ -465,6 +485,10 @@ class ContactsCore extends EventTarget {
             // Fires its own `wcs-contacts:error-info-changed` event; no getter, so the
             // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
             { name: "errorInfo", event: "wcs-contacts:error-info-changed", semantics: "state" },
+            // Whether this page can use the Contact Picker (the API is there and the page
+            // is top-level). Computed at call time; the event carries the boolean and
+            // fires from observe() when it differs from the last value dispatched.
+            { name: "supported", event: "wcs-contacts:supported-changed", semantics: "state" },
         ],
         commands: [
             { name: "select", async: true },
@@ -478,6 +502,9 @@ class ContactsCore extends EventTarget {
     _error = null;
     _cancelled = false;
     _errorInfo = null;
+    // `supported` as last dispatched (never the value itself — the getter probes at
+    // call time). Starts at false, so observe() announces a page that can pick.
+    _supportedPublished = false;
     // Concurrency lane (io-core). `exhaust`: only one picker at a time — a new begin()
     // while active returns null (idempotent no-op). `withSignal: false`:
     // navigator.contacts.select() has no AbortSignal. dispose() bumps the owner gen.
@@ -513,12 +540,17 @@ class ContactsCore extends EventTarget {
         return this._errorInfo;
     }
     /**
-     * Whether the required platform capability (`web.contacts`) is available right
-     * now — decided by call-time feature detection, not User-Agent. Core-only,
-     * additive.
+     * Whether this page can use the Contact Picker right now:
+     * `navigator.contacts.select` is a function (call-time feature detection, not
+     * User-Agent) **and** the page is top-level — the specification refuses frames, so
+     * inside an `<iframe>` this is false although the API is there (`select()` itself
+     * still asks the browser, which answers `InvalidStateError`). It does not say the
+     * user will pick anyone. A wc-bindable output (event
+     * `wcs-contacts:supported-changed`).
      */
     get supported() {
-        return requiredCapabilitiesAvailable(this.platformAssessment, ContactsCore.REQUIRED_CAPABILITIES);
+        return requiredCapabilitiesAvailable(this.platformAssessment, ContactsCore.REQUIRED_CAPABILITIES)
+            && isTopLevelPage();
     }
     /**
      * Full platform assessment (availability / readiness / preconditions), probed at
@@ -532,10 +564,12 @@ class ContactsCore extends EventTarget {
         });
     }
     // Lifecycle (§3.5). Select is command-driven with no subscription to establish,
-    // so observe() is an idempotent no-op that resolves once ready; dispose() bumps
+    // so observe() only publishes `supported` (when it differs from the last value
+    // dispatched) and resolves once ready — idempotent; dispose() bumps
     // the lane's owner generation, invalidating any in-flight select() (a late
     // resolve then fails the terminal CAS). There is nothing to abort or unsubscribe.
     observe() {
+        this._publishSupported();
         return this._ready;
     }
     dispose() {
@@ -544,6 +578,20 @@ class ContactsCore extends EventTarget {
         // here (timing-and-firing-contract §22): a route the element leaves keeps its
         // nodes — bindings included — for the next entry, and state would keep `loading`.
         this._setLoading(false);
+    }
+    // `supported` is probed at call time, so there is no stored value to set: this
+    // dispatches the current one when it differs from the last one dispatched
+    // (same-value guard). A state binding reads the property when it attaches; the
+    // event is for every other listener.
+    _publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-contacts:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
     }
     _setLoading(loading) {
         if (this._loading === loading)
@@ -635,8 +683,20 @@ class ContactsCore extends EventTarget {
         this._setCancelled(false);
         try {
             const contacts = await selectFn(properties, options);
+            // A picker closed without a choice resolves with an empty list (the
+            // specification's cancel: "remove the UI and return an empty list") — there is
+            // no rejection to catch for it.
+            const closed = Array.isArray(contacts) && contacts.length === 0;
             // Terminal CAS: a stale (dispose-invalidated) completion loses the claim.
-            if (!this._lane.claimTerminal(ticket, "success")) {
+            if (!this._lane.claimTerminal(ticket, closed ? "aborted" : "success")) {
+                return null;
+            }
+            if (closed) {
+                // A routine cancellation, not a result: `value` keeps what the last pick
+                // gave it and no wcs-contacts:complete fires, as on the AbortError path.
+                this._setCancelled(true);
+                this._setLoading(false);
+                this._lane.finalize(ticket);
                 return null;
             }
             // `multiple` does not change the result shape — even a single selection
@@ -652,8 +712,10 @@ class ContactsCore extends EventTarget {
                 return null;
             }
             if (cancelled) {
-                // The user dismissed the contact picker — a routine cancellation, not a
-                // platform failure. Kept out of `error`/`errorInfo`.
+                // An AbortError rejection is treated as a dismissed picker too — kept from
+                // before the empty-list rule above; the specification names no such
+                // rejection, so this is for an implementation that has one. A routine
+                // cancellation, not a platform failure. Kept out of `error`/`errorInfo`.
                 this._setCancelled(true);
             }
             else {
@@ -739,7 +801,7 @@ function upgradeProperties(element) {
  *
  * **Android Chrome only.** Desktop browsers entirely lack `navigator.contacts`
  * — treat `unsupported` as the default state, not an edge case, in any
- * example or consuming UI.
+ * example or consuming UI (`supported` says it ahead of time).
  */
 class WcsContacts extends HTMLElement {
     // SSR (§4.4): observe() completes synchronously, but the Shell still exposes
@@ -829,6 +891,11 @@ class WcsContacts extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Probed at call time by the Core (never cached), so a binding that reads it when
+    // it attaches gets the right value without waiting for an event.
+    get supported() {
+        return this._core.supported;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -841,6 +908,8 @@ class WcsContacts extends HTMLElement {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.style.display = "none";
+        // observe() publishes `supported` (wcs-contacts:supported-changed) when it
+        // differs from the last value dispatched.
         this._connectedCallbackPromise = this._core.observe();
     }
     // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it

@@ -44,14 +44,18 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "x",
       "y",
       "z",
+      "permissionState",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
+      "requestPermission",
       "start",
       "stop"
     ],
     "commandArity": {
+      "requestPermission": 0,
       "start": 0,
       "stop": 0
     }
@@ -66,7 +70,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "properties": [
       "illuminance",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "start",
@@ -481,7 +486,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "loading",
       "error",
       "cancelled",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "select"
@@ -500,15 +506,18 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "loading",
       "error",
       "cancelled",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "get",
-      "store"
+      "store",
+      "preventSilentAccess"
     ],
     "commandArity": {
       "get": 1,
-      "store": 1
+      "store": 1,
+      "preventSilentAccess": 0
     }
   },
   "wcs-debounce": {
@@ -598,7 +607,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "loading",
       "error",
       "cancelled",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "open",
@@ -684,7 +694,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "properties": [
       "active",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "requestFullscreen",
@@ -743,14 +754,18 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "x",
       "y",
       "z",
+      "permissionState",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
+      "requestPermission",
       "start",
       "stop"
     ],
     "commandArity": {
+      "requestPermission": 0,
       "start": 0,
       "stop": 0
     }
@@ -833,7 +848,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "y",
       "z",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "start",
@@ -975,7 +991,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "granted",
       "denied",
       "prompt",
-      "unsupported"
+      "unsupported",
+      "unsupportedReason"
     ],
     "commands": []
   },
@@ -991,7 +1008,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "properties": [
       "active",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "requestPictureInPicture",
@@ -1014,7 +1032,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "properties": [
       "active",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "requestPointerLock",
@@ -1106,7 +1125,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "portrait",
       "landscape",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "lock",
@@ -1127,7 +1147,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "loading",
       "error",
       "cancelled",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "share"
@@ -1287,9 +1308,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "beta",
       "gamma",
       "absolute",
+      "heading",
       "permissionState",
       "error",
-      "errorInfo"
+      "errorInfo",
+      "supported"
     ],
     "commands": [
       "requestPermission",

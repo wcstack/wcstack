@@ -10,7 +10,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-share>` はパス契約で直接バインドできます:
 
 - **command サーフェス**: `share(data)` — 単一の async command。`command.share: $command.doShare` として起動する
-- **出力 state サーフェス**: `value`、`loading`、`error`、`cancelled`、そして 4.25（未リリース）から `supported`
+- **出力 state サーフェス**: `value`、`loading`、`error`、`cancelled`、そして 4.25 から `supported`
 
 これにより「記事を共有」ボタンを HTML 上で宣言的に表現できます — 成功・失敗・ユーザーがネイティブ共有シートを単に閉じただけ、という3つの異なる結果をそれぞれバインド可能な形で区別しつつ、UI 層で `navigator.share()` / `try`/`catch` の配線を書く必要がありません。
 
@@ -73,7 +73,7 @@ npm install @wcstack/share
 
 ### 2. 共有できるページでだけボタンを出す
 
-4.25（未リリース）から、出力 `supported` が「このページで Web Share API を使えるか」を言います。束縛して、使えないページではボタンを隠します:
+4.25 から、出力 `supported` が「このページで Web Share API を使えるか」を言います。束縛して、使えないページではボタンを隠します:
 
 ```html
 <wcs-state>
@@ -116,9 +116,9 @@ npm install @wcstack/share
 | `error`     | `wcs-share:error`               | 真のプラットフォーム障害（ユーザーが共有シートをキャンセルした場合を**除く**すべて）。まだ失敗が無い場合、または次の `share()` 呼び出しでリセットされた後は `null`。 |
 | `cancelled` | `wcs-share:cancelled-changed`   | ユーザーがネイティブ共有シートを閉じた（`AbortError`）場合に `true`。`error` を条件にしたバインディングが日常的なキャンセルに反応しないよう、`error` とは独立している。 |
 | `errorInfo` | `wcs-share:error-info-changed`  | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は unsupported なら `capability-missing`、真の失敗なら `share-failed`。 |
-| `supported` | `wcs-share:supported-changed`   | 4.25（未リリース）から。このページで Web Share API を使えるなら `true`。下記参照。 |
+| `supported` | `wcs-share:supported-changed`   | 4.25 から。このページで Web Share API を使えるなら `true`。下記参照。 |
 
-**`supported`**（4.25（未リリース）から）は、`navigator.share` が関数で、**かつ**ページがその利用を禁じられていないときに `true` です。`web-share` を切る `Permissions-Policy`（サーバーのヘッダ、または `allow="web-share"` の無い `<iframe>`）と、安全でないコンテキストは、どちらも `false` にします。（ポリシーが `web-share` という機能を知らないブラウザ — デスクトップの Chromium — には聞きません: そこでは API の有無で決まります。）値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-share:supported-changed`（`detail` は boolean）を流します。
+**`supported`**（4.25 から）は、`navigator.share` が関数で、**かつ**ページがその利用を禁じられていないときに `true` です。`web-share` を切る `Permissions-Policy`（サーバーのヘッダ、または `allow="web-share"` の無い `<iframe>`）と、安全でないコンテキストは、どちらも `false` にします。（ポリシーが `web-share` という機能を知らないブラウザ — デスクトップの Chromium — には聞きません: そこでは API の有無で決まります。）値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-share:supported-changed`（`detail` は boolean）を流します。
 
 特定のデータを共有できるかは**言いません** — 「このデータ」（ファイル）について聞く方法は、これまでどおり `canShare(data)` です。利用者が共有先を選ぶかどうかも言いません。Permissions-Policy が理由のとき、`share()` はそのままブラウザに渡り、ブラウザが拒否します（`error`、`errorInfo.code: "share-failed"`）。`navigator.share` が無いときの `share()` は、何も呼ばずに `capability-missing` で終わります。
 
@@ -212,7 +212,7 @@ form:has(wcs-share:state(error)) .banner { display: block; }
 - **`autoTrigger` を持たない。** `navigator.share()` は実際のユーザー操作の文脈内から呼び出す必要があります。ノード側が自動トリガーを提供しても、そのトリガー自体がジェスチャー文脈を継承しないため、`@wcstack/fullscreen` と同様にこのノードは自動トリガーを持ちません。ボタンのクリックハンドラ（state のメソッド）の中で `$command.doShare.emit(...)` を呼んでください。
 - **`abort` コマンドを持たない。** 進行中の `navigator.share()` 呼び出しを中断するプラットフォーム機構が存在しません。
 - **`cancelled` は `error` と独立している。** `AbortError`（ユーザーが共有シートを閉じた）は `cancelled` のみを設定し、`error` には触れません。それ以外の reject はすべて `error` のみを設定し、`cancelled` には触れません。
-- **非対応のブラウザ。** `navigator.share` が関数でない状態で `share()` を呼ぶと、即座に `error` が `{ message: "Web Share API is not supported in this browser." }`（`errorInfo.code: "capability-missing"`）になり `null` で解決します — 非同期処理を開始しないため、この呼び出しは operation lane に入りません。事前に UI を隠したい場合は `supported` を束縛してください（4.25（未リリース）から。4.24 までは自分で `typeof navigator.share` を確認します）。
+- **非対応のブラウザ。** `navigator.share` が関数でない状態で `share()` を呼ぶと、即座に `error` が `{ message: "Web Share API is not supported in this browser." }`（`errorInfo.code: "capability-missing"`）になり `null` で解決します — 非同期処理を開始しないため、この呼び出しは operation lane に入りません。事前に UI を隠したい場合は `supported` を束縛してください（4.25 から。4.24 までは自分で `typeof navigator.share` を確認します）。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開します。非同期 probe が無いため、この promise は常に即座に settle します（`ready` は `Promise.resolve()` 固定）。
 - **同値ガードは `loading`/`error`/`cancelled` に適用され、`value` には適用されない。** これら3つの setter は idempotent state であるため、値が実際に変化したとき（参照等価 `===`）のみ発火します。`value` は異なり、**成功完了シグナル**であって `wcs-share:complete` が唯一の成功通知であるため、成功した `share()` の**たびに**発火します（同値ガード無し）。したがって、`data` 引数無しの `share()`（`value` が既に `null` のときに `null` を echo）でも `wcs-share:complete` を発火し、**同一のオブジェクト参照**を `data` として渡す2回連続の成功した `share()` は `wcs-share:complete` を**2回**発火します（完了ごとに1回）。これは `@wcstack/clipboard`（`read`）や `@wcstack/broadcast`（`message`）が結果/イベント値を扱う方針と同じです — 完了は「発生」であって idempotent state ではありません。
 
@@ -237,7 +237,7 @@ await share.share({ title: "Article", url: location.href });
 share.dispose(); // 進行中の share() を無効化し、stale な resolve を破棄する
 ```
 
-4.25（未リリース）から、`share.supported` はいつでも読めます。`share.observe()` は、最後に流した値と違っていれば `wcs-share:supported-changed` を流します。
+4.25 から、`share.supported` はいつでも読めます。`share.observe()` は、最後に流した値と違っていれば `wcs-share:supported-changed` を流します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

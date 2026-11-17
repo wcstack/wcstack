@@ -143,10 +143,10 @@ if (pip.error) {
 
 | プロパティ  | 型                       | イベント                     | 説明 |
 |-------------|--------------------------|------------------------------|------|
-| `active`    | `boolean`                | `wcs-pip:change`             | 解決済みの `<video>` target が現在 document の Picture-in-Picture 要素かどうか。4.25（未リリース）から、`<wcs-pip>` が文書の外にある間は `false`（[要素が文書を離れるとき](#要素が文書を離れるとき)参照）。 |
+| `active`    | `boolean`                | `wcs-pip:change`             | 解決済みの `<video>` target が現在 document の Picture-in-Picture 要素かどうか。4.25 から、`<wcs-pip>` が文書の外にある間は `false`（[要素が文書を離れるとき](#要素が文書を離れるとき)参照）。 |
 | `error`     | `any`                    | `wcs-pip:error`              | 直近のコマンド失敗（不正なタグ・非対応API・gesture 制約による reject）、または直近が成功／未失敗なら `null`。observable 化しても `error` の値の形自体は不変。 |
 | `errorInfo` | `WcsIoErrorInfo \| null` | `wcs-pip:error-info-changed` | `error` から導出される追加的でシリアライズ可能な失敗 **taxonomy**: 安定した `{ code, phase, recoverable, message }`。`error` と歩調を合わせて `null` になる。下の taxonomy 表参照。 |
-| `supported` | `boolean`                | `wcs-pip:supported-changed`  | 4.25（未リリース）から。このページで Picture-in-Picture を使えるなら `true`、使えないなら `false`（Firefox、Permissions-Policy が禁じた文書）。イベントの `detail` は boolean そのもの。下記参照。 |
+| `supported` | `boolean`                | `wcs-pip:supported-changed`  | 4.25 から。このページで Picture-in-Picture を使えるなら `true`、使えないなら `false`（Firefox、Permissions-Policy が禁じた文書）。イベントの `detail` は boolean そのもの。下記参照。 |
 
 `active` は、`enterpictureinpicture`/`leavepictureinpicture` が**その対象要素自身に**発火するたびに、`document.pictureInPictureElement` と解決済み `<video>` target を比較して導出されます（`document` レベルのイベントではありません — 詳細は下記「イベント購読」参照）。
 
@@ -163,7 +163,7 @@ if (pip.error) {
 
 ### `supported` — このページで Picture-in-Picture を使えるか
 
-4.25（未リリース）から。`supported` は、このページで Picture-in-Picture を使えるときに `true` です: 文書が有効と答え（`document.pictureInPictureEnabled`）、`<video>` に `requestPictureInPicture()` があり、Permissions-Policy が切っていない — サーバーの `Permissions-Policy: picture-in-picture=()` ヘッダーも、`allow` 属性で止めている `<iframe>` も無い（fullscreen と違い、フレームはポリシーが止めない限り Picture-in-Picture を使えます）— 場合です。それ以外は、理由が何であれ `false` です。**Firefox には、ページが使える Picture-in-Picture API が無いので、そこでは `supported` は `false` です。**
+4.25 から。`supported` は、このページで Picture-in-Picture を使えるときに `true` です: 文書が有効と答え（`document.pictureInPictureEnabled`）、`<video>` に `requestPictureInPicture()` があり、Permissions-Policy が切っていない — サーバーの `Permissions-Policy: picture-in-picture=()` ヘッダーも、`allow` 属性で止めている `<iframe>` も無い（fullscreen と違い、フレームはポリシーが止めない限り Picture-in-Picture を使えます）— 場合です。それ以外は、理由が何であれ `false` です。**Firefox には、ページが使える Picture-in-Picture API が無いので、そこでは `supported` は `false` です。**
 
 要求が通ることまでは言いません。要求には user gesture と、映すもののある動画が要り、`<video disablepictureinpicture>` は断ります。Picture-in-Picture は安全なコンテキストを要らないので、素の `http:` のページであることだけでは `false` になりません。
 
@@ -205,7 +205,7 @@ Fullscreen の `fullscreenchange`（`document` に発火）と異なり、Pictur
 
 ## 要素が文書を離れるとき
 
-4.25（未リリース）から。`<wcs-pip>` が自分の `<video>` を聞いているのは、接続されている間だけです。`active` が `true` の間に切断されると — `if:` の枝が消える、`@wcstack/router` がルートの本文を取り外す — `active: false` を `wcs-pip:change` イベントとともに公開します。バインドした state のパスも `:state(active)` もそれに従います。文書の外にある要素は、その値をもう保証できないからです。小窓は**閉じません**。再び接続されると本当の値を読み直し、`<video>` がまだ document の Picture-in-Picture 要素なら `active` はイベントとともに `true` に戻ります。そのため、移動された（取り外して入れ直された）要素は `false`、`true` の順に報告します。4.24 までは切断しても `active` がそのまま残り、小窓が閉じられた後も state は `true` を示し続けていました。
+4.25 から。`<wcs-pip>` が自分の `<video>` を聞いているのは、接続されている間だけです。`active` が `true` の間に切断されると — `if:` の枝が消える、`@wcstack/router` がルートの本文を取り外す — `active: false` を `wcs-pip:change` イベントとともに公開します。バインドした state のパスも `:state(active)` もそれに従います。文書の外にある要素は、その値をもう保証できないからです。小窓は**閉じません**。再び接続されると本当の値を読み直し、`<video>` がまだ document の Picture-in-Picture 要素なら `active` はイベントとともに `true` に戻ります。そのため、移動された（取り外して入れ直された）要素は `false`、`true` の順に報告します。4.24 までは切断しても `active` がそのまま残り、小窓が閉じられた後も state は `true` を示し続けていました。
 
 小窓をどうするかはブラウザが決めます。**ナビゲーションをまたいで小窓を続けるには、`<video>` が文書に残っていなければなりません。** ルートの本文の中にある `<video>` は、ルートを離れると取り外されます。Chromium は取り外された動画を小窓で再生し続けますが、ほかのブラウザはそうとは限りません — そして `<wcs-pip>` も一緒に去っているので、どちらの場合も `active` はルートが戻るまで `false` です。動画とその `<wcs-pip>` はルーターの外、残り続けるレイアウトの側に置いてください（[router README — ルートの本文はどこに置くか](../router/README.ja.md#ルートの本文はどこに置くか)）。動画は再生を続け、小窓は残り、`active` はどのルートでも本当の値を伝え続けます。
 
@@ -288,7 +288,7 @@ PipCore.wcBindable = {
     { name: "active", event: "wcs-pip:change", getter: (e) => e.detail.active },
     { name: "error", event: "wcs-pip:error" },
     { name: "errorInfo", event: "wcs-pip:error-info-changed" },
-    { name: "supported", event: "wcs-pip:supported-changed" }, // 4.25（未リリース）
+    { name: "supported", event: "wcs-pip:supported-changed" }, // 4.25
   ],
   commands: [
     { name: "requestPictureInPicture", async: true },
@@ -320,7 +320,7 @@ await core.exitPictureInPicture();
 core.dispose();                 // リスナーを外す
 ```
 
-4.25（未リリース）から、`dispose()` は `active` が `true` だったとき `active: false` を公開し（dispose した Core はもう video を聞いていません）、次の `observe(video)` が読み直します。`core.supported` と、`observe()` が発火する `wcs-pip:supported-changed` イベントは、このページで Picture-in-Picture を使えるかを伝えます。
+4.25 から、`dispose()` は `active` が `true` だったとき `active: false` を公開し（dispose した Core はもう video を聞いていません）、次の `observe(video)` が読み直します。`core.supported` と、`observe()` が発火する `wcs-pip:supported-changed` イベントは、このページで Picture-in-Picture を使えるかを伝えます。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

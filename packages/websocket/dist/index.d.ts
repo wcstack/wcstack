@@ -271,7 +271,7 @@ declare class WcsWebSocket extends HTMLElement {
     set send(data: any);
     connect(): void;
     sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
-    close(code?: number, reason?: string): void;
+    close(code?: unknown, reason?: unknown): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     private _scheduleConnect;
     connectedCallback(): void;

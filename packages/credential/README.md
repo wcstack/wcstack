@@ -10,8 +10,8 @@ It is an **async primitive node** that turns `navigator.credentials.get()`/`.sto
 With `@wcstack/state`, `<wcs-credential>` can be bound directly through path contracts:
 
 - **input surface**: none — `get(options)`/`store(credential)`'s arguments are per-call
-- **command surface**: `get`, `store`, and — since 4.25 (not released yet) — `preventSilentAccess` (sign-out)
-- **output state surface**: `value`, `loading`, `error`, `cancelled`, and — since 4.25 (not released yet) — `supported`
+- **command surface**: `get`, `store`, and — since 4.25 — `preventSilentAccess` (sign-out)
+- **output state surface**: `value`, `loading`, `error`, `cancelled`, and — since 4.25 — `supported`
 
 ## Why this exists — password/federated only, WebAuthn is explicitly out of scope
 
@@ -29,7 +29,7 @@ npm install @wcstack/credential
 
 ## Browser support
 
-Since 4.25 (not released yet) the element says where it works, through the `supported` output.
+Since 4.25 the element says where it works, through the `supported` output.
 
 | Browser | Password credentials | `supported` |
 | ------- | -------------------- | ----------- |
@@ -135,8 +135,8 @@ So this element is an enhancement for Chromium, and the sign-in form has to work
 What each part is for:
 
 - **Silent sign-in on load.** `supported` arrives as `true` in a browser that has password credentials, the `$watch` runs once, and `get({ password: true, mediation: "silent" })` resolves with the saved credential or `null` — without showing anything. In Firefox and Safari `supported` stays `false`, nothing is asked, and the form is simply there. The command is emitted from that `$watch`, not from `$connectedCallback`: `supported` arrives once the element is defined and bound, and a command emitted before its `command.` binding is attached would be lost (`[wcs/command-token-unbound]`).
-- **Store after the server said yes.** `store()` is called once `POST /api/session` succeeded, never before: the browser offers to save whatever it is given, and a mistyped password saved once comes back on every visit. Since 4.25 (not released yet) `store()` takes the plain `{ id, password }`; up to 4.24 it takes a `PasswordCredential` you build yourself.
-- **Sign out calls `preventSilentAccess()`** (since 4.25 (not released yet)). Without it the browser hands the credential over again on the next load, and the user who just signed out is signed back in.
+- **Store after the server said yes.** `store()` is called once `POST /api/session` succeeded, never before: the browser offers to save whatever it is given, and a mistyped password saved once comes back on every visit. Since 4.25 `store()` takes the plain `{ id, password }`; up to 4.24 it takes a `PasswordCredential` you build yourself.
+- **Sign out calls `preventSilentAccess()`** (since 4.25). Without it the browser hands the credential over again on the next load, and the user who just signed out is signed back in.
 - **The password does not enter the state tree.** The credential is taken from the event (`eventToken.value`) and passed on. See [`value` carries the password](#value-carries-the-password).
 
 ### `value` carries the password
@@ -160,11 +160,11 @@ $on: {
 | `error`     | `wcs-credential:error`           | A true platform failure (normalized `{ name, message }`), or `null`. |
 | `cancelled` | `wcs-credential:cancelled-changed` | `true` when the user dismissed the browser's account-chooser UI (the Credential Management API rejects with `NotAllowedError`). Kept out of `error`. |
 | `errorInfo` | `wcs-credential:error-info-changed` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` (unsupported), `out-of-scope` (a `publicKey`/WebAuthn attempt), or `credential-failed` (a genuine failure). A `NotAllowedError` cancellation is `cancelled`, not `errorInfo`. |
-| `supported` | `wcs-credential:supported-changed` | Since 4.25 (not released yet). `true` when this page can use password credentials. See below. |
+| `supported` | `wcs-credential:supported-changed` | Since 4.25. `true` when this page can use password credentials. See below. |
 
-**`supported`** (since 4.25 (not released yet)) is `true` when `navigator.credentials` exists **and** `PasswordCredential` is a class — see [Browser support](#browser-support). It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-credential:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`). It does **not** say a credential is saved for this site, nor that the user will choose one: `get()` answers that.
+**`supported`** (since 4.25) is `true` when `navigator.credentials` exists **and** `PasswordCredential` is a class — see [Browser support](#browser-support). It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-credential:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`). It does **not** say a credential is saved for this site, nor that the user will choose one: `get()` answers that.
 
-**Unsupported is `capability-missing`, not a failure.** Since 4.25 (not released yet), where there is no `PasswordCredential` a `get()` whose options ask for `password` or `federated`, and every `store()`, end without calling the browser: `error` is `{ name: "NotSupportedError", message: "Password credentials are not supported in this browser." }` and `errorInfo` is `{ code: "capability-missing", phase: "start", recoverable: false, capabilityId: "web.password-credential", … }`. Up to 4.24 the call went to the browser and came back as `credential-failed` with `recoverable: true` — a failure a page would retry, in a browser that can never do it. Where `navigator.credentials` itself is missing, `error` is `{ message: "Credential Management API is not supported in this browser." }` (`capabilityId: "web.credentials"`), as before.
+**Unsupported is `capability-missing`, not a failure.** Since 4.25, where there is no `PasswordCredential` a `get()` whose options ask for `password` or `federated`, and every `store()`, end without calling the browser: `error` is `{ name: "NotSupportedError", message: "Password credentials are not supported in this browser." }` and `errorInfo` is `{ code: "capability-missing", phase: "start", recoverable: false, capabilityId: "web.password-credential", … }`. Up to 4.24 the call went to the browser and came back as `credential-failed` with `recoverable: true` — a failure a page would retry, in a browser that can never do it. Where `navigator.credentials` itself is missing, `error` is `{ message: "Credential Management API is not supported in this browser." }` (`capabilityId: "web.credentials"`), as before.
 
 **Concurrency.** `get()` and `store()` share one io-core lane with the `latest`
 policy: a later call **supersedes** the earlier one (these are used sequentially in
@@ -175,11 +175,11 @@ are invoked concurrently, the later call's result wins.
 
 | Command | Async | Description |
 | ------- | ----- | ------------ |
-| `get`   | yes   | `get(options)` — `options.publicKey` is rejected as a scope violation (see above) rather than forwarded. Never-throw: `NotAllowedError` (user dismissed the account chooser) → `cancelled`, everything else → `error`. Resolves the credential, or `null` when there is none. Since 4.25 (not released yet), `get(null)` and `get()` ask for nothing instead of throwing. |
-| `store` | yes   | `store(credential)` — a `Credential` instance, or since 4.25 (not released yet) a plain `{ id, password, name?, iconURL? }`, from which the element builds `new PasswordCredential(...)` with the members given. `value` echoes the credential stored (`navigator.credentials.store()` itself resolves `Promise<void>`). |
-| `preventSilentAccess` | yes | Since 4.25 (not released yet). Sign-out: calls `navigator.credentials.preventSilentAccess()`, after which a `get({ mediation: "silent" })` no longer hands a credential over until the user signs in again. No arguments. Clears `error` on success; a rejection lands in `error` / `errorInfo` (`credential-failed`). Where the browser has no such method it resolves having done nothing — signing out works everywhere. It touches neither `value` nor `loading`, and does not go through the lane: it neither supersedes a `get()` / `store()` in flight nor is superseded by one. |
+| `get`   | yes   | `get(options)` — `options.publicKey` is rejected as a scope violation (see above) rather than forwarded. Never-throw: `NotAllowedError` (user dismissed the account chooser) → `cancelled`, everything else → `error`. Resolves the credential, or `null` when there is none. Since 4.25, `get(null)` and `get()` ask for nothing instead of throwing. |
+| `store` | yes   | `store(credential)` — a `Credential` instance, or since 4.25 a plain `{ id, password, name?, iconURL? }`, from which the element builds `new PasswordCredential(...)` with the members given. `value` echoes the credential stored (`navigator.credentials.store()` itself resolves `Promise<void>`). |
+| `preventSilentAccess` | yes | Since 4.25. Sign-out: calls `navigator.credentials.preventSilentAccess()`, after which a `get({ mediation: "silent" })` no longer hands a credential over until the user signs in again. No arguments. Clears `error` on success; a rejection lands in `error` / `errorInfo` (`credential-failed`). Where the browser has no such method it resolves having done nothing — signing out works everywhere. It touches neither `value` nor `loading`, and does not go through the lane: it neither supersedes a `get()` / `store()` in flight nor is superseded by one. |
 
-**`store()` and plain data** (since 4.25 (not released yet)). A state method has an id and a password as strings, not a `PasswordCredential` — a class only Chromium has. So `store({ id, password })` builds it: when the argument is not a `Credential` instance and its `id` and `password` are strings, the element stores `new PasswordCredential({ id, password })`, adding `name` and `iconURL` when they are given. Anything else is passed to the browser as it came. A constructor that throws (an empty `id`) ends in `error` like any other failure.
+**`store()` and plain data** (since 4.25). A state method has an id and a password as strings, not a `PasswordCredential` — a class only Chromium has. So `store({ id, password })` builds it: when the argument is not a `Credential` instance and its `id` and `password` are strings, the element stores `new PasswordCredential({ id, password })`, adding `name` and `iconURL` when they are given. Anything else is passed to the browser as it came. A constructor that throws (an empty `id`) ends in `error` like any other failure.
 
 > **Wire `get` and `store` through a state method, not straight to a button.** `<button data-wcs="onclick: $command.getCredential">` emits the token with the DOM event as its first argument, so the element is called as `get(event)` — options that ask for nothing, which resolves `null` — or `store(event)`, which the browser rejects with a `TypeError`. These commands take data: emit it from a method (`this.$command.getCredential.emit({ password: true })`). `preventSilentAccess` takes no argument, so `onclick: $command.forgetSignIn` is fine.
 
@@ -262,7 +262,7 @@ const credential = await core.get({ password: true });
 core.dispose();
 ```
 
-Since 4.25 (not released yet): `core.supported` can be read at any time, `core.observe()` dispatches `wcs-credential:supported-changed` when the value differs from the last one dispatched, `core.store({ id, password })` builds the `PasswordCredential`, and `await core.preventSilentAccess()` is the sign-out.
+Since 4.25: `core.supported` can be read at any time, `core.observe()` dispatches `wcs-credential:supported-changed` when the value differs from the last one dispatched, `core.store({ id, password })` builds the `PasswordCredential`, and `await core.preventSilentAccess()` is the sign-out.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

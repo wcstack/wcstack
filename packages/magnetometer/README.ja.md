@@ -9,7 +9,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-magnetometer>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `frequency`（サンプリングレート、Hz）
-- **出力 state サーフェス**: `x`、`y`、`z`、`error`、`errorInfo`、そして 4.25（未リリース）から `supported`
+- **出力 state サーフェス**: `x`、`y`、`z`、`error`、`errorInfo`、そして 4.25 から `supported`
 
 `@wcstack/magnetometer` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
@@ -92,7 +92,7 @@ npm install @wcstack/magnetometer
 
 | 属性        | 型     | 既定値 | 説明 |
 | ----------- | ------ | ------ | ---- |
-| `frequency` | number | —      | サンプリングレート（Hz）。`Magnetometer`コンストラクタへそのまま渡る。読み取られるのは`start()`実行時のみ — 稼働中に変更しても`stop()`＋`start()`し直すまで反映されない（注意・制限を参照）。4.25（未リリース）から: 正の数でない値は `start()` のときにコンソールへ 1 回言います（`[wcs/frequency-invalid]`、注意・制限を参照）。 |
+| `frequency` | number | —      | サンプリングレート（Hz）。`Magnetometer`コンストラクタへそのまま渡る。読み取られるのは`start()`実行時のみ — 稼働中に変更しても`stop()`＋`start()`し直すまで反映されない（注意・制限を参照）。4.25 から: 正の数でない値は `start()` のときにコンソールへ 1 回言います（`[wcs/frequency-invalid]`、注意・制限を参照）。 |
 
 **`null` と `undefined`。** 属性に対応する入力（`frequency`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（プラットフォームのサンプリングレート）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
 
@@ -105,7 +105,7 @@ npm install @wcstack/magnetometer
 | `z`        | `wcs-magnetometer:reading` | z軸方向の磁束密度。 |
 | `error`    | `wcs-magnetometer:error`   | 正規化された`{ error, message }`、無ければ`null`。 |
 | `errorInfo` | `wcs-magnetometer:error-info-changed` | シリアライズ可能な失敗分類（`WcsIoErrorInfo` — 安定した `code` / `phase` / `recoverable`）、無ければ`null`。`error`から派生する追加的な出力で、既存の`error`の形状は不変。 |
-| `supported` | `wcs-magnetometer:supported-changed` | 4.25（未リリース）から。このページでセンサーを使えるなら`true`。[`supported`](#supported--このページで使えるか)を参照。 |
+| `supported` | `wcs-magnetometer:supported-changed` | 4.25 から。このページでセンサーを使えるなら`true`。[`supported`](#supported--このページで使えるか)を参照。 |
 
 `x`/`y`/`z`は単一の`wcs-magnetometer:reading`イベントから派生します（ネイティブの1回の`reading`イベントで3軸が同時に更新される）。
 
@@ -113,12 +113,12 @@ npm install @wcstack/magnetometer
 
 | コマンド | 非同期 | 説明 |
 | -------- | ------ | ---- |
-| `start`  | いいえ | センサーを構築（never-throw: コンストラクタの同期例外はキャッチし`error`へ）し読み取りを開始する。開始済みの間は冪等（再度呼んでも何もしない）。4.25（未リリース）から: センサー自身の`error`イベントの後は次の`start()`が新しいセンサーを作る。 |
+| `start`  | いいえ | センサーを構築（never-throw: コンストラクタの同期例外はキャッチし`error`へ）し読み取りを開始する。開始済みの間は冪等（再度呼んでも何もしない）。4.25 から: センサー自身の`error`イベントの後は次の`start()`が新しいセンサーを作る。 |
 | `stop`   | いいえ | センサーを停止しリスナーを解除する。未開始でも安全に呼べる。 |
 
 ## `supported` — このページで使えるか
 
-4.25（未リリース）から。`supported` は、このページでセンサーを使えるときに `true` です: ブラウザに `Magnetometer` クラスがあり、ページが secure context で、Permissions-Policy が `magnetometer` を切っていない（サーバーのヘッダ、または `allow="magnetometer"` の無い `<iframe>`——ページが自分のポリシーを読めるブラウザ、つまり Chromium で分かります）。`false` のところでは `start()` は動かず、タップしても変わりません: 機能を出さないでください。
+4.25 から。`supported` は、このページでセンサーを使えるときに `true` です: ブラウザに `Magnetometer` クラスがあり、ページが secure context で、Permissions-Policy が `magnetometer` を切っていない（サーバーのヘッダ、または `allow="magnetometer"` の無い `<iframe>`——ページが自分のポリシーを読めるブラウザ、つまり Chromium で分かります）。`false` のところでは `start()` は動かず、タップしても変わりません: 機能を出さないでください。
 
 利用者が許可するかどうかは**言いません**（それは `<wcs-permission name="magnetometer">` が見ます）。そして**端末にセンサーがあるかどうかは言えません**: PC には API があってセンサーがありません。そこでは読み取りが来ないだけか、センサーが `error` で知らせます。
 
@@ -133,7 +133,7 @@ npm install @wcstack/magnetometer
 
 ## iPhone では
 
-iPhone / iPad の Safari には `Magnetometer` クラスが無く、この読み取りを運ぶほかのイベントもないので、`<wcs-magnetometer>` にはフォールバックがありません。4.25（未リリース）から、iPhone では `supported` が `false` になり、ページは何かを出す前にそれを読めます。`start()` はこれまでどおり `unsupported`（`errorInfo.code: "capability-missing"`）で終わります。`<wcs-accelerometer>` と `<wcs-gyroscope>` は 4.25（未リリース）から `devicemotion` を通して iPhone でも動きます。方角が欲しいなら `<wcs-tilt>` の `heading` を使ってください。
+iPhone / iPad の Safari には `Magnetometer` クラスが無く、この読み取りを運ぶほかのイベントもないので、`<wcs-magnetometer>` にはフォールバックがありません。4.25 から、iPhone では `supported` が `false` になり、ページは何かを出す前にそれを読めます。`start()` はこれまでどおり `unsupported`（`errorInfo.code: "capability-missing"`）で終わります。`<wcs-accelerometer>` と `<wcs-gyroscope>` は 4.25 から `devicemotion` を通して iPhone でも動きます。方角が欲しいなら `<wcs-tilt>` の `heading` を使ってください。
 
 ## `:state()` による CSS スタイリング
 
@@ -186,9 +186,9 @@ wcs-magnetometer:state(error) ~ .fallback { display: block; }
 
 - **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。
 - **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。
-- **`error`イベントの後、`start()`はまた動きます。** 4.25（未リリース）から、センサーが自分の`error`イベント（たとえば`NotReadableError`）を出すと、失敗したセンサーは片付けられ、次の`start()`が新しいセンサーを作ります。4.24までは、そのエラーの後の`start()`は`stop()`を呼ぶまで何もせず、それを知らせるものもありませんでした。`error`そのものは上記のとおり残ります。
+- **`error`イベントの後、`start()`はまた動きます。** 4.25 から、センサーが自分の`error`イベント（たとえば`NotReadableError`）を出すと、失敗したセンサーは片付けられ、次の`start()`が新しいセンサーを作ります。4.24までは、そのエラーの後の`start()`は`stop()`を呼ぶまで何もせず、それを知らせるものもありませんでした。`error`そのものは上記のとおり残ります。
 - **`errorInfo` 分類（taxonomy）。** 同じ失敗をシリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-magnetometer:error-info-changed`）で、`error`の形状は変更しません。正規化された error 名に応じて対応づけます: `unsupported` → `capability-missing`（phase `probe`）、`SecurityError` / `NotAllowedError` → `not-allowed`（phase `start`）、`NotReadableError` → `not-readable`（phase `execute`）、その他のセンサー失敗 → `sensor-error`（phase `execute`）。いずれも `recoverable: false` です。`errorInfo` は `error` と完全に同じタイミングで遷移するため、同様に **sticky** で、`error` が `null` に戻るときにのみ `null` に戻ります。共有の `WcsIoErrorInfo` 型と `WCS_MAGNETOMETER_ERROR_CODE` 定数はエクスポートされます。
-- **使えない`frequency`は知らせます。** 4.25（未リリース）から、空でなく正の数でもない`frequency`属性（`frequency="60hz"`、`frequency="0"`）で`start()`が走ると、コンソールに要素ごとに 1 回警告が出ます: `[@wcstack/magnetometer] [wcs/frequency-invalid] <wcs-magnetometer> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` センサーは既定の頻度で開始します——これまでも同じでしたが、何も言いませんでした。ブラウザが許す上限を超える頻度はブラウザが丸め、それを知らせるものはありません。
+- **使えない`frequency`は知らせます。** 4.25 から、空でなく正の数でもない`frequency`属性（`frequency="60hz"`、`frequency="0"`）で`start()`が走ると、コンソールに要素ごとに 1 回警告が出ます: `[@wcstack/magnetometer] [wcs/frequency-invalid] <wcs-magnetometer> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` センサーは既定の頻度で開始します——これまでも同じでしたが、何も言いませんでした。ブラウザが許す上限を超える頻度はブラウザが丸め、それを知らせるものはありません。
 - **`frequency`は`start()`時にのみ読み取られます。** `attributeChangedCallback`は無く、`start()`は既に開始済みの間は冪等（再度呼んでも何もしない、上記コマンド参照）であるため、稼働中に`frequency`（属性またはプロパティ）を変更しても反映されません。新しいサンプリングレートを適用するには`stop()`してから`start()`し直してください。
 - **再親付け（別の親要素への移動）はセンサーを停止し、自動再開しません。** 接続中の`<wcs-magnetometer>`要素を別の親へ移動すると`disconnectedCallback`→`connectedCallback`が発火します。Shellは接続時に自動開始しないため（上記クイックスタート参照）、これは実質的な停止であり自動再開はされません。`x`/`y`/`z`は最後のサンプル値のまま凍結され、`error`も発生しません — `start`を再度発行するまでセンサーは inert のままです。
 - **生の`new Magnetometer(...)`は唯一のガード付き構築ヘルパー以外では呼ばない。** 権限拒否・Permissions-Policyブロックは同期的に例外を投げます。
@@ -209,7 +209,7 @@ core.start();
 core.dispose();
 ```
 
-4.25（未リリース）から、`core.supported` はいつでも読め、`core.publishSupported()` は最後に dispatch した値と違うときに `wcs-magnetometer:supported-changed` を dispatch します。
+4.25 から、`core.supported` はいつでも読め、`core.publishSupported()` は最後に dispatch した値と違うときに `wcs-magnetometer:supported-changed` を dispatch します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

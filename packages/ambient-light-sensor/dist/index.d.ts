@@ -94,6 +94,8 @@ interface WcsAmbientLightSensorCoreValues extends WcsAmbientLightSensorReading {
     error: WcsAmbientLightSensorErrorDetail | null;
     /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
     errorInfo: WcsIoErrorInfo | null;
+    /** This page can use the sensor (the API is there and the page is not forbidden to use it). */
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-ambient-light-sensor>`) — identical observable
@@ -145,6 +147,7 @@ declare class AmbientLightSensorCore extends EventTarget {
     private _reading;
     private _error;
     private _errorInfo;
+    private _supportedPublished;
     private _sensor;
     constructor(target?: EventTarget);
     get illuminance(): number | null;
@@ -156,6 +159,13 @@ declare class AmbientLightSensorCore extends EventTarget {
      * `error` property/event are unchanged.
      */
     get errorInfo(): WcsIoErrorInfo | null;
+    /**
+     * Whether this page can use the sensor: the `AmbientLightSensor` class is there, and
+     * neither an insecure context nor a Permissions-Policy that forbids
+     * `ambient-light-sensor` is in the way. Read at call time, never cached. It cannot
+     * say whether the device has a sensor.
+     */
+    get supported(): boolean;
     /** No asynchronous probe to await: start()/stop() are synchronous
      *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
      *  NetworkCore). */
@@ -163,6 +173,13 @@ declare class AmbientLightSensorCore extends EventTarget {
     private _setReading;
     private _setError;
     private _commitErrorInfo;
+    /**
+     * Dispatch `wcs-ambient-light-sensor:supported-changed` when `supported` differs
+     * from the value last dispatched (false before the first). The Shell calls it
+     * on connect, so a listener other than a binding — which reads the property
+     * when it binds — learns the value too.
+     */
+    publishSupported(): void;
     /**
      * Start the sensor at the given `frequency` (Hz), or the platform default
      * when omitted. Idempotent while already started: a redundant start() does
@@ -210,9 +227,10 @@ declare class AmbientLightSensorCore extends EventTarget {
  * (docs/sensor-tag-design.md §1.2). The getter normalizes it: a non-finite or
  * non-positive value (NaN, 0, negative) reads back as `null` — meaning "no
  * frequency specified" — so start() falls back to the platform default rather
- * than forwarding a value the sensor would reject. Any positive finite value is
- * passed through verbatim (no upper-bound clamping — an out-of-range-but-positive
- * rate is still left to the browser/sensor to reject via `error`).
+ * than forwarding a value the sensor would reject, and says so once
+ * (`[wcs/frequency-invalid]`). Any positive finite value is passed through
+ * verbatim (no upper-bound clamping — the browser caps a rate above what it
+ * allows).
  *
  * Permission handling is intentionally NOT implemented here. Compose with
  * `<wcs-permission name="ambient-light-sensor">` instead (see the README's permission
@@ -224,6 +242,7 @@ declare class WcsAmbientLightSensor extends HTMLElement {
     private _core;
     private _connectedCallbackPromise;
     private _internals;
+    private _frequencyWarned;
     constructor();
     get debugStates(): string[];
     private _initInternals;
@@ -245,9 +264,11 @@ declare class WcsAmbientLightSensor extends HTMLElement {
     get illuminance(): number | null;
     get error(): WcsAmbientLightSensorErrorDetail | null;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
     start(): void;
     stop(): void;
+    private _warnUnusableFrequency;
     connectedCallback(): void;
     connectedMoveCallback(): void;
     disconnectedCallback(): void;

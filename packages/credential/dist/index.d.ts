@@ -124,6 +124,19 @@ interface CredentialGetOptions {
 /** A password or federated credential, as accepted by `navigator.credentials.store()`. */
 type StorableCredential = Credential;
 /**
+ * A password credential as plain data, for `store()`: when the argument is not a
+ * `Credential` instance and has a string `id` and `password`, the element builds
+ * `new PasswordCredential(...)` from it (only the members given) and stores that.
+ * Lets a state method pass `{ id, password }` without touching a browser class
+ * that exists in Chromium only.
+ */
+interface WcsPasswordCredentialData {
+    id: string;
+    password: string;
+    name?: string;
+    iconURL?: string;
+}
+/**
  * Value types for CredentialCore (headless) — the observable state properties.
  */
 interface WcsCredentialCoreValues {
@@ -132,6 +145,7 @@ interface WcsCredentialCoreValues {
     error: any;
     cancelled: boolean;
     errorInfo: WcsIoErrorInfo | null;
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-credential>`) — identical observable
@@ -168,9 +182,18 @@ declare function getConfig(): IConfig;
  * Web Share / Contact Picker, `credentials.get()/store()` reject with
  * `NotAllowedError` when the user dismisses the native chooser. That maps to
  * `cancelled`; every other name flows to `error`/`errorInfo`.
+ *
+ * **Password credentials are Chromium only.** Firefox and Safari have
+ * `navigator.credentials` (for WebAuthn) and no `PasswordCredential`. A `get()` that
+ * asks for `password` / `federated`, and every `store()`, is refused there as
+ * `capability-missing` without calling the browser, and `supported` is false.
+ * `preventSilentAccess()` (sign-out) is not on the lane and does nothing where the
+ * method is missing.
  */
 declare class CredentialCore extends EventTarget {
     static wcBindable: IWcBindable;
+    private static readonly CONTAINER_CAPABILITY;
+    private static readonly PASSWORD_CAPABILITY;
     private static readonly REQUIRED_CAPABILITIES;
     private _target;
     private _value;
@@ -178,6 +201,7 @@ declare class CredentialCore extends EventTarget {
     private _error;
     private _cancelled;
     private _errorInfo;
+    private _supportedPublished;
     private _lane;
     private _ready;
     constructor(target?: EventTarget);
@@ -195,19 +219,24 @@ declare class CredentialCore extends EventTarget {
      */
     get errorInfo(): WcsIoErrorInfo | null;
     /**
-     * Whether the required platform capability (`web.credentials`) is available right
-     * now — decided by call-time feature detection, not User-Agent. Core-only,
-     * additive.
+     * Whether this page can use password credentials right now: `navigator.credentials`
+     * is there **and** `PasswordCredential` is a class — decided by call-time feature
+     * detection, not User-Agent. False in Firefox and Safari, which have the container
+     * (for WebAuthn) and no `PasswordCredential`. It does not say a credential is
+     * saved, or that the user will choose one. A wc-bindable output (event
+     * `wcs-credential:supported-changed`).
      */
     get supported(): boolean;
     /**
      * Full platform assessment (availability / readiness / preconditions), probed at
-     * call time. Core-only opt-in dev / sidecar view.
+     * call time. Core-only opt-in dev / sidecar view. Both capabilities are required:
+     * without `PasswordCredential` the readiness is "idle".
      */
     get platformAssessment(): PlatformAssessment;
     observe(): Promise<void>;
     dispose(): void;
     private _commitStep;
+    private _publishSupported;
     private _setLoading;
     private _setValue;
     private _setError;
@@ -217,23 +246,43 @@ declare class CredentialCore extends EventTarget {
     private _normalizeError;
     private _isCancellation;
     private _run;
+    private _capabilitiesPresent;
     /**
      * `get(options)` — v1 scope excludes `publicKey` (WebAuthn). If present, it is
      * stripped and the call surfaces a scope-violation `error` instead of forwarding
      * it to the platform API. `navigator.credentials.get()` does not require a user
      * gesture, so this can be invoked automatically on page load for silent sign-in.
+     * Options that ask for `password` or `federated` need the `PasswordCredential`
+     * class; without it the call ends as `capability-missing` and the browser is not
+     * asked. Anything that is not an object (`null`, `undefined`) asks for nothing.
      */
-    get(options?: CredentialGetOptions & {
+    get(options?: (CredentialGetOptions & {
         publicKey?: unknown;
-    }): Promise<Credential | null>;
+    }) | null): Promise<Credential | null>;
     /**
      * `store(credential)` — shares the same single lane as `get()`.
      * `navigator.credentials.store()` resolves `Promise<void>`, so `value` is
-     * synthesized as an echo of the caller's `credential`. A `PublicKeyCredential`
+     * synthesized as an echo of the credential stored. A `PublicKeyCredential`
      * (`type === "public-key"`, WebAuthn) is rejected as a scope violation before
-     * touching the platform API.
+     * touching the platform API. A plain `{ id, password, name?, iconURL? }` is made
+     * into a `PasswordCredential` first; a `Credential` instance is stored as it is.
+     * Needs the `PasswordCredential` class (`capability-missing` without it).
      */
-    store(credential: StorableCredential): Promise<Credential | null>;
+    store(credential: StorableCredential | WcsPasswordCredentialData): Promise<Credential | null>;
+    private _toCredential;
+    /**
+     * `preventSilentAccess()` — sign-out. Asks the browser not to hand this origin's
+     * credential over without the user (`navigator.credentials.preventSilentAccess()`):
+     * otherwise the next visit's `get({ mediation: "silent" })` signs the user straight
+     * back in. Never-throw: success clears `error`, a rejection lands in `error` /
+     * `errorInfo` (`credential-failed`). Where `navigator.credentials` or the method is
+     * missing it resolves having done nothing — signing out must work everywhere, and
+     * there is nothing to switch off. It does not touch `value` or `loading`.
+     *
+     * Not on the lane: it has no result to race, so a get()/store() in flight neither
+     * supersedes it nor is superseded by it. Only a dispose() drops its completion.
+     */
+    preventSilentAccess(): Promise<void>;
 }
 
 /**
@@ -242,7 +291,8 @@ declare class CredentialCore extends EventTarget {
  * WebAuthn scope exclusion).
  *
  * A thin command-only Shell (mirrors `<wcs-share>`): no attributes at all.
- * `get(options)`/`store(credential)`'s arguments are per-call.
+ * `get(options)`/`store(credential)`'s arguments are per-call;
+ * `preventSilentAccess()` (sign-out) takes none.
  */
 declare class WcsCredential extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
@@ -259,9 +309,11 @@ declare class WcsCredential extends HTMLElement {
     get error(): any;
     get cancelled(): boolean;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
-    get(options?: CredentialGetOptions): Promise<Credential | null>;
-    store(credential: StorableCredential): Promise<Credential | null>;
+    get(options?: CredentialGetOptions | null): Promise<Credential | null>;
+    store(credential: StorableCredential | WcsPasswordCredentialData): Promise<Credential | null>;
+    preventSilentAccess(): Promise<void>;
     connectedCallback(): void;
     connectedMoveCallback(): void;
     disconnectedCallback(): void;
@@ -292,4 +344,4 @@ declare global {
 }
 
 export { CredentialCore, WCS_CREDENTIAL_ERROR_CODE, WcsCredential, bootstrapCredential, getConfig };
-export type { CredentialGetOptions, IWritableConfig, IWritableTagNames, StorableCredential, WcsCredentialCoreValues, WcsCredentialValues, WcsIoErrorInfo, WcsIoErrorPhase };
+export type { CredentialGetOptions, IWritableConfig, IWritableTagNames, StorableCredential, WcsCredentialCoreValues, WcsCredentialValues, WcsIoErrorInfo, WcsIoErrorPhase, WcsPasswordCredentialData };

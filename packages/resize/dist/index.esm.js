@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/resize","version":"4.24.2"};
+var pkg = {"name":"@wcstack/resize","version":"4.25.0"};
 
 /**
  * Headless element-size primitive. A thin, framework-agnostic wrapper around the

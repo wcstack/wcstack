@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/eyedropper","version":"4.24.2"};
+var pkg = {"name":"@wcstack/eyedropper","version":"4.25.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -462,6 +462,10 @@ class EyedropperCore extends EventTarget {
             // Fires its own `wcs-eyedropper:error-info-changed` event; no getter, so the
             // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
             { name: "errorInfo", event: "wcs-eyedropper:error-info-changed", semantics: "state" },
+            // Whether this page can use the EyeDropper API (the constructor is there).
+            // Computed at call time; the event carries the boolean and fires from
+            // observe() when it differs from the last value dispatched.
+            { name: "supported", event: "wcs-eyedropper:supported-changed", semantics: "state" },
         ],
         commands: [
             { name: "open", async: true },
@@ -476,6 +480,9 @@ class EyedropperCore extends EventTarget {
     _error = null;
     _cancelled = false;
     _errorInfo = null;
+    // `supported` as last dispatched (never the value itself — the getter probes at
+    // call time). Starts at false, so observe() announces a page that has the API.
+    _supportedPublished = false;
     // Concurrency lane (io-core). `latest`: a new open() supersedes + aborts the
     // in-flight one (switchMap). `withSignal: true`: the lane owns the per-attempt
     // AbortController whose signal is passed to EyeDropper.open(). dispose() bumps
@@ -513,9 +520,11 @@ class EyedropperCore extends EventTarget {
         return this._errorInfo;
     }
     /**
-     * Whether the required platform capability (`web.eyedropper`) is available right
-     * now — decided by call-time feature detection, not User-Agent. Core-only,
-     * additive.
+     * Whether this page can use the EyeDropper API right now: the `EyeDropper`
+     * constructor is there (call-time feature detection, not User-Agent — browsers
+     * expose the constructor in secure contexts only, so an insecure page reads
+     * false). It does not say the user will pick a color. A wc-bindable output
+     * (event `wcs-eyedropper:supported-changed`).
      */
     get supported() {
         return requiredCapabilitiesAvailable(this.platformAssessment, EyedropperCore.REQUIRED_CAPABILITIES);
@@ -532,10 +541,12 @@ class EyedropperCore extends EventTarget {
         });
     }
     // Lifecycle (§3.5). EyeDropper is command-driven with no subscription to
-    // establish, so observe() is an idempotent no-op that resolves once ready;
+    // establish, so observe() only publishes `supported` (when it differs from the
+    // last value dispatched) and resolves once ready — idempotent;
     // dispose() bumps the lane's owner generation (invalidating any in-flight open())
     // and aborts its AbortController.
     observe() {
+        this._publishSupported();
         return this._ready;
     }
     dispose() {
@@ -552,6 +563,20 @@ class EyedropperCore extends EventTarget {
         if (this._lane.canCommit(ticket)) {
             step();
         }
+    }
+    // `supported` is probed at call time, so there is no stored value to set: this
+    // dispatches the current one when it differs from the last one dispatched
+    // (same-value guard). A state binding reads the property when it attaches; the
+    // event is for every other listener.
+    _publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-eyedropper:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
     }
     _setLoading(loading) {
         if (this._loading === loading)
@@ -842,6 +867,11 @@ class WcsEyedropper extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Probed at call time by the Core (never cached), so a binding that reads it when
+    // it attaches gets the right value without waiting for an event.
+    get supported() {
+        return this._core.supported;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -857,6 +887,8 @@ class WcsEyedropper extends HTMLElement {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.style.display = "none";
+        // observe() publishes `supported` (wcs-eyedropper:supported-changed) when it
+        // differs from the last value dispatched.
         this._connectedCallbackPromise = this._core.observe();
     }
     // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it

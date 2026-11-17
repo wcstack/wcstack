@@ -5,7 +5,7 @@
       "name": "wcs-accelerometer",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/accelerometer` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+        "value": "`@wcstack/accelerometer` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `permissionState`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.requestPermission`, `command.start`, `command.stop`"
       },
       "attributes": [],
       "references": [
@@ -19,7 +19,7 @@
       "name": "wcs-ambient-light-sensor",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/ambient-light-sensor` custom element (wc-bindable).\n\n**Bindable properties**: `illuminance`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+        "value": "`@wcstack/ambient-light-sensor` custom element (wc-bindable).\n\n**Bindable properties**: `illuminance`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
       },
       "attributes": [],
       "references": [
@@ -347,7 +347,7 @@
       "name": "wcs-contacts",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/contacts` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.select`"
+        "value": "`@wcstack/contacts` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`, `supported`\n\n**Commands**: `command.select`"
       },
       "attributes": [],
       "references": [
@@ -361,7 +361,7 @@
       "name": "wcs-credential",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/credential` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.get`, `command.store`"
+        "value": "`@wcstack/credential` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`, `supported`\n\n**Commands**: `command.get`, `command.store`, `command.preventSilentAccess`"
       },
       "attributes": [],
       "references": [
@@ -610,7 +610,7 @@
       "name": "wcs-eyedropper",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/eyedropper` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.open`, `command.abort`"
+        "value": "`@wcstack/eyedropper` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`, `supported`\n\n**Commands**: `command.open`, `command.abort`"
       },
       "attributes": [],
       "references": [
@@ -674,7 +674,7 @@
       "name": "wcs-fullscreen",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/fullscreen` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestFullscreen`, `command.exitFullscreen`"
+        "value": "`@wcstack/fullscreen` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestFullscreen`, `command.exitFullscreen`"
       },
       "attributes": [
         {
@@ -810,7 +810,7 @@
       "name": "wcs-gyroscope",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/gyroscope` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+        "value": "`@wcstack/gyroscope` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `permissionState`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.requestPermission`, `command.start`, `command.stop`"
       },
       "attributes": [],
       "references": [
@@ -1081,7 +1081,7 @@
       "name": "wcs-magnetometer",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/magnetometer` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+        "value": "`@wcstack/magnetometer` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
       },
       "attributes": [],
       "references": [
@@ -1422,7 +1422,7 @@
       "name": "wcs-permission",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/permission` custom element (wc-bindable).\n\n**Bindable properties**: `state`, `granted`, `denied`, `prompt`, `unsupported`\n\n**Inputs**: `name`, `userVisibleOnly`, `sysex`"
+        "value": "`@wcstack/permission` custom element (wc-bindable).\n\n**Bindable properties**: `state`, `granted`, `denied`, `prompt`, `unsupported`, `unsupportedReason`\n\n**Inputs**: `name`, `userVisibleOnly`, `sysex`"
       },
       "attributes": [
         {
@@ -1458,7 +1458,7 @@
       "name": "wcs-pip",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/picture-in-picture` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestPictureInPicture`, `command.exitPictureInPicture`"
+        "value": "`@wcstack/picture-in-picture` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestPictureInPicture`, `command.exitPictureInPicture`"
       },
       "attributes": [
         {
@@ -1480,7 +1480,7 @@
       "name": "wcs-pointer-lock",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/pointer-lock` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestPointerLock`, `command.exitPointerLock`"
+        "value": "`@wcstack/pointer-lock` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`, `supported`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestPointerLock`, `command.exitPointerLock`"
       },
       "attributes": [
         {
@@ -1638,7 +1638,7 @@
       "name": "wcs-screen-orientation",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/screen-orientation` custom element (wc-bindable).\n\n**Bindable properties**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`\n\n**Commands**: `command.lock`, `command.unlock`"
+        "value": "`@wcstack/screen-orientation` custom element (wc-bindable).\n\n**Bindable properties**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`, `supported`\n\n**Commands**: `command.lock`, `command.unlock`"
       },
       "attributes": [],
       "references": [
@@ -1716,7 +1716,7 @@
       "name": "wcs-share",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/share` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.share`"
+        "value": "`@wcstack/share` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`, `supported`\n\n**Commands**: `command.share`"
       },
       "attributes": [],
       "references": [
@@ -1930,7 +1930,7 @@
       "name": "wcs-tilt",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/tilt` custom element (wc-bindable).\n\n**Bindable properties**: `alpha`, `beta`, `gamma`, `absolute`, `permissionState`, `error`, `errorInfo`\n\n**Commands**: `command.requestPermission`, `command.start`, `command.stop`"
+        "value": "`@wcstack/tilt` custom element (wc-bindable).\n\n**Bindable properties**: `alpha`, `beta`, `gamma`, `absolute`, `heading`, `permissionState`, `error`, `errorInfo`, `supported`\n\n**Commands**: `command.requestPermission`, `command.start`, `command.stop`"
       },
       "attributes": [],
       "references": [

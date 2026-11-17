@@ -146,6 +146,12 @@ interface WcsShareCoreValues {
     cancelled: boolean;
     /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
     errorInfo: WcsIoErrorInfo | null;
+    /**
+     * `true` when this page can use the Web Share API: `navigator.share` is there and
+     * no Permissions-Policy (`web-share`) or insecure context forbids it. It does not
+     * say that a particular `data` can be shared — ask `canShare(data)` for that.
+     */
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-share>`) — identical observable surface to
@@ -183,6 +189,7 @@ declare class ShareCore extends EventTarget {
     private _error;
     private _cancelled;
     private _errorInfo;
+    private _supportedPublished;
     private _lane;
     private _ready;
     constructor(target?: EventTarget);
@@ -199,8 +206,12 @@ declare class ShareCore extends EventTarget {
      */
     get errorInfo(): WcsIoErrorInfo | null;
     /**
-     * Whether the required platform capability (`web.share`) is available right now —
-     * decided by call-time feature detection, not User-Agent. Core-only, additive.
+     * Whether this page can use the Web Share API right now: `navigator.share` is a
+     * function (call-time feature detection, not User-Agent) and neither a
+     * Permissions-Policy (`web-share`: the server's header, an `<iframe>` without
+     * `allow="web-share"`) nor an insecure context forbids it. It does not say that
+     * *this* data can be shared (files: `canShare(data)`), nor that the user will
+     * pick a target. A wc-bindable output (event `wcs-share:supported-changed`).
      */
     get supported(): boolean;
     /**
@@ -210,6 +221,7 @@ declare class ShareCore extends EventTarget {
     get platformAssessment(): PlatformAssessment;
     observe(): Promise<void>;
     dispose(): void;
+    private _publishSupported;
     private _setLoading;
     private _setValue;
     private _setError;
@@ -241,6 +253,7 @@ declare class WcsShare extends HTMLElement {
     get error(): any;
     get cancelled(): boolean;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
     share(data?: WcsShareData): Promise<WcsShareData | null>;
     /**

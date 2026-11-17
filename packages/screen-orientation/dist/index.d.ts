@@ -75,9 +75,9 @@ type OrientationLockType = "any" | "natural" | "landscape" | "portrait" | "portr
 /**
  * A single snapshot of `screen.orientation` (Screen Orientation API), or the
  * unsupported default. `type`/`angle` are `null` when the API is absent (see
- * docs/screen-orientation-tag-design.md §7). Unlike `@wcstack/network`, there
- * is no explicit `supported` boolean — `type === null` is the unsupported
- * signal (§7).
+ * docs/screen-orientation-tag-design.md §7). Unlike `@wcstack/network`, the
+ * snapshot carries no `supported` boolean — in it, `type === null` is the
+ * unsupported signal (§7); the `supported` output says it directly.
  */
 interface WcsScreenOrientationSnapshot {
     type: OrientationType | null;
@@ -102,6 +102,11 @@ type WcsScreenOrientationCoreValues = WcsScreenOrientationSnapshot & {
     error: any;
     /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
     errorInfo: WcsIoErrorInfo | null;
+    /**
+     * `true` when this page has `screen.orientation` to monitor. It does not say
+     * `lock()` will hold — that is known only by trying it (`error` / `errorInfo`).
+     */
+    supported: boolean;
 };
 /**
  * Value types for the Shell (`<wcs-screen-orientation>`) — identical
@@ -137,6 +142,7 @@ declare class ScreenOrientationCore extends EventTarget {
     private _snapshot;
     private _error;
     private _errorInfo;
+    private _supportedPublished;
     private _orientation;
     private _subscribed;
     private _gen;
@@ -155,6 +161,14 @@ declare class ScreenOrientationCore extends EventTarget {
      * `error` property/event are unchanged.
      */
     get errorInfo(): WcsIoErrorInfo | null;
+    /**
+     * Whether this page has `screen.orientation` — that is, whether `type` / `angle`
+     * can be monitored. Probed at call time (never cached). It does NOT say `lock()`
+     * will hold: Safari has no `lock()`, a desktop refuses it, and elsewhere it needs
+     * fullscreen — that is known only by trying it (`error` / `errorInfo`). A
+     * wc-bindable output (event `wcs-orientation:supported-changed`).
+     */
+    get supported(): boolean;
     observe(): Promise<void>;
     dispose(): void;
     /**
@@ -177,6 +191,7 @@ declare class ScreenOrientationCore extends EventTarget {
     private _api;
     private _read;
     private _onChange;
+    private _publishSupported;
     private _setError;
     private _errorInfoMessage;
     private _commitErrorInfo;
@@ -209,6 +224,7 @@ declare class WcsScreenOrientation extends HTMLElement {
     get landscape(): boolean;
     get error(): any;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
     lock(orientation: OrientationLockType): Promise<void>;
     unlock(): void;

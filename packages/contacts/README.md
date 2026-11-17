@@ -10,7 +10,7 @@ It is an **async primitive node** that turns `navigator.contacts.select(properti
 With `@wcstack/state`, `<wcs-contacts>` can be bound directly through path contracts:
 
 - **input surface**: none — `select(properties, options)`'s arguments are per-call
-- **output state surface**: `value`, `loading`, `error`, `cancelled`, and — since 4.25 (not released yet) — `supported`
+- **output state surface**: `value`, `loading`, `error`, `cancelled`, and — since 4.25 — `supported`
 
 ## Why this exists — Android Chrome only, unsupported is the common case
 
@@ -63,7 +63,7 @@ Three things in this example are load-bearing:
 
 - **`$commandTokens: ["select"]`** declares the token `pickContact()` emits and the element subscribes to. Without it the page fails with `[wcs/token-undeclared]`.
 - **`pickedName` is a getter.** `picked` is `null` until the first pick, a contact's `name` is an array, and that array can be empty. A getter with `?.` and a fallback says what to show in each case, in one place; prefer it to a path such as `picked.0.name.0` written into the markup.
-- **`supported`** (since 4.25 (not released yet)) hides the button where the picker cannot be used — which is most browsers. Keep a plain input next to it.
+- **`supported`** (since 4.25) hides the button where the picker cannot be used — which is most browsers. Keep a plain input next to it.
 
 ## The result
 
@@ -118,16 +118,16 @@ So `contact.name` is `["山田 花子"]`, never `"山田 花子"`: take `name[0]
 
 | Property    | Event                        | Description |
 | ----------- | ----------------------------- | ------------ |
-| `value`     | `wcs-contacts:complete`        | The array of picked contacts (always an array, even with `multiple: false`; never empty), or `null` before any successful selection. See [The result](#the-result). Since 4.25 (not released yet), a picker closed without a choice leaves it as it was. |
+| `value`     | `wcs-contacts:complete`        | The array of picked contacts (always an array, even with `multiple: false`; never empty), or `null` before any successful selection. See [The result](#the-result). Since 4.25, a picker closed without a choice leaves it as it was. |
 | `loading`   | `wcs-contacts:loading-changed` | `true` while the picker dialog is open. |
 | `error`     | `wcs-contacts:error`           | A true platform failure (a `DOMException`/`Error` from `select()`), or the plain object `{ message: "Contact Picker API is not supported in this browser." }` on the unsupported path, or `null`. |
 | `cancelled` | `wcs-contacts:cancelled-changed` | `true` when the user closed the picker without choosing anyone (kept separate from `error`). Reset to `false` when the next `select()` starts. See below. |
 | `errorInfo` | `wcs-contacts:error-info-changed` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` when unsupported or `select-failed` on a genuine failure. |
-| `supported` | `wcs-contacts:supported-changed` | Since 4.25 (not released yet). `true` when this page can use the Contact Picker. See below. |
+| `supported` | `wcs-contacts:supported-changed` | Since 4.25. `true` when this page can use the Contact Picker. See below. |
 
-**`cancelled` — a closed picker.** The Contact Picker specification gives a closed picker no error: `select()` **resolves with an empty list**. Since 4.25 (not released yet), `<wcs-contacts>` reads that empty list as the cancellation: `cancelled` becomes `true`, `value` keeps what it had, no `wcs-contacts:complete` is dispatched, and `select()` resolves `null`. Up to 4.24 the element waited for an `AbortError` rejection that the specification does not have, so `cancelled` never became `true` and closing the picker wrote `value: []` over the last pick. (An `AbortError` rejection, should a browser send one, still sets `cancelled`.)
+**`cancelled` — a closed picker.** The Contact Picker specification gives a closed picker no error: `select()` **resolves with an empty list**. Since 4.25, `<wcs-contacts>` reads that empty list as the cancellation: `cancelled` becomes `true`, `value` keeps what it had, no `wcs-contacts:complete` is dispatched, and `select()` resolves `null`. Up to 4.24 the element waited for an `AbortError` rejection that the specification does not have, so `cancelled` never became `true` and closing the picker wrote `value: []` over the last pick. (An `AbortError` rejection, should a browser send one, still sets `cancelled`.)
 
-**`supported`** (since 4.25 (not released yet)) is `true` when `navigator.contacts.select` is a function **and** the page is top-level (`window.top === window`): the specification refuses the picker to a document inside an `<iframe>`. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-contacts:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`). It does **not** say the user will choose anyone, and it does not say which `properties` this device offers (`address` and `icon` are not everywhere).
+**`supported`** (since 4.25) is `true` when `navigator.contacts.select` is a function **and** the page is top-level (`window.top === window`): the specification refuses the picker to a document inside an `<iframe>`. It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-contacts:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`). It does **not** say the user will choose anyone, and it does not say which `properties` this device offers (`address` and `icon` are not everywhere).
 
 **Concurrency.** The contact picker is a single system-modal surface, so
 `<wcs-contacts>` runs its calls through the shared io-core lane with the `exhaust`
@@ -213,7 +213,7 @@ DevTools open; they are not a supported styling hook.
 
 ## Notes & limitations
 
-- **Android Chrome only.** Treat `unsupported` as the default, not an edge case: bind `supported` (since 4.25 (not released yet)) and offer the picker only where it is `true`.
+- **Android Chrome only.** Treat `unsupported` as the default, not an edge case: bind `supported` (since 4.25) and offer the picker only where it is `true`.
 - **Unsupported browsers.** Calling `select()` when `navigator.contacts.select` is not a function immediately sets `error` to the plain object `{ message: "Contact Picker API is not supported in this browser." }` (`errorInfo.code: "capability-missing"`) and resolves with `null` — the call never enters the operation lane, since no asynchronous work is started. This shape differs from a real failure, where `error` holds a `DOMException`/`Error`; do not assume `error instanceof Error` or `error.name` on the unsupported path. Inside an `<iframe>` on a browser that has the API, `supported` is `false` but `select()` still asks the browser, which answers `InvalidStateError` (`select-failed`).
 - **`getProperties()` is out of scope for v1** (an async pre-check for supported fields) — see `docs/contact-picker-tag-design.md` §4.
 - Shares its architecture with `@wcstack/share`/`@wcstack/eyedropper`: each call runs through the shared io-core operation lane (`exhaust` here — one picker at a time; `dispose()` invalidates a call in flight, so a late completion writes nothing), never-throw, no `AbortController`.
@@ -232,7 +232,7 @@ await core.select(["name", "tel"], { multiple: true });
 core.dispose();
 ```
 
-Since 4.25 (not released yet), `core.supported` can be read at any time, `core.observe()` dispatches `wcs-contacts:supported-changed` when the value differs from the last one dispatched, and a `select()` the user closes resolves `null` with `core.cancelled` set.
+Since 4.25, `core.supported` can be read at any time, `core.observe()` dispatches `wcs-contacts:supported-changed` when the value differs from the last one dispatched, and a `select()` the user closes resolves `null` with `core.cancelled` set.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

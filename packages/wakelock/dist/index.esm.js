@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/wakelock","version":"4.24.2"};
+var pkg = {"name":"@wcstack/wakelock","version":"4.25.0"};
 
 /**
  * wakelockCapabilities.ts

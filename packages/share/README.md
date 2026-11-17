@@ -10,7 +10,7 @@ It is a **command-only async primitive node** that turns `navigator.share(data)`
 With `@wcstack/state`, `<wcs-share>` can be bound directly through path contracts:
 
 - **command surface**: `share(data)` — a single async command, invoked as `command.share: $command.doShare`
-- **output state surface**: `value`, `loading`, `error`, `cancelled`, and — since 4.25 (not released yet) — `supported`
+- **output state surface**: `value`, `loading`, `error`, `cancelled`, and — since 4.25 — `supported`
 
 This means a "Share this article" button can be expressed declaratively in HTML — success, failure, and the user simply dismissing the native share sheet are three distinct, bindable outcomes — without writing `navigator.share()` / `try`/`catch` glue in your UI layer.
 
@@ -73,7 +73,7 @@ Because `share()` must run from within a real user gesture (a click handler), th
 
 ### 2. Offer the button only where sharing works
 
-Since 4.25 (not released yet), the `supported` output says whether this page can use the Web Share API at all. Bind it and hide the button where it cannot:
+Since 4.25, the `supported` output says whether this page can use the Web Share API at all. Bind it and hide the button where it cannot:
 
 ```html
 <wcs-state>
@@ -116,9 +116,9 @@ Since 4.25 (not released yet), the `supported` output says whether this page can
 | `error`     | `wcs-share:error`               | A genuine platform failure (anything **other than** the user cancelling the share sheet). `null` when there has been no failure yet, or after the next `share()` call resets it. |
 | `cancelled` | `wcs-share:cancelled-changed`   | `true` when the user dismissed the native share sheet (`AbortError`). Kept independent of `error` so bindings gated on `error` do not react to routine cancellation. |
 | `errorInfo` | `wcs-share:error-info-changed`  | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` when unsupported or `share-failed` on a genuine failure. |
-| `supported` | `wcs-share:supported-changed`   | Since 4.25 (not released yet). `true` when this page can use the Web Share API. See below. |
+| `supported` | `wcs-share:supported-changed`   | Since 4.25. `true` when this page can use the Web Share API. See below. |
 
-**`supported`** (since 4.25 (not released yet)) is `true` when `navigator.share` is a function **and** the page is not forbidden to use it: a `Permissions-Policy` that turns `web-share` off (the server's header, or an `<iframe>` without `allow="web-share"`) and an insecure context both make it `false`. (A browser whose policy does not know the `web-share` feature — desktop Chromium — is not asked about it: there the API's presence decides.) It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-share:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`).
+**`supported`** (since 4.25) is `true` when `navigator.share` is a function **and** the page is not forbidden to use it: a `Permissions-Policy` that turns `web-share` off (the server's header, or an `<iframe>` without `allow="web-share"`) and an insecure context both make it `false`. (A browser whose policy does not know the `web-share` feature — desktop Chromium — is not asked about it: there the API's presence decides.) It is read from the browser each time it is asked for, so a binding gets the right value when it attaches; the element also dispatches `wcs-share:supported-changed` (the boolean as `detail`) when it is connected, if the value differs from the last one it dispatched (it starts at `false`).
 
 It does **not** say that a particular payload can be shared — `canShare(data)` stays the way to ask about *this* data (files) — and it does not say the user will pick a target. Where a Permissions-Policy is the reason, `share()` is still passed to the browser, which rejects it (`error`, `errorInfo.code: "share-failed"`); where `navigator.share` is missing, `share()` ends as `capability-missing` without calling anything.
 
@@ -214,7 +214,7 @@ DevTools open; they are not a supported styling hook.
 - **No `autoTrigger`.** `navigator.share()` must be invoked from within a real user gesture. A node-provided auto-trigger would not itself carry that gesture context, so — like `@wcstack/fullscreen` — this node has none. Have the button's click handler (a state method) call `$command.doShare.emit(...)` itself.
 - **No `abort` command.** There is no platform mechanism to cancel an in-flight `navigator.share()` call.
 - **`cancelled` is independent of `error`.** `AbortError` (the user closed the share sheet) sets `cancelled`, never `error`. Every other rejection sets `error`, never `cancelled`.
-- **Unsupported browsers.** Calling `share()` when `navigator.share` is not a function immediately sets `error` to `{ message: "Web Share API is not supported in this browser." }` (`errorInfo.code: "capability-missing"`) and resolves with `null` — the call never enters the operation lane, since no asynchronous work is started. To hide the UI ahead of time, bind `supported` (since 4.25 (not released yet); up to 4.24 check `typeof navigator.share` yourself).
+- **Unsupported browsers.** Calling `share()` when `navigator.share` is not a function immediately sets `error` to `{ message: "Web Share API is not supported in this browser." }` (`errorInfo.code: "capability-missing"`) and resolves with `null` — the call never enters the operation lane, since no asynchronous work is started. To hide the UI ahead of time, bind `supported` (since 4.25; up to 4.24 check `typeof navigator.share` yourself).
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`; since there is no asynchronous probe, this promise always settles immediately (`ready` is `Promise.resolve()`).
 - **Same-value guard applies to `loading`/`error`/`cancelled`, but NOT to `value`.** Those three setters only dispatch when the value actually changes (reference equality, `===`), since they are idempotent state. `value` is different: it is a **success-completion signal**, and `wcs-share:complete` is the *sole* success notification, so it fires on **every** successful `share()` — with no same-value guard. This means a data-less `share()` (echoing `null` when `value` is already `null`) still dispatches `wcs-share:complete`, and two consecutive successful `share()` calls passed the **same object reference** as `data` dispatch `wcs-share:complete` **twice** (once per completion). This matches how `@wcstack/clipboard` (`read`) and `@wcstack/broadcast` (`message`) treat result/event values — a completion is an occurrence, not idempotent state.
 
@@ -239,7 +239,7 @@ await share.share({ title: "Article", url: location.href });
 share.dispose(); // invalidate any in-flight share() so a stale resolve is dropped
 ```
 
-Since 4.25 (not released yet), `share.supported` can be read at any time, and `share.observe()` dispatches `wcs-share:supported-changed` when the value differs from the last one dispatched.
+Since 4.25, `share.supported` can be read at any time, and `share.observe()` dispatches `wcs-share:supported-changed` when the value differs from the last one dispatched.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

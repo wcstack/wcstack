@@ -143,10 +143,10 @@ Unlike `@wcstack/fullscreen` (where `target="self"` is a legitimate way to fulls
 
 | Property    | Type                     | Event                        | Description |
 |-------------|--------------------------|------------------------------|--------------|
-| `active`    | `boolean`                | `wcs-pip:change`             | Whether the resolved `<video>` target is currently the document's Picture-in-Picture element. Since 4.25 (not released yet), `false` while `<wcs-pip>` is out of the document (see [When the element leaves the document](#when-the-element-leaves-the-document)). |
+| `active`    | `boolean`                | `wcs-pip:change`             | Whether the resolved `<video>` target is currently the document's Picture-in-Picture element. Since 4.25, `false` while `<wcs-pip>` is out of the document (see [When the element leaves the document](#when-the-element-leaves-the-document)). |
 | `error`     | `any`                    | `wcs-pip:error`              | The most recent command failure (wrong tag, unsupported API, gesture-context rejection), or `null` if the last attempt succeeded / nothing has failed yet. Value shape unchanged from before it became observable. |
 | `errorInfo` | `WcsIoErrorInfo \| null` | `wcs-pip:error-info-changed` | Additive serializable failure **taxonomy** derived from `error`: a stable `{ code, phase, recoverable, message }`. `null` in lockstep with `error`. See the taxonomy table below. |
-| `supported` | `boolean`                | `wcs-pip:supported-changed`  | Since 4.25 (not released yet). `true` when this page can use Picture-in-Picture; `false` otherwise (Firefox, a document the Permissions-Policy forbids). The event's `detail` is the boolean. See below. |
+| `supported` | `boolean`                | `wcs-pip:supported-changed`  | Since 4.25. `true` when this page can use Picture-in-Picture; `false` otherwise (Firefox, a document the Permissions-Policy forbids). The event's `detail` is the boolean. See below. |
 
 `active` is derived from comparing `document.pictureInPictureElement` against the resolved `<video>` target whenever `enterpictureinpicture`/`leavepictureinpicture` fires **on that target element** — not from a `document`-level event (see "Event subscription" below).
 
@@ -163,7 +163,7 @@ Unlike `@wcstack/fullscreen` (where `target="self"` is a legitimate way to fulls
 
 ### `supported` — can this page use Picture-in-Picture?
 
-Since 4.25 (not released yet). `supported` is `true` when this page can use Picture-in-Picture: the document reports it enabled (`document.pictureInPictureEnabled`), a `<video>` has `requestPictureInPicture()`, and no Permissions-Policy turns it off — the server's `Permissions-Policy: picture-in-picture=()` header, or an `<iframe>` whose `allow` attribute withholds it (unlike fullscreen, a frame has Picture-in-Picture unless a policy says otherwise). Otherwise it is `false`, whatever the reason. **Firefox has no Picture-in-Picture API for pages, so `supported` is `false` there.**
+Since 4.25. `supported` is `true` when this page can use Picture-in-Picture: the document reports it enabled (`document.pictureInPictureEnabled`), a `<video>` has `requestPictureInPicture()`, and no Permissions-Policy turns it off — the server's `Permissions-Policy: picture-in-picture=()` header, or an `<iframe>` whose `allow` attribute withholds it (unlike fullscreen, a frame has Picture-in-Picture unless a policy says otherwise). Otherwise it is `false`, whatever the reason. **Firefox has no Picture-in-Picture API for pages, so `supported` is `false` there.**
 
 It does not say that a request will succeed: that still needs a user gesture and a video with something to show, and a `<video disablepictureinpicture>` refuses. Picture-in-Picture does not need a secure context, so a plain `http:` page is not `false` for that reason.
 
@@ -205,7 +205,7 @@ This also means multiple `<wcs-pip>` instances naturally self-filter: each insta
 
 ## When the element leaves the document
 
-Since 4.25 (not released yet). `<wcs-pip>` listens to its `<video>` only while it is connected. When it is disconnected while `active` is `true` — an `if:` branch that goes away, a route's content that `@wcstack/router` takes out — it publishes `active: false`, with its `wcs-pip:change` event, so a bound state path and `:state(active)` follow: an element that is out of the document can no longer vouch for the value. It does **not** close the small window. When it is connected again it reads the truth: if its `<video>` is still the document's Picture-in-Picture element, `active` goes back to `true`, with the event. An element that is moved (taken out and put back) therefore reports `false`, then `true`. Up to 4.24 a disconnect left `active` as it was, and state kept showing `true` after the small window had been closed.
+Since 4.25. `<wcs-pip>` listens to its `<video>` only while it is connected. When it is disconnected while `active` is `true` — an `if:` branch that goes away, a route's content that `@wcstack/router` takes out — it publishes `active: false`, with its `wcs-pip:change` event, so a bound state path and `:state(active)` follow: an element that is out of the document can no longer vouch for the value. It does **not** close the small window. When it is connected again it reads the truth: if its `<video>` is still the document's Picture-in-Picture element, `active` goes back to `true`, with the event. An element that is moved (taken out and put back) therefore reports `false`, then `true`. Up to 4.24 a disconnect left `active` as it was, and state kept showing `true` after the small window had been closed.
 
 What the browser does with the small window is its own. **For it to go on across a navigation, the `<video>` must stay in the document.** A `<video>` inside a route's content is taken out when the route is left: Chromium keeps a removed video playing in the small window, other browsers may not — and with its `<wcs-pip>` gone too, `active` reads `false` either way until the route comes back. Keep the video and its `<wcs-pip>` outside the router, next to the layout that stays ([router README — Where route content lives](../router/README.md#where-route-content-lives)): the video keeps playing, the small window stays, and `active` keeps telling the truth on every route.
 
@@ -290,7 +290,7 @@ PipCore.wcBindable = {
     { name: "active", event: "wcs-pip:change", getter: (e) => e.detail.active },
     { name: "error", event: "wcs-pip:error" },
     { name: "errorInfo", event: "wcs-pip:error-info-changed" },
-    { name: "supported", event: "wcs-pip:supported-changed" }, // 4.25 (not released yet)
+    { name: "supported", event: "wcs-pip:supported-changed" }, // 4.25
   ],
   commands: [
     { name: "requestPictureInPicture", async: true },
@@ -322,7 +322,7 @@ await core.exitPictureInPicture();
 core.dispose();                 // detach listeners
 ```
 
-Since 4.25 (not released yet), `dispose()` publishes `active: false` when it was `true` (a disposed Core no longer hears the video) and the next `observe(video)` reads it again. `core.supported`, and the `wcs-pip:supported-changed` event `observe()` dispatches, say whether the page can use Picture-in-Picture.
+Since 4.25, `dispose()` publishes `active: false` when it was `true` (a disposed Core no longer hears the video) and the next `observe(video)` reads it again. `core.supported`, and the `wcs-pip:supported-changed` event `observe()` dispatches, say whether the page can use Picture-in-Picture.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

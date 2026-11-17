@@ -10,7 +10,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-permission>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `name`、`user-visible-only`、`sysex`
-- **出力 state サーフェス**: `state`、`granted`、`denied`、`prompt`、`unsupported`、そして 4.25（未リリース）から `unsupportedReason`
+- **出力 state サーフェス**: `state`、`granted`、`denied`、`prompt`、`unsupported`、そして 4.25 から `unsupportedReason`
 
 これにより、パーミッションに応じた UI（バナー・ゲート・機能ヒント）を、UI 層で `navigator.permissions.query()` や `change` リスナーの配線を書かずに、HTML 上で宣言的に表現できます。
 
@@ -28,7 +28,7 @@
 
 パーミッションの変化は `change` リスナーの購読ではなく **状態遷移** になります。
 
-> **このページで使えない機能は `"unsupported"`。** API が存在しない場合や、要求した権限名をブラウザが拒否する場合（対応はブラウザ差が大きい: Firefox は `clipboard-read` 非対応、Safari は複数の名前を欠く）、`<wcs-permission>` は例外を投げず `state = "unsupported"` を報告します。4.5 から、このページで使えない機能も同じく報告します。secure context（HTTPS、または `localhost`）でないページと、Permissions-Policy（サーバの `Permissions-Policy` ヘッダ、または `allow="camera"` の無い `<iframe>`）が切った機能です。Permissions API 自体はこれを拒否と区別しません。Chromium は安全でない origin では `"denied"`、ポリシーで切られたフレームでは `"granted"` を返します。そのため 4.4 までは、すでに許可されている、または許可しようのないカメラを、サイトの設定で許可するよう利用者に案内するページになりました。これからは `"denied"` はサイトの設定で変えられる拒否だけを表し、その機能を取りに行く要素（`<wcs-camera>`・`<wcs-geo>`・`<wcs-listen>`・`<wcs-notify>`）も同じ場合に `"unsupported"` を報告します。4.25（未リリース）から、そのどれなのかを [`unsupportedReason`](#unsupportedreason--なぜ-unsupported-なのか) が言います。
+> **このページで使えない機能は `"unsupported"`。** API が存在しない場合や、要求した権限名をブラウザが拒否する場合（対応はブラウザ差が大きい: Firefox は `clipboard-read` 非対応、Safari は複数の名前を欠く）、`<wcs-permission>` は例外を投げず `state = "unsupported"` を報告します。4.5 から、このページで使えない機能も同じく報告します。secure context（HTTPS、または `localhost`）でないページと、Permissions-Policy（サーバの `Permissions-Policy` ヘッダ、または `allow="camera"` の無い `<iframe>`）が切った機能です。Permissions API 自体はこれを拒否と区別しません。Chromium は安全でない origin では `"denied"`、ポリシーで切られたフレームでは `"granted"` を返します。そのため 4.4 までは、すでに許可されている、または許可しようのないカメラを、サイトの設定で許可するよう利用者に案内するページになりました。これからは `"denied"` はサイトの設定で変えられる拒否だけを表し、その機能を取りに行く要素（`<wcs-camera>`・`<wcs-geo>`・`<wcs-listen>`・`<wcs-notify>`）も同じ場合に `"unsupported"` を報告します。4.25 から、そのどれなのかを [`unsupportedReason`](#unsupportedreason--なぜ-unsupported-なのか) が言います。
 
 ## インストール
 
@@ -92,7 +92,7 @@ npm install @wcstack/permission
 
 ### 5. なぜ unsupported なのかを伝える
 
-4.25（未リリース）から、`unsupportedReason` が `"unsupported"` の 4 つの意味を区別するので、ページは利用者が動ける言葉で伝えられます:
+4.25 から、`unsupportedReason` が `"unsupported"` の 4 つの意味を区別するので、ページは利用者が動ける言葉で伝えられます:
 
 ```html
 <wcs-state>
@@ -128,13 +128,13 @@ npm install @wcstack/permission
 | `denied`      | `wcs-permission:change`| `state === "denied"` のとき `true`。                                |
 | `prompt`      | `wcs-permission:change`| `state === "prompt"` のとき `true`。                                |
 | `unsupported` | `wcs-permission:change`| この環境で query できないとき `true`。                              |
-| `unsupportedReason` | `wcs-permission:unsupported-reason-changed` | 4.25（未リリース）から。`state` が `"unsupported"` である理由 — `"policy-blocked"` / `"insecure-context"` / `"no-permissions-api"` / `"unknown-name"` — そうでない間は `null`。下記参照。 |
+| `unsupportedReason` | `wcs-permission:unsupported-reason-changed` | 4.25 から。`state` が `"unsupported"` である理由 — `"policy-blocked"` / `"insecure-context"` / `"no-permissions-api"` / `"unknown-name"` — そうでない間は `null`。下記参照。 |
 
 最初の 5 つは単一の `wcs-permission:change` イベントから派生します（ブール群は `state` と連動）。`unsupportedReason` は専用のイベントを持ち、その `detail` が理由です。
 
 ### `unsupportedReason` — なぜ `unsupported` なのか
 
-4.25（未リリース）から。`"unsupported"` は 4 つの異なる状況を 1 つの状態に畳んでいます（4.5 の決定で、これは変わりません: 出す・出さないを決めるだけなら「ここでは使えない」は 1 つの答えです）。利用者に伝える言葉はそれぞれ違うので、どれなのかを `unsupportedReason` が言います:
+4.25 から。`"unsupported"` は 4 つの異なる状況を 1 つの状態に畳んでいます（4.5 の決定で、これは変わりません: 出す・出さないを決めるだけなら「ここでは使えない」は 1 つの答えです）。利用者に伝える言葉はそれぞれ違うので、どれなのかを `unsupportedReason` が言います:
 
 | `unsupportedReason` | 何が起きたか | ページが利用者に伝えられること |
 | ------------------- | ------------ | ------------------------------ |
@@ -157,7 +157,7 @@ npm install @wcstack/permission
 - **属性は接続時に読み取り、監視はしない。** `<wcs-permission>` は `observedAttributes` / `attributeChangedCallback` を実装しません。descriptor（`name` ＋追加メンバー）は接続時に固定され（4.8 から、接続の 1 マイクロタスク後に、そのときの属性で — [タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23。`@wcstack/router` が次のルートの `name` で入れ直した要素は、前のではなくその権限を問い合わせる）、接続後に `name` を命令的に変えても再 query しません。別の権限を監視するには別要素を使う（または再接続する）。
 - **再接続で再 query。** 要素を取り外して再挿入すると `connectedCallback` が再実行され、query を再発行して `change` を再購読します（切断時に購読を解除するのと対称）。切断時にまだ解決していない in-flight な query は無効化され、その後に解決しても `state` を更新せず `change` リスナーも張りません。したがって素早い 切断→再接続 でも古い購読が残ることはありません。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラは接続時 query の settle を待ってからスナップショットします。
-- **サイレント失敗処理（zero-log）。** wcstack のゼロ依存方針に沿い、`<wcs-permission>` はログも例外も出しません。Permissions API が無い場合、権限名が拒否される場合、`name` 属性が未指定/空の場合はいずれも静かに `state = "unsupported"` に解決します。`unsupported`（または `state`）をバインドして反応し、理由は `unsupportedReason`（4.25（未リリース）から）で伝えてください。4.25（未リリース）から、「ログを出さない」はブラウザ自身のコンソールにも及びます: この要素がページの Permissions-Policy に聞くのは、そのポリシーが挙げている機能だけです。4.24 までは、ブラウザのポリシーが知らない名前 — フラグの無い `ambient-light-sensor` — を聞いて、Chromium に `Unrecognized feature: 'ambient-light-sensor'` を出させていました。
+- **サイレント失敗処理（zero-log）。** wcstack のゼロ依存方針に沿い、`<wcs-permission>` はログも例外も出しません。Permissions API が無い場合、権限名が拒否される場合、`name` 属性が未指定/空の場合はいずれも静かに `state = "unsupported"` に解決します。`unsupported`（または `state`）をバインドして反応し、理由は `unsupportedReason`（4.25 から）で伝えてください。4.25 から、「ログを出さない」はブラウザ自身のコンソールにも及びます: この要素がページの Permissions-Policy に聞くのは、そのポリシーが挙げている機能だけです。4.24 までは、ブラウザのポリシーが知らない名前 — フラグの無い `ambient-light-sensor` — を聞いて、Chromium に `Unrecognized feature: 'ambient-light-sensor'` を出させていました。
 
 ## `:state()` による CSS スタイリング
 
@@ -229,7 +229,7 @@ perm.addEventListener("wcs-permission:change", (e) => {
 
 await perm.ready;        // 初回 query が settle 済み
 console.log(perm.granted);
-console.log(perm.unsupportedReason); // 4.25（未リリース）から: null、または state が "unsupported" である理由
+console.log(perm.unsupportedReason); // 4.25 から: null、または state が "unsupported" である理由
 
 // 後始末:
 perm.dispose();          // live な `change` リスナーを外す

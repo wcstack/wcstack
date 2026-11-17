@@ -9,7 +9,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-contacts>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し — `select(properties, options)`の引数は呼び出しごと
-- **出力 state サーフェス**: `value`、`loading`、`error`、`cancelled`、そして 4.25（未リリース）から `supported`
+- **出力 state サーフェス**: `value`、`loading`、`error`、`cancelled`、そして 4.25 から `supported`
 
 ## なぜ存在するか — Android Chrome限定、unsupportedが常態
 
@@ -62,7 +62,7 @@ npm install @wcstack/contacts
 
 - **`$commandTokens: ["select"]`** が、`pickContact()` が emit し要素が購読するトークンを宣言します。これが無いと、ページは `[wcs/token-undeclared]` で失敗します。
 - **`pickedName` は getter です。** `picked` は最初に選ぶまで `null` で、連絡先の `name` は配列で、その配列は空のこともあります。`?.` と既定値を持つ getter なら、それぞれの場合に何を出すかを 1 か所で言えます。`picked.0.name.0` のようなパスをマークアップに書くより、こちらを使ってください。
-- **`supported`**（4.25（未リリース）から）が、ピッカーを使えないところ — ほとんどのブラウザ — でボタンを隠します。隣に普通の入力欄を残してください。
+- **`supported`**（4.25 から）が、ピッカーを使えないところ — ほとんどのブラウザ — でボタンを隠します。隣に普通の入力欄を残してください。
 
 ## 結果の形
 
@@ -117,16 +117,16 @@ npm install @wcstack/contacts
 
 | プロパティ  | イベント                        | 説明 |
 | ----------- | -------------------------------- | ---- |
-| `value`     | `wcs-contacts:complete`           | 選択された連絡先の配列（`multiple: false`でも常に配列。空にはならない）、成功前は`null`。[結果の形](#結果の形)を参照。4.25（未リリース）から、選ばずに閉じたピッカーは`value`をそのままにします。 |
+| `value`     | `wcs-contacts:complete`           | 選択された連絡先の配列（`multiple: false`でも常に配列。空にはならない）、成功前は`null`。[結果の形](#結果の形)を参照。4.25 から、選ばずに閉じたピッカーは`value`をそのままにします。 |
 | `loading`   | `wcs-contacts:loading-changed`    | ピッカーダイアログが開いている間`true`。 |
 | `error`     | `wcs-contacts:error`              | 真のプラットフォーム失敗（`select()`が投げた`DOMException`/`Error`）、または unsupported 経路ではプレーンオブジェクト`{ message: "Contact Picker API is not supported in this browser." }`、無ければ`null`。 |
 | `cancelled` | `wcs-contacts:cancelled-changed`  | ユーザーが誰も選ばずにピッカーを閉じたら`true`（`error`とは分離）。次の`select()`の開始時に`false`へ戻ります。下記参照。 |
 | `errorInfo` | `wcs-contacts:error-info-changed` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は unsupported なら `capability-missing`、真の失敗なら `select-failed`。 |
-| `supported` | `wcs-contacts:supported-changed`  | 4.25（未リリース）から。このページで Contact Picker を使えるなら`true`。下記参照。 |
+| `supported` | `wcs-contacts:supported-changed`  | 4.25 から。このページで Contact Picker を使えるなら`true`。下記参照。 |
 
-**`cancelled` — 閉じられたピッカー。** Contact Picker の仕様は、閉じられたピッカーにエラーを与えません: `select()` は**空のリストで resolve します**。4.25（未リリース）から、`<wcs-contacts>` はその空のリストをキャンセルとして読みます: `cancelled` が `true` になり、`value` は元のまま、`wcs-contacts:complete` は流れず、`select()` は `null` で resolve します。4.24 までは、仕様に無い `AbortError` の reject を待っていたため、`cancelled` が `true` になることはなく、ピッカーを閉じると `value: []` が直前の選択を上書きしていました。（ブラウザが `AbortError` で reject することがあれば、それも引き続き `cancelled` にします。）
+**`cancelled` — 閉じられたピッカー。** Contact Picker の仕様は、閉じられたピッカーにエラーを与えません: `select()` は**空のリストで resolve します**。4.25 から、`<wcs-contacts>` はその空のリストをキャンセルとして読みます: `cancelled` が `true` になり、`value` は元のまま、`wcs-contacts:complete` は流れず、`select()` は `null` で resolve します。4.24 までは、仕様に無い `AbortError` の reject を待っていたため、`cancelled` が `true` になることはなく、ピッカーを閉じると `value: []` が直前の選択を上書きしていました。（ブラウザが `AbortError` で reject することがあれば、それも引き続き `cancelled` にします。）
 
-**`supported`**（4.25（未リリース）から）は、`navigator.contacts.select` が関数で、**かつ**ページが最上位（`window.top === window`）のときに `true` です: 仕様は `<iframe>` の中の文書にピッカーを許しません。値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-contacts:supported-changed`（`detail` は boolean）を流します。利用者が誰かを選ぶことは**言いません**。この端末がどの `properties` を出せるかも言いません（`address` と `icon` はどこにでもあるわけではありません）。
+**`supported`**（4.25 から）は、`navigator.contacts.select` が関数で、**かつ**ページが最上位（`window.top === window`）のときに `true` です: 仕様は `<iframe>` の中の文書にピッカーを許しません。値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-contacts:supported-changed`（`detail` は boolean）を流します。利用者が誰かを選ぶことは**言いません**。この端末がどの `properties` を出せるかも言いません（`address` と `icon` はどこにでもあるわけではありません）。
 
 **並行制御。** 連絡先ピッカーはシステムに1つのモーダル面なので、`<wcs-contacts>` は共有
 io-core lane を `exhaust` policy で用いる: 1つの `select()` が進行中の間、2回目の呼び出しは
@@ -209,7 +209,7 @@ form:has(wcs-contacts:state(cancelled)) .hint { display: block; }
 
 ## 注意・制限
 
-- **Android Chrome限定。** unsupportedを例外ケースでなく既定として扱ってください: `supported`（4.25（未リリース）から）を束縛し、`true` のところでだけピッカーを出します。
+- **Android Chrome限定。** unsupportedを例外ケースでなく既定として扱ってください: `supported`（4.25 から）を束縛し、`true` のところでだけピッカーを出します。
 - **非対応のブラウザ。** `navigator.contacts.select` が関数でない状態で `select()` を呼ぶと、即座に `error` がプレーンオブジェクト `{ message: "Contact Picker API is not supported in this browser." }`（`errorInfo.code: "capability-missing"`）になり `null` で解決します — 非同期処理を開始しないため、この呼び出しは operation lane に入りません。この形は実失敗（`error` に `DOMException`/`Error` が入る）とは異なるため、unsupported 経路で `error instanceof Error` や `error.name` を前提にしないでください。API のあるブラウザの `<iframe>` の中では、`supported` は `false` ですが、`select()` はそのままブラウザに聞き、ブラウザが `InvalidStateError`（`select-failed`）で答えます。
 - **`getProperties()`はv1スコープ外**（対応フィールドの非同期事前確認、`docs/contact-picker-tag-design.md` §4参照）。
 - `@wcstack/share`/`@wcstack/eyedropper`とアーキタイプを共有: 呼び出しは共有 io-core の operation lane を通る（ここでは`exhaust` — ピッカーは同時に1つ。`dispose()`は進行中の呼び出しを無効にするので、遅れて届いた完了は何も書かない）、never-throw、AbortController無し。
@@ -228,7 +228,7 @@ await core.select(["name", "tel"], { multiple: true });
 core.dispose();
 ```
 
-4.25（未リリース）から、`core.supported` はいつでも読めます。`core.observe()` は、最後に流した値と違っていれば `wcs-contacts:supported-changed` を流します。利用者が閉じた `select()` は、`core.cancelled` を立てて `null` で resolve します。
+4.25 から、`core.supported` はいつでも読めます。`core.observe()` は、最後に流した値と違っていれば `wcs-contacts:supported-changed` を流します。利用者が閉じた `select()` は、`core.cancelled` を立てて `null` で resolve します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

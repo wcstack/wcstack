@@ -68,6 +68,8 @@ interface IWritableConfig {
  * `:error` / `:error-info-changed`), so a wc-bindable binding core delivers a
  * request/exit failure. `errorInfo` is the additive serializable failure
  * taxonomy derived from `error` (docs/fullscreen-tag-design.md §8, README).
+ * `supported` (`wcs-fullscreen:supported-changed`) says whether this page can
+ * use element fullscreen at all.
  *
  * @example
  * ```typescript
@@ -80,10 +82,12 @@ interface WcsFullscreenCoreValues {
     error: any;
     /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
     errorInfo: WcsIoErrorInfo | null;
+    /** Whether this page can use element fullscreen (API present, not forbidden by a policy). */
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-fullscreen target="...">`) — identical
- * value surface to the Core (`active` / `error` / `errorInfo` all observable).
+ * value surface to the Core (`active` / `error` / `errorInfo` / `supported` all observable).
  * The Shell adds the `target` input (attribute-mirrored) that resolves which
  * element requestFullscreen()/exitFullscreen() operate on
  * (docs/fullscreen-tag-design.md §1/§9).
@@ -117,6 +121,8 @@ declare class FullscreenCore extends EventTarget {
     private _errorInfo;
     private _resolvedTarget;
     private _gen;
+    private _request;
+    private _supportedPublished;
     private _subscribed;
     private _ready;
     constructor(target?: EventTarget);
@@ -130,6 +136,17 @@ declare class FullscreenCore extends EventTarget {
      * `error` value shape is unchanged.
      */
     get errorInfo(): WcsIoErrorInfo | null;
+    /**
+     * Whether this page can use element fullscreen right now: the document says
+     * fullscreen is enabled, an element has `requestFullscreen()` (or the prefixed
+     * `webkitRequestFullscreen()`), and no Permissions-Policy (`fullscreen`: the
+     * server's header, an `<iframe>` without `allow="fullscreen"`) forbids it.
+     * Probed at call time, never cached. It does not say that a request will
+     * succeed (that still needs a user gesture). An iPhone has no element
+     * fullscreen, so this is `false` there. A wc-bindable output (event
+     * `wcs-fullscreen:supported-changed`).
+     */
+    get supported(): boolean;
     /**
      * Update the resolved target without issuing a fullscreen request (e.g. the
      * Shell re-resolves `target` on attribute change / connect). Re-evaluates
@@ -160,7 +177,10 @@ declare class FullscreenCore extends EventTarget {
     private _exitFullscreenFn;
     private _fullscreenElement;
     private _fullscreenChangeEventName;
+    private _fullscreenErrorEventName;
     private _onFullscreenChange;
+    private _onFullscreenError;
+    private _publishSupported;
     private _applyActive;
     private _setActive;
     private _setError;
@@ -205,6 +225,7 @@ declare class WcsFullscreen extends HTMLElement {
     get active(): boolean;
     get error(): any;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     /**
      * Resolve `target` and request fullscreen on it. never-throw: an
      * unresolvable target or an unsupported/rejected API call are both

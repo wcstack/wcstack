@@ -58,7 +58,43 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/fullscreen","version":"4.24.2"};
+var pkg = {"name":"@wcstack/fullscreen","version":"4.25.0"};
+
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/**
+ * Permissions-Policy が制御する機能。permission 名と同じ文字列と、permission の無い機能
+ * (`fullscreen`・`picture-in-picture`・`web-share`: 要素が「このページで使えるか」を言うために聞く)。
+ */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture", "fullscreen", "picture-in-picture", "web-share",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        // このブラウザのポリシーが知らない名前は聞かない: Chromium は知らない名前の allowsFeature に
+        // false を返したうえでコンソールに「Unrecognized feature」を出す(フラグの無い
+        // `ambient-light-sensor`、デスクトップの `web-share`)。知らない機能は切られてもいない。
+        if (typeof policy.features === "function" && !policy.features().includes(feature))
+            return null;
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
 
 /**
  * fullscreenCapabilities.ts
@@ -110,6 +146,12 @@ function deriveFullscreenErrorInfo(error, kind) {
     return { code: WCS_FULLSCREEN_ERROR_CODE.FullscreenError, phase: "execute", recoverable: false, message };
 }
 
+// What a refusal that arrives as an event is reported as. The event carries no
+// reason, so the message says no more than that; `NotAllowedError` puts it in
+// the `not-allowed` class (recoverable: a request from a user gesture may pass).
+function refusedByEvent() {
+    return new DOMException("The browser refused the fullscreen request.", "NotAllowedError");
+}
 /**
  * Headless Fullscreen API primitive. Unlike most wcstack IO nodes, this Core
  * does not operate on itself: it drives `requestFullscreen()` /
@@ -139,6 +181,11 @@ class FullscreenCore extends EventTarget {
             // drives a referenced element, not a competing operation.
             { name: "error", event: "wcs-fullscreen:error", semantics: "state" },
             { name: "errorInfo", event: "wcs-fullscreen:error-info-changed", semantics: "state" },
+            // Whether this page can use element fullscreen (the API is there and no
+            // Permissions-Policy forbids it). Computed at call time; the event carries
+            // the boolean and fires from observe() when it differs from the last value
+            // dispatched.
+            { name: "supported", event: "wcs-fullscreen:supported-changed", semantics: "state" },
         ],
         commands: [
             { name: "requestFullscreen", async: true },
@@ -163,9 +210,18 @@ class FullscreenCore extends EventTarget {
     // document-wide slot, so at most one in-flight request/exit is meaningful
     // per Core at a time.
     _gen = 0;
-    // True once observe() has attached the document-level fullscreenchange
-    // listener. Guards observe() so a redundant call does not double-subscribe;
-    // dispose() resets it so a later observe() resumes cleanly.
+    // The request this instance made that an event may still answer, or null. The
+    // standard API answers with its promise; the prefixed one returns nothing and
+    // answers with fullscreenchange / fullscreenerror on the document. A
+    // fullscreenerror is this instance's only while this is set and waiting — the
+    // event does not say whose request failed.
+    _request = null;
+    // `supported` as last dispatched (never the value itself — the getter probes at
+    // call time). Starts at false, so observe() announces a page that can use it.
+    _supportedPublished = false;
+    // True once observe() has attached the document-level fullscreenchange /
+    // fullscreenerror listeners. Guards observe() so a redundant call does not
+    // double-subscribe; dispose() resets it so a later observe() resumes cleanly.
     _subscribed = false;
     // SSR (§10): no asynchronous probe to await — observe() completes
     // synchronously, so readiness is immediate.
@@ -193,6 +249,32 @@ class FullscreenCore extends EventTarget {
         return this._errorInfo;
     }
     /**
+     * Whether this page can use element fullscreen right now: the document says
+     * fullscreen is enabled, an element has `requestFullscreen()` (or the prefixed
+     * `webkitRequestFullscreen()`), and no Permissions-Policy (`fullscreen`: the
+     * server's header, an `<iframe>` without `allow="fullscreen"`) forbids it.
+     * Probed at call time, never cached. It does not say that a request will
+     * succeed (that still needs a user gesture). An iPhone has no element
+     * fullscreen, so this is `false` there. A wc-bindable output (event
+     * `wcs-fullscreen:supported-changed`).
+     */
+    get supported() {
+        // The policy is asked first, and `fullscreenEnabled` is read only when it did
+        // not forbid: a browser may report reading it in a forbidding frame as an
+        // error. Only "policy-blocked" decides here: fullscreen does not need a
+        // secure context (a plain http: page can use it), so "insecure-context" is
+        // not a reason, and `fullscreenEnabled` — which follows the policy itself —
+        // gives the answer there and where the policy cannot be asked (WebKit and
+        // Firefox expose no policy object).
+        if (featureUnavailable("fullscreen") === "policy-blocked")
+            return false;
+        const d = document;
+        if ((d.fullscreenEnabled ?? d.webkitFullscreenEnabled ?? false) !== true)
+            return false;
+        const proto = Element.prototype;
+        return typeof proto.requestFullscreen === "function" || typeof proto.webkitRequestFullscreen === "function";
+    }
+    /**
      * Update the resolved target without issuing a fullscreen request (e.g. the
      * Shell re-resolves `target` on attribute change / connect). Re-evaluates
      * `active` against the current `document.fullscreenElement` so the state
@@ -205,20 +287,31 @@ class FullscreenCore extends EventTarget {
     // Lifecycle (§10/§3.5). Idempotent: a second observe() while already
     // subscribed is a no-op (no double listener). Synchronous overall (no probe
     // to await), so the returned promise is only for API uniformity with other
-    // IO nodes.
+    // IO nodes. Also publishes `supported` when it differs from the last value
+    // dispatched.
     observe() {
+        this._publishSupported();
         if (!this._subscribed) {
             this._subscribed = true;
             document.addEventListener(this._fullscreenChangeEventName(), this._onFullscreenChange);
+            document.addEventListener(this._fullscreenErrorEventName(), this._onFullscreenError);
         }
         return this._ready;
     }
     dispose() {
         this._gen++;
+        this._request = null;
         if (this._subscribed) {
             this._subscribed = false;
             document.removeEventListener(this._fullscreenChangeEventName(), this._onFullscreenChange);
+            document.removeEventListener(this._fullscreenErrorEventName(), this._onFullscreenError);
         }
+        // A disposed Core hears no fullscreenchange, so it can no longer vouch for
+        // `active`: publish false through the normal setter (timing contract §22 — a
+        // disconnect publishes what it changes). Nothing is exited: the target stays
+        // fullscreen for as long as the browser keeps it, and setTarget() re-reads the
+        // truth — publishing true again — on the next connect.
+        this._setActive(false);
     }
     /**
      * Request fullscreen on `element`. never-throw (§3/§6): a missing API or a
@@ -232,6 +325,7 @@ class FullscreenCore extends EventTarget {
     async requestFullscreen(element) {
         const gen = ++this._gen;
         this._resolvedTarget = element;
+        this._request = null; // this call supersedes the request before it
         if (!element) {
             // Distinct from "API is not supported" (below): the Shell's `target`
             // selector did not resolve to any element (missing/typo'd selector).
@@ -245,16 +339,41 @@ class FullscreenCore extends EventTarget {
             this._setError({ message: "Fullscreen API is not supported." }, "capability-missing");
             return;
         }
+        const request = { waiting: false, refused: false };
+        this._request = request;
         try {
-            await fn.call(element);
-            if (gen !== this._gen)
-                return; // stale: dispose()/superseding call ran
+            const result = fn.call(element);
+            if (typeof result?.then === "function") {
+                // The standard API: the call's promise answers this request, and it
+                // alone. The browser fires fullscreenerror for the same refusal as well,
+                // and the rejection carries the reason, so the event is not this
+                // request's answer.
+                this._request = null;
+                await result;
+                if (gen !== this._gen)
+                    return; // stale: dispose()/superseding call ran
+                this._setError(null);
+                this._applyActive();
+                return;
+            }
+            // The prefixed API returns nothing: the answer is a fullscreenchange or a
+            // fullscreenerror on the document.
+            if (request.refused) {
+                // The event fired inside the call itself.
+                this._request = null;
+                this._setError(refusedByEvent());
+                return;
+            }
+            // The request is made: the failure before it is no longer the latest
+            // attempt's. From here the events answer.
             this._setError(null);
             this._applyActive();
+            request.waiting = true;
         }
         catch (e) {
             if (gen !== this._gen)
                 return; // stale
+            this._request = null;
             this._setError(e);
         }
     }
@@ -274,6 +393,7 @@ class FullscreenCore extends EventTarget {
         if (!fn)
             return; // unsupported: silent no-op (semantically already "not fullscreen")
         const gen = ++this._gen;
+        this._request = null; // an exit that runs supersedes a request still waiting for its answer
         try {
             await fn();
             if (gen !== this._gen)
@@ -322,10 +442,49 @@ class FullscreenCore extends EventTarget {
     _fullscreenChangeEventName() {
         return "onfullscreenchange" in document ? "fullscreenchange" : "webkitfullscreenchange";
     }
+    _fullscreenErrorEventName() {
+        return "onfullscreenerror" in document ? "fullscreenerror" : "webkitfullscreenerror";
+    }
     // --- Internal ---
     _onFullscreenChange = () => {
         this._applyActive();
+        // The target is fullscreen: a request that was waiting for its answer has it.
+        if (this._active)
+            this._request = null;
     };
+    // A refusal that arrives as an event. The prefixed API returns no promise, so
+    // this is the only place its refusal shows. A request whose call returned a
+    // promise is not waiting for this event (`_request` is null from the moment
+    // the call returned), so a refusal the promise reports is never reported a
+    // second time. The event reaches the document without saying whose request
+    // failed: with no request waiting here, it is another instance's (or the
+    // page's own call) and is ignored.
+    _onFullscreenError = () => {
+        const request = this._request;
+        if (request === null)
+            return;
+        if (!request.waiting) {
+            // Inside the platform call: whether a promise answers is not known yet.
+            request.refused = true;
+            return;
+        }
+        this._request = null;
+        this._setError(refusedByEvent());
+    };
+    // `supported` is probed at call time, so there is no stored value to set: this
+    // dispatches the current one when it differs from the last one dispatched
+    // (same-value guard). A state binding reads the property when it attaches; the
+    // event is for every other listener.
+    _publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-fullscreen:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
+    }
     // Re-derive `active` by comparing document.fullscreenElement (incl. legacy
     // fallback) against *this instance's* resolved target (§2/§2.1/§5). A null
     // resolved target always yields active=false — there is nothing for this
@@ -600,6 +759,12 @@ class WcsFullscreen extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Whether this page can use element fullscreen — probed at call time by the
+    // Core (never cached), so a state binding that reads it when it attaches gets
+    // the right value without waiting for `wcs-fullscreen:supported-changed`.
+    get supported() {
+        return this._core.supported;
+    }
     // --- Commands ---
     /**
      * Resolve `target` and request fullscreen on it. never-throw: an
@@ -652,6 +817,10 @@ class WcsFullscreen extends HTMLElement {
         this._reresolve();
         this._connectedCallbackPromise = this._core.observe();
     }
+    // dispose() publishes `active: false` when it was true (timing contract §22):
+    // out of the document this element hears no fullscreenchange, and the browser
+    // ends the fullscreen when the target leaves with it. Nothing is exited here;
+    // the next connectedCallback re-reads the truth through _reresolve().
     disconnectedCallback() {
         this._core.dispose();
     }

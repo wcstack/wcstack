@@ -203,7 +203,7 @@ declare class WcsIdle extends HTMLElement {
     get errorInfo(): WcsIoErrorInfo | null;
     get connectedCallbackPromise(): Promise<void>;
     requestPermission(): Promise<"granted" | "denied">;
-    start(threshold?: number): Promise<void>;
+    start(threshold?: unknown): Promise<void>;
     stop(): void;
     connectedCallback(): void;
     connectedMoveCallback(): void;

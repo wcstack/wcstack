@@ -80,7 +80,7 @@ npm install @wcstack/idle
 | コマンド             | 非同期 | 説明 |
 | -------------------- | ------ | ---- |
 | `requestPermission`  | はい   | 静的でgesture-gatedな`IdleDetector.requestPermission()`をラップ。**実際のuser gestureハンドラ内から呼ぶ必要があります。** never-throw: rejectは`"denied"`に倒れます。 |
-| `start`              | はい   | アイドル検知セッションを開始（`threshold`はms、最小60000）。後続の`start()`/`stop()`で上書きされます。idle-detection の許可が無いと拒まれ、何も検知せず、`error`（`not-allowed`）に流れます。4.8 から、要素が `[wcs/command-not-ready]` で警告します（`start()` がまた成功するまで 1 回）。API が無いときは警告しません（`capability-missing`）。 4.25（未リリース）から、`threshold` の位置にある数でないもの —— `on…: $command.x` の束縛が最初に渡すイベント —— は無視し、`threshold` 属性の値を使います: 「開始」ボタンをトークンに直結できます。 |
+| `start`              | はい   | アイドル検知セッションを開始（`threshold`はms、最小60000）。後続の`start()`/`stop()`で上書きされます。idle-detection の許可が無いと拒まれ、何も検知せず、`error`（`not-allowed`）に流れます。4.8 から、要素が `[wcs/command-not-ready]` で警告します（`start()` がまた成功するまで 1 回）。API が無いときは警告しません（`capability-missing`）。 4.25 から、`threshold` の位置にある数でないもの —— `on…: $command.x` の束縛が最初に渡すイベント —— は無視し、`threshold` 属性の値を使います: 「開始」ボタンをトークンに直結できます。 |
 | `stop`               | いいえ | 現在のセッションを停止。未開始でも安全に呼べます。 |
 
 ## 属性 / 入力

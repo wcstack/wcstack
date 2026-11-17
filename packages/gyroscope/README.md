@@ -10,7 +10,7 @@ It is an **async primitive node** that turns device angular velocity readings in
 With `@wcstack/state`, `<wcs-gyroscope>` can be bound directly through path contracts:
 
 - **input surface**: `frequency` (sampling rate in Hz)
-- **output state surface**: `x`, `y`, `z`, `error`, `errorInfo`, and — since 4.25 (not released yet) — `permissionState`, `supported`
+- **output state surface**: `x`, `y`, `z`, `error`, `errorInfo`, and — since 4.25 — `permissionState`, `supported`
 
 This means rotation-rate-driven UI can be expressed declaratively in HTML, without writing `Gyroscope`/`reading`/`error`-listener glue in your UI layer.
 
@@ -18,7 +18,7 @@ This means rotation-rate-driven UI can be expressed declaratively in HTML, witho
 
 - **Core** (`GyroscopeCore`) constructs the platform `Gyroscope`, tracks its live `reading`/`error` events
 - **Shell** (`<wcs-gyroscope>`) connects that state to DOM lifecycle
-- **Binding Contract** (`static wcBindable`) declares observable `properties` and `start`/`stop` `commands` (since 4.25 (not released yet), `requestPermission` too)
+- **Binding Contract** (`static wcBindable`) declares observable `properties` and `start`/`stop` `commands` (since 4.25, `requestPermission` too)
 
 ## Why this exists — a rare case where the platform API already matches never-throw
 
@@ -26,7 +26,7 @@ The Generic Sensor API's `Accelerometer`/`Gyroscope`/`Magnetometer`/`AmbientLigh
 
 > **Compose with `@wcstack/permission`.** `navigator.permissions.query({name:"gyroscope"})` already exists — pair `<wcs-gyroscope>` with `<wcs-permission name="gyroscope">` for `granted`/`denied`/`prompt` status rather than duplicating that state here (see `docs/sensor-tag-design.md`).
 
-> **Chromium/Android-centric support.** Desktop browsers commonly reject with `SecurityError` even when the `Gyroscope` class exists. Design any UI around `unsupported`/denied being the common case, not the exception. Since 4.25 (not released yet), a browser with no `Gyroscope` class but with `devicemotion` — Safari on an iPhone or iPad, Firefox on Android — is read through that event instead: see [Where it runs](#where-it-runs--the-sensor-class-or-devicemotion).
+> **Chromium/Android-centric support.** Desktop browsers commonly reject with `SecurityError` even when the `Gyroscope` class exists. Design any UI around `unsupported`/denied being the common case, not the exception. Since 4.25, a browser with no `Gyroscope` class but with `devicemotion` — Safari on an iPhone or iPad, Firefox on Android — is read through that event instead: see [Where it runs](#where-it-runs--the-sensor-class-or-devicemotion).
 
 ## Install
 
@@ -89,11 +89,11 @@ own self-contained `<wcs-state>` declaring `gyroGranted`:
 <button data-wcs="onclick: $command.startGyro; disabled: gyroGranted|not">Start</button>
 ```
 
-Every bound state path must be declared up front — binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`gyroGranted|not`), not a leading `!`. This example waits for the Generic Sensor's permission, which belongs to the `Gyroscope` class. Where the element reads `devicemotion` instead (an iPhone), that permission says nothing about it: since 4.25 (not released yet), use example 3 there.
+Every bound state path must be declared up front — binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`gyroGranted|not`), not a leading `!`. This example waits for the Generic Sensor's permission, which belongs to the `Gyroscope` class. Where the element reads `devicemotion` instead (an iPhone), that permission says nothing about it: since 4.25, use example 3 there.
 
 ### 3. Count shakes (fast turns) — on an iPhone too
 
-Since 4.25 (not released yet). One tap asks (where there is something to ask) and starts; every reading goes to a state handler through an event token, which looks at the size of the turn rate, not at its direction:
+Since 4.25. One tap asks (where there is something to ask) and starts; every reading goes to a state handler through an event token, which looks at the size of the turn rate, not at its direction:
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/gyroscope/auto"></script>
@@ -141,7 +141,7 @@ Since 4.25 (not released yet). One tap asks (where there is something to ask) an
 
 | Attribute   | Type   | Default | Description |
 | ----------- | ------ | ------- | ------------ |
-| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Gyroscope` constructor. Read only when `start()` runs — changing it while already started has no effect until `stop()` + `start()` (see Notes). Since 4.25 (not released yet): on the `devicemotion` fallback it thins the readings instead ([Where it runs](#where-it-runs--the-sensor-class-or-devicemotion)), and a value that is not a positive number is said once in the console when `start()` runs (`[wcs/frequency-invalid]`, see Notes). |
+| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Gyroscope` constructor. Read only when `start()` runs — changing it while already started has no effect until `stop()` + `start()` (see Notes). Since 4.25: on the `devicemotion` fallback it thins the readings instead ([Where it runs](#where-it-runs--the-sensor-class-or-devicemotion)), and a value that is not a positive number is said once in the console when `start()` runs (`[wcs/frequency-invalid]`, see Notes). |
 
 **`null` and `undefined`.** The input backed by an attribute (`frequency`) takes `null` as "clear": the attribute is removed and the input falls back to its default (the platform's sampling rate). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
 
@@ -154,8 +154,8 @@ Since 4.25 (not released yet). One tap asks (where there is something to ask) an
 | `z`      | `wcs-gyroscope:reading` | Angular velocity around the z-axis. |
 | `error`  | `wcs-gyroscope:error`   | Normalized `{ error, message }`, or `null`. |
 | `errorInfo` | `wcs-gyroscope:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo` — stable `code` / `phase` / `recoverable`), or `null`. Additive, derived from `error`; the existing `error` shape is unchanged. |
-| `permissionState` | `wcs-gyroscope:permission-changed` | Since 4.25 (not released yet). `"granted"` \| `"denied"` \| `"unknown"` — what the browser answered to `requestPermission()`; `"unknown"` until it answers. It is not the Generic Sensor's permission (that is `<wcs-permission name="gyroscope">`). |
-| `supported` | `wcs-gyroscope:supported-changed` | Since 4.25 (not released yet). `true` when this page can use the sensor. See [`supported`](#supported--can-this-page-use-it). |
+| `permissionState` | `wcs-gyroscope:permission-changed` | Since 4.25. `"granted"` \| `"denied"` \| `"unknown"` — what the browser answered to `requestPermission()`; `"unknown"` until it answers. It is not the Generic Sensor's permission (that is `<wcs-permission name="gyroscope">`). |
+| `supported` | `wcs-gyroscope:supported-changed` | Since 4.25. `true` when this page can use the sensor. See [`supported`](#supported--can-this-page-use-it). |
 
 `x`/`y`/`z` all derive from the single `wcs-gyroscope:reading` event (one native `reading` event updates all three axes together).
 
@@ -163,13 +163,13 @@ Since 4.25 (not released yet). One tap asks (where there is something to ask) an
 
 | Command | Async | Description |
 | ------- | ----- | ------------ |
-| `requestPermission` | yes | Since 4.25 (not released yet). Where the element reads `devicemotion` and the browser has `DeviceMotionEvent.requestPermission()` (Safari on an iPhone or iPad), calls it — **from a tap**. Everywhere else the sensor can be started there is nothing to ask, and it resolves to `"granted"` at once. Resolves to `permissionState` as it is after the call; never rejects. |
-| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). Since 4.25 (not released yet): where the browser has no `Gyroscope` class it subscribes to `devicemotion` instead, and after the sensor's own `error` event the next `start()` builds a fresh sensor. |
+| `requestPermission` | yes | Since 4.25. Where the element reads `devicemotion` and the browser has `DeviceMotionEvent.requestPermission()` (Safari on an iPhone or iPad), calls it — **from a tap**. Everywhere else the sensor can be started there is nothing to ask, and it resolves to `"granted"` at once. Resolves to `permissionState` as it is after the call; never rejects. |
+| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). Since 4.25: where the browser has no `Gyroscope` class it subscribes to `devicemotion` instead, and after the sensor's own `error` event the next `start()` builds a fresh sensor. |
 | `stop`  | no    | Stop the sensor and detach its listeners. Safe to call when not started. |
 
 ## `supported` — can this page use it
 
-Since 4.25 (not released yet). `supported` is `true` when this page can use the sensor: the browser has the `Gyroscope` class or `DeviceMotionEvent`, the page is a secure context, and no Permissions-Policy turns `gyroscope` off for it (the server's header, or an `<iframe>` without `allow="gyroscope"` — read where the browser lets a page see its policy, which is Chromium). Where it is `false`, `start()` cannot work and no tap changes that: do not offer the feature.
+Since 4.25. `supported` is `true` when this page can use the sensor: the browser has the `Gyroscope` class or `DeviceMotionEvent`, the page is a secure context, and no Permissions-Policy turns `gyroscope` off for it (the server's header, or an `<iframe>` without `allow="gyroscope"` — read where the browser lets a page see its policy, which is Chromium). Where it is `false`, `start()` cannot work and no tap changes that: do not offer the feature.
 
 It does **not** say that the user will allow it (`permissionState`, and `<wcs-permission name="gyroscope">` for the sensor class), and it **cannot say whether the device has the sensor**: a PC has the API and no sensor. There the readings simply never come, or the sensor reports it through `error`.
 
@@ -184,7 +184,7 @@ The value is read from the browser each time it is asked for, so a binding gets 
 
 ## Where it runs — the sensor class, or `devicemotion`
 
-Since 4.25 (not released yet). `start()` uses the Generic Sensor `Gyroscope` class where the browser has it, and `window`'s `devicemotion` event where it does not. Which of the two is decided at each `start()`.
+Since 4.25. `start()` uses the Generic Sensor `Gyroscope` class where the browser has it, and `window`'s `devicemotion` event where it does not. Which of the two is decided at each `start()`.
 
 | Browser | What `start()` reads | `requestPermission()` |
 | --- | --- | --- |
@@ -205,7 +205,7 @@ Up to 4.24 only the first row worked: the others ended as `unsupported`.
 
 ## On an iPhone
 
-Since 4.25 (not released yet). Safari on an iPhone or iPad has no `Gyroscope` class, so `<wcs-gyroscope>` reads `devicemotion` there, and iOS gates that event behind `DeviceMotionEvent.requestPermission()`:
+Since 4.25. Safari on an iPhone or iPad has no `Gyroscope` class, so `<wcs-gyroscope>` reads `devicemotion` there, and iOS gates that event behind `DeviceMotionEvent.requestPermission()`:
 
 - **Ask from a tap.** iOS shows its question only when the method is called from a tap. Emit `requestPermission` and `start` from the same tap handler, as the shake example does. `start()` does not check the permission: it subscribes at once, and the readings begin once the user has allowed.
 - **A refusal to ask is not a refusal by the user.** Called outside a tap, iOS rejects the call and shows nothing. `permissionState` then stays as it was — it changes only when the browser answers: `"granted"`, or `"denied"` for any other answer. The rejection lands in `error`, with `errorInfo.code: "not-allowed"` and `recoverable: true`, because a call from a tap can still be granted. Write "you refused" only for `permissionState: "denied"`.
@@ -234,7 +234,7 @@ element, so there is no risk of confusing this output state with an input.
 
 Note that `error` is **sticky** (see Notes & limitations below): once set, it
 stays on until the page is reloaded or you clear it yourself — a successful
-`start()` does not turn it back off. Since 4.25 (not released yet), an answered `requestPermission()` clears it too.
+`start()` does not turn it back off. Since 4.25, an answered `requestPermission()` clears it too.
 
 **Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
 Firefox 126+. In older browsers the states are simply never set — `:state()`
@@ -269,15 +269,15 @@ DevTools open; it is not a supported styling hook.
 
 ## Notes & limitations
 
-- **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5. `requestPermission()` (since 4.25 (not released yet)) does await the browser, but what it writes afterwards is a plain `permissionState` / `error` value — nothing a disconnect could race.
-- **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed. Since 4.25 (not released yet) there is one exception: when the browser answers a `requestPermission()`, the previous `error` is cleared, as in `<wcs-tilt>`.
-- **After an `error` event, `start()` works again.** Since 4.25 (not released yet), when the sensor reports its own `error` event (a `NotReadableError`, say), the failed sensor is torn down, so the next `start()` builds a fresh one. Up to 4.24 `start()` did nothing after such an error until `stop()` had been called, and nothing said so. `error` itself stays, as above.
-- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-gyroscope:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. The mapping keys off the normalized error name: `unsupported` → `capability-missing` (phase `probe`); `SecurityError` / `NotAllowedError` → `not-allowed` (phase `start`); `NotReadableError` → `not-readable` (phase `execute`); any other sensor failure → `sensor-error` (phase `execute`). All are `recoverable: false`, with one exception since 4.25 (not released yet): a rejected `requestPermission()` (`NotAllowedError` — iOS did not ask, because the call was not in a tap) is `not-allowed` with `recoverable: true`, since a call from a tap can succeed. `errorInfo` transitions exactly when `error` does, so it is **sticky** in the same way and only returns to `null` when `error` does. The shared `WcsIoErrorInfo` type and the `WCS_GYROSCOPE_ERROR_CODE` constants are exported.
-- **An unusable `frequency` is said.** Since 4.25 (not released yet), when `start()` runs with a `frequency` attribute that is not empty and is not a positive number (`frequency="60hz"`, `frequency="0"`), the console gets one warning per element: `[@wcstack/gyroscope] [wcs/frequency-invalid] <wcs-gyroscope> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` The sensor still starts, at the default rate — as it did before, without a word. A rate above what the browser allows is capped by the browser, and nothing says so.
+- **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5. `requestPermission()` (since 4.25) does await the browser, but what it writes afterwards is a plain `permissionState` / `error` value — nothing a disconnect could race.
+- **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed. Since 4.25 there is one exception: when the browser answers a `requestPermission()`, the previous `error` is cleared, as in `<wcs-tilt>`.
+- **After an `error` event, `start()` works again.** Since 4.25, when the sensor reports its own `error` event (a `NotReadableError`, say), the failed sensor is torn down, so the next `start()` builds a fresh one. Up to 4.24 `start()` did nothing after such an error until `stop()` had been called, and nothing said so. `error` itself stays, as above.
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-gyroscope:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. The mapping keys off the normalized error name: `unsupported` → `capability-missing` (phase `probe`); `SecurityError` / `NotAllowedError` → `not-allowed` (phase `start`); `NotReadableError` → `not-readable` (phase `execute`); any other sensor failure → `sensor-error` (phase `execute`). All are `recoverable: false`, with one exception since 4.25: a rejected `requestPermission()` (`NotAllowedError` — iOS did not ask, because the call was not in a tap) is `not-allowed` with `recoverable: true`, since a call from a tap can succeed. `errorInfo` transitions exactly when `error` does, so it is **sticky** in the same way and only returns to `null` when `error` does. The shared `WcsIoErrorInfo` type and the `WCS_GYROSCOPE_ERROR_CODE` constants are exported.
+- **An unusable `frequency` is said.** Since 4.25, when `start()` runs with a `frequency` attribute that is not empty and is not a positive number (`frequency="60hz"`, `frequency="0"`), the console gets one warning per element: `[@wcstack/gyroscope] [wcs/frequency-invalid] <wcs-gyroscope> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` The sensor still starts, at the default rate — as it did before, without a word. A rate above what the browser allows is capped by the browser, and nothing says so.
 - **`frequency` is read only at `start()`.** There is no `attributeChangedCallback`, and `start()` is idempotent while already started (a redundant call is a no-op — see Commands above), so changing the `frequency` attribute/property on a running sensor has no effect. To apply a new sampling rate, `stop()` then `start()` again.
 - **Reparenting stops the sensor and does not resume it.** Moving a connected `<wcs-gyroscope>` element to a different parent runs `disconnectedCallback` → `connectedCallback`; since the Shell does not auto-start on connect (see Quick Start above), this is effectively a stop with no automatic restart. `x`/`y`/`z` freeze at their last sample, and no `error` is raised — the sensor stays inert until `start` is invoked again.
 - **Never call the raw `new Gyroscope(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
-- Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="gyroscope">`. `permissionState` (since 4.25 (not released yet)) is only the answer to iOS's `DeviceMotionEvent.requestPermission()`, which no Permissions API entry reports.
+- Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="gyroscope">`. `permissionState` (since 4.25) is only the answer to iOS's `DeviceMotionEvent.requestPermission()`, which no Permissions API entry reports.
 
 ## Headless usage (`GyroscopeCore`)
 
@@ -294,7 +294,7 @@ core.start();
 core.dispose();
 ```
 
-Since 4.25 (not released yet), `core.supported` can be read at any time, `core.publishSupported()` dispatches `wcs-gyroscope:supported-changed` when the value differs from the last one dispatched, `await core.requestPermission()` asks where there is something to ask, and `core.start(frequency)` reads `devicemotion` where the `Gyroscope` class is missing.
+Since 4.25, `core.supported` can be read at any time, `core.publishSupported()` dispatches `wcs-gyroscope:supported-changed` when the value differs from the last one dispatched, `await core.requestPermission()` asks where there is something to ask, and `core.start(frequency)` reads `devicemotion` where the `Gyroscope` class is missing.
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

@@ -82,14 +82,14 @@ npm install @wcstack/fullscreen
 
 | プロパティ | イベント                | 説明 |
 | ----------- | ------------------------ | ---- |
-| `active`    | `wcs-fullscreen:change`  | `document.fullscreenElement` が**このインスタンスが解決したtarget**と一致している間 `true`、それ以外は `false`。4.25（未リリース）から、要素が文書の外にある間も `false`（[要素が文書を離れるとき](#要素が文書を離れるとき)参照）。 |
-| `error`     | `wcs-fullscreen:error` | 直近の失敗: rejectされたPromise（gesture外呼び出しなら `TypeError` 等）、プラットフォームAPI非対応なら `{ message: "Fullscreen API is not supported." }`、`target` が要素へ未解決なら `{ message: "Fullscreen target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は `null`。4.25（未リリース）から、ブラウザがイベントでしか知らせない拒否は `NotAllowedError` の `DOMException`（`"The browser refused the fullscreen request."`）になる（「注意・制限」参照）。 |
+| `active`    | `wcs-fullscreen:change`  | `document.fullscreenElement` が**このインスタンスが解決したtarget**と一致している間 `true`、それ以外は `false`。4.25 から、要素が文書の外にある間も `false`（[要素が文書を離れるとき](#要素が文書を離れるとき)参照）。 |
+| `error`     | `wcs-fullscreen:error` | 直近の失敗: rejectされたPromise（gesture外呼び出しなら `TypeError` 等）、プラットフォームAPI非対応なら `{ message: "Fullscreen API is not supported." }`、`target` が要素へ未解決なら `{ message: "Fullscreen target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は `null`。4.25 から、ブラウザがイベントでしか知らせない拒否は `NotAllowedError` の `DOMException`（`"The browser refused the fullscreen request."`）になる（「注意・制限」参照）。 |
 | `errorInfo` | `wcs-fullscreen:error-info-changed` | `error` から導出した serializable な失敗 taxonomy（`WcsIoErrorInfo`: 安定 `code` / `phase` / `recoverable`）、または `null`。additive で `error` の値の形は不変。 |
-| `supported` | `wcs-fullscreen:supported-changed` | 4.25（未リリース）から。このページで要素の fullscreen を使えるなら `true`、使えないなら `false`（iPhone、Permissions-Policy が禁じたフレーム）。イベントの `detail` は boolean そのもの。下記参照。 |
+| `supported` | `wcs-fullscreen:supported-changed` | 4.25 から。このページで要素の fullscreen を使えるなら `true`、使えないなら `false`（iPhone、Permissions-Policy が禁じたフレーム）。イベントの `detail` は boolean そのもの。下記参照。 |
 
 ### `supported` — このページで fullscreen を使えるか
 
-4.25（未リリース）から。`supported` は、このページで要素の fullscreen を使えるときに `true` です: 文書が有効と答え（`document.fullscreenEnabled`、または接頭辞付きの `webkitFullscreenEnabled`）、要素に `requestFullscreen()`（または `webkitRequestFullscreen()`）があり、Permissions-Policy が切っていない — サーバーの `Permissions-Policy: fullscreen=()` ヘッダーも、`allow="fullscreen"`（または `allowfullscreen`）の無いクロスオリジンの `<iframe>` も無い — 場合です。それ以外は、理由が何であれ `false` です。**iPhone（iOS の Safari）には要素の fullscreen が無いので、そこでは `supported` は `false` です**（iPad にはあります）。
+4.25 から。`supported` は、このページで要素の fullscreen を使えるときに `true` です: 文書が有効と答え（`document.fullscreenEnabled`、または接頭辞付きの `webkitFullscreenEnabled`）、要素に `requestFullscreen()`（または `webkitRequestFullscreen()`）があり、Permissions-Policy が切っていない — サーバーの `Permissions-Policy: fullscreen=()` ヘッダーも、`allow="fullscreen"`（または `allowfullscreen`）の無いクロスオリジンの `<iframe>` も無い — 場合です。それ以外は、理由が何であれ `false` です。**iPhone（iOS の Safari）には要素の fullscreen が無いので、そこでは `supported` は `false` です**（iPad にはあります）。
 
 要求が通ることまでは言いません。要求には user gesture が要り、利用者はいつでも fullscreen を抜けられます。fullscreen は安全なコンテキストを要らないので、素の `http:` のページであることだけでは `false` になりません。
 
@@ -182,7 +182,7 @@ wcs-fullscreen:state(active) ~ .exit-hint { display: none; } /* デフォルト 
 
 ## 要素が文書を離れるとき
 
-4.25（未リリース）から。`<wcs-fullscreen>` が document を聞いているのは、接続されている間だけです。`active` が `true` の間に切断されると — `if:` の枝が消える、`@wcstack/router` がルートの本文を取り外す — `active: false` を `wcs-fullscreen:change` イベントとともに公開します。バインドした state のパスも `:state(active)` もそれに従います。文書の外にある要素は、その値をもう保証できないからです。fullscreen 自体は**抜けません**。再び接続されると本当の値を読み直し、target がまだ fullscreen なら `active` はイベントとともに `true` に戻ります。そのため、移動された（取り外して入れ直された）要素は `false`、`true` の順に報告します。4.24 までは切断しても `active` がそのまま残り、fullscreen が終わった後も state は `true` を示し続けていました。
+4.25 から。`<wcs-fullscreen>` が document を聞いているのは、接続されている間だけです。`active` が `true` の間に切断されると — `if:` の枝が消える、`@wcstack/router` がルートの本文を取り外す — `active: false` を `wcs-fullscreen:change` イベントとともに公開します。バインドした state のパスも `:state(active)` もそれに従います。文書の外にある要素は、その値をもう保証できないからです。fullscreen 自体は**抜けません**。再び接続されると本当の値を読み直し、target がまだ fullscreen なら `active` はイベントとともに `true` に戻ります。そのため、移動された（取り外して入れ直された）要素は `false`、`true` の順に報告します。4.24 までは切断しても `active` がそのまま残り、fullscreen が終わった後も state は `true` を示し続けていました。
 
 fullscreen をどうするかはブラウザが決めます。**fullscreen になっている要素が文書から取り除かれると、ブラウザは fullscreen を終わらせます。** ルートの本文の中にある target はルートとともに去り、fullscreen もそこで終わります。ナビゲーションをまたいで fullscreen を続けるには、target — とその `<wcs-fullscreen>` — をルーターの外、残り続けるレイアウトの側に置きます（[router README — ルートの本文はどこに置くか](../router/README.ja.md#ルートの本文はどこに置くか)）。target だけを外に置き `<wcs-fullscreen>` をルートの中に置いた場合、fullscreen は続きますが、`active` はそのルートを離れている間 `false` で、戻ると `true` に戻ります。
 
@@ -223,12 +223,12 @@ fullscreen をどうするかはブラウザが決めます。**fullscreen に�
 </div>
 ```
 
-watch は `active` が `true` になったとき — fullscreen が有効な状態で固定を頼みます — と、`false` に戻ったとき — 利用者が Esc や終了ボタンを押した、あるいは（4.25（未リリース）から）要素が文書を離れた — に走ります。`$watch` は `@wcstack/state` のフルエントリ（`/auto`）に含まれます。向きの固定が無いブラウザ（Safari、デスクトップのブラウザ）では `lockError` がそれを伝え、fullscreen には影響しません。
+watch は `active` が `true` になったとき — fullscreen が有効な状態で固定を頼みます — と、`false` に戻ったとき — 利用者が Esc や終了ボタンを押した、あるいは（4.25 から）要素が文書を離れた — に走ります。`$watch` は `@wcstack/state` のフルエントリ（`/auto`）に含まれます。向きの固定が無いブラウザ（Safari、デスクトップのブラウザ）では `lockError` がそれを伝え、fullscreen には影響しません。
 
 ## 注意・制限
 
 - **iPhone には要素の fullscreen が無い。** iPhone の Safari は要素の fullscreen を実装していません。`supported` は `false` で、要求は `error` で終わります。ボタンは `supported` で隠してください。`<video controls>` には、そこでもシステム自身の全画面ボタンがあります。
-- **イベントで届く拒否。** 4.25（未リリース）から。標準の `requestFullscreen()` は promise を返し、その reject が `error` になります。古い Safari の接頭辞付き API（`webkitRequestFullscreen()`）は何も返しません。拒否がページに届くのは、document の `webkitfullscreenerror` / `fullscreenerror` イベントだけです。`<wcs-fullscreen>` は接続されている間これを聞き、promise を返さなかった呼び出しでこの要素が出した要求に対して発火したとき、`error` を `NotAllowedError` の `DOMException` — `"The browser refused the fullscreen request."`、`errorInfo.code` は `not-allowed` — にします。イベントは理由を運ばないので、メッセージはそれ以上を言いません。届くのはコマンドの promise が決着した後です。`await` の直後に読むのではなく、`error` をバインドしてください。promise を返した呼び出しの要求には promise だけが答えるので、同じ拒否を 2 回報告することはありません。この要素の要求が待っていないときのイベント — 別のインスタンスのもの — は無視します。
+- **イベントで届く拒否。** 4.25 から。標準の `requestFullscreen()` は promise を返し、その reject が `error` になります。古い Safari の接頭辞付き API（`webkitRequestFullscreen()`）は何も返しません。拒否がページに届くのは、document の `webkitfullscreenerror` / `fullscreenerror` イベントだけです。`<wcs-fullscreen>` は接続されている間これを聞き、promise を返さなかった呼び出しでこの要素が出した要求に対して発火したとき、`error` を `NotAllowedError` の `DOMException` — `"The browser refused the fullscreen request."`、`errorInfo.code` は `not-allowed` — にします。イベントは理由を運ばないので、メッセージはそれ以上を言いません。届くのはコマンドの promise が決着した後です。`await` の直後に読むのではなく、`error` をバインドしてください。promise を返した呼び出しの要求には promise だけが答えるので、同じ拒否を 2 回報告することはありません。この要素の要求が待っていないときのイベント — 別のインスタンスのもの — は無視します。
 - **同じ更新が描画する target。** コマンドは emit した時点で走り、state の描画はその 1 マイクロタスク後です。そのため `this.showPlayer = true; this.$command.goFullscreen.emit();` は、`if:` の枝がまだ文書に入れていない `target` を求めることになり、`error` は `{ message: "Fullscreen target could not be resolved." }` になります。描画の後、`$renderedCallback` から emit してください — `if (paths.includes("showPlayer") && this.showPlayer) this.$command.goFullscreen.emit();`。そこはまだクリックの user activation の中です（[state README — Command Token](../state/README.ja.md#command-tokenメソッドバインディング)）。
 - **user gesture制約。** `requestFullscreen()` は実際のuser gesture（クリックハンドラ等）内から同期的に呼ばれた場合のみ成功します。本ノードはgestureを生成できません — command-tokenプロトコル経由（`<wcs-fullscreen>` 側の `command.requestFullscreen: $command.<token>`、ボタン側の `onclick: $command.<token>`）で呼び出す場合は、**起動元のイベント自体**が本物のuser gestureであることを確認してください。`setTimeout` の中やPromiseチェーンの奥深くから呼び出すと、呼び出し方法に関わらず `TypeError`（WHATWG Fullscreen仕様のtransient-activationチェックによる。`NotAllowedError` ではない）でrejectされます — これはブラウザレベルの制約であり、wcstack側で回避する手段はありません。
 - **ベンダープレフィックス。** 一部の古いSafariバージョンは `webkitRequestFullscreen` / `webkitExitFullscreen` / `webkitFullscreenElement` / `webkitFullscreenEnabled` / `webkitfullscreenchange` / `webkitfullscreenerror` のみを実装しています。Coreは標準名を優先的にプローブし、**呼び出しの都度**（非キャッシュ）レガシー名にフォールバックするため、両方とも透過的にサポートされます。
@@ -258,7 +258,7 @@ await core.exitFullscreen();
 core.dispose();                          // document のリスナーを外す
 ```
 
-4.25（未リリース）から、`dispose()` は `active` が `true` だったとき `active: false` を公開し（dispose した Core はもう document を聞いていません）、`setTarget(element)` が読み直します — Shell は接続のたびに呼びます。`core.supported` と、`observe()` が発火する `wcs-fullscreen:supported-changed` イベントは、このページで fullscreen を使えるかを伝えます。
+4.25 から、`dispose()` は `active` が `true` だったとき `active: false` を公開し（dispose した Core はもう document を聞いていません）、`setTarget(element)` が読み直します — Shell は接続のたびに呼びます。`core.supported` と、`observe()` が発火する `wcs-fullscreen:supported-changed` イベントは、このページで fullscreen を使えるかを伝えます。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

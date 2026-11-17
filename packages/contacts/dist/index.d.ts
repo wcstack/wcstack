@@ -158,6 +158,7 @@ interface WcsContactsCoreValues {
     error: any;
     cancelled: boolean;
     errorInfo: WcsIoErrorInfo | null;
+    supported: boolean;
 }
 /**
  * Value types for the Shell (`<wcs-contacts>`) — identical observable surface
@@ -189,6 +190,13 @@ declare function getConfig(): IConfig;
  * (`properties`, `options`) rather than one — the command-token argument
  * pass-through does not special-case argument count, so this requires no protocol
  * change.
+ *
+ * A picker closed without a choice **resolves with an empty list** — the
+ * specification has no `AbortError` for it ("return an empty list"); `select()`
+ * rejects only with `InvalidStateError` (not a top-level page, a picker already
+ * showing, the picker failed), `SecurityError` (no user activation) and `TypeError`
+ * (empty or unsupported properties). So an empty result is the cancellation: it
+ * sets `cancelled`, leaves `value` as it was and fires no `wcs-contacts:complete`.
  */
 declare class ContactsCore extends EventTarget {
     static wcBindable: IWcBindable;
@@ -199,6 +207,7 @@ declare class ContactsCore extends EventTarget {
     private _error;
     private _cancelled;
     private _errorInfo;
+    private _supportedPublished;
     private _lane;
     private _ready;
     constructor(target?: EventTarget);
@@ -215,9 +224,13 @@ declare class ContactsCore extends EventTarget {
      */
     get errorInfo(): WcsIoErrorInfo | null;
     /**
-     * Whether the required platform capability (`web.contacts`) is available right
-     * now — decided by call-time feature detection, not User-Agent. Core-only,
-     * additive.
+     * Whether this page can use the Contact Picker right now:
+     * `navigator.contacts.select` is a function (call-time feature detection, not
+     * User-Agent) **and** the page is top-level — the specification refuses frames, so
+     * inside an `<iframe>` this is false although the API is there (`select()` itself
+     * still asks the browser, which answers `InvalidStateError`). It does not say the
+     * user will pick anyone. A wc-bindable output (event
+     * `wcs-contacts:supported-changed`).
      */
     get supported(): boolean;
     /**
@@ -227,6 +240,7 @@ declare class ContactsCore extends EventTarget {
     get platformAssessment(): PlatformAssessment;
     observe(): Promise<void>;
     dispose(): void;
+    private _publishSupported;
     private _setLoading;
     private _setValue;
     private _setError;
@@ -245,7 +259,7 @@ declare class ContactsCore extends EventTarget {
  *
  * **Android Chrome only.** Desktop browsers entirely lack `navigator.contacts`
  * — treat `unsupported` as the default state, not an edge case, in any
- * example or consuming UI.
+ * example or consuming UI (`supported` says it ahead of time).
  */
 declare class WcsContacts extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
@@ -262,6 +276,7 @@ declare class WcsContacts extends HTMLElement {
     get error(): any;
     get cancelled(): boolean;
     get errorInfo(): WcsIoErrorInfo | null;
+    get supported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
     select(properties: ContactProperty[], options?: ContactsSelectOptions): Promise<ContactInfo[] | null>;
     connectedCallback(): void;

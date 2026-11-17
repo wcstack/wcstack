@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/idle","version":"4.24.2"};
+var pkg = {"name":"@wcstack/idle","version":"4.25.0"};
 
 /**
  * idleCapabilities.ts
@@ -623,8 +623,10 @@ class WcsIdle extends HTMLElement {
     requestPermission() {
         return this._core.requestPermission();
     }
+    // Anything that is not a number in `threshold`'s place — the event an `on…: $command.x` binding emits
+    // first — is not a threshold: a "Start" button wired straight to the token starts with the attribute's.
     start(threshold) {
-        return this._core.start(threshold ?? this.threshold);
+        return this._core.start(typeof threshold === "number" ? threshold : this.threshold);
     }
     stop() {
         this._core.stop();

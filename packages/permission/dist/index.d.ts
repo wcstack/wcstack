@@ -59,6 +59,17 @@ interface IWritableConfig {
  */
 type PermissionStateOrUnsupported = "prompt" | "granted" | "denied" | "unsupported";
 /**
+ * Why `state` is `"unsupported"` (`null` while it is not):
+ * - `"policy-blocked"` — a Permissions-Policy turns the feature off for this page
+ *   (the server's header, or an `<iframe>` without `allow`).
+ * - `"insecure-context"` — the page is not a secure context.
+ * - `"no-permissions-api"` — the browser has no `navigator.permissions.query`.
+ * - `"unknown-name"` — the browser rejected the permission name, or `name` is empty.
+ *
+ * The last two say that the browser cannot tell, not that the feature is absent.
+ */
+type WcsPermissionUnsupportedReason = "policy-blocked" | "insecure-context" | "no-permissions-api" | "unknown-name";
+/**
  * Descriptor passed to `navigator.permissions.query()`. `name` is the permission
  * name (e.g. `"geolocation"`, `"notifications"`, `"camera"`). The optional fields
  * cover the descriptors that take extra members:
@@ -90,6 +101,8 @@ interface WcsPermissionCoreValues {
     denied: boolean;
     prompt: boolean;
     unsupported: boolean;
+    /** Why `state` is `"unsupported"`, or `null` while it is not. */
+    unsupportedReason: WcsPermissionUnsupportedReason | null;
 }
 /**
  * Value types for the Shell (`<wcs-permission>`) — identical observable surface
@@ -130,12 +143,19 @@ declare function getConfig(): IConfig;
  * from one `wcs-geo:position` event), so a binding like `hidden@granted` works
  * directly. The live `change` event of the PermissionStatus is tracked so a grant
  * flipping in browser settings flows into the declarative state.
+ *
+ * `"unsupported"` folds four different things — the page is forbidden (a
+ * Permissions-Policy), the context is insecure, the browser has no Permissions API,
+ * the browser rejected the name (or the name is empty). `unsupportedReason` says
+ * which, through its own event (`wcs-permission:unsupported-reason-changed`),
+ * dispatched before the state's event with both values already in place.
  */
 declare class PermissionCore extends EventTarget {
     static wcBindable: IWcBindable;
     private _target;
     private _descriptor;
     private _state;
+    private _unsupportedReason;
     private _permissionStatus;
     private _permissionSubscribed;
     private _permGen;
@@ -146,6 +166,13 @@ declare class PermissionCore extends EventTarget {
     get denied(): boolean;
     get prompt(): boolean;
     get unsupported(): boolean;
+    /**
+     * Why `state` is `"unsupported"`: `"policy-blocked"` (a Permissions-Policy turns
+     * the feature off for this page), `"insecure-context"`, `"no-permissions-api"`
+     * (no `navigator.permissions.query`) or `"unknown-name"` (the browser rejected the
+     * name, or it is empty). `null` while `state` is anything else.
+     */
+    get unsupportedReason(): WcsPermissionUnsupportedReason | null;
     /** Resolves once the current (or initial) query settles. */
     get ready(): Promise<void>;
     private _setState;
@@ -199,6 +226,7 @@ declare class WcsPermission extends HTMLElement {
     get denied(): boolean;
     get prompt(): boolean;
     get unsupported(): boolean;
+    get unsupportedReason(): WcsPermissionUnsupportedReason | null;
     get connectedCallbackPromise(): Promise<void>;
     private _descriptor;
     private _scheduleObserve;
@@ -214,4 +242,4 @@ declare global {
 }
 
 export { PermissionCore, WcsPermission, bootstrapPermission, getConfig };
-export type { IWritableConfig, IWritableTagNames, PermissionStateOrUnsupported, WcsPermissionCoreValues, WcsPermissionDescriptor, WcsPermissionInputs, WcsPermissionValues };
+export type { IWritableConfig, IWritableTagNames, PermissionStateOrUnsupported, WcsPermissionCoreValues, WcsPermissionDescriptor, WcsPermissionInputs, WcsPermissionUnsupportedReason, WcsPermissionValues };

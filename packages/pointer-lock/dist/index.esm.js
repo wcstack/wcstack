@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/pointer-lock","version":"4.24.2"};
+var pkg = {"name":"@wcstack/pointer-lock","version":"4.25.0"};
 
 /**
  * pointerLockCapabilities.ts
@@ -110,6 +110,12 @@ function derivePointerLockErrorInfo(error, kind) {
     return { code: WCS_POINTER_LOCK_ERROR_CODE.PointerLockError, phase: "execute", recoverable: false, message };
 }
 
+// What a refusal that arrives as an event is reported as. The event carries no
+// reason, so the message says no more than that; `NotAllowedError` puts it in
+// the `not-allowed` class (recoverable: a request from a user gesture may pass).
+function refusedByEvent() {
+    return new DOMException("The browser refused the pointer lock request.", "NotAllowedError");
+}
 /**
  * Headless Pointer Lock primitive. A thin, framework-agnostic wrapper around
  * the Pointer Lock API (`Element.requestPointerLock()` /
@@ -156,6 +162,11 @@ class PointerLockCore extends EventTarget {
             // drives a referenced element, not a competing operation.
             { name: "error", event: "wcs-pointer-lock:error", semantics: "state" },
             { name: "errorInfo", event: "wcs-pointer-lock:error-info-changed", semantics: "state" },
+            // Whether this page has the Pointer Lock API (an element has
+            // requestPointerLock() or the prefixed name). Computed at call time; the
+            // event carries the boolean and fires from observe() when it differs from
+            // the last value dispatched.
+            { name: "supported", event: "wcs-pointer-lock:supported-changed", semantics: "state" },
         ],
         commands: [
             { name: "requestPointerLock", async: true },
@@ -182,6 +193,15 @@ class PointerLockCore extends EventTarget {
     // needs it. exitPointerLock() is synchronous and has no stale-resolution
     // race to guard against.
     _gen = 0;
+    // The request this instance made that an event may still answer, or null.
+    // Chromium and WebKit answer with the call's promise; Firefox (and the prefixed
+    // API) return nothing and answer with pointerlockchange / pointerlockerror on
+    // the document. A pointerlockerror is this instance's only while this is set
+    // and waiting — the event does not say whose request failed.
+    _request = null;
+    // `supported` as last dispatched (never the value itself — the getter probes at
+    // call time). Starts at false, so observe() announces a page that has the API.
+    _supportedPublished = false;
     // SSR (§3.8): no asynchronous probe to await — observe() completes
     // synchronously, so readiness is immediate.
     _ready = Promise.resolve();
@@ -207,24 +227,48 @@ class PointerLockCore extends EventTarget {
     get errorInfo() {
         return this._errorInfo;
     }
+    /**
+     * Whether this page has the Pointer Lock API right now: an element has
+     * `requestPointerLock()` (or the prefixed `webkitRequestPointerLock()`). Probed
+     * at call time, never cached. No Permissions-Policy feature governs pointer
+     * lock, so there is no policy to ask. It does not say that a request will
+     * succeed (that needs a user gesture, and a sandboxed `<iframe>` needs
+     * `allow-pointer-lock`). A wc-bindable output (event
+     * `wcs-pointer-lock:supported-changed`).
+     */
+    get supported() {
+        const proto = Element.prototype;
+        return typeof proto.requestPointerLock === "function" || typeof proto.webkitRequestPointerLock === "function";
+    }
     // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
     // updates the tracked resolved target without re-subscribing to `document`.
+    // Also publishes `supported` when it differs from the last value dispatched.
     observe(target) {
+        this._publishSupported();
         this._resolvedTarget = target;
         if (!this._subscribed) {
             this._subscribed = true;
             document.addEventListener(this._pointerLockChangeEventName(), this._onChange);
+            document.addEventListener(this._pointerLockErrorEventName(), this._onLockError);
         }
         this._applyActive();
         return this._ready;
     }
     dispose() {
         this._gen++; // invalidate any in-flight requestPointerLock() resolution
+        this._request = null;
         if (this._subscribed) {
             this._subscribed = false;
             document.removeEventListener(this._pointerLockChangeEventName(), this._onChange);
+            document.removeEventListener(this._pointerLockErrorEventName(), this._onLockError);
         }
         this._resolvedTarget = null;
+        // A disposed Core hears no pointerlockchange, so it can no longer vouch for
+        // `active`: publish false through the normal setter (timing contract §22 — a
+        // disconnect publishes what it changes). The lock itself is not released
+        // here; observe() re-reads the truth — publishing true again — on the next
+        // connect.
+        this._setActive(false);
     }
     /**
      * Request pointer lock on `element`. Never-throw: a missing API or a
@@ -240,6 +284,7 @@ class PointerLockCore extends EventTarget {
     async requestPointerLock(element) {
         const gen = ++this._gen;
         this._resolvedTarget = element;
+        this._request = null; // this call supersedes the request before it
         if (!element) {
             this._setError({ message: "Pointer Lock target could not be resolved." }, "invalid-argument");
             return;
@@ -253,17 +298,42 @@ class PointerLockCore extends EventTarget {
             this._setError({ message: "Pointer Lock API is not supported." }, "capability-missing");
             return;
         }
+        const request = { waiting: false, refused: false };
+        this._request = request;
         try {
             // fn is already bound to `element` by _requestPointerLockFn().
-            await fn();
-            if (gen !== this._gen)
-                return; // stale
+            const result = fn();
+            if (typeof result?.then === "function") {
+                // Chromium and WebKit: the call's promise answers this request, and it
+                // alone. They fire pointerlockerror for the same refusal as well — WebKit
+                // before it rejects the promise — and the rejection carries the reason,
+                // so the event is not this request's answer.
+                this._request = null;
+                await result;
+                if (gen !== this._gen)
+                    return; // stale
+                this._setError(null);
+                this._applyActive();
+                return;
+            }
+            // Firefox (and the prefixed API) return nothing: the answer is a
+            // pointerlockchange or a pointerlockerror on the document.
+            if (request.refused) {
+                // The event fired inside the call itself.
+                this._request = null;
+                this._setError(refusedByEvent());
+                return;
+            }
+            // The request is made: the failure before it is no longer the latest
+            // attempt's. From here the events answer.
             this._setError(null);
             this._applyActive();
+            request.waiting = true;
         }
         catch (e) {
             if (gen !== this._gen)
                 return; // stale
+            this._request = null;
             this._setError(e);
         }
     }
@@ -339,9 +409,51 @@ class PointerLockCore extends EventTarget {
     _pointerLockChangeEventName() {
         return "onpointerlockchange" in document ? "pointerlockchange" : "webkitpointerlockchange";
     }
+    // Picked the same way as the change event's name above. Unlike that one, this
+    // branch is driven in the tests (mocks.ts removes `onpointerlockerror` from
+    // the prototype that owns it).
+    _pointerLockErrorEventName() {
+        return "onpointerlockerror" in document ? "pointerlockerror" : "webkitpointerlockerror";
+    }
     _onChange = () => {
         this._applyActive();
+        // The target is locked: a request that was waiting for its answer has it.
+        if (this._active)
+            this._request = null;
     };
+    // A refusal that arrives as an event. Firefox reports a refused
+    // requestPointerLock() (no user gesture, say) only here — the call returns no
+    // promise to reject. A request whose call returned a promise is not waiting
+    // for this event (`_request` is null from the moment the call returned), so a
+    // refusal the promise reports is never reported a second time. The event fires
+    // on the document without saying whose request failed: with no request waiting
+    // here, it is another instance's (or the page's own call) and is ignored.
+    _onLockError = () => {
+        const request = this._request;
+        if (request === null)
+            return;
+        if (!request.waiting) {
+            // Inside the platform call: whether a promise answers is not known yet.
+            request.refused = true;
+            return;
+        }
+        this._request = null;
+        this._setError(refusedByEvent());
+    };
+    // `supported` is probed at call time, so there is no stored value to set: this
+    // dispatches the current one when it differs from the last one dispatched
+    // (same-value guard). A state binding reads the property when it attaches; the
+    // event is for every other listener.
+    _publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-pointer-lock:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
+    }
     // Self-filter (docs/fullscreen-tag-design.md §2.1): compares against this
     // instance's own resolved target, not merely "is *something* locked" — so
     // multiple concurrent instances each report the correct `active` value.
@@ -622,6 +734,12 @@ class WcsPointerLock extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Whether this page has the Pointer Lock API — probed at call time by the
+    // Core (never cached), so a state binding that reads it when it attaches gets
+    // the right value without waiting for `wcs-pointer-lock:supported-changed`.
+    get supported() {
+        return this._core.supported;
+    }
     // --- Commands ---
     /**
      * Resolve `target` and request pointer lock on it. Requires a user-gesture
@@ -646,6 +764,10 @@ class WcsPointerLock extends HTMLElement {
         upgradeProperties(this);
         this._applyDisplayAndObserve();
     }
+    // dispose() publishes `active: false` when it was true (timing contract §22):
+    // out of the document this element hears no pointerlockchange, and the browser
+    // releases the lock when the target leaves with it. Nothing is released here;
+    // the next connectedCallback re-reads the truth through observe().
     disconnectedCallback() {
         this._core.dispose();
     }

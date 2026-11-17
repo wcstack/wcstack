@@ -66,7 +66,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/debounce","version":"4.24.2"};
+var pkg = {"name":"@wcstack/debounce","version":"4.25.0"};
 
 /**
  * Build the wc-bindable `properties` list for a debounce/throttle element, with

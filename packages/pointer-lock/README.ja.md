@@ -83,7 +83,7 @@ npm install @wcstack/pointer-lock
 
 ### イベントで届く拒否（`pointerlockerror`）
 
-4.25（未リリース）から。断られた要求の知らせ方は、ブラウザによって違います:
+4.25 から。断られた要求の知らせ方は、ブラウザによって違います:
 
 - **Chromium と WebKit** は `requestPointerLock()` から promise を返し、それを reject します。その reject が、ブラウザ自身の理由とともに `error` になります — `allow-pointer-lock` の無い sandbox の `<iframe>` では `SecurityError`、WebKit の `WrongDocumentError`（`"Pointer lock requires the window to have focus."`）など。
 - **Firefox** は `requestPointerLock()` から何も返しません。拒否がページに届くのは、document の `pointerlockerror` イベントだけです。`<wcs-pointer-lock>` は接続されている間これを聞き（ブラウザが持つ名前が `webkitpointerlockerror` ならそちらを聞き）、promise を返さなかった呼び出しでこの要素が出した要求に対して発火したとき、`error` を `NotAllowedError` の `DOMException` — `"The browser refused the pointer lock request."`、`errorInfo.code` は `not-allowed`、`recoverable: true` — にします。イベントは理由を運ばない（Firefox はコンソールに書きます）ので、ブラウザが何を理由に断ったとしても、メッセージはそれ以上を言いません。
@@ -96,10 +96,10 @@ promise を返した呼び出しの要求には、その promise だけが答え
 
 | プロパティ  | イベント                                | 説明 |
 | ----------- | -------------------------------------- | ------------ |
-| `active`    | `wcs-pointer-lock:change`             | `document.pointerLockElement` がこのインスタンスの解決済み target と一致していれば `true`、それ以外は `false`。4.25（未リリース）から、要素が文書の外にある間も `false`（[要素が文書を離れるとき](#要素が文書を離れるとき)参照）。 |
-| `error`     | `wcs-pointer-lock:error`              | 直近の失敗、または `null`。次のいずれか: rejectされたPromise（gesture外呼び出しなら`NotAllowedError`等）、プラットフォームAPI非対応なら`{ message: "Pointer Lock API is not supported." }`、`target`が要素へ未解決なら`{ message: "Pointer Lock target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は`null`。4.25（未リリース）から、ブラウザがイベントでしか知らせない拒否 — Firefox — は `NotAllowedError` の `DOMException`（`"The browser refused the pointer lock request."`）になる（上記参照）。 |
+| `active`    | `wcs-pointer-lock:change`             | `document.pointerLockElement` がこのインスタンスの解決済み target と一致していれば `true`、それ以外は `false`。4.25 から、要素が文書の外にある間も `false`（[要素が文書を離れるとき](#要素が文書を離れるとき)参照）。 |
+| `error`     | `wcs-pointer-lock:error`              | 直近の失敗、または `null`。次のいずれか: rejectされたPromise（gesture外呼び出しなら`NotAllowedError`等）、プラットフォームAPI非対応なら`{ message: "Pointer Lock API is not supported." }`、`target`が要素へ未解決なら`{ message: "Pointer Lock target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は`null`。4.25 から、ブラウザがイベントでしか知らせない拒否 — Firefox — は `NotAllowedError` の `DOMException`（`"The browser refused the pointer lock request."`）になる（上記参照）。 |
 | `errorInfo` | `wcs-pointer-lock:error-info-changed` | `error` から導出される追加のシリアライズ可能な失敗タクソノミ `{ code, phase, recoverable, message }`、または `null`。下記参照。 |
-| `supported` | `wcs-pointer-lock:supported-changed`  | 4.25（未リリース）から。ブラウザに Pointer Lock API があれば `true`、無ければ `false`。イベントの `detail` は boolean そのもの。下記参照。 |
+| `supported` | `wcs-pointer-lock:supported-changed`  | 4.25 から。ブラウザに Pointer Lock API があれば `true`、無ければ `false`。イベントの `detail` は boolean そのもの。下記参照。 |
 
 `error` と `errorInfo` は **どちらも観測可能な event-backed の `wcBindable` property** です。（`error` はかつて独自イベントを持たない命令的 getter でしたが、現在はそうではありません。）wc-bindable バインディングコアが request/exit の失敗をリアクティブに配信するようになったため、コマンドが settle するたびに `element.error` をポーリングするのではなく `data-wcs` / `bind()` でバインドできます。`error` の **値の形状は不変** で、`errorInfo` は追加のシリアライズ可能な分類です。
 
@@ -111,14 +111,14 @@ promise を返した呼び出しの要求には、その promise だけが答え
 | -------------------- | --------- | ------------- | ----- |
 | `capability-missing` | `probe`   | `false`       | Pointer Lock API 非対応（標準名・レガシー名のどちらも存在しない） |
 | `invalid-argument`   | `start`   | `false`       | `target` が要素へ未解決 |
-| `not-allowed`        | `execute` | `true`        | `NotAllowedError` / `TypeError` — user gesture 外での呼び出し。実際の gesture 内で再試行すれば成功しうる。4.25（未リリース）から、`pointerlockerror` イベントで届いた拒否（Firefox）もすべてここ。理由は分からない |
+| `not-allowed`        | `execute` | `true`        | `NotAllowedError` / `TypeError` — user gesture 外での呼び出し。実際の gesture 内で再試行すれば成功しうる。4.25 から、`pointerlockerror` イベントで届いた拒否（Firefox）もすべてここ。理由は分からない |
 | `pointer-lock-error` | `execute` | `false`       | その他の caught 例外 |
 
 安定した `code` 値は `WCS_POINTER_LOCK_ERROR_CODE` として export されます。共有の `WcsIoErrorInfo` / `WcsIoErrorPhase` 型も本パッケージから再 export されます。
 
 ### `supported` — このページに pointer lock があるか
 
-4.25（未リリース）から。`supported` は、ブラウザに Pointer Lock API があるときに `true` です: 要素に `requestPointerLock()`（または接頭辞付きの `webkitRequestPointerLock()`）がある場合です。それ以外は `false` です — たとえば iPhone の Safari。
+4.25 から。`supported` は、ブラウザに Pointer Lock API があるときに `true` です: 要素に `requestPointerLock()`（または接頭辞付きの `webkitRequestPointerLock()`）がある場合です。それ以外は `false` です — たとえば iPhone の Safari。
 
 要求が通ることも、マウスがつながっていることも言いません。要求にはやはり user gesture が要り、sandbox の `<iframe>` には `allow-pointer-lock` が要ります。pointer lock を扱う Permissions-Policy は無いので、要素が前もって聞けるものはありません。そうしたフレームは `true` を報告し、要求は断られます（`error`）。
 
@@ -212,7 +212,7 @@ wcs-pointer-lock:state(active) ~ .crosshair { display: none; } /* デフォル�
 
 ## 要素が文書を離れるとき
 
-4.25（未リリース）から。`<wcs-pointer-lock>` が document を聞いているのは、接続されている間だけです。`active` が `true` の間に切断されると — `if:` の枝が消える、`@wcstack/router` がルートの本文を取り外す — `active: false` を `wcs-pointer-lock:change` イベントとともに公開します。バインドした state のパスも `:state(active)` もそれに従います。文書の外にある要素は、その値をもう保証できないからです。ロック自体は**解きません**。再び接続されると本当の値を読み直し、target がまだロックされていれば `active` はイベントとともに `true` に戻ります。そのため、移動された（取り外して入れ直された）要素は `false`、`true` の順に報告します。4.24 までは切断しても `active` がそのまま残り、ロックが解けた後も state は `true` を示し続けていました。
+4.25 から。`<wcs-pointer-lock>` が document を聞いているのは、接続されている間だけです。`active` が `true` の間に切断されると — `if:` の枝が消える、`@wcstack/router` がルートの本文を取り外す — `active: false` を `wcs-pointer-lock:change` イベントとともに公開します。バインドした state のパスも `:state(active)` もそれに従います。文書の外にある要素は、その値をもう保証できないからです。ロック自体は**解きません**。再び接続されると本当の値を読み直し、target がまだロックされていれば `active` はイベントとともに `true` に戻ります。そのため、移動された（取り外して入れ直された）要素は `false`、`true` の順に報告します。4.24 までは切断しても `active` がそのまま残り、ロックが解けた後も state は `true` を示し続けていました。
 
 ロックをどうするかはブラウザが決めます。**ロックされている要素が文書から取り除かれると、ブラウザはロックを解きます。** ルートの本文の中にある target はルートとともに去り、ロックもそこで終わります。ナビゲーションをまたいでポインタをロックしたままにするには、target — とその `<wcs-pointer-lock>` — をルーターの外、残り続けるレイアウトの側に置きます（[router README — ルートの本文はどこに置くか](../router/README.ja.md#ルートの本文はどこに置くか)）。target だけを外に置き `<wcs-pointer-lock>` をルートの中に置いた場合、ロックは続きますが、`active` はそのルートを離れている間 `false` で、戻ると `true` に戻ります。
 
@@ -251,7 +251,7 @@ lock.exitPointerLock();  // 同期的
 lock.dispose();          // document のリスナーを外す
 ```
 
-4.25（未リリース）から、`dispose()` は `active` が `true` だったとき `active: false` を公開し（dispose した Core はもう document を聞いていません）、次の `observe(element)` が読み直します。`lock.supported` と、`observe()` が発火する `wcs-pointer-lock:supported-changed` イベントは、ブラウザに API があるかを伝えます。Firefox では、`lock.error` は `requestPointerLock()` が resolve した後に、document の `pointerlockerror` イベントで立ちます。
+4.25 から、`dispose()` は `active` が `true` だったとき `active: false` を公開し（dispose した Core はもう document を聞いていません）、次の `observe(element)` が読み直します。`lock.supported` と、`observe()` が発火する `wcs-pointer-lock:supported-changed` イベントは、ブラウザに API があるかを伝えます。Firefox では、`lock.error` は `requestPointerLock()` が resolve した後に、document の `pointerlockerror` イベントで立ちます。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

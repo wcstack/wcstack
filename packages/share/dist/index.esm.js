@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/share","version":"4.24.2"};
+var pkg = {"name":"@wcstack/share","version":"4.25.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -406,6 +406,36 @@ function assessCapabilities(registry, options) {
 function requiredCapabilitiesAvailable(assessment, required) {
     return required.every((id) => assessment.availability.get(id) === "available");
 }
+/**
+ * Permissions-Policy が制御する機能。permission 名と同じ文字列と、permission の無い機能
+ * (`fullscreen`・`picture-in-picture`・`web-share`: 要素が「このページで使えるか」を言うために聞く)。
+ */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture", "fullscreen", "picture-in-picture", "web-share",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        // このブラウザのポリシーが知らない名前は聞かない: Chromium は知らない名前の allowsFeature に
+        // false を返したうえでコンソールに「Unrecognized feature」を出す(フラグの無い
+        // `ambient-light-sensor`、デスクトップの `web-share`)。知らない機能は切られてもいない。
+        if (typeof policy.features === "function" && !policy.features().includes(feature))
+            return null;
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
 
 /**
  * shareCapabilities.ts
@@ -454,6 +484,11 @@ class ShareCore extends EventTarget {
             // Fires its own `wcs-share:error-info-changed` event; no getter, so the bound
             // value is the event detail (mirrors `error` / `loading` / `cancelled`).
             { name: "errorInfo", event: "wcs-share:error-info-changed", semantics: "state" },
+            // Whether this page can use the Web Share API (the API is there and no
+            // Permissions-Policy / insecure context forbids it). Computed at call time;
+            // the event carries the boolean and fires from observe() when it differs from
+            // the last value dispatched.
+            { name: "supported", event: "wcs-share:supported-changed", semantics: "state" },
         ],
         commands: [
             { name: "share", async: true },
@@ -468,6 +503,9 @@ class ShareCore extends EventTarget {
     _error = null;
     _cancelled = false;
     _errorInfo = null;
+    // `supported` as last dispatched (never the value itself — the getter probes at
+    // call time). Starts at false, so observe() announces a page that can share.
+    _supportedPublished = false;
     // Concurrency lane (io-core). `exhaust`: only one share dialog at a time — a new
     // begin() while active returns null (idempotent no-op). `withSignal: false`:
     // navigator.share() has no AbortSignal. dispose() bumps the owner generation.
@@ -503,11 +541,16 @@ class ShareCore extends EventTarget {
         return this._errorInfo;
     }
     /**
-     * Whether the required platform capability (`web.share`) is available right now —
-     * decided by call-time feature detection, not User-Agent. Core-only, additive.
+     * Whether this page can use the Web Share API right now: `navigator.share` is a
+     * function (call-time feature detection, not User-Agent) and neither a
+     * Permissions-Policy (`web-share`: the server's header, an `<iframe>` without
+     * `allow="web-share"`) nor an insecure context forbids it. It does not say that
+     * *this* data can be shared (files: `canShare(data)`), nor that the user will
+     * pick a target. A wc-bindable output (event `wcs-share:supported-changed`).
      */
     get supported() {
-        return requiredCapabilitiesAvailable(this.platformAssessment, ShareCore.REQUIRED_CAPABILITIES);
+        return requiredCapabilitiesAvailable(this.platformAssessment, ShareCore.REQUIRED_CAPABILITIES)
+            && featureUnavailable("web-share") === null;
     }
     /**
      * Full platform assessment (availability / readiness / preconditions), probed at
@@ -521,10 +564,12 @@ class ShareCore extends EventTarget {
         });
     }
     // Lifecycle (§3.5). Share is command-driven with no subscription to establish,
-    // so observe() is an idempotent no-op that resolves once ready; dispose() bumps
+    // so observe() only publishes `supported` (when it differs from the last value
+    // dispatched) and resolves once ready — idempotent; dispose() bumps
     // the lane's owner generation, invalidating any in-flight share() (a late resolve
     // then fails the commit guard). There is nothing to abort or unsubscribe.
     observe() {
+        this._publishSupported();
         return this._ready;
     }
     dispose() {
@@ -533,6 +578,20 @@ class ShareCore extends EventTarget {
         // here (timing-and-firing-contract §22): a route the element leaves keeps its
         // nodes — bindings included — for the next entry, and state would keep `loading`.
         this._setLoading(false);
+    }
+    // `supported` is probed at call time, so there is no stored value to set: this
+    // dispatches the current one when it differs from the last one dispatched
+    // (same-value guard). A state binding reads the property when it attaches; the
+    // event is for every other listener.
+    _publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-share:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
     }
     _setLoading(loading) {
         if (this._loading === loading)
@@ -821,6 +880,11 @@ class WcsShare extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Probed at call time by the Core (never cached), so a binding that reads it when
+    // it attaches gets the right value without waiting for an event.
+    get supported() {
+        return this._core.supported;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -851,6 +915,8 @@ class WcsShare extends HTMLElement {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.style.display = "none";
+        // observe() publishes `supported` (wcs-share:supported-changed) when it differs
+        // from the last value dispatched.
         this._connectedCallbackPromise = this._core.observe();
     }
     // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it

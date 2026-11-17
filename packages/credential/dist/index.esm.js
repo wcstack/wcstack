@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/credential","version":"4.24.2"};
+var pkg = {"name":"@wcstack/credential","version":"4.25.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
@@ -432,10 +432,17 @@ const WCS_CREDENTIAL_ERROR_CODE = {
 };
 /**
  * credential node の capability registry。`navigator.credentials`(CredentialsContainer)
- * の presence を probe する。文字列 ID を global property path として eval しない。
+ * と `PasswordCredential` クラスの presence を probe する。文字列 ID を global property
+ * path として eval しない。
+ *
+ * `web.password-credential`: このノードの対象(password / federated の資格情報)は
+ * `PasswordCredential` クラスを要る。実装しているのは Chromium だけで、Firefox と Safari は
+ * WebAuthn 用の `navigator.credentials` だけを持つ — そこで `get({ password: true })` や
+ * `store()` をブラウザに渡すと、非対応が「失敗」(credential-failed)に見えてしまう。
  */
 const CREDENTIAL_CAPABILITIES = new Map([
     ["web.credentials", { probe: () => globalThis.navigator?.credentials != null, compatKey: "api.CredentialsContainer" }],
+    ["web.password-credential", { probe: () => typeof globalThis.PasswordCredential === "function", compatKey: "api.PasswordCredential" }],
 ]);
 
 /**
@@ -463,6 +470,13 @@ const CREDENTIAL_CAPABILITIES = new Map([
  * Web Share / Contact Picker, `credentials.get()/store()` reject with
  * `NotAllowedError` when the user dismisses the native chooser. That maps to
  * `cancelled`; every other name flows to `error`/`errorInfo`.
+ *
+ * **Password credentials are Chromium only.** Firefox and Safari have
+ * `navigator.credentials` (for WebAuthn) and no `PasswordCredential`. A `get()` that
+ * asks for `password` / `federated`, and every `store()`, is refused there as
+ * `capability-missing` without calling the browser, and `supported` is false.
+ * `preventSilentAccess()` (sign-out) is not on the lane and does nothing where the
+ * method is missing.
  */
 class CredentialCore extends EventTarget {
     static wcBindable = {
@@ -478,20 +492,35 @@ class CredentialCore extends EventTarget {
             // Fires its own `wcs-credential:error-info-changed` event; no getter, so the
             // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
             { name: "errorInfo", event: "wcs-credential:error-info-changed", semantics: "state" },
+            // Whether this page can use password credentials (`navigator.credentials` and
+            // the `PasswordCredential` class). Computed at call time; the event carries the
+            // boolean and fires from observe() when it differs from the last value
+            // dispatched.
+            { name: "supported", event: "wcs-credential:supported-changed", semantics: "state" },
         ],
         commands: [
             { name: "get", async: true },
             { name: "store", async: true },
+            { name: "preventSilentAccess", async: true },
         ],
     };
-    // Required capability (probed at call time, never at module eval).
-    static REQUIRED_CAPABILITIES = ["web.credentials"];
+    // Capabilities (probed at call time, never at module eval). Every command needs
+    // the container; password / federated credentials — what this element is for —
+    // need the `PasswordCredential` class as well.
+    static CONTAINER_CAPABILITY = "web.credentials";
+    static PASSWORD_CAPABILITY = "web.password-credential";
+    static REQUIRED_CAPABILITIES = [
+        CredentialCore.CONTAINER_CAPABILITY, CredentialCore.PASSWORD_CAPABILITY,
+    ];
     _target;
     _value = null;
     _loading = false;
     _error = null;
     _cancelled = false;
     _errorInfo = null;
+    // `supported` as last dispatched (never the value itself — the getter probes at
+    // call time). Starts at false, so observe() announces a page that has them.
+    _supportedPublished = false;
     // Concurrency lane (io-core), shared by get() and store(). `latest`: a later
     // call supersedes the earlier. `withSignal: false`: the API takes no AbortSignal.
     _lane = new OperationLane("credential", "latest", { withSignal: false });
@@ -527,16 +556,20 @@ class CredentialCore extends EventTarget {
         return this._errorInfo;
     }
     /**
-     * Whether the required platform capability (`web.credentials`) is available right
-     * now — decided by call-time feature detection, not User-Agent. Core-only,
-     * additive.
+     * Whether this page can use password credentials right now: `navigator.credentials`
+     * is there **and** `PasswordCredential` is a class — decided by call-time feature
+     * detection, not User-Agent. False in Firefox and Safari, which have the container
+     * (for WebAuthn) and no `PasswordCredential`. It does not say a credential is
+     * saved, or that the user will choose one. A wc-bindable output (event
+     * `wcs-credential:supported-changed`).
      */
     get supported() {
         return requiredCapabilitiesAvailable(this.platformAssessment, CredentialCore.REQUIRED_CAPABILITIES);
     }
     /**
      * Full platform assessment (availability / readiness / preconditions), probed at
-     * call time. Core-only opt-in dev / sidecar view.
+     * call time. Core-only opt-in dev / sidecar view. Both capabilities are required:
+     * without `PasswordCredential` the readiness is "idle".
      */
     get platformAssessment() {
         return assessCapabilities(CREDENTIAL_CAPABILITIES, {
@@ -546,9 +579,11 @@ class CredentialCore extends EventTarget {
         });
     }
     // Lifecycle (§3.5). Command-driven with no subscription to establish, so
-    // observe() is an idempotent no-op that resolves once ready; dispose() bumps the
+    // observe() only publishes `supported` (when it differs from the last value
+    // dispatched) and resolves once ready — idempotent; dispose() bumps the
     // lane's owner generation, invalidating any in-flight get()/store().
     observe() {
+        this._publishSupported();
         return this._ready;
     }
     dispose() {
@@ -565,6 +600,20 @@ class CredentialCore extends EventTarget {
         if (this._lane.canCommit(ticket)) {
             step();
         }
+    }
+    // `supported` is probed at call time, so there is no stored value to set: this
+    // dispatches the current one when it differs from the last one dispatched
+    // (same-value guard). A state binding reads the property when it attaches; the
+    // event is for every other listener.
+    _publishSupported() {
+        const supported = this.supported;
+        if (this._supportedPublished === supported)
+            return;
+        this._supportedPublished = supported;
+        this._target.dispatchEvent(new CustomEvent("wcs-credential:supported-changed", {
+            detail: supported,
+            bubbles: true,
+        }));
     }
     _setLoading(loading) {
         if (this._loading === loading)
@@ -688,36 +737,60 @@ class CredentialCore extends EventTarget {
             return null;
         }
     }
+    // never-throw + unsupported: probe at call time what this call needs, and when
+    // something is absent do NOT start — publish a stable `capability-missing`
+    // taxonomy and return false. The container is needed by every call; the
+    // `PasswordCredential` class only where the call is about password / federated
+    // credentials (Firefox and Safari have the container for WebAuthn and no such
+    // class: passed on to the browser, that would come back as a failure the page
+    // could retry, `credential-failed`, when it is a browser that cannot do it).
+    _capabilitiesPresent(needsPasswordCredential) {
+        const availability = this.platformAssessment.availability;
+        if (availability.get(CredentialCore.CONTAINER_CAPABILITY) !== "available") {
+            const message = "Credential Management API is not supported in this browser.";
+            this._setErrorInfo(WCS_CREDENTIAL_ERROR_CODE.CapabilityMissing, "start", false, message, CredentialCore.CONTAINER_CAPABILITY);
+            this._setError({ message });
+            return false;
+        }
+        if (needsPasswordCredential && availability.get(CredentialCore.PASSWORD_CAPABILITY) !== "available") {
+            const message = "Password credentials are not supported in this browser.";
+            this._setErrorInfo(WCS_CREDENTIAL_ERROR_CODE.CapabilityMissing, "start", false, message, CredentialCore.PASSWORD_CAPABILITY);
+            this._setError({ name: "NotSupportedError", message });
+            return false;
+        }
+        return true;
+    }
     /**
      * `get(options)` — v1 scope excludes `publicKey` (WebAuthn). If present, it is
      * stripped and the call surfaces a scope-violation `error` instead of forwarding
      * it to the platform API. `navigator.credentials.get()` does not require a user
      * gesture, so this can be invoked automatically on page load for silent sign-in.
+     * Options that ask for `password` or `federated` need the `PasswordCredential`
+     * class; without it the call ends as `capability-missing` and the browser is not
+     * asked. Anything that is not an object (`null`, `undefined`) asks for nothing.
      */
-    async get(options = {}) {
-        if ("publicKey" in options) {
+    async get(options) {
+        const request = options !== null && typeof options === "object" ? options : {};
+        if ("publicKey" in request) {
             const message = "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.";
             this._setErrorInfo(WCS_CREDENTIAL_ERROR_CODE.OutOfScope, "start", false, message);
             this._setError({ name: "NotSupportedError", message });
             return null;
         }
-        const assessment = this.platformAssessment;
-        if (!requiredCapabilitiesAvailable(assessment, CredentialCore.REQUIRED_CAPABILITIES)) {
-            const missing = CredentialCore.REQUIRED_CAPABILITIES.find((id) => assessment.availability.get(id) !== "available");
-            const message = "Credential Management API is not supported in this browser.";
-            this._setErrorInfo(WCS_CREDENTIAL_ERROR_CODE.CapabilityMissing, "start", false, message, missing);
-            this._setError({ message });
+        if (!this._capabilitiesPresent(Boolean(request.password) || request.federated != null)) {
             return null;
         }
         const nav = globalThis.navigator;
-        return this._run(() => nav.credentials.get(options));
+        return this._run(() => nav.credentials.get(request));
     }
     /**
      * `store(credential)` — shares the same single lane as `get()`.
      * `navigator.credentials.store()` resolves `Promise<void>`, so `value` is
-     * synthesized as an echo of the caller's `credential`. A `PublicKeyCredential`
+     * synthesized as an echo of the credential stored. A `PublicKeyCredential`
      * (`type === "public-key"`, WebAuthn) is rejected as a scope violation before
-     * touching the platform API.
+     * touching the platform API. A plain `{ id, password, name?, iconURL? }` is made
+     * into a `PasswordCredential` first; a `Credential` instance is stored as it is.
+     * Needs the `PasswordCredential` class (`capability-missing` without it).
      */
     async store(credential) {
         if (credential?.type === "public-key") {
@@ -726,19 +799,72 @@ class CredentialCore extends EventTarget {
             this._setError({ name: "NotSupportedError", message });
             return null;
         }
-        const assessment = this.platformAssessment;
-        if (!requiredCapabilitiesAvailable(assessment, CredentialCore.REQUIRED_CAPABILITIES)) {
-            const missing = CredentialCore.REQUIRED_CAPABILITIES.find((id) => assessment.availability.get(id) !== "available");
-            const message = "Credential Management API is not supported in this browser.";
-            this._setErrorInfo(WCS_CREDENTIAL_ERROR_CODE.CapabilityMissing, "start", false, message, missing);
-            this._setError({ message });
+        if (!this._capabilitiesPresent(true)) {
             return null;
         }
         const nav = globalThis.navigator;
         return this._run(async () => {
-            await nav.credentials.store(credential);
-            return credential;
+            // Built inside the operation: a constructor that throws (an empty id) lands in
+            // `error` like any other failure of this store().
+            const stored = this._toCredential(credential);
+            await nav.credentials.store(stored);
+            return stored;
         });
+    }
+    // A `Credential` instance passes through. Anything else with a string `id` and
+    // `password` becomes a `PasswordCredential` with only the members given, so a
+    // state method can store `{ id, password }` without reaching for a class that
+    // only Chromium has. The rest is handed to the browser as it came (it rejects
+    // what it cannot store). `Credential` is guarded: a browser may lack the class.
+    _toCredential(credential) {
+        const g = globalThis;
+        if (typeof g.Credential === "function" && credential instanceof g.Credential) {
+            return credential;
+        }
+        const data = credential;
+        if (typeof data?.id !== "string" || typeof data.password !== "string") {
+            return credential;
+        }
+        const init = { id: data.id, password: data.password };
+        if (data.name != null)
+            init.name = data.name;
+        if (data.iconURL != null)
+            init.iconURL = data.iconURL;
+        // Probed by _capabilitiesPresent(true) just before the operation started.
+        return new g.PasswordCredential(init);
+    }
+    /**
+     * `preventSilentAccess()` — sign-out. Asks the browser not to hand this origin's
+     * credential over without the user (`navigator.credentials.preventSilentAccess()`):
+     * otherwise the next visit's `get({ mediation: "silent" })` signs the user straight
+     * back in. Never-throw: success clears `error`, a rejection lands in `error` /
+     * `errorInfo` (`credential-failed`). Where `navigator.credentials` or the method is
+     * missing it resolves having done nothing — signing out must work everywhere, and
+     * there is nothing to switch off. It does not touch `value` or `loading`.
+     *
+     * Not on the lane: it has no result to race, so a get()/store() in flight neither
+     * supersedes it nor is superseded by it. Only a dispose() drops its completion.
+     */
+    async preventSilentAccess() {
+        const credentials = globalThis.navigator?.credentials;
+        if (credentials == null || typeof credentials.preventSilentAccess !== "function") {
+            return;
+        }
+        const generation = this._lane.ownerGeneration;
+        try {
+            await credentials.preventSilentAccess();
+            if (generation !== this._lane.ownerGeneration)
+                return;
+            this._commitErrorInfo(null);
+            this._setError(null);
+        }
+        catch (e) {
+            if (generation !== this._lane.ownerGeneration)
+                return;
+            const norm = this._normalizeError(e);
+            this._setErrorInfo(WCS_CREDENTIAL_ERROR_CODE.CredentialFailed, "execute", true, norm.message);
+            this._setError(norm);
+        }
     }
 }
 
@@ -810,7 +936,8 @@ function upgradeProperties(element) {
  * WebAuthn scope exclusion).
  *
  * A thin command-only Shell (mirrors `<wcs-share>`): no attributes at all.
- * `get(options)`/`store(credential)`'s arguments are per-call.
+ * `get(options)`/`store(credential)`'s arguments are per-call;
+ * `preventSilentAccess()` (sign-out) takes none.
  */
 class WcsCredential extends HTMLElement {
     static hasConnectedCallbackPromise = true;
@@ -897,6 +1024,11 @@ class WcsCredential extends HTMLElement {
     get errorInfo() {
         return this._core.errorInfo;
     }
+    // Probed at call time by the Core (never cached), so a binding that reads it when
+    // it attaches gets the right value without waiting for an event.
+    get supported() {
+        return this._core.supported;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -907,11 +1039,16 @@ class WcsCredential extends HTMLElement {
     store(credential) {
         return this._core.store(credential);
     }
+    preventSilentAccess() {
+        return this._core.preventSilentAccess();
+    }
     // --- Lifecycle ---
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.style.display = "none";
+        // observe() publishes `supported` (wcs-credential:supported-changed) when it
+        // differs from the last value dispatched.
         this._connectedCallbackPromise = this._core.observe();
     }
     // Moved by moveBefore() (a list row a reorder moves): where this element is changes nothing of what it

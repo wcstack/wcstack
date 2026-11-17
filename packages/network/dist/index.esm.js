@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/network","version":"4.24.2"};
+var pkg = {"name":"@wcstack/network","version":"4.25.0"};
 
 const UNSUPPORTED_SNAPSHOT = Object.freeze({
     effectiveType: null,

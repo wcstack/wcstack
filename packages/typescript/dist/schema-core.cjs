@@ -55,11 +55,19 @@ var WcsDiagnosticCode = {
   PathTypeMismatch: "wcs/path-type-mismatch",
   // 書き戻す束縛（`value:` / `checked:` / `radio:` / `checkbox:`、`#ro` なし）が、setter の無い getter を指す。ランタイムは
   // 入力のたびに `"<path>" is a getter without a setter` を投げる（code なし — 7GUIs の評価の Temperature）。error。
+  // カスタム要素の出力（`wcBindable.properties` のメンバー — 組み込みタグと、ページが定義して宣言を読める要素）を束ねた
+  // ときも同じ: 出力だけのメンバーは束ねた時点で要素の値を書くので、state の初期化が失敗する（`<wcs-wakelock
+  // data-wcs="held: keepAwake">` — 継ぎ目アプリ stamp-rally。lint は 0 件だった）。要素が書かない形（`#ro,init=none`、
+  // 双方向のメンバーの `#ro`）では出さない（state の dom/wc.ts の attachProperty と同じ条件）。
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
   // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
   // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。値の読めないキー（辿れない名前、
   // 読めない spread を持つオブジェクトリテラルの種 `draft: { ...makeDraft() }`）の下を束ねたときも、キーの上で 1 回言う。
+  // カスタム要素の出力だけのメンバーが書くスロット（`<wcs-contacts data-wcs="value: picked">` の `picked`・`<wcs-fetch>` の
+  // spread が書く `<パス>.value`）の下も同じ: 中身は要素が渡すもので、種（`picked: null`）からは形が読めない。その下の
+  // パスを 1 件ずつ `wcs/binding-path-missing` にしていた（contacts の README の Quick Start そのもの — 継ぎ目アプリ
+  // stamp-rally）。キーに JSDoc の `@type` があれば、その形で検査して何も言わない。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
   // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
   // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
@@ -328,6 +336,31 @@ var WcsDiagnosticCode = {
   // `rootMargin must be specified in pixels or percent`）。`<wcs-intersect>` は何も監視せず `observing` が false のまま、
   // `<wcs-infinite-scroll>` は次のページを読み込まない。束ねた値（`rootMargin: …`）は検査しない。warning。
   RootMarginUnit: "wcs/root-margin-unit",
+  // センサーのタグ（`<wcs-accelerometer>` / `<wcs-gyroscope>` / `<wcs-magnetometer>` / `<wcs-ambient-light-sensor>`）の
+  // リテラルの `frequency` が正の有限の数値でない（`"60hz"`・`"0"`・`"-5"`）。要素の getter はそれを「指定なし」（null）
+  // として読み、センサーはブラウザの既定の頻度で黙って動く（4.25 からランタイムも同じ code で警告する — 継ぎ目アプリ
+  // stamp-rally）。空の値は指定なし。束ねた値（`frequency: …`）は検査しない。warning。
+  FrequencyInvalid: "wcs/frequency-invalid",
+  // `target` を CSS セレクタとして読むタグ（`<wcs-fullscreen>` / `<wcs-pip>` / `<wcs-pointer-lock>` / `<wcs-intersect>` /
+  // `<wcs-resize>`）のリテラルの `target` が裸の語（`viewer`）で、文書にその id の要素があり、そのタグ名の要素は無い。
+  // `<viewer>` 要素を選ぶセレクタなので何も選ばず、要素は対象を持たない（`#viewer` のつもり — stamp-rally）。全画面などの
+  // コマンドは `error` にだけ失敗を出し、監視の要素は何も監視しない。warning。
+  TargetSelector: "wcs/target-selector",
+  // `on*: $command.x` をボタンに直結すると、トークンは `(event, ...添字)` で emit され、`command.<method>: $command.x` で
+  // 受ける要素のメソッドはイベントを第 1 引数として呼ばれる。データを取るコマンド（組み込みタグの、引数を宣言する
+  // メソッド）ではそれが原因から遠い所で失敗する — `<wcs-screen-orientation>` の `lock(event)` と `<wcs-share>` の
+  // `share(event)` はブラウザの TypeError が `error` に出るだけ、`<wcs-credential>` の `get(event)` は何も言わず null
+  // （stamp-rally）。`on*:` の束縛に出す。`<wcs-fetch>` の `fetch`（4.24 から url の位置の文字列でない値を無視する）と
+  // ネイティブ要素のコマンド（native-commands の後付けは第 1 引数がイベントなら引数なしで呼ぶ）は対象外。warning。
+  CommandEventArgument: "wcs/command-event-argument",
+  // 既知のカスタム要素の出力だけのメンバー（`<wcs-fullscreen>` の `active: viewerFs`）に束ねたパスへ、スクリプトが
+  // リテラルの `true` を代入する（`this.viewerFs = true`）。出力は要素が書くもので、その書き込みは要素に届かない —
+  // 全画面にはならず、ページだけがそうなったことにする（stamp-rally）。わざと狭い: `true` の代入だけ（`false` / `null` /
+  // 値への代入は、使い終えた出力を戻す普通の書き方）。そのパスが、state の値を自分のものとして受け取る束縛 — カスタム要素の
+  // 入力・双方向のメンバー、ネイティブ要素の双方向の束縛（`checked: flag`）、宣言を読めないカスタム要素のメンバー — にも
+  // 束ねてあれば対象外。表示するだけの束縛（`class.`・`attr.`・`textContent:`・`{{ }}`・`if:`）は対象外にしない — 実際の
+  // ページ（m18a）は `class.fullscreen: viewerFs` も持っていた。アクセサのあるパスも対象外。warning。
+  OutputPathWritten: "wcs/output-path-written",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
@@ -2916,7 +2949,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.24.2";
+var version = "4.25.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -10391,7 +10424,10 @@ function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs, scope) {
   if (unread !== null && candidate.opaque === void 0 && prop.declaredType === void 0) {
     candidate.opaque = { spread: unread.text, ...unread.from !== void 0 ? { from: unread.from } : {} };
   }
-  if (prop.declaredType !== void 0) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+  if (prop.declaredType !== void 0) {
+    candidate.typed = true;
+    pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+  }
 }
 var MAX_SPREAD_HOPS = 8;
 function objectLiteralKeys(content, scope, shorthands, hops = 0) {
@@ -10607,6 +10643,7 @@ function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
   if (shape.element !== null) {
     if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
     if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    markTyped(paths, `${path}.*`);
     if (depth < MAX_OBJECT_NEST_DEPTH) pushDeclaredShapePaths(`${path}.*`, shape.element, paths, depth + 1, typedefs);
   }
   if (depth >= MAX_OBJECT_NEST_DEPTH) return;
@@ -10615,8 +10652,13 @@ function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
     if (!hasPath(paths, fieldPath)) {
       paths.push(withHint({ path: fieldPath, kind: "data" }, jsDocTypeHint(field.type, typedefs)));
     }
+    markTyped(paths, fieldPath);
     pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
   }
+}
+function markTyped(paths, path) {
+  const candidate = paths.find((p) => p.path === path);
+  if (candidate !== void 0 && (candidate.kind === "data" || candidate.kind === "list")) candidate.typed = true;
 }
 function pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope) {
   if (prop.value && isArrayLiteral(prop.value)) {
@@ -11095,164 +11137,81 @@ function withHint(candidate, typeHint) {
   return typeHint === void 0 ? candidate : { ...candidate, typeHint };
 }
 
-// src/service/statePathResolver.ts
-function isUnresolvedPath(path, scopes) {
-  if (scopes.opaquePaths.length > 0) {
-    const wildcard = hasIndexSegment(path) ? toWildcardForm(path) : path;
-    if (scopes.opaquePaths.some((o) => path.startsWith(`${o}.`) || wildcard.startsWith(`${o}.`))) return true;
-  }
-  let owner = null;
-  for (const mount of scopes.mounts) {
-    if ((path === mount || path.startsWith(`${mount}.`)) && (owner === null || mount.length > owner.length)) owner = mount;
-  }
-  if (owner !== null) return scopes.unresolvedMounts.has(owner);
-  if (scopes.rootUnresolved) return true;
-  for (const mount of scopes.unresolvedMounts) {
-    if (mount.startsWith(`${path}.`)) return true;
-  }
-  return false;
+// src/core/parser/positionalParser.ts
+var { delimiters } = getWcsManifest().syntax;
+function locate(haystack, needle, from, to) {
+  if (needle.length === 0) return null;
+  const index = haystack.indexOf(needle, from);
+  if (index === -1 || index + needle.length > to) return null;
+  return { start: index, end: index + needle.length };
 }
-function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
-  return getStatePathIndex(html, stateTagName, fileReader).paths;
-}
-function getStatePathIndex(html, stateTagName = "wcs-state", fileReader) {
-  return resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
-}
-function resolveStatePathIndex(elements, html, fileReader, includeRoots) {
-  const paths = [];
-  const volumePaths = [];
-  const mounts = [];
-  const unresolvedMounts = /* @__PURE__ */ new Set();
-  const roots = [];
-  const mountPoints = /* @__PURE__ */ new Set();
-  for (const element2 of elements) {
-    if (element2.mountPath === null) {
-      if (!includeRoots) continue;
-      const resolved2 = resolveElementPathsRaw(element2, html, fileReader);
-      if (!element2.bindComponent) roots.push({ element: element2, readable: resolved2.readable });
-      paths.push(...resolved2.paths);
-      continue;
-    }
-    const resolved = resolveElementPathsRaw(element2, html, fileReader);
-    const grafted = graftVolumePaths(element2.mountPath, resolved, mountPoints);
-    if (element2.mountPath !== "") {
-      mounts.push(element2.mountPath);
-      if (!resolved.readable) unresolvedMounts.add(element2.mountPath);
-    }
-    paths.push(...grafted);
-    volumePaths.push(...grafted);
+function parseEmbeddedTextWithPositions(expression) {
+  const exprRange = { start: 0, end: expression.length };
+  let parsed = null;
+  let error = null;
+  try {
+    parsed = parseBindTextForEmbeddedNode2(expression);
+  } catch (e) {
+    error = e.message;
   }
+  if (parsed === null) {
+    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null };
+  }
+  const firstPipe = indexOfOutsideQuotes2(expression, delimiters.filter);
+  const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
+  const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
   return {
-    paths,
-    volumePaths,
-    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html), opaquePaths: opaquePathsOf(paths) },
-    elements
+    exprRange,
+    exprText: expression,
+    parsed,
+    error,
+    propRange: null,
+    pathRange: pathLocal
   };
 }
-function opaquePathsOf(paths) {
-  return paths.filter((p) => p.opaque !== void 0 || p.openKeys === true).map((p) => p.path);
-}
-function moduleLocationOf(fileReader, path) {
-  return fileReader === void 0 ? void 0 : { fileReader, path: path ?? "" };
-}
-function isPageRootUnresolved(roots, html) {
-  if (roots.every((root) => root.readable)) return false;
-  const insideTemplate = createTemplateTester(html);
-  const pageRoots = roots.filter((root) => !insideTemplate(root.element.tagStart));
-  return pageRoots.length > 0 && pageRoots.every((root) => !root.readable);
-}
-function graftVolumePaths(mountPath, resolved, mountPoints) {
-  const prefix = mountPath + ".";
-  const out = [];
-  for (const p of resolved.paths) {
-    if (p.path.startsWith("$")) continue;
-    if (p.kind === "eventToken") continue;
-    out.push({ ...p, path: prefix + p.path });
-  }
-  if (resolved.readable) {
-    const segments = mountPath.split(".");
-    for (let i = 1; i <= segments.length; i++) {
-      const path = segments.slice(0, i).join(".");
-      if (mountPoints.has(path)) continue;
-      mountPoints.add(path);
-      out.push({ path, kind: "data", typeHint: "object" });
+function parseBindTextWithPositions(bindText) {
+  const results = [];
+  const segments = splitBindTexts(bindText);
+  let segmentStart = 0;
+  for (const segment of segments) {
+    const leading = segment.length - segment.trimStart().length;
+    const expr = segment.trim();
+    const exprStart = segmentStart + leading;
+    segmentStart += segment.length + delimiters.binding.length;
+    if (expr.length === 0) continue;
+    const exprRange = { start: exprStart, end: exprStart + expr.length };
+    let parsed = null;
+    let error = null;
+    try {
+      parsed = parseBindTextsForElement2(expr)[0] ?? null;
+    } catch (e) {
+      error = e.message;
     }
-  }
-  return out;
-}
-var UNREADABLE = { paths: [], readable: false };
-function isJsonObject(text3) {
-  try {
-    const data2 = JSON.parse(text3);
-    return typeof data2 === "object" && data2 !== null && !Array.isArray(data2);
-  } catch {
-    return false;
-  }
-}
-function isReadableStateScript(script) {
-  return hasDefaultExportObject(script) && !hasTopLevelSpread(script);
-}
-function fromJson(text3) {
-  const paths = analyzeJsonPaths(text3);
-  return { paths, readable: paths.length > 0 || isJsonObject(text3) };
-}
-function scriptReadable(script, paths) {
-  return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
-}
-function fromScript(script, location) {
-  const paths = analyzeStatePaths(script, location);
-  return { paths, readable: scriptReadable(script, paths) };
-}
-function resolveElementPathsRaw(element2, html, fileReader) {
-  let readable = false;
-  if (element2.stateAttr) {
-    const jsonContent = findScriptJsonById(html, element2.stateAttr);
-    if (jsonContent) {
-      const resolved = fromJson(jsonContent);
-      if (resolved.paths.length > 0) return resolved;
-      readable ||= resolved.readable;
+    if (parsed === null) {
+      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null });
+      continue;
     }
+    const colon = indexOfOutsideQuotes2(expr, delimiters.propValue);
+    const propEndLimit = colon === -1 ? expr.length : colon;
+    const propLocal = locate(expr, parsed.propName, 0, propEndLimit);
+    let pathLocal = null;
+    if (colon !== -1) {
+      const stateBase = colon + 1;
+      const rhsPipe = indexOfOutsideQuotes2(expr.slice(stateBase), delimiters.filter);
+      const pathScopeEnd = rhsPipe === -1 ? expr.length : stateBase + rhsPipe;
+      pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
+    }
+    const lift = (range) => range === null ? null : { start: exprStart + range.start, end: exprStart + range.end };
+    results.push({
+      exprRange,
+      exprText: expr,
+      parsed,
+      error,
+      propRange: lift(propLocal),
+      pathRange: lift(pathLocal)
+    });
   }
-  if (element2.srcAttr && fileReader) {
-    const resolved = resolveSrcAttribute(element2.srcAttr, fileReader);
-    if (resolved.paths.length > 0) return resolved;
-    readable ||= resolved.readable;
-  }
-  if (element2.jsonAttr) {
-    const resolved = fromJson(element2.jsonAttr);
-    if (resolved.paths.length > 0) return resolved;
-    readable ||= resolved.readable;
-  }
-  if (element2.scriptBlocks.length > 0) {
-    const blocks = element2.scriptBlocks.map((block) => ({
-      script: block.content,
-      paths: analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath))
-    }));
-    return {
-      paths: blocks.flatMap((block) => block.paths),
-      readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths))
-    };
-  }
-  return readable ? { paths: [], readable } : UNREADABLE;
-}
-function readStateScript(srcPath, fileReader) {
-  return readStateScriptFile(srcPath, fileReader)?.text;
-}
-function readStateScriptFile(srcPath, fileReader) {
-  const paths = srcPath.endsWith(".js") ? [srcPath.replace(/\.js$/, ".ts"), srcPath] : srcPath.endsWith(".ts") ? [srcPath] : [];
-  for (const path of paths) {
-    const text3 = fileReader(path);
-    if (text3) return { path, text: text3 };
-  }
-  return void 0;
-}
-function resolveSrcAttribute(srcPath, fileReader) {
-  if (srcPath.endsWith(".json")) {
-    const content = fileReader(srcPath);
-    return content ? fromJson(content) : UNREADABLE;
-  }
-  const file = readStateScriptFile(srcPath, fileReader);
-  return file !== void 0 ? fromScript(file.text, { fileReader, path: file.path }) : UNREADABLE;
+  return results;
 }
 
 // src/service/forContext.ts
@@ -11597,6 +11556,1939 @@ function getForTemplateDepthAt(html, openPos, offset2, bindAttrName) {
   return depth;
 }
 
+// src/service/generated/builtinTags.generated.ts
+var BUILTIN_TAGS = {
+  "wcs-accelerometer": {
+    "package": "accelerometer",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "frequency": null
+    },
+    "properties": [
+      "x",
+      "y",
+      "z",
+      "permissionState",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "requestPermission",
+      "start",
+      "stop"
+    ],
+    "commandArity": {
+      "requestPermission": 0,
+      "start": 0,
+      "stop": 0
+    }
+  },
+  "wcs-ambient-light-sensor": {
+    "package": "ambient-light-sensor",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "frequency": null
+    },
+    "properties": [
+      "illuminance",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "start",
+      "stop"
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0
+    }
+  },
+  "wcs-audio": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "volume",
+      "limiter",
+      "resume-on-gesture"
+    ],
+    "inputs": {
+      "volume": "volume",
+      "limiter": "limiter",
+      "resumeOnGesture": "resume-on-gesture"
+    },
+    "properties": [
+      "state",
+      "running",
+      "suspended",
+      "unsupported",
+      "voices",
+      "noteOn",
+      "noteOff",
+      "warnings",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "resume",
+      "suspend",
+      "noteOn",
+      "noteOff",
+      "allNotesOff"
+    ],
+    "commandArity": {
+      "resume": 0,
+      "suspend": 0,
+      "noteOn": 2,
+      "noteOff": 1,
+      "allNotesOff": 0
+    }
+  },
+  "wcs-voice": {
+    "package": "audio",
+    "hasWcBindable": false,
+    "observedAttributes": [
+      "poly"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-osc": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "frequency",
+      "detune",
+      "type",
+      "glide",
+      "transpose",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "frequency": "frequency",
+      "detune": "detune",
+      "type": "type",
+      "glide": "glide",
+      "transpose": "transpose"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-noise": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-biquad": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "frequency",
+      "q",
+      "gain",
+      "detune",
+      "type",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "frequency": "frequency",
+      "q": "q",
+      "gain": "gain",
+      "detune": "detune",
+      "type": "type"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-gain": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "gain",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "gain": "gain"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-delay": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "time",
+      "feedback",
+      "mix",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "time": "time",
+      "feedback": "feedback",
+      "mix": "mix"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-shaper": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "amount",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "amount": "amount"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-env": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "attack",
+      "decay",
+      "sustain",
+      "release",
+      "depth",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "attack": "attack",
+      "decay": "decay",
+      "sustain": "sustain",
+      "release": "release",
+      "depth": "depth"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-lfo": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "rate",
+      "depth",
+      "type",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "rate": "rate",
+      "depth": "depth",
+      "type": "type"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-analyser": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "fft",
+      "smoothing",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "fft": "fft",
+      "smoothing": "smoothing"
+    },
+    "properties": [
+      "frame"
+    ],
+    "commands": [
+      "sample"
+    ],
+    "commandArity": {
+      "sample": 0
+    }
+  },
+  "wcs-broadcast": {
+    "package": "broadcast",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "name"
+    ],
+    "inputs": {
+      "name": "name",
+      "manual": "manual"
+    },
+    "properties": [
+      "message",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "open",
+      "post",
+      "close"
+    ],
+    "commandArity": {
+      "open": 0,
+      "post": 1,
+      "close": 0
+    }
+  },
+  "wcs-camera": {
+    "package": "camera",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "facing-mode",
+      "device-id",
+      "audio",
+      "width",
+      "height"
+    ],
+    "inputs": {
+      "audio": "audio",
+      "facingMode": "facing-mode",
+      "deviceId": "device-id",
+      "width": "width",
+      "height": "height",
+      "autostart": "autostart",
+      "keepAlive": "keep-alive"
+    },
+    "properties": [
+      "active",
+      "permission",
+      "audioPermission",
+      "deviceId",
+      "devices",
+      "error",
+      "errorInfo",
+      "streamReady",
+      "ended"
+    ],
+    "commands": [
+      "start",
+      "stop",
+      "switchCamera"
+    ],
+    "handles": [
+      "streamReady"
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "switchCamera": 0
+    }
+  },
+  "wcs-recorder": {
+    "package": "camera",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "mimeType": "mime-type",
+      "timeslice": "timeslice",
+      "audioBitsPerSecond": "audio-bits",
+      "videoBitsPerSecond": "video-bits"
+    },
+    "properties": [
+      "recording",
+      "paused",
+      "duration",
+      "mimeType",
+      "blob",
+      "objectURL",
+      "error",
+      "errorInfo",
+      "recorded",
+      "dataavailable"
+    ],
+    "commands": [
+      "attachStream",
+      "start",
+      "stop",
+      "pause",
+      "resume"
+    ],
+    "commandArity": {
+      "attachStream": 1,
+      "start": 0,
+      "stop": 0,
+      "pause": 0,
+      "resume": 0
+    }
+  },
+  "wcs-clipboard": {
+    "package": "clipboard",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "monitor": "monitor"
+    },
+    "properties": [
+      "text",
+      "items",
+      "loading",
+      "error",
+      "readPermission",
+      "writePermission",
+      "monitoring",
+      "errorInfo",
+      "copied",
+      "cut",
+      "pasted"
+    ],
+    "commands": [
+      "writeText",
+      "write",
+      "readText",
+      "read",
+      "startMonitor",
+      "stopMonitor"
+    ],
+    "commandArity": {
+      "writeText": 1,
+      "write": 1,
+      "readText": 0,
+      "read": 0,
+      "startMonitor": 0,
+      "stopMonitor": 0
+    }
+  },
+  "wcs-contacts": {
+    "package": "contacts",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "value",
+      "loading",
+      "error",
+      "cancelled",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "select"
+    ],
+    "commandArity": {
+      "select": 2
+    }
+  },
+  "wcs-credential": {
+    "package": "credential",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "value",
+      "loading",
+      "error",
+      "cancelled",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "get",
+      "store",
+      "preventSilentAccess"
+    ],
+    "commandArity": {
+      "get": 1,
+      "store": 1,
+      "preventSilentAccess": 0
+    }
+  },
+  "wcs-debounce": {
+    "package": "debounce",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "source": null,
+      "wait": "wait",
+      "leading": null,
+      "trailing": null,
+      "maxWait": "max-wait"
+    },
+    "properties": [
+      "value",
+      "fired",
+      "pending"
+    ],
+    "commands": [
+      "trigger",
+      "cancel",
+      "flush"
+    ],
+    "commandArity": {
+      "trigger": 0,
+      "cancel": 0,
+      "flush": 0
+    }
+  },
+  "wcs-throttle": {
+    "package": "debounce",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "source": null,
+      "wait": "wait",
+      "leading": null,
+      "trailing": null,
+      "maxWait": "max-wait"
+    },
+    "properties": [
+      "value",
+      "fired",
+      "pending"
+    ],
+    "commands": [
+      "trigger",
+      "cancel",
+      "flush"
+    ],
+    "commandArity": {
+      "trigger": 0,
+      "cancel": 0,
+      "flush": 0
+    }
+  },
+  "wcs-defined": {
+    "package": "defined",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "tags",
+      "mode",
+      "timeout"
+    ],
+    "inputs": {
+      "tags": "tags",
+      "mode": "mode",
+      "timeout": "timeout"
+    },
+    "properties": [
+      "defined",
+      "pending",
+      "missing",
+      "count",
+      "total",
+      "error"
+    ],
+    "commands": []
+  },
+  "wcs-eyedropper": {
+    "package": "eyedropper",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "value",
+      "loading",
+      "error",
+      "cancelled",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "open",
+      "abort"
+    ],
+    "commandArity": {
+      "open": 0,
+      "abort": 0
+    }
+  },
+  "wcs-fetch": {
+    "package": "fetch",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
+    "inputs": {
+      "url": null,
+      "method": null,
+      "target": null,
+      "manual": null,
+      "body": null,
+      "responseType": null,
+      "trigger": null
+    },
+    "properties": [
+      "value",
+      "loading",
+      "error",
+      "status",
+      "objectURL",
+      "errorInfo",
+      "trigger"
+    ],
+    "commands": [
+      "fetch",
+      "abort"
+    ],
+    "commandArity": {
+      "fetch": 2,
+      "abort": 0
+    }
+  },
+  "wcs-fetch-header": {
+    "package": "fetch",
+    "hasWcBindable": false,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-fetch-body": {
+    "package": "fetch",
+    "hasWcBindable": false,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-infinite-scroll": {
+    "package": "fetch",
+    "hasWcBindable": false,
+    "observedAttributes": [
+      "target",
+      "root",
+      "root-margin",
+      "threshold",
+      "disabled"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-fullscreen": {
+    "package": "fullscreen",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target"
+    ],
+    "inputs": {
+      "target": "target"
+    },
+    "properties": [
+      "active",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "requestFullscreen",
+      "exitFullscreen"
+    ],
+    "commandArity": {
+      "requestFullscreen": 0,
+      "exitFullscreen": 0
+    }
+  },
+  "wcs-geo": {
+    "package": "geolocation",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "highAccuracy": "high-accuracy",
+      "timeout": "timeout",
+      "maximumAge": "maximum-age",
+      "watch": "watch",
+      "manual": "manual",
+      "trigger": null
+    },
+    "properties": [
+      "position",
+      "latitude",
+      "longitude",
+      "accuracy",
+      "coords",
+      "timestamp",
+      "watching",
+      "loading",
+      "error",
+      "permission",
+      "errorInfo",
+      "trigger"
+    ],
+    "commands": [
+      "getCurrentPosition",
+      "watchPosition",
+      "clearWatch"
+    ],
+    "commandArity": {
+      "getCurrentPosition": 0,
+      "watchPosition": 0,
+      "clearWatch": 0
+    }
+  },
+  "wcs-gyroscope": {
+    "package": "gyroscope",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "frequency": null
+    },
+    "properties": [
+      "x",
+      "y",
+      "z",
+      "permissionState",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "requestPermission",
+      "start",
+      "stop"
+    ],
+    "commandArity": {
+      "requestPermission": 0,
+      "start": 0,
+      "stop": 0
+    }
+  },
+  "wcs-idle": {
+    "package": "idle",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "threshold": "threshold"
+    },
+    "properties": [
+      "userState",
+      "screenState",
+      "active",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "requestPermission",
+      "start",
+      "stop"
+    ],
+    "commandArity": {
+      "requestPermission": 0,
+      "start": 1,
+      "stop": 0
+    }
+  },
+  "wcs-intersect": {
+    "package": "intersection",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target",
+      "root",
+      "root-margin",
+      "threshold"
+    ],
+    "inputs": {
+      "target": "target",
+      "root": "root",
+      "rootMargin": "root-margin",
+      "threshold": "threshold",
+      "once": "once",
+      "manual": "manual",
+      "trigger": null
+    },
+    "properties": [
+      "entry",
+      "intersecting",
+      "ratio",
+      "visible",
+      "observing",
+      "trigger"
+    ],
+    "commands": [
+      "observe",
+      "reobserve",
+      "unobserve",
+      "disconnect",
+      "reset"
+    ],
+    "commandArity": {
+      "observe": 0,
+      "reobserve": 0,
+      "unobserve": 0,
+      "disconnect": 0,
+      "reset": 0
+    }
+  },
+  "wcs-magnetometer": {
+    "package": "magnetometer",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "frequency": null
+    },
+    "properties": [
+      "x",
+      "y",
+      "z",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "start",
+      "stop"
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0
+    }
+  },
+  "wcs-media-query": {
+    "package": "media-query",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "query"
+    ],
+    "inputs": {
+      "query": "query"
+    },
+    "properties": [
+      "matched",
+      "media",
+      "supported"
+    ],
+    "commands": []
+  },
+  "wcs-midi": {
+    "package": "midi",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "input",
+      "output",
+      "channel"
+    ],
+    "inputs": {
+      "input": "input",
+      "output": "output",
+      "channel": "channel",
+      "sysex": "sysex",
+      "auto": "auto"
+    },
+    "properties": [
+      "message",
+      "type",
+      "channel",
+      "note",
+      "velocity",
+      "control",
+      "value",
+      "devices",
+      "connected",
+      "permission",
+      "granted",
+      "denied",
+      "unsupported",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "request",
+      "close",
+      "send"
+    ],
+    "commandArity": {
+      "request": 0,
+      "close": 0,
+      "send": 2
+    }
+  },
+  "wcs-network": {
+    "package": "network",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "effectiveType",
+      "downlink",
+      "rtt",
+      "saveData",
+      "supported",
+      "offline"
+    ],
+    "commands": []
+  },
+  "wcs-notify": {
+    "package": "notification",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "notice": null,
+      "mode": "mode",
+      "body": "body",
+      "icon": "icon",
+      "badge": "badge",
+      "tag": "tag",
+      "lang": "lang",
+      "dir": "dir",
+      "requireInteraction": "require-interaction",
+      "silent": "silent",
+      "renotify": "renotify",
+      "manual": "manual"
+    },
+    "properties": [
+      "permission",
+      "granted",
+      "denied",
+      "prompt",
+      "unsupported",
+      "error",
+      "errorInfo",
+      "clicked",
+      "closed",
+      "shown"
+    ],
+    "commands": [
+      "request",
+      "notify",
+      "close",
+      "closeAll"
+    ],
+    "commandArity": {
+      "request": 0,
+      "notify": 2,
+      "close": 1,
+      "closeAll": 0
+    }
+  },
+  "wcs-permission": {
+    "package": "permission",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "name": "name",
+      "userVisibleOnly": "user-visible-only",
+      "sysex": "sysex"
+    },
+    "properties": [
+      "state",
+      "granted",
+      "denied",
+      "prompt",
+      "unsupported",
+      "unsupportedReason"
+    ],
+    "commands": []
+  },
+  "wcs-pip": {
+    "package": "picture-in-picture",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target"
+    ],
+    "inputs": {
+      "target": "target"
+    },
+    "properties": [
+      "active",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "requestPictureInPicture",
+      "exitPictureInPicture"
+    ],
+    "commandArity": {
+      "requestPictureInPicture": 0,
+      "exitPictureInPicture": 0
+    }
+  },
+  "wcs-pointer-lock": {
+    "package": "pointer-lock",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target"
+    ],
+    "inputs": {
+      "target": "target"
+    },
+    "properties": [
+      "active",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "requestPointerLock",
+      "exitPointerLock"
+    ],
+    "commandArity": {
+      "requestPointerLock": 0,
+      "exitPointerLock": 0
+    }
+  },
+  "wcs-raf": {
+    "package": "raf",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "reduced-motion"
+    ],
+    "inputs": {
+      "once": "once",
+      "repeat": "repeat",
+      "manual": "manual",
+      "reducedMotion": "reduced-motion",
+      "trigger": null
+    },
+    "properties": [
+      "tick",
+      "elapsed",
+      "dt",
+      "running",
+      "suspended",
+      "trigger"
+    ],
+    "commands": [
+      "start",
+      "stop",
+      "reset",
+      "pause",
+      "resume"
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "reset": 0,
+      "pause": 0,
+      "resume": 0
+    }
+  },
+  "wcs-resize": {
+    "package": "resize",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target",
+      "box",
+      "round"
+    ],
+    "inputs": {
+      "target": "target",
+      "box": "box",
+      "round": "round",
+      "once": "once",
+      "manual": "manual",
+      "trigger": null
+    },
+    "properties": [
+      "entry",
+      "width",
+      "height",
+      "observing",
+      "trigger"
+    ],
+    "commands": [
+      "observe",
+      "unobserve",
+      "disconnect"
+    ],
+    "commandArity": {
+      "observe": 0,
+      "unobserve": 0,
+      "disconnect": 0
+    }
+  },
+  "wcs-screen-orientation": {
+    "package": "screen-orientation",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "type",
+      "angle",
+      "portrait",
+      "landscape",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "lock",
+      "unlock"
+    ],
+    "commandArity": {
+      "lock": 1,
+      "unlock": 0
+    }
+  },
+  "wcs-share": {
+    "package": "share",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "value",
+      "loading",
+      "error",
+      "cancelled",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "share"
+    ],
+    "commandArity": {
+      "share": 1
+    }
+  },
+  "wcs-speak": {
+    "package": "speech",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "say": null,
+      "rate": "rate",
+      "pitch": "pitch",
+      "volume": "volume",
+      "voice": "voice",
+      "lang": "lang",
+      "manual": "manual"
+    },
+    "properties": [
+      "voices",
+      "speaking",
+      "paused",
+      "pending",
+      "charIndex",
+      "spokenWord",
+      "error",
+      "errorInfo",
+      "unsupported"
+    ],
+    "commands": [
+      "speak",
+      "cancel",
+      "pause",
+      "resume"
+    ],
+    "commandArity": {
+      "speak": 1,
+      "cancel": 0,
+      "pause": 0,
+      "resume": 0
+    }
+  },
+  "wcs-listen": {
+    "package": "speech",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {
+      "lang": "lang",
+      "continuous": "continuous",
+      "interim": "interim",
+      "maxRestarts": "max-restarts",
+      "manual": "manual",
+      "trigger": null
+    },
+    "properties": [
+      "interimTranscript",
+      "finalTranscript",
+      "result",
+      "listening",
+      "permission",
+      "error",
+      "errorInfo",
+      "unsupported",
+      "trigger"
+    ],
+    "commands": [
+      "start",
+      "stop",
+      "abort"
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "abort": 0
+    }
+  },
+  "wcs-sse": {
+    "package": "sse",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
+    "inputs": {
+      "url": "url",
+      "withCredentials": "with-credentials",
+      "events": "events",
+      "raw": "raw",
+      "autoReconnect": "auto-reconnect",
+      "reconnectInterval": "reconnect-interval",
+      "maxReconnects": "max-reconnects",
+      "staleAfter": "stale-after",
+      "manual": "manual",
+      "trigger": null
+    },
+    "properties": [
+      "message",
+      "connected",
+      "loading",
+      "error",
+      "errorInfo",
+      "readyState",
+      "trigger"
+    ],
+    "commands": [
+      "connect",
+      "close"
+    ],
+    "commandArity": {
+      "connect": 0,
+      "close": 0
+    }
+  },
+  "wcs-storage": {
+    "package": "storage",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "key",
+      "storage-key",
+      "type"
+    ],
+    "inputs": {
+      "key": null,
+      "storageKey": null,
+      "type": null,
+      "value": null,
+      "manual": null,
+      "trigger": null
+    },
+    "properties": [
+      "value",
+      "loading",
+      "error",
+      "errorInfo",
+      "trigger"
+    ],
+    "commands": [
+      "load",
+      "save",
+      "remove"
+    ],
+    "commandArity": {
+      "load": 0,
+      "save": 0,
+      "remove": 0
+    }
+  },
+  "wcs-tilt": {
+    "package": "tilt",
+    "hasWcBindable": true,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [
+      "alpha",
+      "beta",
+      "gamma",
+      "absolute",
+      "heading",
+      "permissionState",
+      "error",
+      "errorInfo",
+      "supported"
+    ],
+    "commands": [
+      "requestPermission",
+      "start",
+      "stop"
+    ],
+    "commandArity": {
+      "requestPermission": 0,
+      "start": 0,
+      "stop": 0
+    }
+  },
+  "wcs-timer": {
+    "package": "timer",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "interval"
+    ],
+    "inputs": {
+      "interval": "interval",
+      "once": "once",
+      "repeat": "repeat",
+      "immediate": "immediate",
+      "manual": "manual",
+      "trigger": null
+    },
+    "properties": [
+      "tick",
+      "elapsed",
+      "running",
+      "trigger"
+    ],
+    "commands": [
+      "start",
+      "stop",
+      "reset",
+      "pause",
+      "resume"
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "reset": 0,
+      "pause": 0,
+      "resume": 0
+    }
+  },
+  "wcs-upload": {
+    "package": "upload",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
+    "inputs": {
+      "url": null,
+      "method": null,
+      "fieldName": null,
+      "multiple": null,
+      "maxSize": null,
+      "accept": null,
+      "manual": null,
+      "files": null,
+      "trigger": null
+    },
+    "properties": [
+      "value",
+      "loading",
+      "progress",
+      "error",
+      "status",
+      "errorInfo",
+      "trigger",
+      "files"
+    ],
+    "commands": [
+      "upload",
+      "abort"
+    ],
+    "commandArity": {
+      "upload": 0,
+      "abort": 0
+    }
+  },
+  "wcs-upload-header": {
+    "package": "upload",
+    "hasWcBindable": false,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-view-transition": {
+    "package": "view-transition",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "mode",
+      "naming",
+      "naming-limit",
+      "reduced-motion",
+      "types",
+      "disabled",
+      "for"
+    ],
+    "inputs": {
+      "disabled": "disabled",
+      "mode": "mode",
+      "naming": "naming",
+      "namingLimit": "naming-limit",
+      "reducedMotion": "reduced-motion",
+      "types": "types",
+      "participants": "for"
+    },
+    "properties": [
+      "active",
+      "error"
+    ],
+    "commands": [
+      "skip"
+    ],
+    "commandArity": {
+      "skip": 0
+    }
+  },
+  "wcs-wakelock": {
+    "package": "wakelock",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "active",
+      "type"
+    ],
+    "inputs": {
+      "active": "active",
+      "type": "type",
+      "manual": "manual"
+    },
+    "properties": [
+      "held",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "request",
+      "release"
+    ],
+    "commandArity": {
+      "request": 0,
+      "release": 0
+    }
+  },
+  "wcs-ws": {
+    "package": "websocket",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
+    "inputs": {
+      "url": "url",
+      "protocols": "protocols",
+      "autoReconnect": "auto-reconnect",
+      "reconnectInterval": "reconnect-interval",
+      "maxReconnects": "max-reconnects",
+      "binaryType": "binary-type",
+      "staleAfter": "stale-after",
+      "manual": "manual",
+      "trigger": null,
+      "send": null
+    },
+    "properties": [
+      "message",
+      "connected",
+      "loading",
+      "error",
+      "errorInfo",
+      "readyState",
+      "trigger",
+      "send"
+    ],
+    "commands": [
+      "connect",
+      "sendMessage",
+      "close"
+    ],
+    "commandArity": {
+      "connect": 0,
+      "sendMessage": 1,
+      "close": 2
+    }
+  },
+  "wcs-worker": {
+    "package": "worker",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "src"
+    ],
+    "inputs": {
+      "src": "src",
+      "type": "type",
+      "name": "name",
+      "manual": "manual",
+      "keepAlive": "keep-alive",
+      "restartOnError": "restart-on-error",
+      "maxRestarts": "max-restarts",
+      "restartInterval": "restart-interval"
+    },
+    "properties": [
+      "message",
+      "error",
+      "errorInfo",
+      "running"
+    ],
+    "commands": [
+      "start",
+      "post",
+      "terminate"
+    ],
+    "commandArity": {
+      "start": 0,
+      "post": 2,
+      "terminate": 0
+    }
+  }
+};
+
+// src/service/pageElements.ts
+var MAX_FILES = 32;
+var JS_TYPES = /* @__PURE__ */ new Set(["", "module", "text/javascript", "application/javascript", "text/ecmascript"]);
+function pageScripts(html) {
+  const inline = [];
+  const srcs = [];
+  const re = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  const text3 = html.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
+  let m;
+  while ((m = re.exec(text3)) !== null) {
+    const attrs = m[1];
+    const type = (extractAttribute(attrs, "type") ?? "").trim().toLowerCase();
+    if (!JS_TYPES.has(type)) continue;
+    const src = extractAttribute(attrs, "src");
+    if (src !== null) srcs.push(src);
+    else if (m[2].trim() !== "") inline.push(m[2]);
+  }
+  return { inline, srcs };
+}
+function joinRelative(from, spec) {
+  if (!spec.startsWith("./") && !spec.startsWith("../")) return null;
+  const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/") + 1) : "";
+  const out = [];
+  for (const seg of `${dir}${spec}`.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === ".." && out.length > 0 && out[out.length - 1] !== "..") out.pop();
+    else out.push(seg);
+  }
+  return `./${out.join("/")}`;
+}
+function parseScript(source) {
+  for (const sourceType of ["module", "script"]) {
+    try {
+      return parse3(source, { ecmaVersion: "latest", sourceType, allowHashBang: true });
+    } catch {
+    }
+  }
+  return null;
+}
+function* nodes(node) {
+  yield node;
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const v of value) if (v !== null && typeof v === "object" && typeof v.type === "string") yield* nodes(v);
+    } else if (value !== null && typeof value === "object" && typeof value.type === "string") {
+      yield* nodes(value);
+    }
+  }
+}
+var keyName = (key, computed) => computed ? null : key.type === "Identifier" ? key.name : key.type === "Literal" && typeof key.value === "string" ? key.value : null;
+function names(obj, key) {
+  const prop = obj.properties.find((p) => p.type === "Property" && keyName(p.key, p.computed) === key);
+  if (prop === void 0 || prop.type !== "Property") return void 0;
+  if (prop.value.type !== "ArrayExpression") return null;
+  const out = [];
+  for (const el of prop.value.elements) {
+    if (el === null || el.type !== "ObjectExpression" || el.properties.some((p) => p.type !== "Property")) return null;
+    const name = el.properties.find((p) => p.type === "Property" && keyName(p.key, p.computed) === "name");
+    if (name === void 0 || name.type !== "Property" || name.value.type !== "Literal" || typeof name.value.value !== "string") return null;
+    out.push(name.value.value);
+  }
+  return out;
+}
+function contractOf(value) {
+  if (value.type !== "ObjectExpression" || value.properties.some((p) => p.type !== "Property")) return "unknown";
+  const properties = names(value, "properties");
+  const inputs = names(value, "inputs");
+  const commands = names(value, "commands");
+  if (properties === null || inputs === null || commands === null) return "unknown";
+  return {
+    properties: properties ?? [],
+    inputs: Object.fromEntries((inputs ?? []).map((n) => [n, null])),
+    commands: commands ?? []
+  };
+}
+function declaredBy(cls) {
+  let declared = "none";
+  for (const member of cls.body.body) {
+    if (member.type !== "PropertyDefinition" && member.type !== "MethodDefinition" || !member.static) continue;
+    if (keyName(member.key, member.computed) !== "wcBindable") continue;
+    if (member.type === "PropertyDefinition") {
+      declared = member.value === null || member.value === void 0 ? "unknown" : contractOf(member.value);
+    } else {
+      const body = member.kind === "get" ? member.value.body.body : [];
+      const ret = body.length === 1 && body[0].type === "ReturnStatement" ? body[0].argument : null;
+      declared = ret === null || ret === void 0 ? "unknown" : contractOf(ret);
+    }
+  }
+  const sup = cls.superClass;
+  return { declared, superName: sup !== null && sup !== void 0 && sup.type === "Identifier" ? sup.name : null };
+}
+function isDefine(callee) {
+  if (callee.type !== "MemberExpression" || keyName(callee.property, callee.computed) !== "define") return false;
+  const o = callee.object;
+  return o.type === "Identifier" && o.name === "customElements" || o.type === "MemberExpression" && keyName(o.property, o.computed) === "customElements";
+}
+var lastRead = null;
+function collectPageElementContracts(html, fileReader) {
+  if (lastRead !== null && lastRead.fileReader === fileReader && lastRead.html === html) return lastRead.contracts;
+  const contracts = readPageElementContracts(html, fileReader);
+  lastRead = { html, fileReader, contracts };
+  return contracts;
+}
+function readPageElementContracts(html, fileReader) {
+  const { inline, srcs } = pageScripts(html);
+  const programs2 = [];
+  const read = /* @__PURE__ */ new Set();
+  const queue = srcs.map((spec) => ({ from: "", spec: spec.startsWith(".") ? spec : `./${spec}` }));
+  const visit2 = (program, from) => {
+    programs2.push(program);
+    for (const n of nodes(program)) {
+      const source = n.type === "ImportDeclaration" || n.type === "ExportAllDeclaration" || n.type === "ExportNamedDeclaration" ? n.source : n.type === "ImportExpression" ? n.source : null;
+      if (source !== null && source !== void 0 && source.type === "Literal" && typeof source.value === "string") queue.push({ from, spec: source.value });
+    }
+  };
+  for (const source of inline) {
+    const program = parseScript(source);
+    if (program !== null) visit2(program, "");
+  }
+  while (queue.length > 0 && fileReader !== void 0 && read.size < MAX_FILES) {
+    const { from, spec } = queue.shift();
+    const path = joinRelative(from, spec);
+    if (path === null || read.has(path) || !/\.m?js$/.test(path)) continue;
+    read.add(path);
+    const text3 = fileReader(path);
+    const program = text3 === void 0 ? null : parseScript(text3);
+    if (program !== null) visit2(program, path);
+  }
+  const classes = /* @__PURE__ */ new Map();
+  const defines = [];
+  for (const program of programs2) {
+    for (const n of nodes(program)) {
+      if (n.type === "ClassDeclaration" && n.id !== null && !classes.has(n.id.name)) classes.set(n.id.name, declaredBy(n));
+      else if (n.type === "VariableDeclarator" && n.id.type === "Identifier" && n.init?.type === "ClassExpression" && !classes.has(n.id.name)) {
+        classes.set(n.id.name, declaredBy(n.init));
+      } else if (n.type === "CallExpression" && isDefine(n.callee) && n.arguments.length >= 2) {
+        const [tag, cls] = n.arguments;
+        if (tag.type !== "Literal" || typeof tag.value !== "string") continue;
+        if (cls.type === "ClassExpression") defines.push({ tag: tag.value, info: declaredBy(cls) });
+        else if (cls.type === "Identifier") defines.push({ tag: tag.value, info: cls.name });
+      }
+    }
+  }
+  const resolve = (info, depth) => {
+    if (info.declared === "unknown") return null;
+    if (info.declared !== "none") return info.declared;
+    const sup = info.superName === null ? void 0 : classes.get(info.superName);
+    return sup === void 0 || depth > 16 ? null : resolve(sup, depth + 1);
+  };
+  const out = /* @__PURE__ */ new Map();
+  for (const { tag, info } of defines) {
+    const name = tag.toLowerCase();
+    if (name.startsWith("wcs-") || out.has(name)) continue;
+    const cls = typeof info === "string" ? classes.get(info) : info;
+    const contract = cls === void 0 ? null : resolve(cls, 0);
+    if (contract !== null) out.set(name, contract);
+  }
+  return out;
+}
+function mayDefineElements(html) {
+  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(html);
+}
+
+// src/service/elementMembers.ts
+var own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+function memberRole(contract, member) {
+  const output = contract.properties.includes(member);
+  const input = own(contract.inputs, member);
+  return output ? input ? "two-way" : "output" : input ? "input" : null;
+}
+function createContractLookup(html, fileReader) {
+  let page = null;
+  return (tag) => {
+    if (tag === void 0 || !tag.includes("-")) return null;
+    if (own(BUILTIN_TAGS, tag)) return BUILTIN_TAGS[tag].hasWcBindable ? BUILTIN_TAGS[tag] : null;
+    if (tag.startsWith("wcs-")) return null;
+    page ??= mayDefineElements(html) ? collectPageElementContracts(html, fileReader) : /* @__PURE__ */ new Map();
+    return page.get(tag) ?? null;
+  };
+}
+function initModifier(modifiers) {
+  for (const modifier of modifiers) {
+    const match = /^\s*init\s*=(.*)$/.exec(modifier);
+    if (match !== null) return match[1].trim();
+  }
+  return null;
+}
+function elementWrites(binding) {
+  if (binding.role === "input") return false;
+  if (!binding.modifiers.some((modifier) => modifier.trim() === "ro")) return true;
+  const init = initModifier(binding.modifiers);
+  return binding.role === "output" ? init !== "none" : init === "element";
+}
+function collectMemberBindings(html, bindAttribute, lookup) {
+  const out = [];
+  let ignored = null;
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    if (attr.tagName === void 0 || !attr.tagName.includes("-")) continue;
+    const contract = lookup(attr.tagName);
+    if (contract === null) continue;
+    ignored ??= findIgnoredRanges(html, bindAttribute);
+    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
+    const tag = attr.tagName;
+    const bindings = parseBindTextWithPositions(attr.value);
+    bindings.forEach((binding, index) => {
+      const parsed = binding.parsed;
+      if (parsed === null || binding.pathRange === null) return;
+      const start = attr.valueStart + binding.pathRange.start;
+      const end = attr.valueStart + binding.pathRange.end;
+      let path = parsed.statePathName;
+      if (path.startsWith(".")) {
+        const list = getRowShorthandForPath(html, start, bindAttribute) === null ? null : getResolvedForListPath(html, start, bindAttribute);
+        if (list === null || list.startsWith(".")) return;
+        path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+      }
+      if (parsed.bindingType === "spread") {
+        const later = new Set(bindings.slice(index + 1).flatMap((b) => b.parsed?.bindingType === "prop" ? [b.parsed.propName] : []));
+        for (const member of /* @__PURE__ */ new Set([...contract.properties, ...Object.keys(contract.inputs)])) {
+          if (later.has(member)) continue;
+          out.push({ tag, member, role: memberRole(contract, member), path: `${path}.${member}`, modifiers: [], spread: true, start, end });
+        }
+        return;
+      }
+      if (parsed.bindingType !== "prop" || parsed.propSegments.length !== 1) return;
+      const role = memberRole(contract, parsed.propName);
+      if (role === null) return;
+      out.push({ tag, member: parsed.propName, role, path, modifiers: parsed.propModifiers, spread: false, start, end });
+    });
+  }
+  return out;
+}
+var lastRead2 = null;
+function documentMemberBindings(html, bindAttribute, fileReader) {
+  if (lastRead2 !== null && lastRead2.fileReader === fileReader && lastRead2.bindAttribute === bindAttribute && lastRead2.html === html) {
+    return lastRead2.bindings;
+  }
+  const bindings = collectMemberBindings(html, bindAttribute, createContractLookup(html, fileReader));
+  lastRead2 = { html, bindAttribute, fileReader, bindings };
+  return bindings;
+}
+function collectOutputSlots(bindings) {
+  const slots = /* @__PURE__ */ new Map();
+  for (const binding of bindings) {
+    if (binding.role !== "output" || !elementWrites(binding) || slots.has(binding.path)) continue;
+    slots.set(binding.path, { path: binding.path, tag: binding.tag, member: binding.member, start: binding.start, end: binding.end });
+  }
+  return [...slots.values()];
+}
+
+// src/service/statePathResolver.ts
+function isUnresolvedPath(path, scopes) {
+  if (scopes.opaquePaths.length > 0) {
+    const wildcard = hasIndexSegment(path) ? toWildcardForm(path) : path;
+    if (scopes.opaquePaths.some((o) => path.startsWith(`${o}.`) || wildcard.startsWith(`${o}.`))) return true;
+  }
+  let owner = null;
+  for (const mount of scopes.mounts) {
+    if ((path === mount || path.startsWith(`${mount}.`)) && (owner === null || mount.length > owner.length)) owner = mount;
+  }
+  if (owner !== null) return scopes.unresolvedMounts.has(owner);
+  if (scopes.rootUnresolved) return true;
+  for (const mount of scopes.unresolvedMounts) {
+    if (mount.startsWith(`${path}.`)) return true;
+  }
+  return false;
+}
+function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
+  return getStatePathIndex(html, stateTagName, fileReader).paths;
+}
+function getStatePathIndex(html, stateTagName = "wcs-state", fileReader, bindAttribute) {
+  const index = resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  if (bindAttribute === void 0) return index;
+  const outputSlots = openOutputSlots(html, bindAttribute, fileReader, index.paths, index.scopes.opaquePaths);
+  if (outputSlots.length === 0) return index;
+  return {
+    ...index,
+    scopes: { ...index.scopes, opaquePaths: [...index.scopes.opaquePaths, ...outputSlots.map((slot) => slot.path)], outputSlots }
+  };
+}
+function openOutputSlots(html, bindAttribute, fileReader, paths, opaque2) {
+  const slots = collectOutputSlots(documentMemberBindings(html, bindAttribute, fileReader));
+  if (slots.length === 0) return slots;
+  const byPath = /* @__PURE__ */ new Map();
+  for (const candidate of paths) if (!byPath.has(candidate.path)) byPath.set(candidate.path, candidate);
+  return slots.filter((slot) => {
+    if (opaque2.some((o) => slot.path === o || slot.path.startsWith(`${o}.`))) return false;
+    const candidate = byPath.get(slot.path);
+    if (candidate === void 0) return true;
+    return (candidate.kind === "data" || candidate.kind === "list") && candidate.typed !== true && candidate.openKeys !== true;
+  });
+}
+function resolveStatePathIndex(elements, html, fileReader, includeRoots) {
+  const paths = [];
+  const volumePaths = [];
+  const mounts = [];
+  const unresolvedMounts = /* @__PURE__ */ new Set();
+  const roots = [];
+  const mountPoints = /* @__PURE__ */ new Set();
+  for (const element2 of elements) {
+    if (element2.mountPath === null) {
+      if (!includeRoots) continue;
+      const resolved2 = resolveElementPathsRaw(element2, html, fileReader);
+      if (!element2.bindComponent) roots.push({ element: element2, readable: resolved2.readable });
+      paths.push(...resolved2.paths);
+      continue;
+    }
+    const resolved = resolveElementPathsRaw(element2, html, fileReader);
+    const grafted = graftVolumePaths(element2.mountPath, resolved, mountPoints);
+    if (element2.mountPath !== "") {
+      mounts.push(element2.mountPath);
+      if (!resolved.readable) unresolvedMounts.add(element2.mountPath);
+    }
+    paths.push(...grafted);
+    volumePaths.push(...grafted);
+  }
+  return {
+    paths,
+    volumePaths,
+    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html), opaquePaths: opaquePathsOf(paths) },
+    elements
+  };
+}
+function opaquePathsOf(paths) {
+  return paths.filter((p) => p.opaque !== void 0 || p.openKeys === true).map((p) => p.path);
+}
+function moduleLocationOf(fileReader, path) {
+  return fileReader === void 0 ? void 0 : { fileReader, path: path ?? "" };
+}
+function isPageRootUnresolved(roots, html) {
+  if (roots.every((root) => root.readable)) return false;
+  const insideTemplate = createTemplateTester(html);
+  const pageRoots = roots.filter((root) => !insideTemplate(root.element.tagStart));
+  return pageRoots.length > 0 && pageRoots.every((root) => !root.readable);
+}
+function graftVolumePaths(mountPath, resolved, mountPoints) {
+  const prefix = mountPath + ".";
+  const out = [];
+  for (const p of resolved.paths) {
+    if (p.path.startsWith("$")) continue;
+    if (p.kind === "eventToken") continue;
+    out.push({ ...p, path: prefix + p.path });
+  }
+  if (resolved.readable) {
+    const segments = mountPath.split(".");
+    for (let i = 1; i <= segments.length; i++) {
+      const path = segments.slice(0, i).join(".");
+      if (mountPoints.has(path)) continue;
+      mountPoints.add(path);
+      out.push({ path, kind: "data", typeHint: "object" });
+    }
+  }
+  return out;
+}
+var UNREADABLE = { paths: [], readable: false };
+function isJsonObject(text3) {
+  try {
+    const data2 = JSON.parse(text3);
+    return typeof data2 === "object" && data2 !== null && !Array.isArray(data2);
+  } catch {
+    return false;
+  }
+}
+function isReadableStateScript(script) {
+  return hasDefaultExportObject(script) && !hasTopLevelSpread(script);
+}
+function fromJson(text3) {
+  const paths = analyzeJsonPaths(text3);
+  return { paths, readable: paths.length > 0 || isJsonObject(text3) };
+}
+function scriptReadable(script, paths) {
+  return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
+}
+function fromScript(script, location) {
+  const paths = analyzeStatePaths(script, location);
+  return { paths, readable: scriptReadable(script, paths) };
+}
+function resolveElementPathsRaw(element2, html, fileReader) {
+  let readable = false;
+  if (element2.stateAttr) {
+    const jsonContent = findScriptJsonById(html, element2.stateAttr);
+    if (jsonContent) {
+      const resolved = fromJson(jsonContent);
+      if (resolved.paths.length > 0) return resolved;
+      readable ||= resolved.readable;
+    }
+  }
+  if (element2.srcAttr && fileReader) {
+    const resolved = resolveSrcAttribute(element2.srcAttr, fileReader);
+    if (resolved.paths.length > 0) return resolved;
+    readable ||= resolved.readable;
+  }
+  if (element2.jsonAttr) {
+    const resolved = fromJson(element2.jsonAttr);
+    if (resolved.paths.length > 0) return resolved;
+    readable ||= resolved.readable;
+  }
+  if (element2.scriptBlocks.length > 0) {
+    const blocks = element2.scriptBlocks.map((block) => ({
+      script: block.content,
+      paths: analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath))
+    }));
+    return {
+      paths: blocks.flatMap((block) => block.paths),
+      readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths))
+    };
+  }
+  return readable ? { paths: [], readable } : UNREADABLE;
+}
+function readStateScript(srcPath, fileReader) {
+  return readStateScriptFile(srcPath, fileReader)?.text;
+}
+function readStateScriptFile(srcPath, fileReader) {
+  const paths = srcPath.endsWith(".js") ? [srcPath.replace(/\.js$/, ".ts"), srcPath] : srcPath.endsWith(".ts") ? [srcPath] : [];
+  for (const path of paths) {
+    const text3 = fileReader(path);
+    if (text3) return { path, text: text3 };
+  }
+  return void 0;
+}
+function resolveSrcAttribute(srcPath, fileReader) {
+  if (srcPath.endsWith(".json")) {
+    const content = fileReader(srcPath);
+    return content ? fromJson(content) : UNREADABLE;
+  }
+  const file = readStateScriptFile(srcPath, fileReader);
+  return file !== void 0 ? fromScript(file.text, { fileReader, path: file.path }) : UNREADABLE;
+}
+
 // src/service/scriptAst.ts
 var PREFIX = "(async function* () {\n";
 var SUFFIX = "\n})";
@@ -11615,10 +13507,11 @@ function collectGetterReads(body, options = {}) {
   const fn = unwrapWrapper(program);
   if (fn === null) return null;
   const out = [];
-  const root = { thisIsState: true, aliases: /* @__PURE__ */ new Set(), nested: false };
+  const thisIsState = options.stateParam === void 0;
+  const root = { thisIsState, aliases: new Set(thisIsState ? [] : [options.stateParam]), nested: false };
   collecting = options;
   try {
-    visit(fn.body, enterFunction(fn, root, true, false), out);
+    visit(fn.body, enterFunction(fn, root, thisIsState, false), out);
   } finally {
     collecting = {};
   }
@@ -11812,6 +13705,7 @@ function emit(out, segments, options, start, end, scope) {
     written: options.written,
     ...lists !== void 0 ? { indexed: lists } : {},
     ...scope.nested ? { nested: true } : {},
+    ...options.assignsTrue === true ? { assignsTrue: true } : {},
     start: start - PREFIX.length,
     end: end - PREFIX.length
   });
@@ -11853,7 +13747,7 @@ function visit(node, scope, out) {
       return;
     case "AssignmentExpression":
       if (node.operator === "=" && node.left.type === "Identifier" && isThisRoot(node.right, scope)) return;
-      if (node.operator === "=") visitWriteTarget(node.left, scope, out);
+      if (node.operator === "=") visitWriteTarget(node.left, scope, out, node.right.type === "Literal" && node.right.value === true);
       else visitReadWriteTarget(node.left, scope, out);
       visit(node.right, scope, out);
       return;
@@ -11934,7 +13828,7 @@ function visitCall(node, scope, out) {
   }
   for (const argument of node.arguments) visit(argument, scope, out);
 }
-function visitWriteTarget(target, scope, out) {
+function visitWriteTarget(target, scope, out, assignsTrue = false) {
   const unwrapped = unwrapChain(target);
   if (unwrapped.type !== "MemberExpression") {
     visit(unwrapped, scope, out);
@@ -11942,7 +13836,7 @@ function visitWriteTarget(target, scope, out) {
   }
   const { segments, base } = resolveChain(unwrapped);
   if (!isThisRoot(base, scope)) visit(base, scope, out);
-  else if (collecting.writes) emit(out, segments, { form: "write", callee: false, written: false }, unwrapped.start, unwrapped.end, scope);
+  else if (collecting.writes) emit(out, segments, { form: "write", callee: false, written: false, assignsTrue }, unwrapped.start, unwrapped.end, scope);
   for (const segment of segments) {
     if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }
@@ -12513,6 +14407,20 @@ function resolveLocale(locale2) {
   if (locale2 === void 0 || locale2 === "" || /^ja\b|^ja[-_]/i.test(locale2) || locale2.toLowerCase() === "ja") return "ja";
   return "en";
 }
+var TARGET_EFFECT_JA = {
+  "wcs-fullscreen": "requestFullscreen() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
+  "wcs-pip": "requestPictureInPicture() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
+  "wcs-pointer-lock": "requestPointerLock() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
+  "wcs-intersect": "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059",
+  "wcs-resize": "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059"
+};
+var TARGET_EFFECT_EN = {
+  "wcs-fullscreen": "requestFullscreen() fails, and only the error output says so",
+  "wcs-pip": "requestPictureInPicture() fails, and only the error output says so",
+  "wcs-pointer-lock": "requestPointerLock() fails, and only the error output says so",
+  "wcs-intersect": "the element observes nothing and observing stays false",
+  "wcs-resize": "the element observes nothing and observing stays false"
+};
 function isUnitlessZero(token) {
   return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
 }
@@ -12533,6 +14441,9 @@ var ja = {
   eventTokenUndeclared: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
   commandRhsFormat: () => `command \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u53F3\u8FBA\u306B\u306F $command.<name>\uFF08$commandTokens \u3067\u5BA3\u8A00\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044`,
   commandTokenUndeclared: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $commandTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
+  commandTokensAbsent: (t, name) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u3053\u306E state \u306B\u306F $commandTokens \u304C\u3042\u308A\u307E\u305B\u3093\u3002state \u306B $commandTokens: ["${name}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`,
+  eventTokensAbsent: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u3053\u306E state \u306B\u306F $eventTokens \u304C\u3042\u308A\u307E\u305B\u3093\u3002state \u306B $eventTokens: ["${t}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`,
+  onEntryUndeclared: (t, absent) => `$on \u306E\u30A8\u30F3\u30C8\u30EA "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093${absent ? "\uFF08\u3053\u306E state \u306B\u306F $eventTokens \u304C\u3042\u308A\u307E\u305B\u3093\uFF09" : ""}\u3002state \u306F\u8AAD\u307F\u8FBC\u307F\u3067\u5931\u6557\u3057\u3001\u30DA\u30FC\u30B8\u306F\u521D\u671F\u5316\u3055\u308C\u307E\u305B\u3093\uFF08$on entry "${t}" is not declared in $eventTokens\uFF09\u3002${absent ? `$eventTokens: ["${t}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044` : `$eventTokens \u306B "${t}" \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`}`,
   streamPathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F $stream \u5BA3\u8A00\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
   pathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
   pathNonexistent: (p) => `\u30D1\u30B9 "${p}" \u306F\u5BA3\u8A00\u3055\u308C\u305F stateSchema \u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
@@ -12587,9 +14498,11 @@ var ja = {
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
   stateAbsent: (tag) => `\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306B\u306F\u675F\u7E1B\u304C\u3042\u308A\u307E\u3059\u304C <${tag}> \u304C\u7121\u3044\u306E\u3067\u3001\u675F\u7E1B\u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u30DA\u30FC\u30B8\u304C\u53D6\u308A\u8FBC\u3080\u65AD\u7247\u3084\u3001state \u3092\u30B9\u30AF\u30EA\u30D7\u30C8\u3067\u4F5C\u308B\u30DA\u30FC\u30B8\uFF09\u3002state \u306E\u3042\u308B\u30DA\u30FC\u30B8\u3092\u691C\u67FB\u3059\u308B\u304B\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u96A3\uFF08\u304B\u4E0A\uFF09\u306E wcstack.manifest.json \u306E stateSchema \u306B\u30D1\u30B9\u3092\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u304C\u66F8\u304F\u306E\u3067\u3001\u4E2D\u8EAB\u306F\u8981\u7D20\u304C\u6E21\u3059\u3082\u306E\u3067\u3059\u3002\u305D\u306E\u5F62\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
+  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${spread === void 0 ? "" : `"${spread}" \u304C\u675F\u306D\u308B `}"${member}" \u306F <${tag}> \u304C\u66F8\u304F\u30E1\u30F3\u30D0\u30FC\uFF08${twoWay ? "\u5165\u529B\u3067\u3082\u3042\u308B\u51FA\u529B" : "\u51FA\u529B"}\uFF09\u3067\u3059\u3002\u8981\u7D20\u306F\u305D\u306E\u5024\u3092 "${p}" \u306B\u66F8\u304F\u306E\u3067\u3001${atInit ? "\u675F\u306D\u305F\u6642\u70B9\u306E\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u3001state \u306E\u521D\u671F\u5316\u304C\u5931\u6557\u3057\u307E\u3059" : "\u8981\u7D20\u304C\u5024\u3092\u77E5\u3089\u305B\u308B\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059"}\uFF08"${p}" is a getter without a setter\uFF09\u3002${spread !== void 0 ? `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001spread \u306E\u5F8C\u308D\u3067 "${member}" \u3092\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08${spread}; ${member}: <\u30C7\u30FC\u30BF\u306E\u30AD\u30FC>\uFF09` : !twoWay ? `\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u3092\u675F\u306D\u3066\u305D\u308C\u3092 getter \u304B\u3089\u8AAD\u3080\uFF08${member}: <\u30C7\u30FC\u30BF\u306E\u30AD\u30FC>\uFF09\u304B\u3001setter \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044\uFF08set "${p}"(v) { \u2026 }\uFF09` : atInit ? `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001\u6700\u521D\u306E\u5024\u3092 state \u304B\u3089\u53D6\u3063\u3066\u304F\u3060\u3055\u3044\uFF08#init=element \u3092\u5916\u3059\uFF09` : `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${member}#ro: ${p} \u2014 state \u304B\u3089\u8981\u7D20\u3078\u306F\u4ECA\u307E\u3067\u3069\u304A\u308A\u66F8\u304B\u308C\u307E\u3059\uFF09`}`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
   guardReadsAtModuleTop: (r) => `\u30AC\u30FC\u30C9\u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u3001export \u3059\u308B\u95A2\u6570\u306E\u5916\uFF08\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\uFF09\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u3067 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001\u30AC\u30FC\u30C9\u306F\u305D\u306E\u3068\u304D\u8AAD\u3093\u3060\u5024\u3092\u6301\u3061\u7D9A\u3051\u3001\u9077\u79FB\u306E\u305F\u3073\u306B\u305D\u306E\u5024\u3067\u6C7A\u3081\u307E\u3059\uFF08\u30ED\u30B0\u30A4\u30F3\u3057\u305F\u5F8C\u3082\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u7121\u3044\u307E\u307E\uFF09\u3002\u9077\u79FB\u306E\u305F\u3073\u306B\u8D70\u308B\u3001export \u3057\u305F\u95A2\u6570\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   stateReadsAtModuleTop: (r) => `state \u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F <wcs-state> \u3054\u3068\u306B 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001state \u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u306E\u6642\u70B9\u306E\u5024\u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u5F8C\u3067\u5909\u308F\u308B\u30C8\u30FC\u30AF\u30F3\u3084\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u898B\u3048\u307E\u305B\u3093\uFF09\u3002\u5024\u3092 state \u306B\u7F6E\u304F\uFF08<wcs-storage> \u306B\u675F\u306D\u308B\uFF09\u304B\u3001\u4F7F\u3046\u30E1\u30BD\u30C3\u30C9\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
@@ -12611,6 +14524,10 @@ var ja = {
     const effect = tag === "wcs-intersect" ? "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059" : "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001\u6B21\u306E\u30DA\u30FC\u30B8\u306F\u8AAD\u307F\u8FBC\u307E\u308C\u307E\u305B\u3093";
     return `\u30D6\u30E9\u30A6\u30B6\u306F root-margin="${value}" \u3092\u62D2\u307F\u307E\u3059\uFF08rootMargin must be specified in pixels or percent\uFF09: ${why}\u3002\u305D\u306E\u305F\u3081${effect}\u3002${suggested === null ? "1\u301C4 \u500B\u306E\u5024\u3092\u3001\u305D\u308C\u305E\u308C px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044" : `root-margin="${suggested}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`}`;
   },
+  frequencyInvalid: (tag, value, suggested) => `frequency="${value}" \u306F\u6B63\u306E\u6570\u5024\u3067\u306F\u306A\u3044\u306E\u3067\u3001<${tag}> \u306F\u3053\u308C\u3092\u300C\u6307\u5B9A\u306A\u3057\u300D\u3068\u3057\u3066\u8AAD\u307F\u3001\u30BB\u30F3\u30B5\u30FC\u306F\u30D6\u30E9\u30A6\u30B6\u306E\u65E2\u5B9A\u306E\u983B\u5EA6\u3067\u52D5\u304D\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${suggested === null ? "\u6B63\u306E\u6570\u5024\uFF08Hz\uFF09\u3092\u66F8\u304F\u304B\u3001\u65E2\u5B9A\u306E\u983B\u5EA6\u3067\u3088\u3051\u308C\u3070\u5C5E\u6027\u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044" : `\u6570\u5024\u3060\u3051\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: frequency="${suggested}"`}`,
+  targetSelector: (tag, value) => `<${tag}> \u306E target \u306F CSS \u30BB\u30EC\u30AF\u30BF\u3067\u3059\u3002target="${value}" \u306F <${value}> \u8981\u7D20\u3092\u9078\u3073\u307E\u3059\u304C\u3001\u3053\u306E\u6587\u66F8\u306B\u305D\u306E\u8981\u7D20\u306F\u7121\u304F\u3001id="${value}" \u306E\u8981\u7D20\u304C\u3042\u308A\u307E\u3059\u3002\u5BFE\u8C61\u304C\u898B\u3064\u304B\u3089\u306A\u3044\u306E\u3067\u3001${TARGET_EFFECT_JA[tag] ?? "\u8981\u7D20\u306F\u4F55\u3082\u3057\u307E\u305B\u3093"}\u3002id \u3092\u6307\u3059\u306A\u3089 target="#${value}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  commandEventArgument: (property, token, tag, method, more) => `"${property}: ${token}" \u306F\u30C8\u30FC\u30AF\u30F3\u3092\u30A4\u30D9\u30F3\u30C8\u304B\u3089\u76F4\u63A5 emit \u3059\u308B\u306E\u3067\u3001\u53D7\u3051\u5074\u306E\u30B3\u30DE\u30F3\u30C9\u306F\u30A4\u30D9\u30F3\u30C8\u3092\u7B2C 1 \u5F15\u6570\u3068\u3057\u3066\u547C\u3070\u308C\u307E\u3059\u3002<${tag}> \u306E ${method}() \u306F\u5F15\u6570\u3092\u53D6\u308B\u30B3\u30DE\u30F3\u30C9\u3067\u3001${method}(event) \u306B\u306A\u308A\u307E\u3059${more > 0 ? `\uFF08\u307B\u304B\u306B ${more} \u4EF6\u306E\u53D7\u3051\u5074\u3082\u540C\u3058\u3067\u3059\uFF09` : ""}\u3002state \u306E\u30E1\u30BD\u30C3\u30C9\u304B\u3089 emit \u3057\u3066\u304F\u3060\u3055\u3044 \u2014 ${property}: <\u30E1\u30BD\u30C3\u30C9> \u3068\u66F8\u304D\u3001<\u30E1\u30BD\u30C3\u30C9>() { this.${token}.emit(\u2026) } \u3067 ${method}() \u304C\u53D7\u3051\u53D6\u308B\u5024\u3092\u6E21\u3057\u307E\u3059\uFF08\u6E21\u3059\u5024\u304C\u7121\u3051\u308C\u3070\u5F15\u6570\u306A\u3057\u3067 emit \u3057\u307E\u3059\uFF09`,
+  outputPathWritten: (path, tag, member, commands) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u306B\u675F\u306D\u3066\u3042\u308A\u307E\u3059\u3002\u51FA\u529B\u306F\u8981\u7D20\u304C\u66F8\u304F\u3082\u306E\u3067\u3001\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u66F8\u304D\u8FBC\u307F\u306F\u8981\u7D20\u306B\u5C4A\u304D\u307E\u305B\u3093\u3002true \u3092\u4EE3\u5165\u3057\u3066\u3082\u8981\u7D20\u306F\u4F55\u3082\u305B\u305A\u3001\u30DA\u30FC\u30B8\u3060\u3051\u304C\u305D\u3046\u306A\u3063\u305F\u3053\u3068\u306B\u3057\u307E\u3059\u3002${commands.length === 0 ? `<${tag}> \u306B\u30B3\u30DE\u30F3\u30C9\u306F\u7121\u304F\u3001\u3053\u306E\u5024\u306F\u8981\u7D20\u304C\u77E5\u3089\u305B\u308B\u3082\u306E\u3067\u3059\u3002\u4EE3\u5165\u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044` : `\u8981\u7D20\u306B\u306F\u30B3\u30DE\u30F3\u30C9\u3067\u983C\u3093\u3067\u304F\u3060\u3055\u3044\uFF08${commands.join("\u30FB")} \u2014 command.<\u30E1\u30BD\u30C3\u30C9>: $command.<\u540D\u524D> \u3092\u675F\u306D\u3001\u3053\u3053\u3067 this.$command.<\u540D\u524D>.emit() \u3092\u547C\u3076\uFF09\u3002"${path}" \u306F\u8981\u7D20\u304C\u66F8\u304D\u307E\u3059`}`,
   filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
   filterRemoved: (n, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${c}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002"${c}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   substrRemoved: (rewrite) => `\u30D5\u30A3\u30EB\u30BF "substr" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002slice(start, start + length) \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 slice \u306E\u7B2C 2 \u5F15\u6570\u306F\u9577\u3055\u3067\u306F\u306A\u304F\u7D42\u308F\u308A\u306E\u4F4D\u7F6E\u3067\u3059${rewrite === null ? "" : `\uFF08\u3053\u3053\u3067\u306F ${rewrite}\uFF09`}`,
@@ -12666,7 +14583,7 @@ var ja = {
   storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
   storageInitSeed: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u304C\u3001#init=element \u306F\u8981\u7D20\u306E\u5024\u3092\u3053\u306E\u30B9\u30ED\u30C3\u30C8\u3078\u5F15\u304D\u8FBC\u307F\u307E\u3059\u3002\u521D\u56DE\uFF08\u7A7A\u306E\u30AD\u30FC\uFF09\u306F null \u306A\u306E\u3067\u3001\u30B7\u30FC\u30C9\u306F null \u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059 \u2014 null \u3067\u30B7\u30FC\u30C9\u3057\u3066\u8AAD\u3080\u5074\u3067\u65E2\u5B9A\u5024\u3092\u88DC\u3046\uFF08\`this.${path} ?? \u2026\`\uFF09\u304B\u3001null \u3092\u7121\u8996\u3059\u308B setter \u3092\u6301\u3064\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
   storagePairClobber: (path) => `<wcs-storage> \u306E value \u3092 #init=element \u306A\u3057\u3067\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2 "${path}" \u306B\u675F\u306D\u3066\u3044\u307E\u3059\u3002state \u306E\u5074\u304C\u5148\u306B\u66F8\u304F\u306E\u3067\u3001\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B getter \u306E\u6700\u521D\u306E\u5024\u304C\u4FDD\u5B58\u5024\u306E\u4E0A\u306B\u4FDD\u5B58\u3055\u308C\u3001setter \u306F\u4FDD\u5B58\u5024\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093 \u2014 #init=element \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\`value#init=element: ${path}\`\uFF09`,
-  inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u308B\u304B\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
+  inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: \u8981\u7D20\u306E\u5024\u3082\u53D7\u3051\u53D6\u308B\u306A\u3089\u3001setter \u3092\u6DFB\u3048\u305F\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092 ${input}#init=element: <getter> \u3067\u3002\u8981\u7D20\u306E\u5024\u3092\u53D7\u3051\u53D6\u3089\u306A\u3044\u306A\u3089\u3001\u4E00\u65B9\u5411\u306B ${input}#ro: <getter> \u3067\uFF08setter \u3082 #ro \u3082\u7121\u3044\u3068\u3001\u8981\u7D20\u304C\u77E5\u3089\u305B\u308B\u5024\u306E\u66F8\u304D\u623B\u3057\u304C getter \u306B\u62D2\u307E\u308C\u307E\u3059 \u2014 wcs/path-readonly\uFF09\u3002\u307E\u305F\u306F\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
   inputNestedWriteOneShot: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u305A\u3001<${tag}> \u306F\u8981\u6C42\u306E\u305F\u3073\u306B "${input}" \u3092 null \u306B\u623B\u3059\u306E\u3067\u3001\u6B21\u306E\u8981\u6C42\u306F "${input}" \u306A\u3057\u3067\u9001\u3089\u308C\u307E\u3059 \u2014 \u8981\u6C42\u3092\u59CB\u3081\u308B\u30CF\u30F3\u30C9\u30E9\u3067\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4F5C\u3063\u3066\u4EE3\u5165\u3057\uFF08\`this.submitBody = { \u2026 }\`\uFF09\u3001\u305D\u308C\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u304B\u3089\u3060\u3068\u3001DevTools \u306E\u30BF\u30A4\u30E0\u30E9\u30A4\u30F3\u306F\u4ED8\u3044\u305F\u6642\u70B9\u304B\u3089\u59CB\u307E\u308A\u307E\u3059\u3002\u65E2\u306B\u3042\u308B\u914D\u7DDA\u306F 4.0 \u304C\u9001\u308A\u76F4\u3057\u307E\u3059\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/">\uFF08\u307E\u305F\u306F\u305D\u308C\u3092\u4F5C\u308B <head> \u306E\u540C\u671F\u30B9\u30AF\u30EA\u30D7\u30C8 \u2014 basename \u306B\u30ED\u30B1\u30FC\u30EB\u3092\u7F6E\u304F\u5F62\uFF09\u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
@@ -12799,6 +14716,9 @@ var en = {
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
+  commandTokensAbsent: (t, name) => `Command token "${t}" is not declared: this state has no $commandTokens. Add $commandTokens: ["${name}"] to the state`,
+  eventTokensAbsent: (t) => `Event token "${t}" is not declared: this state has no $eventTokens. Add $eventTokens: ["${t}"] to the state`,
+  onEntryUndeclared: (t, absent) => `The $on entry "${t}" is not declared in $eventTokens${absent ? " (this state has none)" : ""}, so the state fails to load and the page is not initialized ($on entry "${t}" is not declared in $eventTokens). ${absent ? `Add $eventTokens: ["${t}"]` : `Add "${t}" to $eventTokens`}`,
   streamPathMissing: (p) => `Path "${p}" does not exist in the $stream declaration`,
   pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
   pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
@@ -12853,9 +14773,11 @@ var en = {
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
   stateAbsent: (tag) => `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
   pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" is written by "${member}" of <${tag}>, an output, so it holds whatever the element gives: its shape cannot be read statically, and the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
+  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) => `"${p}" is a getter without a setter, but "${member}"${spread === void 0 ? "" : `, which "${spread}" binds,`} is ${twoWay ? "a member <" + tag + "> writes too (an output as well as an input)" : "an output of <" + tag + ">"}: the element writes its value to "${p}", and ${atInit ? "the write made when it is bound fails, so the state fails to initialize" : "that write fails each time the element reports a value"} ("${p}" is a getter without a setter). ${spread !== void 0 ? `Add a setter (set "${p}"(v) { \u2026 }), or bind "${member}" to a data path after the spread (${spread}; ${member}: <a data key>)` : !twoWay ? `Bind a data path and read it in the getter (${member}: <a data key>), or add a setter (set "${p}"(v) { \u2026 })` : atInit ? `Add a setter (set "${p}"(v) { \u2026 }), or take the first value from the state (remove #init=element)` : `Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${member}#ro: ${p} \u2014 the state still writes the element)`}`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   guardReadsAtModuleTop: (r) => `The guard's module reads ${r} at its top level, outside the function it exports. The module is evaluated once, when the page loads, so the guard keeps the value it read then and decides every navigation with it (after a login, the session is still not there). Read it inside the exported function, which runs on every navigation`,
   stateReadsAtModuleTop: (r) => `The state's module reads ${r} at its top level. The module is evaluated once per <wcs-state>, so the state keeps the value it read when the page loaded (a token or a session that changes later is not seen). Keep the value in state (bind it with <wcs-storage>), or read it inside the method that uses it`,
@@ -12877,6 +14799,10 @@ var en = {
     const effect = tag === "wcs-intersect" ? "the element observes nothing and observing stays false" : "the element observes nothing and no page is loaded";
     return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? "Write one to four values, each a number with px or %" : `Write root-margin="${suggested}"`}`;
   },
+  frequencyInvalid: (tag, value, suggested) => `frequency="${value}" is not a positive number, so <${tag}> reads it as "none" and the sensor runs at the browser's default rate, without a word. ${suggested === null ? "Write a positive number (Hz), or remove the attribute for the default rate" : `Write the number alone: frequency="${suggested}"`}`,
+  targetSelector: (tag, value) => `The target of <${tag}> is a CSS selector: target="${value}" selects <${value}> elements, and this document has none \u2014 it has an element with id="${value}". No target is found, so ${TARGET_EFFECT_EN[tag] ?? "the element does nothing"}. To name the id, write target="#${value}"`,
+  commandEventArgument: (property, token, tag, method, more) => `"${property}: ${token}" emits the token straight from the event, so the commands that receive it are called with the event as their first argument. ${method}() of <${tag}> takes an argument there, and gets the event: ${method}(event)${more > 0 ? ` (and ${more} more such ${more === 1 ? "receiver" : "receivers"})` : ""}. Emit from a state method instead \u2014 write ${property}: <method>, with <method>() { this.${token}.emit(\u2026) } passing what ${method}() takes (emit with no argument when there is nothing to pass)`,
+  outputPathWritten: (path, tag, member, commands) => `"${path}" is bound to "${member}" of <${tag}>, an output: the element writes it, and a write from a script does not reach the element. Assigning true makes the element do nothing \u2014 only the page now says so. ${commands.length === 0 ? `<${tag}> has no command: the value is the element's to report. Remove the assignment` : `Ask the element with a command (${commands.join(", ")} \u2014 bind command.<method>: $command.<name> and call this.$command.<name>.emit() here), and let the element write "${path}"`}`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") \u2014 write "${c}"`,
   substrRemoved: (rewrite) => `Filter "substr" was removed in 4.0 \u2014 write slice(start, start + length): slice takes the end index, not a length${rewrite === null ? "" : ` (here: ${rewrite})`}`,
@@ -12932,7 +14858,7 @@ var en = {
   storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
   storageInitSeed: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null \u2014 seed it with null and supply the default where you read it (\`this.${path} ?? \u2026\`), or bind an accessor pair whose setter ignores null`,
   storagePairClobber: (path) => `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it \u2014 add #init=element (\`value#init=element: ${path}\`)`,
-  inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
+  inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value: with a setter beside it to take the element's value in as well (the accessor pair, ${input}#init=element: <getter>), or one way when the element's value is not taken in (${input}#ro: <getter> \u2014 with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "${path}" instead of writing below it`,
   inputNestedWriteOneShot: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it \u2014 build a new object in the handler that starts the request (\`this.submitBody = { \u2026 }\`) and bind that`,
   devtoolsAfterState: () => `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one \u2014 the form for a locale in the basename (without it, deep links misderive the basename)`,
@@ -13079,15 +15005,15 @@ var REMOVED_DECLARATION_KEYS = Object.freeze({
   $updatedCallback: "$renderedCallback"
 });
 var SUBSTR_FILTER = "substr";
-var own = (table, name) => Object.prototype.hasOwnProperty.call(table, name) ? table[name] : null;
+var own2 = (table, name) => Object.prototype.hasOwnProperty.call(table, name) ? table[name] : null;
 function removedFilterReplacement(name) {
-  return own(REMOVED_FILTER_NAMES, name);
+  return own2(REMOVED_FILTER_NAMES, name);
 }
 function removedApiReplacement(name) {
-  return own(REMOVED_API_NAMES, name);
+  return own2(REMOVED_API_NAMES, name);
 }
 function removedDeclarationReplacement(name) {
-  return own(REMOVED_DECLARATION_KEYS, name);
+  return own2(REMOVED_DECLARATION_KEYS, name);
 }
 function substrRewrite(args) {
   if (args.length !== 2) return null;
@@ -13157,6 +15083,427 @@ function booleanAttributeText(name, tag) {
     return { kind: "presence", property: BOOLEAN_ATTRIBUTE_PROPERTY[attribute] };
   }
   return { kind: "text" };
+}
+
+// src/service/stateBehavior.ts
+var BEHAVIOR_KEY = "$behavior";
+var MUSTACHE_KEY = "enableMustache";
+var DIRECTIONAL_KEY = "enableDirectionalInitialSync";
+function isMustacheDisabled(html, stateTagName = "wcs-state", fileReader) {
+  return isBehaviorDisabled(MUSTACHE_KEY, html, stateTagName, fileReader);
+}
+function isDirectionalSyncDisabled(html, stateTagName = "wcs-state", fileReader) {
+  return isBehaviorDisabled(DIRECTIONAL_KEY, html, stateTagName, fileReader);
+}
+function isBehaviorDisabled(key, html, stateTagName, fileReader) {
+  if (!html.includes(key) && (fileReader === void 0 || !html.includes("src"))) return false;
+  const elements = parseWcsStateElements(html, stateTagName);
+  if (elements.length === 0) return false;
+  const insideTemplate = createTemplateTester(html);
+  const root = elements.find((e) => e.mountPath === null && !e.bindComponent && !insideTemplate(e.tagStart));
+  if (root === void 0) return false;
+  if (root.stateAttr !== void 0) {
+    const json = findScriptJsonById(html, root.stateAttr);
+    return json !== null && jsonDisables(json, key);
+  }
+  if (root.srcAttr !== void 0) {
+    if (fileReader === void 0) return false;
+    if (root.srcAttr.endsWith(".json")) {
+      const json = fileReader(root.srcAttr);
+      return json !== void 0 && jsonDisables(json, key);
+    }
+    const script = readStateScript(root.srcAttr, fileReader);
+    return script !== void 0 && scriptDisables(script, key);
+  }
+  if (root.jsonAttr !== void 0) return jsonDisables(root.jsonAttr, key);
+  const block = root.scriptBlocks[0];
+  return block !== void 0 && scriptDisables(block.content, key);
+}
+function jsonDisables(text3, key) {
+  try {
+    const data2 = JSON.parse(text3);
+    const behavior = data2?.[BEHAVIOR_KEY];
+    return typeof behavior === "object" && behavior !== null && behavior[key] === false;
+  } catch {
+    return false;
+  }
+}
+function scriptDisables(script, key) {
+  if (!script.includes(key)) return false;
+  const decl = findTopLevelDeclaration(script, BEHAVIOR_KEY);
+  if (decl === null || decl.kind !== "data") return false;
+  return analyzeDeclarationEntries(script, BEHAVIOR_KEY).some((entry) => entry.name === key && entry.kind === "data" && entry.value !== void 0 && stripComments(entry.value) === "false");
+}
+function stripComments(value) {
+  return value.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim();
+}
+
+// src/service/scriptCallArgs.ts
+var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
+var TEMPLATE_NO_SUBST = /^\s*`((?:\\.|[^\\`$]|\$(?!\{))*)`\s*$/;
+function splitCallArgs(source, open) {
+  const args = [];
+  const starts = [];
+  let depth = 0;
+  let argStart = open;
+  let i = open;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === ")" && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      return { args, starts, end: i + 1 };
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (ch === "," && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      argStart = i + 1;
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return null;
+}
+function literalString2(arg) {
+  const match = STRING_LITERAL.exec(arg);
+  if (match !== null) return match[2];
+  const template = TEMPLATE_NO_SUBST.exec(arg);
+  return template === null ? null : template[1];
+}
+function literalArrayLength(arg) {
+  const trimmed = arg.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const inner = trimmed.slice(1, -1);
+  if (inner.trim().length === 0) return 0;
+  if (/(^|[^.])\.\.\./.test(inner)) return null;
+  const parts = splitCallArgs(`${inner})`, 0);
+  if (parts === null) return null;
+  return parts.args.filter((part) => part.trim().length > 0).length;
+}
+function blankComments(source) {
+  const out = source.split("");
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out[i] = " ";
+        i++;
+      }
+      if (i < source.length) {
+        out[i] = " ";
+        out[i + 1] = " ";
+        i += 2;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+function createApiCallRegex(apis) {
+  return new RegExp(`\\.\\s*\\$(${apis.join("|")})\\s*\\(`, "g");
+}
+
+// src/service/configDeclarationValidator.ts
+var manifest = getWcsManifest();
+var BEHAVIOR_OPTIONS = manifest.behaviorOptions;
+var BEHAVIOR_KEYS = Object.freeze(Object.keys(BEHAVIOR_OPTIONS));
+var FEATURE_NAMES2 = Object.freeze([...manifest.features]);
+var BEHAVIOR_KEY2 = "$behavior";
+var FEATURES_KEY = "$features";
+function validateConfigDeclarations(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
+    if (!block.content.includes(BEHAVIOR_KEY2) && !block.content.includes(FEATURES_KEY)) continue;
+    validateBehavior(block, msgs, out);
+    validateFeatures(block, msgs, out);
+  }
+  validateFeaturesAttributes(html, stateTagName, msgs, out);
+  return out;
+}
+function push(out, code, start, end, message, severity = "error") {
+  out.push({ code, start, end, message, severity });
+}
+function validateBehavior(block, msgs, out) {
+  const decl = findTopLevelDeclaration(block.content, BEHAVIOR_KEY2);
+  if (decl === null) return;
+  const base = block.contentStart;
+  if (block.mountPath !== null) {
+    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
+    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.configInVolume(BEHAVIOR_KEY2, block.mountPath));
+    return;
+  }
+  if (decl.kind === "method") {
+    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
+    return;
+  }
+  if (decl.value === void 0) return;
+  const kind = literalKind(decl.value);
+  if (kind === "string" || kind === "number" || kind === "boolean" || kind === "function" || kind === "null" || kind === "array") {
+    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
+    return;
+  }
+  if (kind !== "object") return;
+  for (const entry of analyzeDeclarationEntries(block.content, BEHAVIOR_KEY2)) {
+    if (!BEHAVIOR_KEYS.includes(entry.name)) {
+      push(
+        out,
+        WcsDiagnosticCode.BehaviorInvalid,
+        base + entry.start,
+        base + entry.end,
+        msgs.behaviorKeyUnknown(entry.name, BEHAVIOR_KEYS, suggestion(entry.name, BEHAVIOR_KEYS, msgs))
+      );
+      continue;
+    }
+    const type = BEHAVIOR_OPTIONS[entry.name].type;
+    if (entry.kind === "method") {
+      push(out, WcsDiagnosticCode.BehaviorInvalid, base + entry.start, base + entry.end, msgs.behaviorValueType(entry.name, type));
+      continue;
+    }
+    if (entry.value === void 0 || entry.valueStart === void 0) continue;
+    const valueKind = literalKind(entry.value);
+    if (valueKind !== type && valueKind !== "unknown") {
+      const blanked = blankComments(entry.value);
+      const lead = blanked.length - blanked.trimStart().length;
+      const start = base + entry.valueStart + lead;
+      push(out, WcsDiagnosticCode.BehaviorInvalid, start, start + blanked.trim().length, msgs.behaviorValueType(entry.name, type));
+    }
+  }
+}
+function validateFeatures(block, msgs, out) {
+  const decl = findTopLevelDeclaration(block.content, FEATURES_KEY);
+  if (decl === null) return;
+  const base = block.contentStart;
+  if (block.mountPath !== null) {
+    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
+    push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.configInVolume(FEATURES_KEY, block.mountPath));
+    return;
+  }
+  if (decl.kind === "method") {
+    push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
+    return;
+  }
+  if (decl.value === void 0 || decl.valueStart === void 0) return;
+  const kind = literalKind(decl.value);
+  if (kind !== "array") {
+    if (kind !== "unknown" && kind !== "undefined") {
+      push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
+    }
+    return;
+  }
+  for (const element2 of arrayElements(blankComments(decl.value))) {
+    const elementKind = literalKind(element2.text);
+    const start = base + decl.valueStart + element2.start;
+    if (elementKind === "string") {
+      const name = element2.text.slice(1, -1);
+      if (!FEATURE_NAMES2.includes(name)) {
+        push(
+          out,
+          WcsDiagnosticCode.FeatureUnknown,
+          start + 1,
+          start + 1 + name.length,
+          msgs.featureUnknown(name, FEATURE_NAMES2, suggestion(name, FEATURE_NAMES2, msgs))
+        );
+      }
+    } else if (elementKind !== "unknown") {
+      push(out, WcsDiagnosticCode.FeatureUnknown, start, start + element2.text.length, msgs.featureUnknown(element2.text, FEATURE_NAMES2, ""));
+    }
+  }
+}
+function validateFeaturesAttributes(html, stateTagName, msgs, out) {
+  if (!html.includes("features")) return;
+  let rootSeen = false;
+  const insideTemplate = createTemplateTester(html);
+  for (const element2 of parseWcsStateElements(html, stateTagName)) {
+    const candidate = element2.mountPath === null && !element2.bindComponent && !insideTemplate(element2.tagStart);
+    const isRoot = candidate && !rootSeen;
+    if (candidate) rootSeen = true;
+    const tagText = html.slice(element2.tagStart, element2.tagEnd);
+    const match = /(?:^|\s)(features)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?(?=[\s/>]|$)/id.exec(tagText);
+    if (match === null) continue;
+    const nameSpan = match.indices[1];
+    if (!isRoot) {
+      push(
+        out,
+        WcsDiagnosticCode.FeaturesInvalid,
+        element2.tagStart + nameSpan[0],
+        element2.tagStart + nameSpan[1],
+        msgs.featuresAttrNotRoot(),
+        "warning"
+      );
+      continue;
+    }
+    const group = match[2] !== void 0 ? 2 : match[3] !== void 0 ? 3 : match[4] !== void 0 ? 4 : 0;
+    if (group === 0) continue;
+    const valueStart = element2.tagStart + match.indices[group][0];
+    const value = match[group];
+    const token = /\S+/g;
+    let t;
+    while ((t = token.exec(value)) !== null) {
+      if (FEATURE_NAMES2.includes(t[0])) continue;
+      push(
+        out,
+        WcsDiagnosticCode.FeatureUnknown,
+        valueStart + t.index,
+        valueStart + t.index + t[0].length,
+        msgs.featureUnknown(t[0], FEATURE_NAMES2, suggestion(t[0], FEATURE_NAMES2, msgs))
+      );
+    }
+  }
+}
+function literalKind(value) {
+  const text3 = blankComments(value).trim();
+  const scan = maskCommentsAndStrings(text3).trim();
+  if (/^(["'])[^"']*\1$/.test(scan)) return "string";
+  if (/^`[^`]*`$/.test(scan)) return text3.includes("${") ? "unknown" : "string";
+  if (/^-?(?:\d[\w.]*|\.\d[\w]*)$/.test(scan)) return "number";
+  if (/^(?:true|false)$/.test(scan)) return "boolean";
+  if (scan === "null") return "null";
+  if (scan === "undefined") return "undefined";
+  if (/^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(scan)) return "function";
+  if (isWholeBracket(scan, "[", "]")) return "array";
+  if (isWholeBracket(scan, "{", "}")) return "object";
+  return "unknown";
+}
+function isWholeBracket(scan, open, close) {
+  if (scan[0] !== open || scan[scan.length - 1] !== close) return false;
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      if (depth === 0) return i === scan.length - 1;
+    }
+  }
+  return false;
+}
+function arrayElements(value) {
+  const scan = maskCommentsAndStrings(value);
+  const open = scan.indexOf("[");
+  const close = scan.lastIndexOf("]");
+  const out = [];
+  let depth = 0;
+  let from = open + 1;
+  const take = (end) => {
+    const raw = value.slice(from, end);
+    const text3 = raw.trim();
+    if (text3.length > 0) out.push({ text: text3, start: from + (raw.length - raw.trimStart().length) });
+  };
+  for (let i = open + 1; i < close; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === "," && depth === 0) {
+      take(i);
+      from = i + 1;
+    }
+  }
+  take(close);
+  return out;
+}
+
+// src/service/tokenDeclarations.ts
+function scriptTokenNames(script, key) {
+  if (!isReadableStateScript(script)) return null;
+  const declaration = findTopLevelDeclaration(script, key);
+  if (declaration === null) return maskCommentsAndStrings(script).includes(key) ? null : [];
+  if (declaration.kind !== "data" || declaration.value === void 0 || literalKind(declaration.value) !== "array") return null;
+  const names2 = [];
+  for (const element2 of arrayElements(blankComments(declaration.value))) {
+    if (literalKind(element2.text) !== "string") return null;
+    names2.push(element2.text.slice(1, -1));
+  }
+  return names2;
+}
+function jsonTokenNames(text3, key) {
+  let data2;
+  try {
+    data2 = JSON.parse(text3);
+  } catch {
+    return null;
+  }
+  if (typeof data2 !== "object" || data2 === null || Array.isArray(data2)) return null;
+  const value = data2[key];
+  if (value === void 0) return [];
+  return Array.isArray(value) && value.every((name) => typeof name === "string") ? value : null;
+}
+function documentDeclaresNoTokens(html, elements, key) {
+  const states = elements.filter((element2) => element2.mountPath === null);
+  if (states.length === 0) return false;
+  for (const element2 of states) {
+    if (element2.bindComponent || element2.srcAttr !== void 0) return false;
+    let names2;
+    if (element2.stateAttr !== void 0) {
+      const json = findScriptJsonById(html, element2.stateAttr);
+      names2 = json === null ? null : jsonTokenNames(json, key);
+    } else if (element2.jsonAttr !== void 0) {
+      names2 = jsonTokenNames(element2.jsonAttr, key);
+    } else if (element2.scriptBlocks.length === 0) {
+      names2 = null;
+    } else {
+      names2 = [];
+      for (const block of element2.scriptBlocks) {
+        const listed = scriptTokenNames(block.content, key);
+        if (listed === null) return false;
+        names2.push(...listed);
+      }
+    }
+    if (names2 === null || names2.length > 0) return false;
+  }
+  return true;
 }
 
 // src/service/bindingValidator.ts
@@ -13233,7 +15580,7 @@ function forEachStateMethod(elements, html, fileReader, spelling, fn) {
 function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
   const diagnostics = [];
   const msgs = getMessages(locale2);
-  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader, attrName);
   const statePaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
   const attrs = findAllBindAttributes(html, attrName);
   const outerCandidates = [];
@@ -13248,6 +15595,12 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
     preventDefaultHandlers ??= collectPreventDefaultHandlers(pathIndex.elements, html, fileReader);
     return preventDefaultHandlers;
   };
+  const absentTokenCandidates = [];
+  const noTokens = {};
+  const declaresNoTokens = (key) => noTokens[key] ??= documentDeclaresNoTokens(html, pathIndex.elements, key);
+  const contractOf2 = createContractLookup(html, fileReader);
+  let directionalOff = null;
+  const seedsFromElement = () => !(directionalOff ??= isDirectionalSyncDisabled(html, stateTagName, fileReader));
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
     const nonEmptyCount = bindings.filter((b) => b.trim().length > 0).length;
@@ -13270,7 +15623,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
       }
     }
     let pos = 0;
-    for (const binding of bindings) {
+    for (const [bindingIndex, binding] of bindings.entries()) {
       const bindingStart = attr.valueStart + pos;
       const parsed = parseBindingExpression(binding);
       const scopedPaths = statePaths;
@@ -13365,6 +15718,15 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
             message: msgs.eventTokenUndeclared(tokenName),
             severity: "warning"
           });
+        } else if (tokenName && tokenNames.size === 0 && declaresNoTokens("$eventTokens")) {
+          const pathStart = bindingStart + binding.indexOf(parsed.path);
+          absentTokenCandidates.push({
+            offset: attr.valueStart,
+            start: pathStart,
+            end: pathStart + tokenName.length,
+            message: msgs.eventTokensAbsent(tokenName),
+            severity: "warning"
+          });
         }
         pos += binding.length + 1;
         continue;
@@ -13405,13 +15767,45 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
               end: pathStart + tokenPath.length,
               message: msgs.commandTokenUndeclared(tokenPath),
               // ランタイムは取り付けで #1302 として throw し、root では初期化が失敗する
-              // （eventToken. と `on*: $command.x` はイベントのたびに #1301 を記録するだけなので warning のまま）
+              // （eventToken. と `on*: $command.x` はイベントのたびに #1301 / #1302 を記録するだけなので warning のまま）
+              severity: "error"
+            });
+          } else if (commandNames.size === 0 && declaresNoTokens("$commandTokens")) {
+            absentTokenCandidates.push({
+              offset: attr.valueStart,
+              start: pathStart,
+              end: pathStart + tokenPath.length,
+              message: msgs.commandTokensAbsent(tokenPath, tokenPath.slice("$command.".length)),
               severity: "error"
             });
           }
         }
         pos += binding.length + 1;
         continue;
+      }
+      const emitsCommand = propNoMod.startsWith("on") && (parsed.path?.trim().startsWith("$command.") ?? false);
+      if (emitsCommand) {
+        const tokenPath = parsed.path.trim();
+        const pathStart = bindingStart + binding.indexOf(parsed.path);
+        if (commandNames.size > 0) {
+          if (!commandNames.has(tokenPath) && !isUnresolvedPath(tokenPath, pathIndex.scopes)) {
+            diagnostics.push({
+              code: WcsDiagnosticCode.TokenUndeclared,
+              start: pathStart,
+              end: pathStart + tokenPath.length,
+              message: msgs.commandTokenUndeclared(tokenPath),
+              severity: "warning"
+            });
+          }
+        } else if (declaresNoTokens("$commandTokens")) {
+          absentTokenCandidates.push({
+            offset: attr.valueStart,
+            start: pathStart,
+            end: pathStart + tokenPath.length,
+            message: msgs.commandTokensAbsent(tokenPath, tokenPath.slice("$command.".length)),
+            severity: "warning"
+          });
+        }
       }
       if (parsed.path && scopedPaths.length > 0) {
         const pathTrimmed = parsed.path.trim();
@@ -13426,7 +15820,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
             }
           }
           const refusedByParser = hasUnsafeSegment(pathTrimmed) && !pathTrimmed.startsWith("$command.") && !(propNoMod.startsWith("on") && !pathTrimmed.includes("."));
-          if (checkPath && !refusedByParser) {
+          if (checkPath && !refusedByParser && !emitsCommand) {
             const schema = applicationSchema;
             const unresolved = isUnresolvedPath(checkPath, pathIndex.scopes);
             const verdict = hasRecursionWildcard(checkPath) ? {
@@ -13454,6 +15848,30 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
                   start: pathStart,
                   end: pathStart + pathTrimmed.length,
                   message: msgs.pathReadonlyTwoWay(checkPath, propNoMod),
+                  severity: "error"
+                });
+              }
+            } else {
+              const contract = contractOf2(attr.tagName);
+              for (const write of contract === null ? [] : outputWrites(contract, propNoMod, parsed.property, bindings.slice(bindingIndex + 1))) {
+                const written = write.member === null ? checkPath : `${checkPath}.${write.member}`;
+                const target = scopedPaths.find((p) => p.path === written);
+                if (target === void 0 || target.kind !== "computed" || target.settable === true) continue;
+                const atInit = write.seeds && seedsFromElement();
+                if (!atInit && !write.listens) continue;
+                const pathStart = bindingStart + binding.indexOf(parsed.path);
+                diagnostics.push({
+                  code: WcsDiagnosticCode.PathReadonly,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.pathReadonlyOutput(
+                    written,
+                    attr.tagName,
+                    write.name,
+                    atInit,
+                    write.twoWay,
+                    write.member === null ? void 0 : `...: ${pathTrimmed}`
+                  ),
                   severity: "error"
                 });
               }
@@ -13620,13 +16038,17 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
       pos += binding.length + 1;
     }
   }
-  if (outerCandidates.length > 0 || currentTargetCandidates.length > 0) {
+  if (outerCandidates.length > 0 || currentTargetCandidates.length > 0 || absentTokenCandidates.length > 0) {
     const contexts = analyzeElementContexts(
       html,
-      [...outerCandidates, ...currentTargetCandidates].map((c) => c.offset),
+      [...outerCandidates, ...currentTargetCandidates, ...absentTokenCandidates].map((c) => c.offset),
       attrName,
       stateTagName
     );
+    for (const c of absentTokenCandidates) {
+      if (contexts.get(c.offset)?.bound !== true) continue;
+      diagnostics.push({ code: WcsDiagnosticCode.TokenUndeclared, start: c.start, end: c.end, message: c.message, severity: c.severity });
+    }
     for (const c of outerCandidates) {
       if (contexts.get(c.offset)?.rowOrBranch !== true) continue;
       diagnostics.push({
@@ -13650,6 +16072,26 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
     }
   }
   return diagnostics;
+}
+function outputWrites(contract, property, written, later) {
+  if (property === "...") {
+    const explicit = new Set(later.map((b) => parseBindingExpression(b).property.replace(/#.*$/, "").trim().replace(/^\./, "")));
+    return contract.properties.filter((name2) => !explicit.has(name2)).map((name2) => {
+      const twoWay = memberRole(contract, name2) === "two-way";
+      return { name: name2, member: name2, seeds: !twoWay, listens: true, twoWay };
+    });
+  }
+  const explicitForm = property.startsWith(".");
+  const name = explicitForm ? property.slice(1) : property;
+  if (name.includes(".") || !explicitForm && /^on\w/.test(name)) return [];
+  const role = memberRole(contract, name);
+  if (role === null || role === "input") return [];
+  const modifiers = modifiersOf(written);
+  const init = initModifier(modifiers);
+  if (role === "output" && (init === "state" || init === "auto")) return [];
+  const seeds = role === "output" ? init === null || init === "element" : init === "element";
+  const listens = !modifiers.includes("ro");
+  return seeds || listens ? [{ name, member: null, seeds, listens, twoWay: role === "two-way" }] : [];
 }
 function openTagBefore(html, valueStart) {
   const lt2 = html.lastIndexOf("<", valueStart);
@@ -14361,7 +16803,7 @@ function templateTester(html) {
 function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale2, fileReader, applicationSchema) {
   const diagnostics = [];
   const msgs = getMessages(locale2);
-  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader, bindAttrName);
   const allPaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
   const defaultSchema = applicationSchema;
   const missingVerdict = (path, displayPath, pathSet2, scoped) => {
@@ -14554,83 +16996,6 @@ function isValidTemplatePath(path, pathSet, scopedPaths) {
   return pathExistsInCandidates(path, scopedPaths, pathSet);
 }
 
-// src/core/parser/positionalParser.ts
-var { delimiters } = getWcsManifest().syntax;
-function locate(haystack, needle, from, to) {
-  if (needle.length === 0) return null;
-  const index = haystack.indexOf(needle, from);
-  if (index === -1 || index + needle.length > to) return null;
-  return { start: index, end: index + needle.length };
-}
-function parseEmbeddedTextWithPositions(expression) {
-  const exprRange = { start: 0, end: expression.length };
-  let parsed = null;
-  let error = null;
-  try {
-    parsed = parseBindTextForEmbeddedNode2(expression);
-  } catch (e) {
-    error = e.message;
-  }
-  if (parsed === null) {
-    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null };
-  }
-  const firstPipe = indexOfOutsideQuotes2(expression, delimiters.filter);
-  const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
-  const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
-  return {
-    exprRange,
-    exprText: expression,
-    parsed,
-    error,
-    propRange: null,
-    pathRange: pathLocal
-  };
-}
-function parseBindTextWithPositions(bindText) {
-  const results = [];
-  const segments = splitBindTexts(bindText);
-  let segmentStart = 0;
-  for (const segment of segments) {
-    const leading = segment.length - segment.trimStart().length;
-    const expr = segment.trim();
-    const exprStart = segmentStart + leading;
-    segmentStart += segment.length + delimiters.binding.length;
-    if (expr.length === 0) continue;
-    const exprRange = { start: exprStart, end: exprStart + expr.length };
-    let parsed = null;
-    let error = null;
-    try {
-      parsed = parseBindTextsForElement2(expr)[0] ?? null;
-    } catch (e) {
-      error = e.message;
-    }
-    if (parsed === null) {
-      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null });
-      continue;
-    }
-    const colon = indexOfOutsideQuotes2(expr, delimiters.propValue);
-    const propEndLimit = colon === -1 ? expr.length : colon;
-    const propLocal = locate(expr, parsed.propName, 0, propEndLimit);
-    let pathLocal = null;
-    if (colon !== -1) {
-      const stateBase = colon + 1;
-      const rhsPipe = indexOfOutsideQuotes2(expr.slice(stateBase), delimiters.filter);
-      const pathScopeEnd = rhsPipe === -1 ? expr.length : stateBase + rhsPipe;
-      pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
-    }
-    const lift = (range) => range === null ? null : { start: exprStart + range.start, end: exprStart + range.end };
-    results.push({
-      exprRange,
-      exprText: expr,
-      parsed,
-      error,
-      propRange: lift(propLocal),
-      pathRange: lift(pathLocal)
-    });
-  }
-  return results;
-}
-
 // src/service/bindingSyntaxValidator.ts
 var CODE_MARKER = "[wcs/binding-syntax]";
 function bindingSyntaxDetail(error) {
@@ -14670,1456 +17035,6 @@ function validateBindingSyntax(html, bindAttrName = "data-wcs", locale2) {
     });
   }
   return diagnostics;
-}
-
-// src/service/generated/builtinTags.generated.ts
-var BUILTIN_TAGS = {
-  "wcs-accelerometer": {
-    "package": "accelerometer",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "frequency": null
-    },
-    "properties": [
-      "x",
-      "y",
-      "z",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "start",
-      "stop"
-    ]
-  },
-  "wcs-ambient-light-sensor": {
-    "package": "ambient-light-sensor",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "frequency": null
-    },
-    "properties": [
-      "illuminance",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "start",
-      "stop"
-    ]
-  },
-  "wcs-audio": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "volume",
-      "limiter",
-      "resume-on-gesture"
-    ],
-    "inputs": {
-      "volume": "volume",
-      "limiter": "limiter",
-      "resumeOnGesture": "resume-on-gesture"
-    },
-    "properties": [
-      "state",
-      "running",
-      "suspended",
-      "unsupported",
-      "voices",
-      "noteOn",
-      "noteOff",
-      "warnings",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "resume",
-      "suspend",
-      "noteOn",
-      "noteOff",
-      "allNotesOff"
-    ]
-  },
-  "wcs-voice": {
-    "package": "audio",
-    "hasWcBindable": false,
-    "observedAttributes": [
-      "poly"
-    ],
-    "inputs": {},
-    "properties": [],
-    "commands": []
-  },
-  "wcs-osc": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "frequency",
-      "detune",
-      "type",
-      "glide",
-      "transpose",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "frequency": "frequency",
-      "detune": "detune",
-      "type": "type",
-      "glide": "glide",
-      "transpose": "transpose"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-noise": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {},
-    "properties": [],
-    "commands": []
-  },
-  "wcs-biquad": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "frequency",
-      "q",
-      "gain",
-      "detune",
-      "type",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "frequency": "frequency",
-      "q": "q",
-      "gain": "gain",
-      "detune": "detune",
-      "type": "type"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-gain": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "gain",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "gain": "gain"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-delay": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "time",
-      "feedback",
-      "mix",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "time": "time",
-      "feedback": "feedback",
-      "mix": "mix"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-shaper": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "amount",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "amount": "amount"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-env": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "attack",
-      "decay",
-      "sustain",
-      "release",
-      "depth",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "attack": "attack",
-      "decay": "decay",
-      "sustain": "sustain",
-      "release": "release",
-      "depth": "depth"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-lfo": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "rate",
-      "depth",
-      "type",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "rate": "rate",
-      "depth": "depth",
-      "type": "type"
-    },
-    "properties": [],
-    "commands": []
-  },
-  "wcs-analyser": {
-    "package": "audio",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "fft",
-      "smoothing",
-      "id",
-      "out",
-      "param",
-      "note",
-      "master",
-      "poly"
-    ],
-    "inputs": {
-      "fft": "fft",
-      "smoothing": "smoothing"
-    },
-    "properties": [
-      "frame"
-    ],
-    "commands": [
-      "sample"
-    ]
-  },
-  "wcs-broadcast": {
-    "package": "broadcast",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "name"
-    ],
-    "inputs": {
-      "name": "name",
-      "manual": "manual"
-    },
-    "properties": [
-      "message",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "open",
-      "post",
-      "close"
-    ]
-  },
-  "wcs-camera": {
-    "package": "camera",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "facing-mode",
-      "device-id",
-      "audio",
-      "width",
-      "height"
-    ],
-    "inputs": {
-      "audio": "audio",
-      "facingMode": "facing-mode",
-      "deviceId": "device-id",
-      "width": "width",
-      "height": "height",
-      "autostart": "autostart",
-      "keepAlive": "keep-alive"
-    },
-    "properties": [
-      "active",
-      "permission",
-      "audioPermission",
-      "deviceId",
-      "devices",
-      "error",
-      "errorInfo",
-      "streamReady",
-      "ended"
-    ],
-    "commands": [
-      "start",
-      "stop",
-      "switchCamera"
-    ],
-    "handles": [
-      "streamReady"
-    ]
-  },
-  "wcs-recorder": {
-    "package": "camera",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "mimeType": "mime-type",
-      "timeslice": "timeslice",
-      "audioBitsPerSecond": "audio-bits",
-      "videoBitsPerSecond": "video-bits"
-    },
-    "properties": [
-      "recording",
-      "paused",
-      "duration",
-      "mimeType",
-      "blob",
-      "objectURL",
-      "error",
-      "errorInfo",
-      "recorded",
-      "dataavailable"
-    ],
-    "commands": [
-      "attachStream",
-      "start",
-      "stop",
-      "pause",
-      "resume"
-    ]
-  },
-  "wcs-clipboard": {
-    "package": "clipboard",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "monitor": "monitor"
-    },
-    "properties": [
-      "text",
-      "items",
-      "loading",
-      "error",
-      "readPermission",
-      "writePermission",
-      "monitoring",
-      "errorInfo",
-      "copied",
-      "cut",
-      "pasted"
-    ],
-    "commands": [
-      "writeText",
-      "write",
-      "readText",
-      "read",
-      "startMonitor",
-      "stopMonitor"
-    ]
-  },
-  "wcs-contacts": {
-    "package": "contacts",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "value",
-      "loading",
-      "error",
-      "cancelled",
-      "errorInfo"
-    ],
-    "commands": [
-      "select"
-    ]
-  },
-  "wcs-credential": {
-    "package": "credential",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "value",
-      "loading",
-      "error",
-      "cancelled",
-      "errorInfo"
-    ],
-    "commands": [
-      "get",
-      "store"
-    ]
-  },
-  "wcs-debounce": {
-    "package": "debounce",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "source": null,
-      "wait": "wait",
-      "leading": null,
-      "trailing": null,
-      "maxWait": "max-wait"
-    },
-    "properties": [
-      "value",
-      "fired",
-      "pending"
-    ],
-    "commands": [
-      "trigger",
-      "cancel",
-      "flush"
-    ]
-  },
-  "wcs-throttle": {
-    "package": "debounce",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "source": null,
-      "wait": "wait",
-      "leading": null,
-      "trailing": null,
-      "maxWait": "max-wait"
-    },
-    "properties": [
-      "value",
-      "fired",
-      "pending"
-    ],
-    "commands": [
-      "trigger",
-      "cancel",
-      "flush"
-    ]
-  },
-  "wcs-defined": {
-    "package": "defined",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "tags",
-      "mode",
-      "timeout"
-    ],
-    "inputs": {
-      "tags": "tags",
-      "mode": "mode",
-      "timeout": "timeout"
-    },
-    "properties": [
-      "defined",
-      "pending",
-      "missing",
-      "count",
-      "total",
-      "error"
-    ],
-    "commands": []
-  },
-  "wcs-eyedropper": {
-    "package": "eyedropper",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "value",
-      "loading",
-      "error",
-      "cancelled",
-      "errorInfo"
-    ],
-    "commands": [
-      "open",
-      "abort"
-    ]
-  },
-  "wcs-fetch": {
-    "package": "fetch",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "url"
-    ],
-    "inputs": {
-      "url": null,
-      "method": null,
-      "target": null,
-      "manual": null,
-      "body": null,
-      "responseType": null,
-      "trigger": null
-    },
-    "properties": [
-      "value",
-      "loading",
-      "error",
-      "status",
-      "objectURL",
-      "errorInfo",
-      "trigger"
-    ],
-    "commands": [
-      "fetch",
-      "abort"
-    ]
-  },
-  "wcs-fetch-header": {
-    "package": "fetch",
-    "hasWcBindable": false,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [],
-    "commands": []
-  },
-  "wcs-fetch-body": {
-    "package": "fetch",
-    "hasWcBindable": false,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [],
-    "commands": []
-  },
-  "wcs-infinite-scroll": {
-    "package": "fetch",
-    "hasWcBindable": false,
-    "observedAttributes": [
-      "target",
-      "root",
-      "root-margin",
-      "threshold",
-      "disabled"
-    ],
-    "inputs": {},
-    "properties": [],
-    "commands": []
-  },
-  "wcs-fullscreen": {
-    "package": "fullscreen",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "target"
-    ],
-    "inputs": {
-      "target": "target"
-    },
-    "properties": [
-      "active",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "requestFullscreen",
-      "exitFullscreen"
-    ]
-  },
-  "wcs-geo": {
-    "package": "geolocation",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "highAccuracy": "high-accuracy",
-      "timeout": "timeout",
-      "maximumAge": "maximum-age",
-      "watch": "watch",
-      "manual": "manual",
-      "trigger": null
-    },
-    "properties": [
-      "position",
-      "latitude",
-      "longitude",
-      "accuracy",
-      "coords",
-      "timestamp",
-      "watching",
-      "loading",
-      "error",
-      "permission",
-      "errorInfo",
-      "trigger"
-    ],
-    "commands": [
-      "getCurrentPosition",
-      "watchPosition",
-      "clearWatch"
-    ]
-  },
-  "wcs-gyroscope": {
-    "package": "gyroscope",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "frequency": null
-    },
-    "properties": [
-      "x",
-      "y",
-      "z",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "start",
-      "stop"
-    ]
-  },
-  "wcs-idle": {
-    "package": "idle",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "threshold": "threshold"
-    },
-    "properties": [
-      "userState",
-      "screenState",
-      "active",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "requestPermission",
-      "start",
-      "stop"
-    ]
-  },
-  "wcs-intersect": {
-    "package": "intersection",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "target",
-      "root",
-      "root-margin",
-      "threshold"
-    ],
-    "inputs": {
-      "target": "target",
-      "root": "root",
-      "rootMargin": "root-margin",
-      "threshold": "threshold",
-      "once": "once",
-      "manual": "manual",
-      "trigger": null
-    },
-    "properties": [
-      "entry",
-      "intersecting",
-      "ratio",
-      "visible",
-      "observing",
-      "trigger"
-    ],
-    "commands": [
-      "observe",
-      "reobserve",
-      "unobserve",
-      "disconnect",
-      "reset"
-    ]
-  },
-  "wcs-magnetometer": {
-    "package": "magnetometer",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "frequency": null
-    },
-    "properties": [
-      "x",
-      "y",
-      "z",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "start",
-      "stop"
-    ]
-  },
-  "wcs-media-query": {
-    "package": "media-query",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "query"
-    ],
-    "inputs": {
-      "query": "query"
-    },
-    "properties": [
-      "matched",
-      "media",
-      "supported"
-    ],
-    "commands": []
-  },
-  "wcs-midi": {
-    "package": "midi",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "input",
-      "output",
-      "channel"
-    ],
-    "inputs": {
-      "input": "input",
-      "output": "output",
-      "channel": "channel",
-      "sysex": "sysex",
-      "auto": "auto"
-    },
-    "properties": [
-      "message",
-      "type",
-      "channel",
-      "note",
-      "velocity",
-      "control",
-      "value",
-      "devices",
-      "connected",
-      "permission",
-      "granted",
-      "denied",
-      "unsupported",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "request",
-      "close",
-      "send"
-    ]
-  },
-  "wcs-network": {
-    "package": "network",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "effectiveType",
-      "downlink",
-      "rtt",
-      "saveData",
-      "supported",
-      "offline"
-    ],
-    "commands": []
-  },
-  "wcs-notify": {
-    "package": "notification",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "notice": null,
-      "mode": "mode",
-      "body": "body",
-      "icon": "icon",
-      "badge": "badge",
-      "tag": "tag",
-      "lang": "lang",
-      "dir": "dir",
-      "requireInteraction": "require-interaction",
-      "silent": "silent",
-      "renotify": "renotify",
-      "manual": "manual"
-    },
-    "properties": [
-      "permission",
-      "granted",
-      "denied",
-      "prompt",
-      "unsupported",
-      "error",
-      "errorInfo",
-      "clicked",
-      "closed",
-      "shown"
-    ],
-    "commands": [
-      "request",
-      "notify",
-      "close",
-      "closeAll"
-    ]
-  },
-  "wcs-permission": {
-    "package": "permission",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "name": "name",
-      "userVisibleOnly": "user-visible-only",
-      "sysex": "sysex"
-    },
-    "properties": [
-      "state",
-      "granted",
-      "denied",
-      "prompt",
-      "unsupported"
-    ],
-    "commands": []
-  },
-  "wcs-pip": {
-    "package": "picture-in-picture",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "target"
-    ],
-    "inputs": {
-      "target": "target"
-    },
-    "properties": [
-      "active",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "requestPictureInPicture",
-      "exitPictureInPicture"
-    ]
-  },
-  "wcs-pointer-lock": {
-    "package": "pointer-lock",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "target"
-    ],
-    "inputs": {
-      "target": "target"
-    },
-    "properties": [
-      "active",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "requestPointerLock",
-      "exitPointerLock"
-    ]
-  },
-  "wcs-raf": {
-    "package": "raf",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "reduced-motion"
-    ],
-    "inputs": {
-      "once": "once",
-      "repeat": "repeat",
-      "manual": "manual",
-      "reducedMotion": "reduced-motion",
-      "trigger": null
-    },
-    "properties": [
-      "tick",
-      "elapsed",
-      "dt",
-      "running",
-      "suspended",
-      "trigger"
-    ],
-    "commands": [
-      "start",
-      "stop",
-      "reset",
-      "pause",
-      "resume"
-    ]
-  },
-  "wcs-resize": {
-    "package": "resize",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "target",
-      "box",
-      "round"
-    ],
-    "inputs": {
-      "target": "target",
-      "box": "box",
-      "round": "round",
-      "once": "once",
-      "manual": "manual",
-      "trigger": null
-    },
-    "properties": [
-      "entry",
-      "width",
-      "height",
-      "observing",
-      "trigger"
-    ],
-    "commands": [
-      "observe",
-      "unobserve",
-      "disconnect"
-    ]
-  },
-  "wcs-screen-orientation": {
-    "package": "screen-orientation",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "type",
-      "angle",
-      "portrait",
-      "landscape",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "lock",
-      "unlock"
-    ]
-  },
-  "wcs-share": {
-    "package": "share",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "value",
-      "loading",
-      "error",
-      "cancelled",
-      "errorInfo"
-    ],
-    "commands": [
-      "share"
-    ]
-  },
-  "wcs-speak": {
-    "package": "speech",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "say": null,
-      "rate": "rate",
-      "pitch": "pitch",
-      "volume": "volume",
-      "voice": "voice",
-      "lang": "lang",
-      "manual": "manual"
-    },
-    "properties": [
-      "voices",
-      "speaking",
-      "paused",
-      "pending",
-      "charIndex",
-      "spokenWord",
-      "error",
-      "errorInfo",
-      "unsupported"
-    ],
-    "commands": [
-      "speak",
-      "cancel",
-      "pause",
-      "resume"
-    ]
-  },
-  "wcs-listen": {
-    "package": "speech",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {
-      "lang": "lang",
-      "continuous": "continuous",
-      "interim": "interim",
-      "maxRestarts": "max-restarts",
-      "manual": "manual",
-      "trigger": null
-    },
-    "properties": [
-      "interimTranscript",
-      "finalTranscript",
-      "result",
-      "listening",
-      "permission",
-      "error",
-      "errorInfo",
-      "unsupported",
-      "trigger"
-    ],
-    "commands": [
-      "start",
-      "stop",
-      "abort"
-    ]
-  },
-  "wcs-sse": {
-    "package": "sse",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "url"
-    ],
-    "inputs": {
-      "url": "url",
-      "withCredentials": "with-credentials",
-      "events": "events",
-      "raw": "raw",
-      "autoReconnect": "auto-reconnect",
-      "reconnectInterval": "reconnect-interval",
-      "maxReconnects": "max-reconnects",
-      "staleAfter": "stale-after",
-      "manual": "manual",
-      "trigger": null
-    },
-    "properties": [
-      "message",
-      "connected",
-      "loading",
-      "error",
-      "errorInfo",
-      "readyState",
-      "trigger"
-    ],
-    "commands": [
-      "connect",
-      "close"
-    ]
-  },
-  "wcs-storage": {
-    "package": "storage",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "key",
-      "storage-key",
-      "type"
-    ],
-    "inputs": {
-      "key": null,
-      "storageKey": null,
-      "type": null,
-      "value": null,
-      "manual": null,
-      "trigger": null
-    },
-    "properties": [
-      "value",
-      "loading",
-      "error",
-      "errorInfo",
-      "trigger"
-    ],
-    "commands": [
-      "load",
-      "save",
-      "remove"
-    ]
-  },
-  "wcs-tilt": {
-    "package": "tilt",
-    "hasWcBindable": true,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [
-      "alpha",
-      "beta",
-      "gamma",
-      "absolute",
-      "permissionState",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "requestPermission",
-      "start",
-      "stop"
-    ]
-  },
-  "wcs-timer": {
-    "package": "timer",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "interval"
-    ],
-    "inputs": {
-      "interval": "interval",
-      "once": "once",
-      "repeat": "repeat",
-      "immediate": "immediate",
-      "manual": "manual",
-      "trigger": null
-    },
-    "properties": [
-      "tick",
-      "elapsed",
-      "running",
-      "trigger"
-    ],
-    "commands": [
-      "start",
-      "stop",
-      "reset",
-      "pause",
-      "resume"
-    ]
-  },
-  "wcs-upload": {
-    "package": "upload",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "url"
-    ],
-    "inputs": {
-      "url": null,
-      "method": null,
-      "fieldName": null,
-      "multiple": null,
-      "maxSize": null,
-      "accept": null,
-      "manual": null,
-      "files": null,
-      "trigger": null
-    },
-    "properties": [
-      "value",
-      "loading",
-      "progress",
-      "error",
-      "status",
-      "errorInfo",
-      "trigger",
-      "files"
-    ],
-    "commands": [
-      "upload",
-      "abort"
-    ]
-  },
-  "wcs-upload-header": {
-    "package": "upload",
-    "hasWcBindable": false,
-    "observedAttributes": [],
-    "inputs": {},
-    "properties": [],
-    "commands": []
-  },
-  "wcs-view-transition": {
-    "package": "view-transition",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "mode",
-      "naming",
-      "naming-limit",
-      "reduced-motion",
-      "types",
-      "disabled",
-      "for"
-    ],
-    "inputs": {
-      "disabled": "disabled",
-      "mode": "mode",
-      "naming": "naming",
-      "namingLimit": "naming-limit",
-      "reducedMotion": "reduced-motion",
-      "types": "types",
-      "participants": "for"
-    },
-    "properties": [
-      "active",
-      "error"
-    ],
-    "commands": [
-      "skip"
-    ]
-  },
-  "wcs-wakelock": {
-    "package": "wakelock",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "active",
-      "type"
-    ],
-    "inputs": {
-      "active": "active",
-      "type": "type",
-      "manual": "manual"
-    },
-    "properties": [
-      "held",
-      "error",
-      "errorInfo"
-    ],
-    "commands": [
-      "request",
-      "release"
-    ]
-  },
-  "wcs-ws": {
-    "package": "websocket",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "url"
-    ],
-    "inputs": {
-      "url": "url",
-      "protocols": "protocols",
-      "autoReconnect": "auto-reconnect",
-      "reconnectInterval": "reconnect-interval",
-      "maxReconnects": "max-reconnects",
-      "binaryType": "binary-type",
-      "staleAfter": "stale-after",
-      "manual": "manual",
-      "trigger": null,
-      "send": null
-    },
-    "properties": [
-      "message",
-      "connected",
-      "loading",
-      "error",
-      "errorInfo",
-      "readyState",
-      "trigger",
-      "send"
-    ],
-    "commands": [
-      "connect",
-      "sendMessage",
-      "close"
-    ]
-  },
-  "wcs-worker": {
-    "package": "worker",
-    "hasWcBindable": true,
-    "observedAttributes": [
-      "src"
-    ],
-    "inputs": {
-      "src": "src",
-      "type": "type",
-      "name": "name",
-      "manual": "manual",
-      "keepAlive": "keep-alive",
-      "restartOnError": "restart-on-error",
-      "maxRestarts": "max-restarts",
-      "restartInterval": "restart-interval"
-    },
-    "properties": [
-      "message",
-      "error",
-      "errorInfo",
-      "running"
-    ],
-    "commands": [
-      "start",
-      "post",
-      "terminate"
-    ]
-  }
-};
-
-// src/service/pageElements.ts
-var MAX_FILES = 32;
-var JS_TYPES = /* @__PURE__ */ new Set(["", "module", "text/javascript", "application/javascript", "text/ecmascript"]);
-function pageScripts(html) {
-  const inline = [];
-  const srcs = [];
-  const re = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
-  const text3 = html.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
-  let m;
-  while ((m = re.exec(text3)) !== null) {
-    const attrs = m[1];
-    const type = (extractAttribute(attrs, "type") ?? "").trim().toLowerCase();
-    if (!JS_TYPES.has(type)) continue;
-    const src = extractAttribute(attrs, "src");
-    if (src !== null) srcs.push(src);
-    else if (m[2].trim() !== "") inline.push(m[2]);
-  }
-  return { inline, srcs };
-}
-function joinRelative(from, spec) {
-  if (!spec.startsWith("./") && !spec.startsWith("../")) return null;
-  const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/") + 1) : "";
-  const out = [];
-  for (const seg of `${dir}${spec}`.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === ".." && out.length > 0 && out[out.length - 1] !== "..") out.pop();
-    else out.push(seg);
-  }
-  return `./${out.join("/")}`;
-}
-function parseScript(source) {
-  for (const sourceType of ["module", "script"]) {
-    try {
-      return parse3(source, { ecmaVersion: "latest", sourceType, allowHashBang: true });
-    } catch {
-    }
-  }
-  return null;
-}
-function* nodes(node) {
-  yield node;
-  for (const value of Object.values(node)) {
-    if (Array.isArray(value)) {
-      for (const v of value) if (v !== null && typeof v === "object" && typeof v.type === "string") yield* nodes(v);
-    } else if (value !== null && typeof value === "object" && typeof value.type === "string") {
-      yield* nodes(value);
-    }
-  }
-}
-var keyName = (key, computed) => computed ? null : key.type === "Identifier" ? key.name : key.type === "Literal" && typeof key.value === "string" ? key.value : null;
-function names(obj, key) {
-  const prop = obj.properties.find((p) => p.type === "Property" && keyName(p.key, p.computed) === key);
-  if (prop === void 0 || prop.type !== "Property") return void 0;
-  if (prop.value.type !== "ArrayExpression") return null;
-  const out = [];
-  for (const el of prop.value.elements) {
-    if (el === null || el.type !== "ObjectExpression" || el.properties.some((p) => p.type !== "Property")) return null;
-    const name = el.properties.find((p) => p.type === "Property" && keyName(p.key, p.computed) === "name");
-    if (name === void 0 || name.type !== "Property" || name.value.type !== "Literal" || typeof name.value.value !== "string") return null;
-    out.push(name.value.value);
-  }
-  return out;
-}
-function contractOf(value) {
-  if (value.type !== "ObjectExpression" || value.properties.some((p) => p.type !== "Property")) return "unknown";
-  const properties = names(value, "properties");
-  const inputs = names(value, "inputs");
-  const commands = names(value, "commands");
-  if (properties === null || inputs === null || commands === null) return "unknown";
-  return {
-    properties: properties ?? [],
-    inputs: Object.fromEntries((inputs ?? []).map((n) => [n, null])),
-    commands: commands ?? []
-  };
-}
-function declaredBy(cls) {
-  let declared = "none";
-  for (const member of cls.body.body) {
-    if (member.type !== "PropertyDefinition" && member.type !== "MethodDefinition" || !member.static) continue;
-    if (keyName(member.key, member.computed) !== "wcBindable") continue;
-    if (member.type === "PropertyDefinition") {
-      declared = member.value === null || member.value === void 0 ? "unknown" : contractOf(member.value);
-    } else {
-      const body = member.kind === "get" ? member.value.body.body : [];
-      const ret = body.length === 1 && body[0].type === "ReturnStatement" ? body[0].argument : null;
-      declared = ret === null || ret === void 0 ? "unknown" : contractOf(ret);
-    }
-  }
-  const sup = cls.superClass;
-  return { declared, superName: sup !== null && sup !== void 0 && sup.type === "Identifier" ? sup.name : null };
-}
-function isDefine(callee) {
-  if (callee.type !== "MemberExpression" || keyName(callee.property, callee.computed) !== "define") return false;
-  const o = callee.object;
-  return o.type === "Identifier" && o.name === "customElements" || o.type === "MemberExpression" && keyName(o.property, o.computed) === "customElements";
-}
-function collectPageElementContracts(html, fileReader) {
-  const { inline, srcs } = pageScripts(html);
-  const programs2 = [];
-  const read = /* @__PURE__ */ new Set();
-  const queue = srcs.map((spec) => ({ from: "", spec: spec.startsWith(".") ? spec : `./${spec}` }));
-  const visit2 = (program, from) => {
-    programs2.push(program);
-    for (const n of nodes(program)) {
-      const source = n.type === "ImportDeclaration" || n.type === "ExportAllDeclaration" || n.type === "ExportNamedDeclaration" ? n.source : n.type === "ImportExpression" ? n.source : null;
-      if (source !== null && source !== void 0 && source.type === "Literal" && typeof source.value === "string") queue.push({ from, spec: source.value });
-    }
-  };
-  for (const source of inline) {
-    const program = parseScript(source);
-    if (program !== null) visit2(program, "");
-  }
-  while (queue.length > 0 && fileReader !== void 0 && read.size < MAX_FILES) {
-    const { from, spec } = queue.shift();
-    const path = joinRelative(from, spec);
-    if (path === null || read.has(path) || !/\.m?js$/.test(path)) continue;
-    read.add(path);
-    const text3 = fileReader(path);
-    const program = text3 === void 0 ? null : parseScript(text3);
-    if (program !== null) visit2(program, path);
-  }
-  const classes = /* @__PURE__ */ new Map();
-  const defines = [];
-  for (const program of programs2) {
-    for (const n of nodes(program)) {
-      if (n.type === "ClassDeclaration" && n.id !== null && !classes.has(n.id.name)) classes.set(n.id.name, declaredBy(n));
-      else if (n.type === "VariableDeclarator" && n.id.type === "Identifier" && n.init?.type === "ClassExpression" && !classes.has(n.id.name)) {
-        classes.set(n.id.name, declaredBy(n.init));
-      } else if (n.type === "CallExpression" && isDefine(n.callee) && n.arguments.length >= 2) {
-        const [tag, cls] = n.arguments;
-        if (tag.type !== "Literal" || typeof tag.value !== "string") continue;
-        if (cls.type === "ClassExpression") defines.push({ tag: tag.value, info: declaredBy(cls) });
-        else if (cls.type === "Identifier") defines.push({ tag: tag.value, info: cls.name });
-      }
-    }
-  }
-  const resolve = (info, depth) => {
-    if (info.declared === "unknown") return null;
-    if (info.declared !== "none") return info.declared;
-    const sup = info.superName === null ? void 0 : classes.get(info.superName);
-    return sup === void 0 || depth > 16 ? null : resolve(sup, depth + 1);
-  };
-  const out = /* @__PURE__ */ new Map();
-  for (const { tag, info } of defines) {
-    const name = tag.toLowerCase();
-    if (name.startsWith("wcs-") || out.has(name)) continue;
-    const cls = typeof info === "string" ? classes.get(info) : info;
-    const contract = cls === void 0 ? null : resolve(cls, 0);
-    if (contract !== null) out.set(name, contract);
-  }
-  return out;
-}
-function mayDefineElements(html) {
-  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(html);
 }
 
 // src/service/ioNodeValidator.ts
@@ -16166,9 +17081,9 @@ function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-s
     checkBindings(occ.tagName, contract, bindAttr.value, valueStart, hasManual, getPaths, diagnostics, msgs);
   }
   if (mayDefineElements(html)) {
-    const own2 = findPageTagOccurrences(html, bindAttribute);
-    const contracts = own2.length > 0 ? collectPageElementContracts(html, fileReader) : null;
-    for (const occ of own2) {
+    const own3 = findPageTagOccurrences(html, bindAttribute);
+    const contracts = own3.length > 0 ? collectPageElementContracts(html, fileReader) : null;
+    for (const occ of own3) {
       const contract = contracts.get(occ.tagName);
       if (contract === void 0) continue;
       if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
@@ -16602,8 +17517,8 @@ function findLiveRegions(html, bindAttribute) {
     const span = extractAttributeSpan(attrs, attribute, at2);
     if (span === null) continue;
     const contentStart = match.index + match[0].length;
-    const own2 = extractAttribute(attrs, bindAttribute);
-    const ownText = own2 === null ? [] : splitBindingExpressions(own2).map(parseBindingExpression).filter((p) => CONTENT_PROPERTIES2.has(p.property.split("#")[0]) && p.path !== null).map((p) => p.path.trim());
+    const own3 = extractAttribute(attrs, bindAttribute);
+    const ownText = own3 === null ? [] : splitBindingExpressions(own3).map(parseBindingExpression).filter((p) => CONTENT_PROPERTIES2.has(p.property.split("#")[0]) && p.path !== null).map((p) => p.path.trim());
     out.push({
       start: span.start,
       end: span.end,
@@ -16870,6 +17785,22 @@ var ROOT_MARGIN_TAGS = /* @__PURE__ */ new Set(["wcs-intersect", "wcs-infinite-s
 var NUMBER = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?`;
 var ROOT_MARGIN_VALUE = new RegExp(`^${NUMBER}(?:px|%)$`, "i");
 var UNITLESS_NUMBER = new RegExp(`^${NUMBER}$`, "i");
+var FREQUENCY_TAGS = /* @__PURE__ */ new Set([
+  "wcs-accelerometer",
+  "wcs-gyroscope",
+  "wcs-magnetometer",
+  "wcs-ambient-light-sensor"
+]);
+var LEADING_NUMBER = /^\s*\+?((?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)/i;
+var TARGET_SELECTOR_TAGS = /* @__PURE__ */ new Set([
+  "wcs-fullscreen",
+  "wcs-pip",
+  "wcs-pointer-lock",
+  "wcs-intersect",
+  "wcs-resize"
+]);
+var TARGET_SELF = "self";
+var BARE_WORD = /^[\w-]+$/;
 function checkRootMargin(value) {
   const values = value.split(/\s+/).filter((v) => v !== "");
   const refused = [...new Set(values.filter((v) => !ROOT_MARGIN_VALUE.test(v)))];
@@ -16877,33 +17808,1067 @@ function checkRootMargin(value) {
   const fixable = values.length <= 4 && refused.every((v) => UNITLESS_NUMBER.test(v));
   return { refused, suggested: fixable ? values.map((v) => UNITLESS_NUMBER.test(v) ? `${v}px` : v).join(" ") : null };
 }
+function checkFrequency(value) {
+  if (value.trim() === "") return null;
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return null;
+  const lead = LEADING_NUMBER.exec(value);
+  const number2 = lead === null ? NaN : Number(lead[1]);
+  return { suggested: Number.isFinite(number2) && number2 > 0 ? lead[1] : null };
+}
 function validateIoAttributes(html, bindAttribute = "data-wcs", locale2) {
-  if (!/root-margin/i.test(html)) return [];
+  if (!/root-margin|frequency|target/i.test(html)) return [];
   const msgs = getMessages(locale2);
   const out = [];
-  for (const region of findStartTagRegions(html)) {
-    if (!ROOT_MARGIN_TAGS.has(region.tagName)) continue;
+  const regions = findStartTagRegions(html);
+  let names2 = null;
+  for (const region of regions) {
+    const tag = region.tagName;
     const content = html.slice(region.start, region.end);
-    const span = extractAttributeSpan(content, "root-margin", region.start);
-    if (span === null) continue;
-    const value = html.slice(span.valueStart, span.valueEnd);
-    if (value.includes("{{") || bindsRootMargin(extractAttribute(content, bindAttribute))) continue;
-    const problem = checkRootMargin(value);
-    if (problem === null) continue;
+    if (ROOT_MARGIN_TAGS.has(tag)) {
+      const literal2 = literalAttribute(html, region, content, "root-margin", "rootMargin", bindAttribute);
+      const problem = literal2 === null ? null : checkRootMargin(literal2.value);
+      if (literal2 !== null && problem !== null) {
+        out.push({
+          code: WcsDiagnosticCode.RootMarginUnit,
+          start: literal2.start,
+          end: literal2.end,
+          severity: "warning",
+          tag,
+          message: msgs.rootMarginUnit(tag, literal2.value, problem.refused, problem.suggested)
+        });
+      }
+    }
+    if (FREQUENCY_TAGS.has(tag)) {
+      const literal2 = literalAttribute(html, region, content, "frequency", "frequency", bindAttribute);
+      const problem = literal2 === null ? null : checkFrequency(literal2.value);
+      if (literal2 !== null && problem !== null) {
+        out.push({
+          code: WcsDiagnosticCode.FrequencyInvalid,
+          start: literal2.start,
+          end: literal2.end,
+          severity: "warning",
+          tag,
+          member: "frequency",
+          message: msgs.frequencyInvalid(tag, literal2.value, problem.suggested)
+        });
+      }
+    }
+    if (TARGET_SELECTOR_TAGS.has(tag)) {
+      const literal2 = literalAttribute(html, region, content, "target", "target", bindAttribute);
+      const word = literal2 === null ? "" : literal2.value.trim();
+      if (literal2 === null || word === TARGET_SELF || !BARE_WORD.test(word)) continue;
+      names2 ??= documentNames(html, regions);
+      if (!names2.ids.has(word) || names2.tags.has(asciiLowerCase(word))) continue;
+      out.push({
+        code: WcsDiagnosticCode.TargetSelector,
+        start: literal2.start,
+        end: literal2.end,
+        severity: "warning",
+        tag,
+        member: "target",
+        message: msgs.targetSelector(tag, word)
+      });
+    }
+  }
+  return out;
+}
+function literalAttribute(html, region, content, name, input, bindAttribute) {
+  const span = extractAttributeSpan(content, name, region.start);
+  if (span === null) return null;
+  const value = html.slice(span.valueStart, span.valueEnd);
+  if (value.includes("{{") || bindsInput(extractAttribute(content, bindAttribute), input)) return null;
+  return { value, start: span.valueStart, end: span.valueEnd };
+}
+function bindsInput(bindings, input) {
+  if (bindings === null) return false;
+  return splitBindingExpressions(bindings).some((binding) => parseBindingExpression(binding).property.replace(/#.*$/, "").trim().replace(/^\./, "") === input);
+}
+function documentNames(html, regions) {
+  const ids2 = /* @__PURE__ */ new Set();
+  const tags = /* @__PURE__ */ new Set();
+  for (const region of regions) {
+    tags.add(region.tagName);
+    const content = html.slice(region.start, region.end);
+    if (!/\sid\s*=/i.test(content)) continue;
+    const id = extractAttribute(content, "id");
+    if (id !== null) ids2.add(id);
+  }
+  return { ids: ids2, tags };
+}
+
+// src/service/commandArgumentValidator.ts
+var COMMAND_PREFIX = "$command.";
+var EVENT_TOLERANT_COMMANDS = /* @__PURE__ */ new Map([
+  // fetch(url?, init?): a url that is not a string is ignored, and the element's own url is fetched (4.24 — the fetch
+  // README, "Commands")
+  ["wcs-fetch.fetch", "a url that is not a string is ignored"],
+  // close(code?, reason?): a code that is not a number is ignored (4.25 — up to 4.24 `WebSocket.close(event)` threw
+  // `InvalidAccessError`). A "Disconnect" button wired straight to the token is the natural form
+  ["wcs-ws.close", "a code that is not a number is ignored"],
+  // start(threshold?): a threshold that is not a number is ignored, and the element's `threshold` applies (4.25)
+  ["wcs-idle.start", "a threshold that is not a number is ignored"],
+  // close(tag?): a tag that is not a string closes nothing — as `close()` with no tag does
+  ["wcs-notify.close", "a tag that is not a string closes nothing"]
+]);
+function validateCommandArguments(html, bindAttribute = "data-wcs", locale2) {
+  if (!html.includes(COMMAND_PREFIX)) return [];
+  const receivers = /* @__PURE__ */ new Map();
+  const emitters = [];
+  const ignored = findIgnoredRanges(html, bindAttribute);
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    if (!attr.value.includes(COMMAND_PREFIX)) continue;
+    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
+    const tag = attr.tagName ?? "";
+    const arity = Object.prototype.hasOwnProperty.call(BUILTIN_TAGS, tag) ? BUILTIN_TAGS[tag].commandArity : void 0;
+    for (const binding of parseBindTextWithPositions(attr.value)) {
+      const parsed = binding.parsed;
+      if (parsed === null || !parsed.statePathName.startsWith(COMMAND_PREFIX)) continue;
+      const token = parsed.statePathName;
+      const segments = parsed.propSegments;
+      if (parsed.bindingType === "event") {
+        if (segments[0] === "eventToken" || binding.propRange === null) continue;
+        emitters.push({
+          token,
+          property: parsed.propName,
+          start: attr.valueStart + binding.propRange.start,
+          end: attr.valueStart + binding.propRange.end
+        });
+      } else if (segments[0] === "command" && segments.length === 2 && arity !== void 0) {
+        const method = segments[1];
+        if ((arity[method] ?? 0) === 0 || EVENT_TOLERANT_COMMANDS.has(`${tag}.${method}`)) continue;
+        const list = receivers.get(token);
+        if (list === void 0) receivers.set(token, [{ tag, method }]);
+        else if (!list.some((r) => r.tag === tag && r.method === method)) list.push({ tag, method });
+      }
+    }
+  }
+  if (emitters.length === 0 || receivers.size === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const emitter of emitters) {
+    const list = receivers.get(emitter.token);
+    if (list === void 0) continue;
+    const first = list[0];
     out.push({
-      code: WcsDiagnosticCode.RootMarginUnit,
-      start: span.valueStart,
-      end: span.valueEnd,
+      code: WcsDiagnosticCode.CommandEventArgument,
+      start: emitter.start,
+      end: emitter.end,
       severity: "warning",
-      tag: region.tagName,
-      message: msgs.rootMarginUnit(region.tagName, value, problem.refused, problem.suggested)
+      tag: first.tag,
+      member: first.method,
+      message: msgs.commandEventArgument(emitter.property, emitter.token, first.tag, first.method, list.length - 1)
     });
   }
   return out;
 }
-function bindsRootMargin(bindings) {
-  if (bindings === null) return false;
-  return splitBindingExpressions(bindings).some((binding) => parseBindingExpression(binding).property.replace(/#.*$/, "").trim().replace(/^\./, "") === "rootMargin");
+
+// src/core/index/referenceIndex.ts
+function buildReferenceIndex(html, options = {}) {
+  clearParserCaches();
+  const bindAttribute = options.bindAttribute ?? "data-wcs";
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const occurrences = [];
+  const problems = [];
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    for (const binding of parseBindTextWithPositions(attr.value)) {
+      const lift = (range) => ({ start: attr.valueStart + range.start, end: attr.valueStart + range.end });
+      if (binding.parsed === null) {
+        problems.push({ message: binding.error ?? "parse error", range: lift(binding.exprRange) });
+        continue;
+      }
+      if (binding.pathRange === null) continue;
+      occurrences.push({
+        source: "attribute",
+        kind: binding.parsed.propSegments[0] === "eventToken" ? "eventToken" : "path",
+        path: binding.parsed.statePathName,
+        pathRange: lift(binding.pathRange),
+        exprRange: lift(binding.exprRange),
+        propName: binding.parsed.propName,
+        propRange: binding.propRange === null ? null : lift(binding.propRange),
+        bindingType: binding.parsed.bindingType
+      });
+    }
+  }
+  const textMatches = [
+    ...findAllMustacheSyntax(html),
+    ...findAllCommentBindings(html)
+  ];
+  for (const match of textMatches) {
+    const binding = parseEmbeddedTextWithPositions(match.expression);
+    const shift = (range) => ({
+      start: match.exprStart + range.start,
+      end: match.exprStart + range.end
+    });
+    if (binding.parsed === null) {
+      problems.push({ message: binding.error ?? "parse error", range: shift(binding.exprRange) });
+      continue;
+    }
+    if (binding.pathRange === null) continue;
+    occurrences.push({
+      source: match.kind,
+      kind: "path",
+      path: binding.parsed.statePathName,
+      pathRange: shift(binding.pathRange),
+      exprRange: { start: match.exprStart, end: match.exprEnd },
+      propName: null,
+      propRange: null,
+      bindingType: "text"
+    });
+  }
+  const declarations = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    const prefix = block.mountPath === null ? "" : block.mountPath + ".";
+    for (const span of analyzeDeclarationSpans(block.content)) {
+      if (prefix !== "" && span.name.startsWith("$")) continue;
+      declarations.push({
+        name: prefix + span.name,
+        kind: span.kind,
+        range: { start: block.contentStart + span.start, end: block.contentStart + span.end }
+      });
+    }
+  }
+  const byPath = /* @__PURE__ */ new Map();
+  for (const occurrence of occurrences) {
+    if (occurrence.kind !== "path") continue;
+    const key = occurrence.path;
+    const list = byPath.get(key);
+    if (list === void 0) {
+      byPath.set(key, [occurrence]);
+    } else {
+      list.push(occurrence);
+    }
+  }
+  const declarationByName = /* @__PURE__ */ new Map();
+  for (const declaration of declarations) {
+    const key = declaration.name;
+    if (!declarationByName.has(key)) declarationByName.set(key, declaration);
+  }
+  return {
+    occurrences,
+    declarations,
+    problems,
+    referencesOf(path) {
+      return (byPath.get(path) ?? []).slice();
+    },
+    declarationOf(path) {
+      const exact = declarationByName.get(path);
+      if (exact !== void 0) return exact;
+      const firstSegment = path.split(".")[0];
+      if (firstSegment === path) return null;
+      return declarationByName.get(firstSegment) ?? null;
+    },
+    occurrenceAt(offset2) {
+      for (const occurrence of occurrences) {
+        if (offset2 >= occurrence.pathRange.start && offset2 < occurrence.pathRange.end) {
+          return occurrence;
+        }
+      }
+      return null;
+    }
+  };
+}
+
+// src/service/semanticValidator.ts
+var STATE_UPDATED_CALLBACKS = /* @__PURE__ */ new Set(["$renderedCallback"]);
+var OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
+var OLD_DECLARATION_MEMBER = /\.\s*(\$streams|\$updatedCallback)\b/g;
+var OLD_DECLARATION_MEMBER_NAMES = new Set(Object.keys(REMOVED_DECLARATION_KEYS));
+var OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]|=(?!=)))/g;
+function collectDeclarationAliasReads(script) {
+  return collectStateThisReads(script, OLD_DECLARATION_MEMBER_NAMES);
+}
+function collectStateThisReads(script, names2) {
+  if (!hasDefaultExportObject(script)) return null;
+  const out = [];
+  const take = (refs, base) => {
+    if (refs === null) return false;
+    for (const ref2 of refs) out.push({ name: ref2.name, start: base + ref2.start });
+    return true;
+  };
+  for (const callable of analyzeCallableBodies(script)) {
+    if (!take(collectThisMemberRefs(callable.body, names2), callable.bodyStart)) return null;
+  }
+  for (const handler of analyzeWatchHandlerSources(script)) {
+    const refs = handler.kind === "body" ? collectThisMemberRefs(handler.text, names2) : collectThisMemberRefsInValue(handler.text, names2);
+    if (!take(refs, handler.start)) return null;
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+function validateNameAliases(script, scriptStart, locale2, mountPath = null) {
+  const msgs = getMessages(locale2);
+  const scan = maskCommentsAndStrings(script);
+  const out = [];
+  const pushDeclaration = (name, start, end, severity) => {
+    const canonical = removedDeclarationReplacement(name);
+    if (canonical === null) return;
+    out.push({
+      code: WcsDiagnosticCode.DeclarationAlias,
+      start: scriptStart + start,
+      end: scriptStart + end,
+      // ボリュームは読み込み（#1601）を通らない — ランタイムは接ぎ木を拒んで console.error で報告する
+      message: mountPath === null ? msgs.declarationAlias(name, canonical) : msgs.declarationAliasInVolume(name, canonical, mountPath),
+      severity
+    });
+  };
+  const pushRead = (name, offset2, severity) => {
+    const canonical = removedDeclarationReplacement(name);
+    if (canonical === null) return;
+    out.push({
+      code: WcsDiagnosticCode.DeclarationAliasRead,
+      start: scriptStart + offset2,
+      end: scriptStart + offset2 + name.length,
+      message: msgs.declarationAliasRead(name, canonical),
+      severity
+    });
+  };
+  OLD_API_CALL.lastIndex = 0;
+  let match;
+  while ((match = OLD_API_CALL.exec(scan)) !== null) {
+    const written = match[1];
+    const canonical = removedApiReplacement(written);
+    if (canonical === null) continue;
+    const offset2 = match.index + match[0].length - written.length;
+    out.push({
+      code: WcsDiagnosticCode.NameAlias,
+      start: scriptStart + offset2,
+      end: scriptStart + offset2 + written.length,
+      message: msgs.nameAlias(written, canonical),
+      severity: "error"
+    });
+  }
+  const astReads = collectDeclarationAliasReads(script);
+  if (astReads !== null) {
+    for (const read of astReads) pushRead(read.name, read.start, "warning");
+  } else {
+    OLD_DECLARATION_MEMBER.lastIndex = 0;
+    while ((match = OLD_DECLARATION_MEMBER.exec(scan)) !== null) {
+      const written = match[1];
+      pushRead(written, match.index + match[0].length - written.length, "info");
+    }
+  }
+  const spans = analyzeDeclarationSpans(script);
+  if (spans.length === 0) {
+    OLD_DECLARATION_KEY.lastIndex = 0;
+    while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
+      const at2 = match.index + match[1].length;
+      pushDeclaration(match[2], at2, at2 + match[2].length, "warning");
+    }
+    return out;
+  }
+  for (const span of spans) pushDeclaration(span.name, span.start, span.end, "error");
+  return out;
+}
+var API_CALL = /\.\s*\$(getAll|setAll|resolve|update)\s*\(/g;
+function validateIndexArity(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  const scan = maskCommentsAndStrings(script);
+  API_CALL.lastIndex = 0;
+  let match;
+  while ((match = API_CALL.exec(scan)) !== null) {
+    const api = `$${match[1]}`;
+    const parsed = splitCallArgs(script, match.index + match[0].length);
+    if (parsed === null) continue;
+    API_CALL.lastIndex = parsed.end;
+    if (parsed.args.length < 2) continue;
+    const path = literalString2(parsed.args[0]);
+    if (path === null) continue;
+    if (path.startsWith(".")) continue;
+    if (hasRecursionWildcard(path)) continue;
+    const actual = literalArrayLength(parsed.args[1]);
+    if (actual === null) continue;
+    const wildcardCount = countWildcardSegments(path);
+    const requirement = api === "$resolve" || api === "$update" ? "exact" : "atMost";
+    const mismatched = requirement === "exact" ? actual !== wildcardCount : actual > wildcardCount;
+    if (!mismatched) continue;
+    const argText = parsed.args[1];
+    const leading = argText.length - argText.trimStart().length;
+    out.push({
+      code: WcsDiagnosticCode.IndexArity,
+      start: scriptStart + parsed.starts[1] + leading,
+      end: scriptStart + parsed.starts[1] + argText.trimEnd().length,
+      message: msgs.indexArity(api, path, requirement, wildcardCount, actual),
+      severity: "error"
+    });
+  }
+  return out;
+}
+function validateGetterCycles(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter");
+  if (getters.length === 0) return [];
+  const declared = new Set(getters.map((getter) => getter.name));
+  const edges = /* @__PURE__ */ new Map();
+  for (const getter of getters) {
+    if (getter.accessor === "set") continue;
+    const targets = /* @__PURE__ */ new Set();
+    for (const read of collectGetterReads(getter.body, { row: accessorRow(getter) }) ?? []) {
+      if (declared.has(read.path)) targets.add(read.path);
+    }
+    edges.set(getter.name, [...targets]);
+  }
+  const gray = /* @__PURE__ */ new Set();
+  const black = /* @__PURE__ */ new Set();
+  const stack = [];
+  const cyclesByEntry = /* @__PURE__ */ new Map();
+  const visit2 = (name) => {
+    if (black.has(name)) return;
+    if (gray.has(name)) {
+      const from = stack.indexOf(name);
+      const cycle = stack.slice(from).concat(name).join(" -> ");
+      for (const member of stack.slice(from)) {
+        if (!cyclesByEntry.has(member)) cyclesByEntry.set(member, cycle);
+      }
+      return;
+    }
+    gray.add(name);
+    stack.push(name);
+    for (const next of edges.get(name) ?? []) {
+      visit2(next);
+    }
+    stack.pop();
+    gray.delete(name);
+    black.add(name);
+  };
+  for (const getter of getters) {
+    visit2(getter.name);
+  }
+  if (cyclesByEntry.size === 0) return [];
+  const out = [];
+  for (const getter of getters) {
+    if (getter.accessor === "set") continue;
+    const cycle = cyclesByEntry.get(getter.name);
+    if (cycle === void 0) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterCycle,
+      start: scriptStart + getter.start,
+      end: scriptStart + getter.end,
+      message: msgs.getterCycle(cycle),
+      severity: "error"
+    });
+  }
+  return out;
+}
+function validateGetterUntrackedReads(script, scriptStart, mountPath, nestedWriteRoots, bindingWrites, locale2) {
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter" && entry.accessor === "get");
+  if (getters.length === 0) return [];
+  const objectRoots = /* @__PURE__ */ new Set();
+  for (const candidate of analyzeStatePaths(script)) {
+    if (candidate.kind === "data" && candidate.rawInitial !== void 0 && isObjectLiteral(candidate.rawInitial)) {
+      objectRoots.add(candidate.path);
+    }
+  }
+  if (objectRoots.size === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const getter of getters) {
+    for (const read of collectGetterReads(getter.body) ?? []) {
+      if (read.form !== "member" && read.form !== "destructure" || read.chain === null) continue;
+      if (read.written) continue;
+      const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
+      if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
+      const prefix = mountPath === null ? [] : mountPath.split(".");
+      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split(".").length, bindingWrites());
+      if (write === void 0 && !nestedWriteRoots().has([...prefix, segments[0]].join("."))) continue;
+      const sp = segments.join(".");
+      out.push({
+        code: WcsDiagnosticCode.GetterUntrackedRead,
+        start: scriptStart + getter.bodyStart + read.start,
+        end: scriptStart + getter.bodyStart + read.end,
+        message: write === void 0 ? msgs.getterUntrackedRead(segments[0], sp) : msgs.getterUntrackedReadBound(segments[0], sp, write.binding, write.tag, write.path),
+        severity: write === void 0 ? "warning" : "error"
+      });
+    }
+  }
+  return out;
+}
+function boundWriteOf(segments, tracked, writes) {
+  return writes.find((write) => {
+    const written = write.path.split(".");
+    if (written.length <= tracked || written.length > segments.length) return false;
+    return written.every((s, i) => s === segments[i] || s === "*" && /^\d+$/.test(segments[i]));
+  });
+}
+function collectBindingWrites(html, bindAttrName) {
+  const out = [];
+  const ignored = findIgnoredRanges(html, bindAttrName);
+  for (const attr of findAllBindAttributes(html, bindAttrName)) {
+    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
+    const tag = attr.tagName ?? "";
+    const contract = BUILTIN_TAGS[tag];
+    const outputs = contract?.hasWcBindable === true ? contract.properties : null;
+    const bindings = parseBindTextWithPositions(attr.value);
+    bindings.forEach((binding, index) => {
+      const parsed = binding.parsed;
+      if (parsed === null || binding.pathRange === null) return;
+      let path = parsed.statePathName;
+      if (path.startsWith(".")) {
+        const at2 = attr.valueStart + binding.pathRange.start;
+        const list = getRowShorthandForPath(html, at2, bindAttrName) === null ? null : getResolvedForListPath(html, at2, bindAttrName);
+        if (list === null) return;
+        path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+      }
+      const write = (written) => {
+        out.push({ path: written, binding: binding.exprText, tag });
+      };
+      if (parsed.bindingType === "spread") {
+        if (outputs === null) return;
+        const later = new Set(bindings.slice(index + 1).flatMap((b) => b.parsed?.bindingType === "prop" ? [b.parsed.propName] : []));
+        for (const output of outputs) if (!later.has(output)) write(`${path}.${output}`);
+        return;
+      }
+      if (parsed.propModifiers.includes("ro")) return;
+      if (parsed.bindingType === "radio" || parsed.bindingType === "checkbox") {
+        write(path);
+      } else if (parsed.bindingType === "prop" && (writesBack(attr, parsed.propName, parsed.propName) || outputs?.includes(parsed.propName) === true)) {
+        write(path);
+      }
+    });
+  }
+  return out;
+}
+function validateGetterLocationReads(script, scriptStart, locale2) {
+  if (!script.includes("location")) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== "getter" || getter.accessor !== "get" || !getter.body.includes("location")) continue;
+    const read = findLocationRead(getter.body);
+    if (read === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.start,
+      end: scriptStart + getter.bodyStart + read.end,
+      message: msgs.getterReadsLocation(read.text),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+var CLOCK_READ = /\bDate\s*\.\s*now\s*\(|\bnew\s+Date\s*\(\s*\)|\bperformance\s*\.\s*now\s*\(/;
+function validateGetterClockReads(script, scriptStart, locale2) {
+  if (!/Date|performance/.test(script)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== "getter" || getter.accessor !== "get") continue;
+    const read = CLOCK_READ.exec(maskCommentsAndStrings(getter.body));
+    if (read === null) continue;
+    const text3 = read[0].startsWith("new") ? "new Date()" : read[0].startsWith("performance") ? "performance.now()" : "Date.now()";
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.index,
+      end: scriptStart + getter.bodyStart + read.index + read[0].length,
+      message: msgs.getterReadsClock(text3),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+function validateGetterAmbientReads(script, scriptStart, locale2) {
+  if (!AMBIENT_READ_SPELLING.test(script)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  let moduleNames = null;
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== "getter" || getter.accessor !== "get" || !AMBIENT_READ_SPELLING.test(getter.body)) continue;
+    const read = findAmbientRead(getter.body, moduleNames ??= moduleBindingNames(script));
+    if (read === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.start,
+      end: scriptStart + getter.bodyStart + read.end,
+      message: msgs.getterReadsAmbient(read.text, read.kind),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+function onHandlerStateParam(script, handler) {
+  if (handler.kind === "body") {
+    const head = script.slice(Math.max(0, handler.start - 400), handler.start);
+    return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;
+  }
+  return /^\s*(?:async\s+)?(?:function\b[^(]*\(\s*([A-Za-z_$][\w$]*)|\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/.exec(handler.text)?.slice(1).find((name) => name !== void 0) ?? null;
+}
+function validateInPlaceChanges(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  const push3 = (text3, kind, textStart, root) => {
+    for (const change of findInPlaceChanges(text3, kind, root)) {
+      out.push({
+        code: change.form === "method" ? WcsDiagnosticCode.ArrayMutation : change.form === "index" ? WcsDiagnosticCode.ArrayIndexAssign : WcsDiagnosticCode.NestedAssign,
+        start: scriptStart + textStart + change.start,
+        end: scriptStart + textStart + change.end,
+        severity: "error",
+        message: change.alias !== null ? msgs.inPlaceAlias(change.alias, change.source, change.target) : msgs.inPlaceChange(change.source, change.target)
+      });
+    }
+  };
+  for (const callable of analyzeCallableBodies(script)) push3(callable.body, "body", callable.bodyStart, "this");
+  for (const handler of analyzeWatchHandlerSources(script)) push3(handler.text, handler.kind, handler.start, "this");
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const root = handler.kind === "body" ? onHandlerStateParam(script, handler) : null;
+    if (handler.kind === "body" && root === null) continue;
+    push3(handler.text, handler.kind, handler.start, root);
+  }
+  return out;
+}
+var NESTED_WRITE_INPUTS = {
+  "wcs-storage": { inputs: ["value"], exemptWhenManual: true },
+  "wcs-fetch": { inputs: ["body"], exemptWhenManual: false, oneShot: true }
+};
+var MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
+function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWriteRoots, locale2) {
+  const tags = findBuiltinTagOccurrences(html).filter((occ) => {
+    const target = NESTED_WRITE_INPUTS[occ.tagName];
+    return target !== void 0 && !(target.exemptWhenManual && MANUAL_ATTRIBUTE.test(occ.attrsText));
+  }).map((occ) => ({ tagName: occ.tagName, start: occ.tagStart, end: occ.attrsStart + occ.attrsText.length }));
+  if (tags.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occ of index.occurrences) {
+    if (occ.kind !== "path" || occ.source !== "attribute" || occ.bindingType !== "prop" || occ.propName === null) continue;
+    if (occ.path.startsWith(".")) continue;
+    const at2 = occ.exprRange.start;
+    const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
+    if (tag === void 0) continue;
+    const input = occ.propName.startsWith(".") ? occ.propName.slice(1) : occ.propName;
+    if (!NESTED_WRITE_INPUTS[tag.tagName].inputs.includes(input)) continue;
+    const example = nestedWriteRoots().get(occ.path);
+    if (example === void 0) continue;
+    const message = NESTED_WRITE_INPUTS[tag.tagName].oneShot ? msgs.inputNestedWriteOneShot(tag.tagName, input, occ.path, example) : msgs.inputNestedWrite(tag.tagName, input, occ.path, example);
+    out.push({
+      code: WcsDiagnosticCode.InputNestedWrite,
+      start: occ.pathRange.start,
+      end: occ.pathRange.end,
+      severity: "error",
+      tag: tag.tagName,
+      statePath: occ.path,
+      message
+    });
+  }
+  return out;
+}
+var TWO_WAY_PROPS = /* @__PURE__ */ new Set(["value", "checked"]);
+var BRACKET_WRITE = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, "g");
+var PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
+var TEMPLATE_BRACKET = String.raw`\bthis\s*(?:\?\.)?\s*\[\s*` + "`([^`]*)`" + String.raw`\s*\]`;
+var TEMPLATE_BRACKET_WRITE = new RegExp(`${TEMPLATE_BRACKET}${ASSIGN_TAIL}`, "g");
+var PRE_TEMPLATE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${TEMPLATE_BRACKET}`, "g");
+var TEMPLATE_KEY_PATH = /^[A-Za-z_][\w]*(?:\.(?:\*|[\w]+))*$/;
+function templateKeyPath(raw) {
+  if (raw.includes("`")) return null;
+  const path = raw.replace(/\$\{[^{}]*\}/g, "*");
+  return TEMPLATE_KEY_PATH.test(path) ? path : null;
+}
+function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
+  const roots = /* @__PURE__ */ new Map();
+  const addPrefixes = (path, inclusive) => {
+    const segments = path.split(".");
+    const last = inclusive ? segments.length : segments.length - 1;
+    const example = inclusive ? `${path}.*` : path;
+    for (let i = 1; i <= last; i++) {
+      const prefix = segments.slice(0, i).join(".");
+      if (!roots.has(prefix)) roots.set(prefix, example);
+    }
+  };
+  const tags = findBuiltinTagOccurrences(html).map((occ) => ({
+    contract: BUILTIN_TAGS[occ.tagName],
+    start: occ.tagStart,
+    end: occ.attrsStart + occ.attrsText.length
+  }));
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occ of index.occurrences) {
+    if (occ.kind !== "path" || occ.source !== "attribute") continue;
+    let path = occ.path;
+    if (path.startsWith(".")) {
+      const list = getRowShorthandForPath(html, occ.pathRange.start, bindAttrName) === null ? null : getResolvedForListPath(html, occ.pathRange.start, bindAttrName);
+      if (list === null) continue;
+      path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+    }
+    if (occ.bindingType === "spread") {
+      addPrefixes(path, true);
+      continue;
+    }
+    if (occ.bindingType === "radio" || occ.bindingType === "checkbox") {
+      addPrefixes(path, false);
+      continue;
+    }
+    if (occ.bindingType !== "prop" || occ.propName === null) continue;
+    if (TWO_WAY_PROPS.has(occ.propName)) {
+      addPrefixes(path, false);
+      continue;
+    }
+    const at2 = occ.exprRange.start;
+    const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
+    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(path, false);
+  }
+  for (const block of blocks) {
+    if (block.mountPath !== null) addPrefixes(block.mountPath, true);
+    const scan = maskCommentsAndStrings(block.content);
+    for (const regex of [BRACKET_WRITE, PRE_BRACKET_INCDEC]) {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(scan)) !== null) {
+        const keyStart = match.index + match[0].search(/["']/) + 1;
+        addPrefixes(block.content.slice(keyStart, keyStart + match[1].length), false);
+      }
+    }
+    for (const regex of [TEMPLATE_BRACKET_WRITE, PRE_TEMPLATE_BRACKET_INCDEC]) {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(scan)) !== null) {
+        const keyStart = match.index + match[0].indexOf("`") + 1;
+        const path = templateKeyPath(block.content.slice(keyStart, keyStart + match[1].length));
+        if (path !== null) addPrefixes(path, false);
+      }
+    }
+    for (const handler of analyzeOnHandlerSources(block.content)) {
+      const param = onHandlerStateParam(block.content, handler);
+      if (param === null) continue;
+      const name = param.replace(/\$/g, "\\$");
+      const region = { start: handler.start, end: handler.start + handler.text.length };
+      const bracket = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*["']([^"']+)["']\\s*\\]`;
+      const template = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*\`([^\`]*)\`` + String.raw`\s*\]`;
+      for (const [pattern, quote] of [[bracket, /["']/], [template, /`/]]) {
+        for (const regex of [new RegExp(`${pattern}${ASSIGN_TAIL}`, "g"), new RegExp(`${PRE_INCDEC}${pattern}`, "g")]) {
+          let match;
+          const part = scan.slice(region.start, region.end);
+          while ((match = regex.exec(part)) !== null) {
+            const keyStart = region.start + match.index + match[0].search(quote) + 1;
+            const raw = block.content.slice(keyStart, keyStart + match[1].length);
+            const path = quote.source === "`" ? templateKeyPath(raw) : raw;
+            if (path !== null) addPrefixes(path, false);
+          }
+        }
+      }
+    }
+    API_CALL.lastIndex = 0;
+    let call;
+    while ((call = API_CALL.exec(scan)) !== null) {
+      const api = call[1];
+      if (api === "getAll") continue;
+      const parsed = splitCallArgs(block.content, call.index + call[0].length);
+      if (parsed === null) continue;
+      API_CALL.lastIndex = parsed.end;
+      const path = parsed.args.length > 0 ? literalString2(parsed.args[0]) : null;
+      if (path === null) continue;
+      if (api === "setAll" || api === "update" || parsed.args.length >= 3) addPrefixes(path, false);
+    }
+  }
+  return roots;
+}
+var STRING = String.raw`(["'])((?:\\.|(?!\1)[^\\\n])*)\1`;
+var NAME = String.raw`[$A-Za-z_][$\w]*`;
+function findPathTests(body, param) {
+  const esc = (name) => name.replace(/\$/g, "\\$");
+  const holders = /* @__PURE__ */ new Set([param]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    const alt = [...holders].map(esc).join("|");
+    const alias = new RegExp(String.raw`\b(?:const|let|var)\s+(${NAME})\s*=\s*(?:new\s+Set\s*\(\s*(?:${alt})\s*\)|\[\s*\.\.\.\s*(?:${alt})\s*\]|Array\.from\s*\(\s*(?:${alt})\s*\)|(?:${alt}))\s*(?:[;\n]|$)`, "g");
+    for (const m of body.matchAll(alias)) {
+      if (!holders.has(m[1])) {
+        holders.add(m[1]);
+        grew = true;
+      }
+    }
+  }
+  const held = [...holders].map(esc).join("|");
+  const out = [];
+  const push3 = (m, prefix, base = 0) => {
+    const [whole, quote, literal2] = m;
+    const at2 = base + m.index + whole.lastIndexOf(quote + literal2) + 1;
+    out.push({ path: prefix ? literal2.replace(/\.$/, "") : literal2, prefix, at: at2 });
+  };
+  for (const m of body.matchAll(new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:includes|indexOf|lastIndexOf|has)\s*\(\s*${STRING}`, "g"))) {
+    push3(m, false);
+  }
+  const elements = /* @__PURE__ */ new Set();
+  const callback = new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:some|every|find|findIndex|findLast|findLastIndex|filter|forEach|map|flatMap)\s*\(\s*(?:async\s+)?(?:function\b\s*(?:${NAME})?\s*)?\(?\s*(${NAME})`, "g");
+  for (const m of body.matchAll(callback)) elements.add(m[1]);
+  for (const m of body.matchAll(new RegExp(String.raw`\bfor\s*\(\s*(?:const|let|var)\s+(${NAME})\s+of\s+(?:${held})\s*\)`, "g"))) elements.add(m[1]);
+  if (elements.size > 0) {
+    const el = [...elements].map(esc).join("|");
+    const compares = [
+      new RegExp(String.raw`(?<![\w$.])(?:${el})\s*[!=]==?\s*${STRING}`, "g"),
+      new RegExp(String.raw`${STRING}\s*[!=]==?\s*(?:${el})(?![\w$])`, "g")
+    ];
+    for (const regex of compares) {
+      for (const m of body.matchAll(regex)) push3(m, false);
+    }
+    for (const m of body.matchAll(new RegExp(String.raw`(?<![\w$.])(?:${el})\s*(?:\?\.|\.)\s*startsWith\s*\(\s*${STRING}`, "g"))) push3(m, true);
+    for (const m of body.matchAll(new RegExp(String.raw`\bswitch\s*\(\s*(?:${el})\s*\)\s*\{`, "g"))) {
+      const open = m.index + m[0].length - 1;
+      const block = body.slice(open, matchingBrace(body, open));
+      for (const c of block.matchAll(new RegExp(String.raw`\bcase\s+${STRING}\s*:`, "g"))) push3(c, false, open);
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+function matchingBrace(text3, open) {
+  let depth = 0;
+  for (let i = open; i < text3.length; i++) {
+    const ch = text3[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      for (i++; i < text3.length && text3[i] !== ch; i++) if (text3[i] === "\\") i++;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}" && --depth === 0) {
+      return i;
+    }
+  }
+  return text3.length;
+}
+function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2) {
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
+  if (blocks.length === 0) return [];
+  const hasCallback = blocks.some((block) => [...STATE_UPDATED_CALLBACKS].some((name) => block.content.includes(name)));
+  if (!hasCallback) return [];
+  const msgs = getMessages(locale2);
+  const boundPaths = collectBoundPaths(html, stateTagName, bindAttrName);
+  const out = [];
+  for (const block of blocks) {
+    const callback = analyzeCallableBodies(block.content).find((entry) => STATE_UPDATED_CALLBACKS.has(entry.name) && entry.kind === "method");
+    if (callback === void 0) continue;
+    if (block.mountPath !== null) continue;
+    const param = new RegExp(String.raw`^\s*\(\s*(${NAME})\s*[,)=]`).exec(block.content.slice(callback.end, callback.bodyStart))?.[1];
+    if (param === void 0) continue;
+    const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
+    const bound = boundPaths;
+    const body = blankComments(callback.body);
+    const reported = /* @__PURE__ */ new Set();
+    for (const test of findPathTests(body, param)) {
+      const path = test.path;
+      if (path.length === 0 || reported.has(path)) continue;
+      const under = (p) => p === path || p.startsWith(`${path}.`);
+      if (test.prefix ? [...bound].some(under) : bound.has(path)) continue;
+      let message;
+      if (test.prefix ? [...declared].some(under) : declared.has(path)) {
+        message = msgs.updatedCallbackUnbound(path);
+      } else {
+        const near = suggestion(path, [...declared, ...bound], msgs);
+        if (near === "") continue;
+        message = msgs.updatedCallbackUnknownPath(path) + near;
+      }
+      reported.add(path);
+      out.push({
+        code: WcsDiagnosticCode.UpdatedCallbackUnbound,
+        start: block.contentStart + callback.bodyStart + test.at,
+        end: block.contentStart + callback.bodyStart + test.at + path.length,
+        message,
+        severity: "warning"
+      });
+    }
+  }
+  return out;
+}
+function collectBoundPaths(html, stateTagName, bindAttrName) {
+  const bound = /* @__PURE__ */ new Set();
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occurrence of index.occurrences) {
+    bound.add(occurrence.path);
+    if (!occurrence.path.startsWith(".")) continue;
+    const forPath = getResolvedForListPath(html, occurrence.pathRange.start, bindAttrName);
+    if (forPath === null) continue;
+    bound.add(
+      occurrence.path === "." ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`
+    );
+  }
+  return bound;
+}
+var DOLLAR_DIGIT_NAME = /\$\d[\w$]*/g;
+var THIS_DOLLAR_DIGIT = /\bthis\s*\.\s*(\$\d[\w$]*)/g;
+var INDEX_READ_FILTER = { has: isOutOfRangeIndexRead };
+function validateIndexParamReads(script, scriptStart, locale2) {
+  if (!hasOutOfRangeIndexName(script)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  const push3 = (name, start, severity) => {
+    out.push({
+      code: WcsDiagnosticCode.IndexParamRange,
+      start: scriptStart + start,
+      end: scriptStart + start + name.length,
+      message: msgs.indexParamRange(name, MAX_INDEX_PARAM3),
+      severity
+    });
+  };
+  const reads = collectStateThisReads(script, INDEX_READ_FILTER);
+  if (reads !== null) {
+    for (const read of reads) push3(read.name, read.start, "error");
+    return out;
+  }
+  const scan = maskCommentsAndStrings(script);
+  THIS_DOLLAR_DIGIT.lastIndex = 0;
+  let match;
+  while ((match = THIS_DOLLAR_DIGIT.exec(scan)) !== null) {
+    const name = match[1];
+    if (isOutOfRangeIndexRead(name)) push3(name, match.index + match[0].length - name.length, "warning");
+  }
+  return out;
+}
+function hasOutOfRangeIndexName(script) {
+  DOLLAR_DIGIT_NAME.lastIndex = 0;
+  let match;
+  while ((match = DOLLAR_DIGIT_NAME.exec(script)) !== null) {
+    if (isOutOfRangeIndexRead(match[0])) return true;
+  }
+  return false;
+}
+function validateOnHandlerThis(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const first = findOwnThis(handler.text, handler.kind);
+    if (first === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.OnHandlerThis,
+      start: scriptStart + handler.start + first.start,
+      end: scriptStart + handler.start + first.end,
+      severity: "error",
+      message: msgs.onHandlerThis(handler.name)
+    });
+  }
+  return out;
+}
+function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrName = "data-wcs") {
+  const out = [];
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
+  let nestedWriteRoots = null;
+  const getNestedWriteRoots = () => nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks);
+  let bindingWrites = null;
+  const getBindingWrites = () => bindingWrites ??= collectBindingWrites(html, bindAttrName);
+  for (const block of blocks) {
+    out.push(...validateIndexArity(block.content, block.contentStart, locale2));
+    out.push(...validateNameAliases(block.content, block.contentStart, locale2, block.mountPath));
+    out.push(...validateIndexParamReads(block.content, block.contentStart, locale2));
+    out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
+    out.push(...validateGetterUntrackedReads(
+      block.content,
+      block.contentStart,
+      block.mountPath,
+      getNestedWriteRoots,
+      getBindingWrites,
+      locale2
+    ));
+    out.push(...validateGetterLocationReads(block.content, block.contentStart, locale2));
+    out.push(...validateGetterClockReads(block.content, block.contentStart, locale2));
+    out.push(...validateGetterAmbientReads(block.content, block.contentStart, locale2));
+    out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));
+    out.push(...validateInPlaceChanges(block.content, block.contentStart, locale2));
+  }
+  out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale2));
+  out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));
+  return out;
+}
+
+// src/service/outputPathValidator.ts
+var ASSIGNS_TRUE = /=\s*true\b/;
+function validateOutputPathWrites(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, fileReader) {
+  if (!ASSIGNS_TRUE.test(html)) return [];
+  if (!/<[a-z][\w.]*-/i.test(html)) return [];
+  const blocks = parseLoadedScriptBlocks(html, stateTagName).filter((block) => ASSIGNS_TRUE.test(block.content) && hasDefaultExportObject(block.content));
+  if (blocks.length === 0) return [];
+  const members = documentMemberBindings(html, bindAttribute, fileReader);
+  const outputs = /* @__PURE__ */ new Map();
+  for (const member of members) {
+    if (member.role === "output" && !member.path.includes("*") && !outputs.has(member.path)) outputs.set(member.path, member);
+  }
+  if (outputs.size === 0) return [];
+  const writes = [];
+  for (const block of blocks) {
+    const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
+    for (const body of stateBodies(block.content, block.mountPath === null)) {
+      if (!ASSIGNS_TRUE.test(body.text)) continue;
+      for (const read of collectGetterReads(body.text, { ...body.options, writes: true }) ?? []) {
+        if (read.form !== "write" || read.assignsTrue !== true || read.chain === null || read.chain.length !== 1) continue;
+        if (!outputs.has(prefix + read.path)) continue;
+        writes.push({ block, path: prefix + read.path, local: read.path, start: body.start + read.start, end: body.start + read.end });
+      }
+    }
+  }
+  if (writes.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const lookup = createContractLookup(html, fileReader);
+  const taken = takenPaths(html, bindAttribute, members, lookup);
+  const accessors = /* @__PURE__ */ new Map();
+  const out = [];
+  for (const write of writes) {
+    if (taken(write.path)) continue;
+    let computed = accessors.get(write.block);
+    if (computed === void 0) {
+      computed = new Set(analyzeStatePaths(write.block.content).filter((p) => p.kind === "computed").map((p) => p.path));
+      accessors.set(write.block, computed);
+    }
+    if (computed.has(write.local)) continue;
+    const binding = outputs.get(write.path);
+    out.push({
+      code: WcsDiagnosticCode.OutputPathWritten,
+      start: write.block.contentStart + write.start,
+      end: write.block.contentStart + write.end,
+      severity: "warning",
+      tag: binding.tag,
+      member: binding.member,
+      statePath: write.path,
+      message: msgs.outputPathWritten(write.path, binding.tag, binding.member, lookup(binding.tag)?.commands ?? [])
+    });
+  }
+  return out;
+}
+function takenPaths(html, bindAttribute, members, lookup) {
+  const taken = /* @__PURE__ */ new Set();
+  const unknownSpreads = [];
+  for (const member of members) if (member.role !== "output") taken.add(member.path);
+  const ignored = findIgnoredRanges(html, bindAttribute);
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    const custom = attr.tagName !== void 0 && attr.tagName.includes("-");
+    if (custom && lookup(attr.tagName) !== null) continue;
+    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
+    for (const binding of parseBindTextWithPositions(attr.value)) {
+      const parsed = binding.parsed;
+      if (parsed === null || parsed.statePathName.startsWith(".")) continue;
+      const path = parsed.statePathName;
+      if (custom) {
+        if (parsed.bindingType === "spread") unknownSpreads.push(path);
+        else if (parsed.bindingType === "prop" && parsed.propSegments.length === 1) taken.add(path);
+      } else if (parsed.bindingType === "radio" || parsed.bindingType === "checkbox" || parsed.bindingType === "prop") {
+        if (writesBack(attr, parsed.propName, `${parsed.propName}#${parsed.propModifiers.join(",")}`)) taken.add(path);
+      }
+    }
+  }
+  return (path) => taken.has(path) || unknownSpreads.some((spread) => path.startsWith(`${spread}.`) && !path.slice(spread.length + 1).includes("."));
+}
+function stateBodies(script, root) {
+  const out = [];
+  for (const callable of analyzeCallableBodies(script)) {
+    if (callable.kind === "getter" && callable.accessor !== "set") continue;
+    if (callable.listed !== void 0 && callable.listed.paths[0] !== callable.name) continue;
+    out.push({ text: callable.body, start: callable.bodyStart, options: { row: accessorRow(callable) } });
+  }
+  if (!root) return out;
+  for (const handler of analyzeWatchHandlerSources(script)) {
+    const body = handler.kind === "body" ? { text: handler.text, start: handler.start, param: null } : functionBody(handler, false);
+    if (body !== null) out.push({ text: body.text, start: body.start, options: {} });
+  }
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const body = handler.kind === "body" ? { text: handler.text, start: handler.start, param: onHandlerStateParam(script, handler) } : functionBody(handler, true);
+    if (body !== null && body.param !== null) out.push({ text: body.text, start: body.start, options: { stateParam: body.param } });
+  }
+  return out;
+}
+var FUNCTION_HEAD = /^\s*(?:async\s+)?function\b[^(]*\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*\{/;
+var ARROW_HEAD = /^\s*(?:async\s+)?(?:\(\s*([A-Za-z_$][\w$]*)?[^()]*\)|([A-Za-z_$][\w$]*))\s*=>\s*\{/;
+function functionBody(handler, arrows) {
+  const scan = maskCommentsAndStrings(handler.text);
+  const head = FUNCTION_HEAD.exec(scan) ?? (arrows ? ARROW_HEAD.exec(scan) : null);
+  const close = scan.trimEnd().length - 1;
+  if (head === null || scan[close] !== "}") return null;
+  const open = head[0].length;
+  return { text: handler.text.slice(open, close), start: handler.start + open, param: head[1] ?? head[2] ?? null };
 }
 
 // src/service/documentEnvValidator.ts
@@ -17449,10 +19414,10 @@ function collectPageLoads(scan, fileReader) {
     mapKeys: [],
     references: []
   };
-  const name = (text3, own2) => {
+  const name = (text3, own3) => {
     const pkgs = namedPackages(text3);
     for (const p of pkgs) loads.pkgs.add(p);
-    if (own2 && pkgs.length > 0) loads.own = true;
+    if (own3 && pkgs.length > 0) loads.own = true;
   };
   const locals = [];
   const specifiers = [];
@@ -17570,7 +19535,7 @@ function readLocalModules(entries, fileReader, loads) {
 
 // src/service/watchDeclarationValidator.ts
 var STATE_NAME_SEPARATOR = "@";
-function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fileReader) {
+function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fileReader, bindAttribute) {
   const msgs = getMessages(locale2);
   const out = [];
   const elements = parseWcsStateElements(html, stateTagName);
@@ -17593,7 +19558,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fi
       }
       const entries = analyzeWatchEntries(block.content);
       if (entries.length === 0) continue;
-      const own2 = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath));
+      const own3 = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath));
       let volumes = null;
       if (hasVolumes) {
         assignment ??= assignVolumes(elements, html);
@@ -17604,13 +19569,15 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fi
           resolvedVolumes.set(tree, volumes);
         }
       }
-      const paths = volumes !== null && volumes.volumePaths.length > 0 ? [...own2, ...volumes.volumePaths] : own2;
+      const paths = volumes !== null && volumes.volumePaths.length > 0 ? [...own3, ...volumes.volumePaths] : own3;
       const pathSet = new Set(paths.map((p) => p.path));
+      const opaque2 = [...opaquePathsOf(own3), ...volumes?.scopes.opaquePaths ?? []];
       const scopes = {
         mounts: volumes?.scopes.mounts ?? [],
         unresolvedMounts: volumes?.scopes.unresolvedMounts ?? NO_MOUNTS,
-        rootUnresolved: !scriptReadable(block.content, own2),
-        opaquePaths: [...opaquePathsOf(own2), ...volumes?.scopes.opaquePaths ?? []]
+        rootUnresolved: !scriptReadable(block.content, own3),
+        // (with the bind attribute: a slot an element's output writes — a key under it names what the element gives)
+        opaquePaths: bindAttribute === void 0 ? opaque2 : [...opaque2, ...openOutputSlots(html, bindAttribute, fileReader, paths, opaque2).map((slot) => slot.path)]
       };
       for (const entry of entries) {
         const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs);
@@ -17685,123 +19652,6 @@ function validateEntry(entry, pathSet, paths, scopes, msgs) {
   return null;
 }
 
-// src/service/scriptCallArgs.ts
-var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
-var TEMPLATE_NO_SUBST = /^\s*`((?:\\.|[^\\`$]|\$(?!\{))*)`\s*$/;
-function splitCallArgs(source, open) {
-  const args = [];
-  const starts = [];
-  let depth = 0;
-  let argStart = open;
-  let i = open;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      i++;
-      continue;
-    }
-    if (ch === ")" && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      return { args, starts, end: i + 1 };
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      i++;
-      continue;
-    }
-    if (ch === "," && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      argStart = i + 1;
-      i++;
-      continue;
-    }
-    i++;
-  }
-  return null;
-}
-function literalString2(arg) {
-  const match = STRING_LITERAL.exec(arg);
-  if (match !== null) return match[2];
-  const template = TEMPLATE_NO_SUBST.exec(arg);
-  return template === null ? null : template[1];
-}
-function literalArrayLength(arg) {
-  const trimmed = arg.trim();
-  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
-  const inner = trimmed.slice(1, -1);
-  if (inner.trim().length === 0) return 0;
-  if (/(^|[^.])\.\.\./.test(inner)) return null;
-  const parts = splitCallArgs(`${inner})`, 0);
-  if (parts === null) return null;
-  return parts.args.filter((part) => part.trim().length > 0).length;
-}
-function blankComments(source) {
-  const out = source.split("");
-  let i = 0;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "/") {
-      while (i < source.length && source[i] !== "\n") {
-        out[i] = " ";
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "*") {
-      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
-        out[i] = " ";
-        i++;
-      }
-      if (i < source.length) {
-        out[i] = " ";
-        out[i + 1] = " ";
-        i += 2;
-      }
-      continue;
-    }
-    i++;
-  }
-  return out.join("");
-}
-function createApiCallRegex(apis) {
-  return new RegExp(`\\.\\s*\\$(${apis.join("|")})\\s*\\(`, "g");
-}
-
 // src/service/scanDeclarationValidator.ts
 var SCAN_KEY = "$scan";
 var SCAN_DECLARATION = /(^|[{,;\s])\$scan(?=\s*(?:[:(]|=(?!=)))/g;
@@ -17856,7 +19706,7 @@ var UNSUPPORTED_API_SITE = {
   $trackDependency: "trackDependency"
 };
 var BRACKET_ASSIGNMENT = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, "g");
-var PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
+var PRE_BRACKET_INCDEC2 = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
 function validateRecursion(html, stateTagName = "wcs-state", locale2) {
   const msgs = getMessages(locale2);
   const out = [];
@@ -17882,12 +19732,12 @@ function validateRecursion(html, stateTagName = "wcs-state", locale2) {
   }
   return out;
 }
-function push(out, code, start, end, message, severity = "error") {
+function push2(out, code, start, end, message, severity = "error") {
   out.push({ code, start, end, message, severity });
 }
 function validateVolumeBlock(script, offset2, mountPath, declaration, msgs, out) {
   if (declaration !== null) {
-    push(
+    push2(
       out,
       WcsDiagnosticCode.RecursionDeclarationInvalid,
       offset2 + declaration.start,
@@ -17899,7 +19749,7 @@ function validateVolumeBlock(script, offset2, mountPath, declaration, msgs, out)
   for (const span of analyzeDeclarationSpans(script)) {
     if (!hasRecursionWildcard(span.name) || seen2.has(span.name)) continue;
     seen2.add(span.name);
-    push(
+    push2(
       out,
       WcsDiagnosticCode.RecursionDeclarationInvalid,
       offset2 + span.start,
@@ -17912,12 +19762,12 @@ function validateDeclaration(declaration, offset2, msgs, out) {
   if (declaration === null) return null;
   const code = WcsDiagnosticCode.RecursionDeclarationInvalid;
   if (declaration.notObject) {
-    push(out, code, offset2 + declaration.start, offset2 + declaration.end, msgs.recursionNotObject());
+    push2(out, code, offset2 + declaration.start, offset2 + declaration.end, msgs.recursionNotObject());
     return null;
   }
   if (declaration.entries.length !== 1) {
     if (!declaration.objectLiteral) return null;
-    push(
+    push2(
       out,
       code,
       offset2 + declaration.start,
@@ -17929,7 +19779,7 @@ function validateDeclaration(declaration, offset2, msgs, out) {
   const entry = declaration.entries[0];
   const anchorProblem = checkNodePath(entry.anchor);
   if (anchorProblem !== null) {
-    push(
+    push2(
       out,
       code,
       offset2 + entry.start,
@@ -17940,7 +19790,7 @@ function validateDeclaration(declaration, offset2, msgs, out) {
   }
   if (entry.repeat === null) {
     if (entry.repeatDefinitelyNotString) {
-      push(
+      push2(
         out,
         code,
         offset2 + entry.valueStart,
@@ -17952,7 +19802,7 @@ function validateDeclaration(declaration, offset2, msgs, out) {
   }
   const repeatProblem = checkNodePath(entry.repeat);
   if (repeatProblem !== null) {
-    push(
+    push2(
       out,
       code,
       offset2 + entry.valueStart,
@@ -17977,7 +19827,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
     const end = offset2 + span.end;
     if (spec === null) {
       if (undeclared) {
-        push(
+        push2(
           out,
           WcsDiagnosticCode.RecursionUnsupported,
           start,
@@ -17989,7 +19839,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
       continue;
     }
     if (span.kind !== "getter") {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionDeclarationInvalid,
         start,
@@ -17999,7 +19849,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
       continue;
     }
     if (setterNames.has(span.name)) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionDeclarationInvalid,
         start,
@@ -18010,7 +19860,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
     }
     const suffix = splitRecursivePath(spec, span.name);
     if (suffix === null) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionAnchor,
         start,
@@ -18020,7 +19870,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
       continue;
     }
     if (suffix.length === 0) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionDeclarationInvalid,
         start,
@@ -18030,7 +19880,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
       continue;
     }
     if (structuralWriteTarget(spec, foldSuffixIndexes(suffix)) !== null) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionDeclarationInvalid,
         start,
@@ -18041,7 +19891,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
     }
     const collision = accepted.find((other) => sameFamily(spec, other.suffix, suffix));
     if (collision !== void 0) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionDeclarationInvalid,
         start,
@@ -18060,7 +19910,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
       const suffix = concreteExpansionSuffix(spec, suffixes, span.name);
       if (suffix === null) continue;
       reported.add(span.name);
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionDeclarationInvalid,
         offset2 + span.start,
@@ -18074,7 +19924,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
 function validateListKeys(script, offset2, msgs, out) {
   for (const entry of analyzeListKeyEntries(script)) {
     if (!hasRecursionWildcard(entry.key)) continue;
-    push(
+    push2(
       out,
       WcsDiagnosticCode.RecursionUnsupported,
       offset2 + entry.start,
@@ -18104,7 +19954,7 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
       if (writes && spec !== null) {
         const owning = owningGetterSuffix(spec, getterSuffixes, path);
         if (owning !== null) {
-          push(
+          push2(
             out,
             WcsDiagnosticCode.RecursionReadonly,
             start,
@@ -18116,7 +19966,7 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
       continue;
     }
     if (api in UNSUPPORTED_API_SITE) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionUnsupported,
         start,
@@ -18127,13 +19977,13 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
     }
     if (spec === null) {
       if (undeclared) {
-        push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, "undeclared"));
+        push2(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, "undeclared"));
       }
       continue;
     }
     const suffix = splitRecursivePath(spec, path);
     if (suffix === null) {
-      push(out, WcsDiagnosticCode.RecursionAnchor, start, end, msgs.recursionAnchorMismatch(path, spec.recursiveAnchor));
+      push2(out, WcsDiagnosticCode.RecursionAnchor, start, end, msgs.recursionAnchorMismatch(path, spec.recursiveAnchor));
       continue;
     }
     if (api === "$getAll") {
@@ -18141,9 +19991,9 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
         const indexesArg = parsed.args[1];
         const indexes = literalArrayLength(indexesArg);
         if (indexes !== null && indexes > 0) {
-          push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, "prefix"));
+          push2(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, "prefix"));
         } else if (indexes === null && isDefiniteNonArrayLiteral(indexesArg)) {
-          push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, "notArray"));
+          push2(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, "notArray"));
         }
       }
       continue;
@@ -18155,26 +20005,26 @@ function validateSetAllForm(path, suffix, args, spec, getterSuffixes, start, end
   const formCode = WcsDiagnosticCode.RecursionSetAllForm;
   const indexesArg = args.length > 1 ? args[1].trim() : "";
   if (args.length < 2 || indexesArg === "undefined" || indexesArg === "null") {
-    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "noIndexes"));
+    push2(out, formCode, start, end, msgs.recursionSetAllForm(path, "noIndexes"));
     return;
   }
   const indexes = literalArrayLength(args[1]);
   if (indexes !== null && indexes > 0) {
-    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "prefix"));
+    push2(out, formCode, start, end, msgs.recursionSetAllForm(path, "prefix"));
     return;
   }
   if (args.length > 2 && isFunctionLiteral(args[2])) {
-    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "mapper"));
+    push2(out, formCode, start, end, msgs.recursionSetAllForm(path, "mapper"));
     return;
   }
   if (args.length > 3 && /\bspread\s*:\s*true\b/.test(args[3])) {
-    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "spread"));
+    push2(out, formCode, start, end, msgs.recursionSetAllForm(path, "spread"));
     return;
   }
   const checkedSuffix = foldSuffixIndexes(suffix);
   const structural = structuralWriteTarget(spec, checkedSuffix);
   if (structural !== null) {
-    push(
+    push2(
       out,
       WcsDiagnosticCode.RecursionStructuralWrite,
       start,
@@ -18185,7 +20035,7 @@ function validateSetAllForm(path, suffix, args, spec, getterSuffixes, start, end
   }
   const conflicting = conflictingGetterSuffix(spec, getterSuffixes, checkedSuffix);
   if (conflicting !== null) {
-    push(
+    push2(
       out,
       WcsDiagnosticCode.RecursionReadonly,
       start,
@@ -18197,7 +20047,7 @@ function validateSetAllForm(path, suffix, args, spec, getterSuffixes, start, end
 function validateAssignments(script, offset2, spec, getterSuffixes, msgs, out) {
   const masked = maskCommentsAndStrings(script);
   const found = [];
-  for (const source of [BRACKET_ASSIGNMENT, PRE_BRACKET_INCDEC]) {
+  for (const source of [BRACKET_ASSIGNMENT, PRE_BRACKET_INCDEC2]) {
     const regex = new RegExp(source.source, "g");
     let match;
     while ((match = regex.exec(masked)) !== null) {
@@ -18214,13 +20064,13 @@ function validateAssignments(script, offset2, spec, getterSuffixes, msgs, out) {
     const start = offset2 + pathStart;
     const end = start + path.length;
     if (hasRecursionWildcard(path)) {
-      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, "assignment"));
+      push2(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, "assignment"));
       continue;
     }
     if (spec === null) continue;
     const owning = owningGetterSuffix(spec, getterSuffixes, path);
     if (owning !== null) {
-      push(
+      push2(
         out,
         WcsDiagnosticCode.RecursionReadonly,
         start,
@@ -18238,206 +20088,6 @@ function isFunctionLiteral(arg) {
   const trimmed = arg.trim();
   if (trimmed.length === 0) return false;
   return /^(?:async\s+)?function\b/.test(trimmed) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(trimmed) || /^(?:async\s+)?[$\w]+\s*=>/.test(trimmed);
-}
-
-// src/service/configDeclarationValidator.ts
-var manifest = getWcsManifest();
-var BEHAVIOR_OPTIONS = manifest.behaviorOptions;
-var BEHAVIOR_KEYS = Object.freeze(Object.keys(BEHAVIOR_OPTIONS));
-var FEATURE_NAMES2 = Object.freeze([...manifest.features]);
-var BEHAVIOR_KEY = "$behavior";
-var FEATURES_KEY = "$features";
-function validateConfigDeclarations(html, stateTagName = "wcs-state", locale2) {
-  const msgs = getMessages(locale2);
-  const out = [];
-  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
-    if (!block.content.includes(BEHAVIOR_KEY) && !block.content.includes(FEATURES_KEY)) continue;
-    validateBehavior(block, msgs, out);
-    validateFeatures(block, msgs, out);
-  }
-  validateFeaturesAttributes(html, stateTagName, msgs, out);
-  return out;
-}
-function push2(out, code, start, end, message, severity = "error") {
-  out.push({ code, start, end, message, severity });
-}
-function validateBehavior(block, msgs, out) {
-  const decl = findTopLevelDeclaration(block.content, BEHAVIOR_KEY);
-  if (decl === null) return;
-  const base = block.contentStart;
-  if (block.mountPath !== null) {
-    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
-    push2(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.configInVolume(BEHAVIOR_KEY, block.mountPath));
-    return;
-  }
-  if (decl.kind === "method") {
-    push2(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
-    return;
-  }
-  if (decl.value === void 0) return;
-  const kind = literalKind(decl.value);
-  if (kind === "string" || kind === "number" || kind === "boolean" || kind === "function" || kind === "null" || kind === "array") {
-    push2(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
-    return;
-  }
-  if (kind !== "object") return;
-  for (const entry of analyzeDeclarationEntries(block.content, BEHAVIOR_KEY)) {
-    if (!BEHAVIOR_KEYS.includes(entry.name)) {
-      push2(
-        out,
-        WcsDiagnosticCode.BehaviorInvalid,
-        base + entry.start,
-        base + entry.end,
-        msgs.behaviorKeyUnknown(entry.name, BEHAVIOR_KEYS, suggestion(entry.name, BEHAVIOR_KEYS, msgs))
-      );
-      continue;
-    }
-    const type = BEHAVIOR_OPTIONS[entry.name].type;
-    if (entry.kind === "method") {
-      push2(out, WcsDiagnosticCode.BehaviorInvalid, base + entry.start, base + entry.end, msgs.behaviorValueType(entry.name, type));
-      continue;
-    }
-    if (entry.value === void 0 || entry.valueStart === void 0) continue;
-    const valueKind = literalKind(entry.value);
-    if (valueKind !== type && valueKind !== "unknown") {
-      const blanked = blankComments(entry.value);
-      const lead = blanked.length - blanked.trimStart().length;
-      const start = base + entry.valueStart + lead;
-      push2(out, WcsDiagnosticCode.BehaviorInvalid, start, start + blanked.trim().length, msgs.behaviorValueType(entry.name, type));
-    }
-  }
-}
-function validateFeatures(block, msgs, out) {
-  const decl = findTopLevelDeclaration(block.content, FEATURES_KEY);
-  if (decl === null) return;
-  const base = block.contentStart;
-  if (block.mountPath !== null) {
-    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
-    push2(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.configInVolume(FEATURES_KEY, block.mountPath));
-    return;
-  }
-  if (decl.kind === "method") {
-    push2(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
-    return;
-  }
-  if (decl.value === void 0 || decl.valueStart === void 0) return;
-  const kind = literalKind(decl.value);
-  if (kind !== "array") {
-    if (kind !== "unknown" && kind !== "undefined") {
-      push2(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
-    }
-    return;
-  }
-  for (const element2 of arrayElements(blankComments(decl.value))) {
-    const elementKind = literalKind(element2.text);
-    const start = base + decl.valueStart + element2.start;
-    if (elementKind === "string") {
-      const name = element2.text.slice(1, -1);
-      if (!FEATURE_NAMES2.includes(name)) {
-        push2(
-          out,
-          WcsDiagnosticCode.FeatureUnknown,
-          start + 1,
-          start + 1 + name.length,
-          msgs.featureUnknown(name, FEATURE_NAMES2, suggestion(name, FEATURE_NAMES2, msgs))
-        );
-      }
-    } else if (elementKind !== "unknown") {
-      push2(out, WcsDiagnosticCode.FeatureUnknown, start, start + element2.text.length, msgs.featureUnknown(element2.text, FEATURE_NAMES2, ""));
-    }
-  }
-}
-function validateFeaturesAttributes(html, stateTagName, msgs, out) {
-  if (!html.includes("features")) return;
-  let rootSeen = false;
-  const insideTemplate = createTemplateTester(html);
-  for (const element2 of parseWcsStateElements(html, stateTagName)) {
-    const candidate = element2.mountPath === null && !element2.bindComponent && !insideTemplate(element2.tagStart);
-    const isRoot = candidate && !rootSeen;
-    if (candidate) rootSeen = true;
-    const tagText = html.slice(element2.tagStart, element2.tagEnd);
-    const match = /(?:^|\s)(features)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?(?=[\s/>]|$)/id.exec(tagText);
-    if (match === null) continue;
-    const nameSpan = match.indices[1];
-    if (!isRoot) {
-      push2(
-        out,
-        WcsDiagnosticCode.FeaturesInvalid,
-        element2.tagStart + nameSpan[0],
-        element2.tagStart + nameSpan[1],
-        msgs.featuresAttrNotRoot(),
-        "warning"
-      );
-      continue;
-    }
-    const group = match[2] !== void 0 ? 2 : match[3] !== void 0 ? 3 : match[4] !== void 0 ? 4 : 0;
-    if (group === 0) continue;
-    const valueStart = element2.tagStart + match.indices[group][0];
-    const value = match[group];
-    const token = /\S+/g;
-    let t;
-    while ((t = token.exec(value)) !== null) {
-      if (FEATURE_NAMES2.includes(t[0])) continue;
-      push2(
-        out,
-        WcsDiagnosticCode.FeatureUnknown,
-        valueStart + t.index,
-        valueStart + t.index + t[0].length,
-        msgs.featureUnknown(t[0], FEATURE_NAMES2, suggestion(t[0], FEATURE_NAMES2, msgs))
-      );
-    }
-  }
-}
-function literalKind(value) {
-  const text3 = blankComments(value).trim();
-  const scan = maskCommentsAndStrings(text3).trim();
-  if (/^(["'])[^"']*\1$/.test(scan)) return "string";
-  if (/^`[^`]*`$/.test(scan)) return text3.includes("${") ? "unknown" : "string";
-  if (/^-?(?:\d[\w.]*|\.\d[\w]*)$/.test(scan)) return "number";
-  if (/^(?:true|false)$/.test(scan)) return "boolean";
-  if (scan === "null") return "null";
-  if (scan === "undefined") return "undefined";
-  if (/^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(scan)) return "function";
-  if (isWholeBracket(scan, "[", "]")) return "array";
-  if (isWholeBracket(scan, "{", "}")) return "object";
-  return "unknown";
-}
-function isWholeBracket(scan, open, close) {
-  if (scan[0] !== open || scan[scan.length - 1] !== close) return false;
-  let depth = 0;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      if (depth === 0) return i === scan.length - 1;
-    }
-  }
-  return false;
-}
-function arrayElements(value) {
-  const scan = maskCommentsAndStrings(value);
-  const open = scan.indexOf("[");
-  const close = scan.lastIndexOf("]");
-  const out = [];
-  let depth = 0;
-  let from = open + 1;
-  const take = (end) => {
-    const raw = value.slice(from, end);
-    const text3 = raw.trim();
-    if (text3.length > 0) out.push({ text: text3, start: from + (raw.length - raw.trimStart().length) });
-  };
-  for (let i = open + 1; i < close; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (ch === "," && depth === 0) {
-      take(i);
-      from = i + 1;
-    }
-  }
-  take(close);
-  return out;
 }
 
 // src/service/namedStateValidator.ts
@@ -18655,809 +20305,6 @@ function validateBindComponentSource(html, tagStart, tagEnd, hasInlineScript, ms
   });
 }
 
-// src/core/index/referenceIndex.ts
-function buildReferenceIndex(html, options = {}) {
-  clearParserCaches();
-  const bindAttribute = options.bindAttribute ?? "data-wcs";
-  const stateTagName = options.stateTagName ?? "wcs-state";
-  const occurrences = [];
-  const problems = [];
-  for (const attr of findAllBindAttributes(html, bindAttribute)) {
-    for (const binding of parseBindTextWithPositions(attr.value)) {
-      const lift = (range) => ({ start: attr.valueStart + range.start, end: attr.valueStart + range.end });
-      if (binding.parsed === null) {
-        problems.push({ message: binding.error ?? "parse error", range: lift(binding.exprRange) });
-        continue;
-      }
-      if (binding.pathRange === null) continue;
-      occurrences.push({
-        source: "attribute",
-        kind: binding.parsed.propSegments[0] === "eventToken" ? "eventToken" : "path",
-        path: binding.parsed.statePathName,
-        pathRange: lift(binding.pathRange),
-        exprRange: lift(binding.exprRange),
-        propName: binding.parsed.propName,
-        propRange: binding.propRange === null ? null : lift(binding.propRange),
-        bindingType: binding.parsed.bindingType
-      });
-    }
-  }
-  const textMatches = [
-    ...findAllMustacheSyntax(html),
-    ...findAllCommentBindings(html)
-  ];
-  for (const match of textMatches) {
-    const binding = parseEmbeddedTextWithPositions(match.expression);
-    const shift = (range) => ({
-      start: match.exprStart + range.start,
-      end: match.exprStart + range.end
-    });
-    if (binding.parsed === null) {
-      problems.push({ message: binding.error ?? "parse error", range: shift(binding.exprRange) });
-      continue;
-    }
-    if (binding.pathRange === null) continue;
-    occurrences.push({
-      source: match.kind,
-      kind: "path",
-      path: binding.parsed.statePathName,
-      pathRange: shift(binding.pathRange),
-      exprRange: { start: match.exprStart, end: match.exprEnd },
-      propName: null,
-      propRange: null,
-      bindingType: "text"
-    });
-  }
-  const declarations = [];
-  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
-    const prefix = block.mountPath === null ? "" : block.mountPath + ".";
-    for (const span of analyzeDeclarationSpans(block.content)) {
-      if (prefix !== "" && span.name.startsWith("$")) continue;
-      declarations.push({
-        name: prefix + span.name,
-        kind: span.kind,
-        range: { start: block.contentStart + span.start, end: block.contentStart + span.end }
-      });
-    }
-  }
-  const byPath = /* @__PURE__ */ new Map();
-  for (const occurrence of occurrences) {
-    if (occurrence.kind !== "path") continue;
-    const key = occurrence.path;
-    const list = byPath.get(key);
-    if (list === void 0) {
-      byPath.set(key, [occurrence]);
-    } else {
-      list.push(occurrence);
-    }
-  }
-  const declarationByName = /* @__PURE__ */ new Map();
-  for (const declaration of declarations) {
-    const key = declaration.name;
-    if (!declarationByName.has(key)) declarationByName.set(key, declaration);
-  }
-  return {
-    occurrences,
-    declarations,
-    problems,
-    referencesOf(path) {
-      return (byPath.get(path) ?? []).slice();
-    },
-    declarationOf(path) {
-      const exact = declarationByName.get(path);
-      if (exact !== void 0) return exact;
-      const firstSegment = path.split(".")[0];
-      if (firstSegment === path) return null;
-      return declarationByName.get(firstSegment) ?? null;
-    },
-    occurrenceAt(offset2) {
-      for (const occurrence of occurrences) {
-        if (offset2 >= occurrence.pathRange.start && offset2 < occurrence.pathRange.end) {
-          return occurrence;
-        }
-      }
-      return null;
-    }
-  };
-}
-
-// src/service/semanticValidator.ts
-var STATE_UPDATED_CALLBACKS = /* @__PURE__ */ new Set(["$renderedCallback"]);
-var OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
-var OLD_DECLARATION_MEMBER = /\.\s*(\$streams|\$updatedCallback)\b/g;
-var OLD_DECLARATION_MEMBER_NAMES = new Set(Object.keys(REMOVED_DECLARATION_KEYS));
-var OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]|=(?!=)))/g;
-function collectDeclarationAliasReads(script) {
-  return collectStateThisReads(script, OLD_DECLARATION_MEMBER_NAMES);
-}
-function collectStateThisReads(script, names2) {
-  if (!hasDefaultExportObject(script)) return null;
-  const out = [];
-  const take = (refs, base) => {
-    if (refs === null) return false;
-    for (const ref2 of refs) out.push({ name: ref2.name, start: base + ref2.start });
-    return true;
-  };
-  for (const callable of analyzeCallableBodies(script)) {
-    if (!take(collectThisMemberRefs(callable.body, names2), callable.bodyStart)) return null;
-  }
-  for (const handler of analyzeWatchHandlerSources(script)) {
-    const refs = handler.kind === "body" ? collectThisMemberRefs(handler.text, names2) : collectThisMemberRefsInValue(handler.text, names2);
-    if (!take(refs, handler.start)) return null;
-  }
-  out.sort((a, b) => a.start - b.start);
-  return out;
-}
-function validateNameAliases(script, scriptStart, locale2, mountPath = null) {
-  const msgs = getMessages(locale2);
-  const scan = maskCommentsAndStrings(script);
-  const out = [];
-  const pushDeclaration = (name, start, end, severity) => {
-    const canonical = removedDeclarationReplacement(name);
-    if (canonical === null) return;
-    out.push({
-      code: WcsDiagnosticCode.DeclarationAlias,
-      start: scriptStart + start,
-      end: scriptStart + end,
-      // ボリュームは読み込み（#1601）を通らない — ランタイムは接ぎ木を拒んで console.error で報告する
-      message: mountPath === null ? msgs.declarationAlias(name, canonical) : msgs.declarationAliasInVolume(name, canonical, mountPath),
-      severity
-    });
-  };
-  const pushRead = (name, offset2, severity) => {
-    const canonical = removedDeclarationReplacement(name);
-    if (canonical === null) return;
-    out.push({
-      code: WcsDiagnosticCode.DeclarationAliasRead,
-      start: scriptStart + offset2,
-      end: scriptStart + offset2 + name.length,
-      message: msgs.declarationAliasRead(name, canonical),
-      severity
-    });
-  };
-  OLD_API_CALL.lastIndex = 0;
-  let match;
-  while ((match = OLD_API_CALL.exec(scan)) !== null) {
-    const written = match[1];
-    const canonical = removedApiReplacement(written);
-    if (canonical === null) continue;
-    const offset2 = match.index + match[0].length - written.length;
-    out.push({
-      code: WcsDiagnosticCode.NameAlias,
-      start: scriptStart + offset2,
-      end: scriptStart + offset2 + written.length,
-      message: msgs.nameAlias(written, canonical),
-      severity: "error"
-    });
-  }
-  const astReads = collectDeclarationAliasReads(script);
-  if (astReads !== null) {
-    for (const read of astReads) pushRead(read.name, read.start, "warning");
-  } else {
-    OLD_DECLARATION_MEMBER.lastIndex = 0;
-    while ((match = OLD_DECLARATION_MEMBER.exec(scan)) !== null) {
-      const written = match[1];
-      pushRead(written, match.index + match[0].length - written.length, "info");
-    }
-  }
-  const spans = analyzeDeclarationSpans(script);
-  if (spans.length === 0) {
-    OLD_DECLARATION_KEY.lastIndex = 0;
-    while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
-      const at2 = match.index + match[1].length;
-      pushDeclaration(match[2], at2, at2 + match[2].length, "warning");
-    }
-    return out;
-  }
-  for (const span of spans) pushDeclaration(span.name, span.start, span.end, "error");
-  return out;
-}
-var API_CALL = /\.\s*\$(getAll|setAll|resolve|update)\s*\(/g;
-function validateIndexArity(script, scriptStart, locale2) {
-  const msgs = getMessages(locale2);
-  const out = [];
-  const scan = maskCommentsAndStrings(script);
-  API_CALL.lastIndex = 0;
-  let match;
-  while ((match = API_CALL.exec(scan)) !== null) {
-    const api = `$${match[1]}`;
-    const parsed = splitCallArgs(script, match.index + match[0].length);
-    if (parsed === null) continue;
-    API_CALL.lastIndex = parsed.end;
-    if (parsed.args.length < 2) continue;
-    const path = literalString2(parsed.args[0]);
-    if (path === null) continue;
-    if (path.startsWith(".")) continue;
-    if (hasRecursionWildcard(path)) continue;
-    const actual = literalArrayLength(parsed.args[1]);
-    if (actual === null) continue;
-    const wildcardCount = countWildcardSegments(path);
-    const requirement = api === "$resolve" || api === "$update" ? "exact" : "atMost";
-    const mismatched = requirement === "exact" ? actual !== wildcardCount : actual > wildcardCount;
-    if (!mismatched) continue;
-    const argText = parsed.args[1];
-    const leading = argText.length - argText.trimStart().length;
-    out.push({
-      code: WcsDiagnosticCode.IndexArity,
-      start: scriptStart + parsed.starts[1] + leading,
-      end: scriptStart + parsed.starts[1] + argText.trimEnd().length,
-      message: msgs.indexArity(api, path, requirement, wildcardCount, actual),
-      severity: "error"
-    });
-  }
-  return out;
-}
-function validateGetterCycles(script, scriptStart, locale2) {
-  const msgs = getMessages(locale2);
-  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter");
-  if (getters.length === 0) return [];
-  const declared = new Set(getters.map((getter) => getter.name));
-  const edges = /* @__PURE__ */ new Map();
-  for (const getter of getters) {
-    if (getter.accessor === "set") continue;
-    const targets = /* @__PURE__ */ new Set();
-    for (const read of collectGetterReads(getter.body, { row: accessorRow(getter) }) ?? []) {
-      if (declared.has(read.path)) targets.add(read.path);
-    }
-    edges.set(getter.name, [...targets]);
-  }
-  const gray = /* @__PURE__ */ new Set();
-  const black = /* @__PURE__ */ new Set();
-  const stack = [];
-  const cyclesByEntry = /* @__PURE__ */ new Map();
-  const visit2 = (name) => {
-    if (black.has(name)) return;
-    if (gray.has(name)) {
-      const from = stack.indexOf(name);
-      const cycle = stack.slice(from).concat(name).join(" -> ");
-      for (const member of stack.slice(from)) {
-        if (!cyclesByEntry.has(member)) cyclesByEntry.set(member, cycle);
-      }
-      return;
-    }
-    gray.add(name);
-    stack.push(name);
-    for (const next of edges.get(name) ?? []) {
-      visit2(next);
-    }
-    stack.pop();
-    gray.delete(name);
-    black.add(name);
-  };
-  for (const getter of getters) {
-    visit2(getter.name);
-  }
-  if (cyclesByEntry.size === 0) return [];
-  const out = [];
-  for (const getter of getters) {
-    if (getter.accessor === "set") continue;
-    const cycle = cyclesByEntry.get(getter.name);
-    if (cycle === void 0) continue;
-    out.push({
-      code: WcsDiagnosticCode.GetterCycle,
-      start: scriptStart + getter.start,
-      end: scriptStart + getter.end,
-      message: msgs.getterCycle(cycle),
-      severity: "error"
-    });
-  }
-  return out;
-}
-function validateGetterUntrackedReads(script, scriptStart, mountPath, nestedWriteRoots, bindingWrites, locale2) {
-  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter" && entry.accessor === "get");
-  if (getters.length === 0) return [];
-  const objectRoots = /* @__PURE__ */ new Set();
-  for (const candidate of analyzeStatePaths(script)) {
-    if (candidate.kind === "data" && candidate.rawInitial !== void 0 && isObjectLiteral(candidate.rawInitial)) {
-      objectRoots.add(candidate.path);
-    }
-  }
-  if (objectRoots.size === 0) return [];
-  const msgs = getMessages(locale2);
-  const out = [];
-  for (const getter of getters) {
-    for (const read of collectGetterReads(getter.body) ?? []) {
-      if (read.form !== "member" && read.form !== "destructure" || read.chain === null) continue;
-      if (read.written) continue;
-      const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
-      if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
-      const prefix = mountPath === null ? [] : mountPath.split(".");
-      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split(".").length, bindingWrites());
-      if (write === void 0 && !nestedWriteRoots().has([...prefix, segments[0]].join("."))) continue;
-      const sp = segments.join(".");
-      out.push({
-        code: WcsDiagnosticCode.GetterUntrackedRead,
-        start: scriptStart + getter.bodyStart + read.start,
-        end: scriptStart + getter.bodyStart + read.end,
-        message: write === void 0 ? msgs.getterUntrackedRead(segments[0], sp) : msgs.getterUntrackedReadBound(segments[0], sp, write.binding, write.tag, write.path),
-        severity: write === void 0 ? "warning" : "error"
-      });
-    }
-  }
-  return out;
-}
-function boundWriteOf(segments, tracked, writes) {
-  return writes.find((write) => {
-    const written = write.path.split(".");
-    if (written.length <= tracked || written.length > segments.length) return false;
-    return written.every((s, i) => s === segments[i] || s === "*" && /^\d+$/.test(segments[i]));
-  });
-}
-function collectBindingWrites(html, bindAttrName) {
-  const out = [];
-  const ignored = findIgnoredRanges(html, bindAttrName);
-  for (const attr of findAllBindAttributes(html, bindAttrName)) {
-    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
-    const tag = attr.tagName ?? "";
-    const contract = BUILTIN_TAGS[tag];
-    const outputs = contract?.hasWcBindable === true ? contract.properties : null;
-    const bindings = parseBindTextWithPositions(attr.value);
-    bindings.forEach((binding, index) => {
-      const parsed = binding.parsed;
-      if (parsed === null || binding.pathRange === null) return;
-      let path = parsed.statePathName;
-      if (path.startsWith(".")) {
-        const at2 = attr.valueStart + binding.pathRange.start;
-        const list = getRowShorthandForPath(html, at2, bindAttrName) === null ? null : getResolvedForListPath(html, at2, bindAttrName);
-        if (list === null) return;
-        path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
-      }
-      const write = (written) => {
-        out.push({ path: written, binding: binding.exprText, tag });
-      };
-      if (parsed.bindingType === "spread") {
-        if (outputs === null) return;
-        const later = new Set(bindings.slice(index + 1).flatMap((b) => b.parsed?.bindingType === "prop" ? [b.parsed.propName] : []));
-        for (const output of outputs) if (!later.has(output)) write(`${path}.${output}`);
-        return;
-      }
-      if (parsed.propModifiers.includes("ro")) return;
-      if (parsed.bindingType === "radio" || parsed.bindingType === "checkbox") {
-        write(path);
-      } else if (parsed.bindingType === "prop" && (writesBack(attr, parsed.propName, parsed.propName) || outputs?.includes(parsed.propName) === true)) {
-        write(path);
-      }
-    });
-  }
-  return out;
-}
-function validateGetterLocationReads(script, scriptStart, locale2) {
-  if (!script.includes("location")) return [];
-  const msgs = getMessages(locale2);
-  const out = [];
-  for (const getter of analyzeCallableBodies(script)) {
-    if (getter.kind !== "getter" || getter.accessor !== "get" || !getter.body.includes("location")) continue;
-    const read = findLocationRead(getter.body);
-    if (read === null) continue;
-    out.push({
-      code: WcsDiagnosticCode.GetterUntrackedRead,
-      start: scriptStart + getter.bodyStart + read.start,
-      end: scriptStart + getter.bodyStart + read.end,
-      message: msgs.getterReadsLocation(read.text),
-      severity: "warning"
-    });
-  }
-  return out;
-}
-var CLOCK_READ = /\bDate\s*\.\s*now\s*\(|\bnew\s+Date\s*\(\s*\)|\bperformance\s*\.\s*now\s*\(/;
-function validateGetterClockReads(script, scriptStart, locale2) {
-  if (!/Date|performance/.test(script)) return [];
-  const msgs = getMessages(locale2);
-  const out = [];
-  for (const getter of analyzeCallableBodies(script)) {
-    if (getter.kind !== "getter" || getter.accessor !== "get") continue;
-    const read = CLOCK_READ.exec(maskCommentsAndStrings(getter.body));
-    if (read === null) continue;
-    const text3 = read[0].startsWith("new") ? "new Date()" : read[0].startsWith("performance") ? "performance.now()" : "Date.now()";
-    out.push({
-      code: WcsDiagnosticCode.GetterUntrackedRead,
-      start: scriptStart + getter.bodyStart + read.index,
-      end: scriptStart + getter.bodyStart + read.index + read[0].length,
-      message: msgs.getterReadsClock(text3),
-      severity: "warning"
-    });
-  }
-  return out;
-}
-function validateGetterAmbientReads(script, scriptStart, locale2) {
-  if (!AMBIENT_READ_SPELLING.test(script)) return [];
-  const msgs = getMessages(locale2);
-  const out = [];
-  let moduleNames = null;
-  for (const getter of analyzeCallableBodies(script)) {
-    if (getter.kind !== "getter" || getter.accessor !== "get" || !AMBIENT_READ_SPELLING.test(getter.body)) continue;
-    const read = findAmbientRead(getter.body, moduleNames ??= moduleBindingNames(script));
-    if (read === null) continue;
-    out.push({
-      code: WcsDiagnosticCode.GetterUntrackedRead,
-      start: scriptStart + getter.bodyStart + read.start,
-      end: scriptStart + getter.bodyStart + read.end,
-      message: msgs.getterReadsAmbient(read.text, read.kind),
-      severity: "warning"
-    });
-  }
-  return out;
-}
-function onHandlerStateParam(script, handler) {
-  if (handler.kind === "body") {
-    const head = script.slice(Math.max(0, handler.start - 400), handler.start);
-    return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;
-  }
-  return /^\s*(?:async\s+)?(?:function\b[^(]*\(\s*([A-Za-z_$][\w$]*)|\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/.exec(handler.text)?.slice(1).find((name) => name !== void 0) ?? null;
-}
-function validateInPlaceChanges(script, scriptStart, locale2) {
-  const msgs = getMessages(locale2);
-  const out = [];
-  const push3 = (text3, kind, textStart, root) => {
-    for (const change of findInPlaceChanges(text3, kind, root)) {
-      out.push({
-        code: change.form === "method" ? WcsDiagnosticCode.ArrayMutation : change.form === "index" ? WcsDiagnosticCode.ArrayIndexAssign : WcsDiagnosticCode.NestedAssign,
-        start: scriptStart + textStart + change.start,
-        end: scriptStart + textStart + change.end,
-        severity: "error",
-        message: change.alias !== null ? msgs.inPlaceAlias(change.alias, change.source, change.target) : msgs.inPlaceChange(change.source, change.target)
-      });
-    }
-  };
-  for (const callable of analyzeCallableBodies(script)) push3(callable.body, "body", callable.bodyStart, "this");
-  for (const handler of analyzeWatchHandlerSources(script)) push3(handler.text, handler.kind, handler.start, "this");
-  for (const handler of analyzeOnHandlerSources(script)) {
-    const root = handler.kind === "body" ? onHandlerStateParam(script, handler) : null;
-    if (handler.kind === "body" && root === null) continue;
-    push3(handler.text, handler.kind, handler.start, root);
-  }
-  return out;
-}
-var NESTED_WRITE_INPUTS = {
-  "wcs-storage": { inputs: ["value"], exemptWhenManual: true },
-  "wcs-fetch": { inputs: ["body"], exemptWhenManual: false, oneShot: true }
-};
-var MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
-function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWriteRoots, locale2) {
-  const tags = findBuiltinTagOccurrences(html).filter((occ) => {
-    const target = NESTED_WRITE_INPUTS[occ.tagName];
-    return target !== void 0 && !(target.exemptWhenManual && MANUAL_ATTRIBUTE.test(occ.attrsText));
-  }).map((occ) => ({ tagName: occ.tagName, start: occ.tagStart, end: occ.attrsStart + occ.attrsText.length }));
-  if (tags.length === 0) return [];
-  const msgs = getMessages(locale2);
-  const out = [];
-  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
-  for (const occ of index.occurrences) {
-    if (occ.kind !== "path" || occ.source !== "attribute" || occ.bindingType !== "prop" || occ.propName === null) continue;
-    if (occ.path.startsWith(".")) continue;
-    const at2 = occ.exprRange.start;
-    const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
-    if (tag === void 0) continue;
-    const input = occ.propName.startsWith(".") ? occ.propName.slice(1) : occ.propName;
-    if (!NESTED_WRITE_INPUTS[tag.tagName].inputs.includes(input)) continue;
-    const example = nestedWriteRoots().get(occ.path);
-    if (example === void 0) continue;
-    const message = NESTED_WRITE_INPUTS[tag.tagName].oneShot ? msgs.inputNestedWriteOneShot(tag.tagName, input, occ.path, example) : msgs.inputNestedWrite(tag.tagName, input, occ.path, example);
-    out.push({
-      code: WcsDiagnosticCode.InputNestedWrite,
-      start: occ.pathRange.start,
-      end: occ.pathRange.end,
-      severity: "error",
-      tag: tag.tagName,
-      statePath: occ.path,
-      message
-    });
-  }
-  return out;
-}
-var TWO_WAY_PROPS = /* @__PURE__ */ new Set(["value", "checked"]);
-var BRACKET_WRITE = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, "g");
-var PRE_BRACKET_INCDEC2 = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
-var TEMPLATE_BRACKET = String.raw`\bthis\s*(?:\?\.)?\s*\[\s*` + "`([^`]*)`" + String.raw`\s*\]`;
-var TEMPLATE_BRACKET_WRITE = new RegExp(`${TEMPLATE_BRACKET}${ASSIGN_TAIL}`, "g");
-var PRE_TEMPLATE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${TEMPLATE_BRACKET}`, "g");
-var TEMPLATE_KEY_PATH = /^[A-Za-z_][\w]*(?:\.(?:\*|[\w]+))*$/;
-function templateKeyPath(raw) {
-  if (raw.includes("`")) return null;
-  const path = raw.replace(/\$\{[^{}]*\}/g, "*");
-  return TEMPLATE_KEY_PATH.test(path) ? path : null;
-}
-function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
-  const roots = /* @__PURE__ */ new Map();
-  const addPrefixes = (path, inclusive) => {
-    const segments = path.split(".");
-    const last = inclusive ? segments.length : segments.length - 1;
-    const example = inclusive ? `${path}.*` : path;
-    for (let i = 1; i <= last; i++) {
-      const prefix = segments.slice(0, i).join(".");
-      if (!roots.has(prefix)) roots.set(prefix, example);
-    }
-  };
-  const tags = findBuiltinTagOccurrences(html).map((occ) => ({
-    contract: BUILTIN_TAGS[occ.tagName],
-    start: occ.tagStart,
-    end: occ.attrsStart + occ.attrsText.length
-  }));
-  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
-  for (const occ of index.occurrences) {
-    if (occ.kind !== "path" || occ.source !== "attribute") continue;
-    let path = occ.path;
-    if (path.startsWith(".")) {
-      const list = getRowShorthandForPath(html, occ.pathRange.start, bindAttrName) === null ? null : getResolvedForListPath(html, occ.pathRange.start, bindAttrName);
-      if (list === null) continue;
-      path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
-    }
-    if (occ.bindingType === "spread") {
-      addPrefixes(path, true);
-      continue;
-    }
-    if (occ.bindingType === "radio" || occ.bindingType === "checkbox") {
-      addPrefixes(path, false);
-      continue;
-    }
-    if (occ.bindingType !== "prop" || occ.propName === null) continue;
-    if (TWO_WAY_PROPS.has(occ.propName)) {
-      addPrefixes(path, false);
-      continue;
-    }
-    const at2 = occ.exprRange.start;
-    const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
-    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(path, false);
-  }
-  for (const block of blocks) {
-    if (block.mountPath !== null) addPrefixes(block.mountPath, true);
-    const scan = maskCommentsAndStrings(block.content);
-    for (const regex of [BRACKET_WRITE, PRE_BRACKET_INCDEC2]) {
-      regex.lastIndex = 0;
-      let match;
-      while ((match = regex.exec(scan)) !== null) {
-        const keyStart = match.index + match[0].search(/["']/) + 1;
-        addPrefixes(block.content.slice(keyStart, keyStart + match[1].length), false);
-      }
-    }
-    for (const regex of [TEMPLATE_BRACKET_WRITE, PRE_TEMPLATE_BRACKET_INCDEC]) {
-      regex.lastIndex = 0;
-      let match;
-      while ((match = regex.exec(scan)) !== null) {
-        const keyStart = match.index + match[0].indexOf("`") + 1;
-        const path = templateKeyPath(block.content.slice(keyStart, keyStart + match[1].length));
-        if (path !== null) addPrefixes(path, false);
-      }
-    }
-    for (const handler of analyzeOnHandlerSources(block.content)) {
-      const param = onHandlerStateParam(block.content, handler);
-      if (param === null) continue;
-      const name = param.replace(/\$/g, "\\$");
-      const region = { start: handler.start, end: handler.start + handler.text.length };
-      const bracket = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*["']([^"']+)["']\\s*\\]`;
-      const template = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*\`([^\`]*)\`` + String.raw`\s*\]`;
-      for (const [pattern, quote] of [[bracket, /["']/], [template, /`/]]) {
-        for (const regex of [new RegExp(`${pattern}${ASSIGN_TAIL}`, "g"), new RegExp(`${PRE_INCDEC}${pattern}`, "g")]) {
-          let match;
-          const part = scan.slice(region.start, region.end);
-          while ((match = regex.exec(part)) !== null) {
-            const keyStart = region.start + match.index + match[0].search(quote) + 1;
-            const raw = block.content.slice(keyStart, keyStart + match[1].length);
-            const path = quote.source === "`" ? templateKeyPath(raw) : raw;
-            if (path !== null) addPrefixes(path, false);
-          }
-        }
-      }
-    }
-    API_CALL.lastIndex = 0;
-    let call;
-    while ((call = API_CALL.exec(scan)) !== null) {
-      const api = call[1];
-      if (api === "getAll") continue;
-      const parsed = splitCallArgs(block.content, call.index + call[0].length);
-      if (parsed === null) continue;
-      API_CALL.lastIndex = parsed.end;
-      const path = parsed.args.length > 0 ? literalString2(parsed.args[0]) : null;
-      if (path === null) continue;
-      if (api === "setAll" || api === "update" || parsed.args.length >= 3) addPrefixes(path, false);
-    }
-  }
-  return roots;
-}
-var STRING = String.raw`(["'])((?:\\.|(?!\1)[^\\\n])*)\1`;
-var NAME = String.raw`[$A-Za-z_][$\w]*`;
-function findPathTests(body, param) {
-  const esc = (name) => name.replace(/\$/g, "\\$");
-  const holders = /* @__PURE__ */ new Set([param]);
-  for (let grew = true; grew; ) {
-    grew = false;
-    const alt = [...holders].map(esc).join("|");
-    const alias = new RegExp(String.raw`\b(?:const|let|var)\s+(${NAME})\s*=\s*(?:new\s+Set\s*\(\s*(?:${alt})\s*\)|\[\s*\.\.\.\s*(?:${alt})\s*\]|Array\.from\s*\(\s*(?:${alt})\s*\)|(?:${alt}))\s*(?:[;\n]|$)`, "g");
-    for (const m of body.matchAll(alias)) {
-      if (!holders.has(m[1])) {
-        holders.add(m[1]);
-        grew = true;
-      }
-    }
-  }
-  const held = [...holders].map(esc).join("|");
-  const out = [];
-  const push3 = (m, prefix, base = 0) => {
-    const [whole, quote, literal2] = m;
-    const at2 = base + m.index + whole.lastIndexOf(quote + literal2) + 1;
-    out.push({ path: prefix ? literal2.replace(/\.$/, "") : literal2, prefix, at: at2 });
-  };
-  for (const m of body.matchAll(new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:includes|indexOf|lastIndexOf|has)\s*\(\s*${STRING}`, "g"))) {
-    push3(m, false);
-  }
-  const elements = /* @__PURE__ */ new Set();
-  const callback = new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:some|every|find|findIndex|findLast|findLastIndex|filter|forEach|map|flatMap)\s*\(\s*(?:async\s+)?(?:function\b\s*(?:${NAME})?\s*)?\(?\s*(${NAME})`, "g");
-  for (const m of body.matchAll(callback)) elements.add(m[1]);
-  for (const m of body.matchAll(new RegExp(String.raw`\bfor\s*\(\s*(?:const|let|var)\s+(${NAME})\s+of\s+(?:${held})\s*\)`, "g"))) elements.add(m[1]);
-  if (elements.size > 0) {
-    const el = [...elements].map(esc).join("|");
-    const compares = [
-      new RegExp(String.raw`(?<![\w$.])(?:${el})\s*[!=]==?\s*${STRING}`, "g"),
-      new RegExp(String.raw`${STRING}\s*[!=]==?\s*(?:${el})(?![\w$])`, "g")
-    ];
-    for (const regex of compares) {
-      for (const m of body.matchAll(regex)) push3(m, false);
-    }
-    for (const m of body.matchAll(new RegExp(String.raw`(?<![\w$.])(?:${el})\s*(?:\?\.|\.)\s*startsWith\s*\(\s*${STRING}`, "g"))) push3(m, true);
-    for (const m of body.matchAll(new RegExp(String.raw`\bswitch\s*\(\s*(?:${el})\s*\)\s*\{`, "g"))) {
-      const open = m.index + m[0].length - 1;
-      const block = body.slice(open, matchingBrace(body, open));
-      for (const c of block.matchAll(new RegExp(String.raw`\bcase\s+${STRING}\s*:`, "g"))) push3(c, false, open);
-    }
-  }
-  return out.sort((a, b) => a.at - b.at);
-}
-function matchingBrace(text3, open) {
-  let depth = 0;
-  for (let i = open; i < text3.length; i++) {
-    const ch = text3[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      for (i++; i < text3.length && text3[i] !== ch; i++) if (text3[i] === "\\") i++;
-    } else if (ch === "{") {
-      depth++;
-    } else if (ch === "}" && --depth === 0) {
-      return i;
-    }
-  }
-  return text3.length;
-}
-function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2) {
-  const blocks = parseLoadedScriptBlocks(html, stateTagName);
-  if (blocks.length === 0) return [];
-  const hasCallback = blocks.some((block) => [...STATE_UPDATED_CALLBACKS].some((name) => block.content.includes(name)));
-  if (!hasCallback) return [];
-  const msgs = getMessages(locale2);
-  const boundPaths = collectBoundPaths(html, stateTagName, bindAttrName);
-  const out = [];
-  for (const block of blocks) {
-    const callback = analyzeCallableBodies(block.content).find((entry) => STATE_UPDATED_CALLBACKS.has(entry.name) && entry.kind === "method");
-    if (callback === void 0) continue;
-    if (block.mountPath !== null) continue;
-    const param = new RegExp(String.raw`^\s*\(\s*(${NAME})\s*[,)=]`).exec(block.content.slice(callback.end, callback.bodyStart))?.[1];
-    if (param === void 0) continue;
-    const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
-    const bound = boundPaths;
-    const body = blankComments(callback.body);
-    const reported = /* @__PURE__ */ new Set();
-    for (const test of findPathTests(body, param)) {
-      const path = test.path;
-      if (path.length === 0 || reported.has(path)) continue;
-      const under = (p) => p === path || p.startsWith(`${path}.`);
-      if (test.prefix ? [...bound].some(under) : bound.has(path)) continue;
-      let message;
-      if (test.prefix ? [...declared].some(under) : declared.has(path)) {
-        message = msgs.updatedCallbackUnbound(path);
-      } else {
-        const near = suggestion(path, [...declared, ...bound], msgs);
-        if (near === "") continue;
-        message = msgs.updatedCallbackUnknownPath(path) + near;
-      }
-      reported.add(path);
-      out.push({
-        code: WcsDiagnosticCode.UpdatedCallbackUnbound,
-        start: block.contentStart + callback.bodyStart + test.at,
-        end: block.contentStart + callback.bodyStart + test.at + path.length,
-        message,
-        severity: "warning"
-      });
-    }
-  }
-  return out;
-}
-function collectBoundPaths(html, stateTagName, bindAttrName) {
-  const bound = /* @__PURE__ */ new Set();
-  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
-  for (const occurrence of index.occurrences) {
-    bound.add(occurrence.path);
-    if (!occurrence.path.startsWith(".")) continue;
-    const forPath = getResolvedForListPath(html, occurrence.pathRange.start, bindAttrName);
-    if (forPath === null) continue;
-    bound.add(
-      occurrence.path === "." ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`
-    );
-  }
-  return bound;
-}
-var DOLLAR_DIGIT_NAME = /\$\d[\w$]*/g;
-var THIS_DOLLAR_DIGIT = /\bthis\s*\.\s*(\$\d[\w$]*)/g;
-var INDEX_READ_FILTER = { has: isOutOfRangeIndexRead };
-function validateIndexParamReads(script, scriptStart, locale2) {
-  if (!hasOutOfRangeIndexName(script)) return [];
-  const msgs = getMessages(locale2);
-  const out = [];
-  const push3 = (name, start, severity) => {
-    out.push({
-      code: WcsDiagnosticCode.IndexParamRange,
-      start: scriptStart + start,
-      end: scriptStart + start + name.length,
-      message: msgs.indexParamRange(name, MAX_INDEX_PARAM3),
-      severity
-    });
-  };
-  const reads = collectStateThisReads(script, INDEX_READ_FILTER);
-  if (reads !== null) {
-    for (const read of reads) push3(read.name, read.start, "error");
-    return out;
-  }
-  const scan = maskCommentsAndStrings(script);
-  THIS_DOLLAR_DIGIT.lastIndex = 0;
-  let match;
-  while ((match = THIS_DOLLAR_DIGIT.exec(scan)) !== null) {
-    const name = match[1];
-    if (isOutOfRangeIndexRead(name)) push3(name, match.index + match[0].length - name.length, "warning");
-  }
-  return out;
-}
-function hasOutOfRangeIndexName(script) {
-  DOLLAR_DIGIT_NAME.lastIndex = 0;
-  let match;
-  while ((match = DOLLAR_DIGIT_NAME.exec(script)) !== null) {
-    if (isOutOfRangeIndexRead(match[0])) return true;
-  }
-  return false;
-}
-function validateOnHandlerThis(script, scriptStart, locale2) {
-  const msgs = getMessages(locale2);
-  const out = [];
-  for (const handler of analyzeOnHandlerSources(script)) {
-    const first = findOwnThis(handler.text, handler.kind);
-    if (first === null) continue;
-    out.push({
-      code: WcsDiagnosticCode.OnHandlerThis,
-      start: scriptStart + handler.start + first.start,
-      end: scriptStart + handler.start + first.end,
-      severity: "error",
-      message: msgs.onHandlerThis(handler.name)
-    });
-  }
-  return out;
-}
-function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrName = "data-wcs") {
-  const out = [];
-  const blocks = parseLoadedScriptBlocks(html, stateTagName);
-  let nestedWriteRoots = null;
-  const getNestedWriteRoots = () => nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks);
-  let bindingWrites = null;
-  const getBindingWrites = () => bindingWrites ??= collectBindingWrites(html, bindAttrName);
-  for (const block of blocks) {
-    out.push(...validateIndexArity(block.content, block.contentStart, locale2));
-    out.push(...validateNameAliases(block.content, block.contentStart, locale2, block.mountPath));
-    out.push(...validateIndexParamReads(block.content, block.contentStart, locale2));
-    out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
-    out.push(...validateGetterUntrackedReads(
-      block.content,
-      block.contentStart,
-      block.mountPath,
-      getNestedWriteRoots,
-      getBindingWrites,
-      locale2
-    ));
-    out.push(...validateGetterLocationReads(block.content, block.contentStart, locale2));
-    out.push(...validateGetterClockReads(block.content, block.contentStart, locale2));
-    out.push(...validateGetterAmbientReads(block.content, block.contentStart, locale2));
-    out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));
-    out.push(...validateInPlaceChanges(block.content, block.contentStart, locale2));
-  }
-  out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale2));
-  out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));
-  return out;
-}
-
 // src/service/scriptStateUseValidator.ts
 var COMMAND_USE = /\.\s*\$command\s*\.\s*([A-Za-z_$][\w$]*)/dg;
 var EMIT_AFTER = /^\s*\.\s*emit\s*\(/;
@@ -19490,7 +20337,8 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
     const paths = analyzeStatePaths(block.content);
     const masked = maskCommentsAndStrings(block.content);
     const declared = paths.filter((p) => p.kind === "command").map((p) => p.path.slice("$command.".length));
-    if (block.mountPath === null && declared.length > 0) {
+    const noCommands = declared.length === 0 && block.mountPath === null && block.content.includes("$command") && scriptTokenNames(block.content, "$commandTokens")?.length === 0;
+    if (block.mountPath === null && (declared.length > 0 || noCommands)) {
       const emitted = /* @__PURE__ */ new Map();
       COMMAND_USE.lastIndex = 0;
       let match;
@@ -19503,7 +20351,7 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
             start: block.contentStart + start,
             end: block.contentStart + end,
             // `$command` holds the declared tokens only: `.emit()` on what it lacks is a TypeError
-            message: msgs.commandTokenUndeclared(`$command.${name}`) + suggestion(name, declared, msgs),
+            message: noCommands ? msgs.commandTokensAbsent(`$command.${name}`, name) : msgs.commandTokenUndeclared(`$command.${name}`) + suggestion(name, declared, msgs),
             severity: "error"
           });
         } else if (!emitted.has(name) && EMIT_AFTER.test(masked.slice(match.index + match[0].length))) {
@@ -19539,6 +20387,19 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
             severity: "warning"
           });
         }
+      }
+    }
+    if (block.mountPath === null && block.content.includes("$on")) {
+      const listed = scriptTokenNames(block.content, "$eventTokens");
+      for (const entry of listed === null ? [] : analyzeDeclarationEntries(block.content, "$on")) {
+        if (listed.includes(entry.name)) continue;
+        out.push({
+          code: WcsDiagnosticCode.TokenUndeclared,
+          start: block.contentStart + entry.start,
+          end: block.contentStart + entry.end,
+          message: msgs.onEntryUndeclared(entry.name, listed.length === 0) + suggestion(entry.name, listed, msgs),
+          severity: "error"
+        });
       }
     }
     const keys = [...new Set(paths.map((p) => p.path.split(".")[0]).filter((key) => key !== "" && !key.startsWith("$")))];
@@ -19596,14 +20457,33 @@ function hidesEmitters(html, blocks) {
 // src/service/scriptReadValidator.ts
 function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileReader, applicationSchema, bindAttribute = "data-wcs") {
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
-  if (blocks.length === 0) return [];
+  if (blocks.length === 0 && (applicationSchema !== void 0 || !html.includes("json") && !html.includes("state=") || collectOutputSlots(documentMemberBindings(html, bindAttribute, fileReader)).length === 0)) return [];
   const msgs = getMessages(locale2);
-  const index = getStatePathIndex(html, stateTagName, fileReader);
+  const index = getStatePathIndex(html, stateTagName, fileReader, bindAttribute);
   const candidates = mergeSchemaCandidates(index.paths, applicationSchema);
   const candidateSet = new Set(candidates.map((p) => p.path));
   let tree = null;
   let bound = null;
+  const boundPaths = () => bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences.filter((o) => o.kind === "path").map((o) => rowPathOf(o.path, html, o.pathRange.start, bindAttribute)).map((path) => hasIndexSegment(path) ? toWildcardForm(path) : path);
   const out = [];
+  if (applicationSchema === void 0) {
+    for (const slot of index.scopes.outputSlots ?? []) {
+      const count = boundPaths().filter((b) => b.startsWith(`${slot.path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
+      if (count === 0) continue;
+      const at2 = slotDeclaration(slot.path, blocks) ?? (index.elements.some((element2) => element2.srcAttr !== void 0 && !element2.srcAttr.endsWith(".json")) ? null : { start: slot.start, end: slot.end });
+      if (at2 === null) continue;
+      out.push({
+        code: WcsDiagnosticCode.PathDynamicUnknown,
+        start: at2.start,
+        end: at2.end,
+        message: msgs.pathDynamicUnknownOutput(slot.path, count, slot.tag, slot.member),
+        severity: "info",
+        tag: slot.tag,
+        member: slot.member,
+        statePath: slot.path
+      });
+    }
+  }
   for (const block of blocks) {
     const spread = applicationSchema === void 0 ? findTopLevelSpread(block.content) : null;
     if (spread !== null) {
@@ -19621,8 +20501,7 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
       const spans = opaque2.length === 0 ? [] : analyzeDeclarationSpans(block.content);
       for (const candidate of opaque2) {
         const path = prefix + candidate.path;
-        bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences.filter((o) => o.kind === "path").map((o) => rowPathOf(o.path, html, o.pathRange.start, bindAttribute)).map((path2) => hasIndexSegment(path2) ? toWildcardForm(path2) : path2);
-        const count = bound.filter((b) => b.startsWith(`${path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
+        const count = boundPaths().filter((b) => b.startsWith(`${path}.`) && !pathExistsInCandidates(b, candidates, candidateSet)).length;
         const span = spans.find((s) => candidate.path === s.name || candidate.path.startsWith(`${s.name}.`));
         if (count === 0 || span === void 0) continue;
         out.push({
@@ -19674,6 +20553,17 @@ function rowPathOf(path, html, offset2, bindAttribute) {
   const list = getResolvedForListPath(html, offset2, bindAttribute);
   if (list === null || list.startsWith(".")) return path;
   return path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+}
+function slotDeclaration(path, blocks) {
+  const ordered = [...blocks].sort((a, b) => (b.mountPath ?? "").length - (a.mountPath ?? "").length);
+  for (const block of ordered) {
+    const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
+    if (!path.startsWith(prefix)) continue;
+    const local = path.slice(prefix.length);
+    const span = analyzeDeclarationSpans(block.content).find((s) => local === s.name || local.startsWith(`${s.name}.`));
+    if (span !== void 0) return { start: block.contentStart + span.start, end: block.contentStart + span.end };
+  }
+  return null;
 }
 function isList(path, candidates, candidateSet) {
   return candidateSet.has(`${path}.*`) || candidates.some((c) => c.path === path && c.kind === "list");
@@ -20110,52 +21000,6 @@ function validateStateAbsent(html, bindAttribute = "data-wcs", stateTagName = "w
   }];
 }
 
-// src/service/stateBehavior.ts
-var BEHAVIOR_KEY2 = "$behavior";
-var MUSTACHE_KEY = "enableMustache";
-function isMustacheDisabled(html, stateTagName = "wcs-state", fileReader) {
-  if (!html.includes(MUSTACHE_KEY) && (fileReader === void 0 || !html.includes("src"))) return false;
-  const elements = parseWcsStateElements(html, stateTagName);
-  if (elements.length === 0) return false;
-  const insideTemplate = createTemplateTester(html);
-  const root = elements.find((e) => e.mountPath === null && !e.bindComponent && !insideTemplate(e.tagStart));
-  if (root === void 0) return false;
-  if (root.stateAttr !== void 0) {
-    const json = findScriptJsonById(html, root.stateAttr);
-    return json !== null && jsonDisablesMustache(json);
-  }
-  if (root.srcAttr !== void 0) {
-    if (fileReader === void 0) return false;
-    if (root.srcAttr.endsWith(".json")) {
-      const json = fileReader(root.srcAttr);
-      return json !== void 0 && jsonDisablesMustache(json);
-    }
-    const script = readStateScript(root.srcAttr, fileReader);
-    return script !== void 0 && scriptDisablesMustache(script);
-  }
-  if (root.jsonAttr !== void 0) return jsonDisablesMustache(root.jsonAttr);
-  const block = root.scriptBlocks[0];
-  return block !== void 0 && scriptDisablesMustache(block.content);
-}
-function jsonDisablesMustache(text3) {
-  try {
-    const data2 = JSON.parse(text3);
-    const behavior = data2?.[BEHAVIOR_KEY2];
-    return typeof behavior === "object" && behavior !== null && behavior[MUSTACHE_KEY] === false;
-  } catch {
-    return false;
-  }
-}
-function scriptDisablesMustache(script) {
-  if (!script.includes(MUSTACHE_KEY)) return false;
-  const decl = findTopLevelDeclaration(script, BEHAVIOR_KEY2);
-  if (decl === null || decl.kind !== "data") return false;
-  return analyzeDeclarationEntries(script, BEHAVIOR_KEY2).some((entry) => entry.name === MUSTACHE_KEY && entry.kind === "data" && entry.value !== void 0 && stripComments(entry.value) === "false");
-}
-function stripComments(value) {
-  return value.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim();
-}
-
 // src/core/sidecar/discover.ts
 var APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
 var MAX_ASCEND = 16;
@@ -20321,16 +21165,18 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateFormInputs(text3, bindAttribute, stateTagName, locale2, fileReader, applicationSchema));
   out.push(...validateBindingHosts(text3, bindAttribute, stateTagName, locale2));
   out.push(...validateIoAttributes(text3, bindAttribute, locale2));
+  out.push(...validateCommandArguments(text3, bindAttribute, locale2));
   out.push(...validateDocumentEnv(text3, locale2));
   out.push(...validatePackageLoads(text3, locale2, fileReader));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));
   out.push(...validateScriptWrites(text3, stateTagName, locale2));
+  out.push(...validateOutputPathWrites(text3, bindAttribute, stateTagName, locale2, fileReader));
   out.push(...validateAccessorLists(text3, stateTagName, locale2));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
   out.push(...validateModuleTopReads(text3, stateTagName, locale2));
-  out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader));
+  out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader, bindAttribute));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));
   out.push(...validateRecursion(text3, stateTagName, locale2));
   out.push(...validateConfigDeclarations(text3, stateTagName, locale2));
