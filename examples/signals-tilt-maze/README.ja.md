@@ -19,7 +19,7 @@ npx serve examples/signals-tilt-maze
 ```
 
 デスクトップはボードをドラッグ（または DevTools → Sensors）。スマホは HTTPS か
-`adb reverse`、iOS は Start ボタンのタップで tilt の許可が下ります。プラット
+`adb reverse`、iOS は Start ボタンのタップで tilt と動きの許可が下ります。プラット
 フォーム上の注意は [state 版](../state-tilt-maze/README.ja.md)と同じです。
 
 ## コアを signals にすると何が変わるか

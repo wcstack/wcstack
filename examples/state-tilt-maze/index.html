@@ -256,7 +256,8 @@
       // Sensor enabling via the command-token protocol: emitting one token
       // fires every subscribed command in declaration order —
       // tilt.requestPermission() (in this click's gesture context, as iOS
-      // requires), tilt.start(), accel.start(). No DOM queries in state; the
+      // requires), tilt.start(), accel.requestPermission() (iOS asks for
+      // motion separately), accel.start(). No DOM queries in state; the
       // wiring lives on the elements themselves.
       // start() without waiting for the permission is safe: the iOS gate is
       // on event DISPATCH, not on listener registration, so an ungranted
@@ -342,7 +343,7 @@
 <wcs-tilt data-wcs="beta: tiltBeta; gamma: tiltGamma; permissionState: tiltPermission; error: tiltError;
                     command.requestPermission: $command.startSensors; command.start: $command.startSensors"></wcs-tilt>
 <wcs-accelerometer data-wcs="x: accelX; y: accelY; z: accelZ; error: accelError;
-                             command.start: $command.startSensors"></wcs-accelerometer>
+                             command.requestPermission: $command.startSensors; command.start: $command.startSensors"></wcs-accelerometer>
 
 <!-- The game loop: the browser's own frames, as a tag. Each frame fires the
      frameTick event token (detail carries the first-class dt), and $on runs
@@ -429,7 +430,7 @@
 <ul class="notes">
   <li>Sensors need a secure context: localhost works; on a phone use HTTPS (or <code>adb reverse</code>).</li>
   <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
-  <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
+  <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (its own permission on iOS, asked from the same tap); without a motion sensor the Retry button covers it.</li>
   <li>Desktop: drag the board, use the arrow keys (focus the board first — it is in the Tab order), or emulate orientation in DevTools &gt; Sensors.</li>
   <li>Start is disabled until <code>&lt;wcs-defined&gt;</code> settles. Block <code>esm.run/@wcstack/tilt</code> in DevTools &gt; Network to watch the 5s timeout fire: Start unlocks anyway and the HUD reports drag-only control.</li>
 </ul>

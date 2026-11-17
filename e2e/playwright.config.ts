@@ -41,9 +41,12 @@ export default defineConfig({
     // And the router's route paths: a static segment as written, the URL's segments percent-decoded (router-encoded-paths, #694).
     // And the screen and sensor nodes: Firefox reports a refused pointer lock as an event, with no rejected promise
     // (io-screen-sensors).
+    // And the stamp-rally seam app: its device check as Firefox is (no Picture-in-Picture, eye dropper or saved
+    // passwords; a forbidding frame told only by fullscreenEnabled), the orientation lock Firefox refuses while
+    // fullscreen, the pointer lock, and saved passwords where the browser has no PasswordCredential (stamp-rally).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

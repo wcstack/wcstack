@@ -20,7 +20,7 @@ npx serve examples/signals-tilt-maze
 ```
 
 Desktop: drag the board (or DevTools → Sensors). Phone: HTTPS or
-`adb reverse`; iOS grants tilt via the Start button's tap. Same platform notes
+`adb reverse`; iOS grants tilt and motion via the Start button's tap. Same platform notes
 as the [state version](../state-tilt-maze/README.md#getting-started).
 
 ## What changes when the core is signals
