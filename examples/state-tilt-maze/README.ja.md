@@ -30,8 +30,8 @@ npx serve examples/state-tilt-maze
   ピクセルそのものなので、見えているものと衝突判定が完全に一致します。
 - **スマホ**: センサーには secure context が必要 — HTTPS で配信するか
   `adb reverse tcp:3000 tcp:3000`（Android）を使ってください。iOS は Start
-  ボタンのタップで tilt の許可が下ります。シェイクは Generic Sensor API
-  （Chromium/Android）が必要で、無い環境では Retry ボタンが代わりです。
+  ボタンのタップで tilt と動きの許可が下ります（問いは 2 つ、タップは 1 回）。
+  動きのセンサーが無い環境では、シェイクの代わりに Retry ボタンを使います。
 
 ## データフロー
 
@@ -66,9 +66,9 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD チ
   同じゲームがそのまま遊べます。
 - **センサー有効化は command token。** Start ボタンの `startGame()` は
   `$command.startSensors` トークンを 1 回 emit するだけ。各要素は自分の
-  メソッドを HTML 側で購読しています（`<wcs-tilt>` に
-  `command.requestPermission` + `command.start`、`<wcs-accelerometer>` に
-  `command.start`）— state は DOM に一切触れません。許可を await せずに
+  メソッドを HTML 側で購読しています（`<wcs-tilt>` と `<wcs-accelerometer>`
+  に `command.requestPermission` + `command.start`）— state は DOM に一切
+  触れません。許可を await せずに
   `start()` を撃っても安全です: ゲートはイベント**配送**側にあって
   リスナー登録側には無いため、未許可の購読はただ沈黙するだけです
   （それ以外の環境では `requestPermission()` が即 `"granted"` を返します）。

@@ -31,9 +31,9 @@ npx serve examples/state-tilt-maze
   DevTools → Sensors). Physics coordinates are the CSS pixels of the 320×320
   board, so what you see is exactly what the collision code sees.
 - **Phone**: sensors need a secure context — serve over HTTPS or use
-  `adb reverse tcp:3000 tcp:3000` (Android). iOS grants tilt through the
-  Start button's tap; shake needs the Generic Sensor API (Chromium/Android),
-  elsewhere the Retry button covers it.
+  `adb reverse tcp:3000 tcp:3000` (Android). iOS grants tilt and motion
+  through the Start button's tap (two questions, one tap); without a motion
+  sensor the Retry button covers the shake.
 
 ## Data Flow
 
@@ -69,7 +69,7 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD chi
 - **Sensor enabling is a command token.** The Start button's `startGame()`
   emits one `$command.startSensors` token, and the elements subscribe their
   own methods to it in HTML (`command.requestPermission` + `command.start` on
-  `<wcs-tilt>`, `command.start` on `<wcs-accelerometer>`) — state touches no
+  `<wcs-tilt>` and on `<wcs-accelerometer>`) — state touches no
   DOM. Firing `start()` without awaiting the permission is safe because that
   gate is on event *dispatch*, not listener registration — an ungranted
   subscription is simply silent (and every other platform resolves

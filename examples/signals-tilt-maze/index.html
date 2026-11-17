@@ -87,7 +87,7 @@
 <ul class="notes">
   <li>Sensors need a secure context: localhost works; on a phone use HTTPS (or <code>adb reverse</code>).</li>
   <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
-  <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
+  <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (its own permission on iOS, asked from the same tap); without a motion sensor the Retry button covers it.</li>
   <li>Desktop: drag the board, use the arrow keys (focus the board first — it is in the Tab order), or emulate orientation in DevTools &gt; Sensors.</li>
   <li>Start waits only while the sensor packages load. Block <code>esm.run/@wcstack/tilt</code> in DevTools &gt; Network to watch it degrade: the <code>import()</code> rejects, Start unlocks anyway and the HUD reports drag-only control.</li>
 </ul>
@@ -299,7 +299,11 @@
     // resolves "granted" immediately, so this ordering is right everywhere.
     const t = tilt.peek();
     t?.command("requestPermission").then(() => t.command("start"));
-    accel.peek()?.command("start");
+    // iOS asks for motion separately, from the same click; the accelerometer's
+    // start() subscribes at once and its readings begin once allowed.
+    const a = accel.peek();
+    a?.command("requestPermission");
+    a?.command("start");
     restart();
   }
 
