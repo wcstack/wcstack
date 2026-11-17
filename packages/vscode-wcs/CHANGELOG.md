@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.20.0 — 2026-11-17
 
-継ぎ目アプリ stamp-rally（画面とセンサーの API のスタンプラリー — 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止）が見つけた lint の穴を直した。作者がわざとした 20 の間違いに、lint は 1 つも報告しなかった。著者が lint の検査にすると決めた 7 つ:
+`@wcstack/state` 4.25.0 から作った（npm の `@wcstack/lint` 4.25.0・`@wcstack/typescript` 4.25.0 と同じ判定）。継ぎ目アプリ stamp-rally（画面とセンサーの API のスタンプラリー — 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止）が見つけた lint の穴を直した。作者がわざとした 20 の間違いに、lint は 1 つも報告しなかった。著者が lint の検査にすると決めた 7 つ:
 
 - `wcs/path-readonly`: カスタム要素が書くメンバー（`wcBindable.properties` のメンバー）を、setter の無い getter に束ねた形も報告する（error）— `<wcs-wakelock data-wcs="held: keepAwake">` と `get keepAwake()`。出力だけのメンバーは束ねた時点で要素の値を書くので、ランタイムはページごと初期化を拒む。lint は 0 件だった。判定はランタイム（state の `attachProperty`）と同じ: 出力だけのメンバーは `#ro` でも束ねた時点で書かれ、`#init=none` ならイベントのたび、`#ro,init=none` だけが何も書かない。入力でもあるメンバー（`<wcs-storage>` の `value`・`trigger`）はイベントのたび（`#ro` なら書かない）と `#init=element` の束ねた時点。spread が束ねるメンバーも同じ。組み込みの `wcs-*` タグと、ページがリテラルの `static wcBindable` で定義する要素が対象。
 - `wcs/token-undeclared`: state に `$commandTokens` / `$eventTokens` **そのものが無い**ときも報告する — `command.<method>: $command.x`（error）・スクリプトの `this.$command.x`（error）・`on*: $command.x` と `eventToken.<member>: name`（warning）。宣言したリストに名前が無いときだけ報告していて、トークンが 1 つも無い state（contacts の README の Quick Start を写したページ）では黙っていた。「無い」と言うのは宣言を全部読める state だけ（トップレベルに spread の無い `export default { … }` か JSON で、キーが無いか空のリスト）。`$eventTokens` に無い `$on` のエントリも報告する（error — ランタイムは state の読み込みを拒む）。
