@@ -622,6 +622,59 @@ describe("Fetch", () => {
     expect(el.error).toBeNull();
   });
 
+  it("204 / 205 はボディを読まない: Content-Type が JSON でも、成功として status を出し value は null（ネットワークの失敗にしない）", async () => {
+    for (const [status, statusText] of [[204, "No Content"], [205, "Reset Content"]] as const) {
+      const json = vi.fn(() => Promise.reject(new SyntaxError("Unexpected end of JSON input")));
+      const text = vi.fn(() => Promise.resolve(""));
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        status,
+        statusText,
+        headers: new Headers({ "Content-Type": "application/json; charset=utf-8" }),
+        json,
+        text,
+      } as unknown as Response);
+
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("url", "/api/session");
+      el.setAttribute("method", "POST");
+
+      await el.fetch();
+
+      expect(json).not.toHaveBeenCalled();
+      expect(text).not.toHaveBeenCalled();
+      expect(el.value).toBeNull();
+      expect(el.status).toBe(status);
+      expect(el.error).toBeNull();
+      expect(el.errorInfo).toBeNull();
+    }
+  });
+
+  it("target のある要素は、204 では中身を書き換えない", async () => {
+    const box = document.createElement("div");
+    box.id = "fetch-204-target";
+    box.innerHTML = "<p>before</p>";
+    document.body.appendChild(box);
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      headers: new Headers({ "Content-Type": "text/html" }),
+      json: vi.fn(),
+      text: vi.fn(() => Promise.resolve("")),
+    } as unknown as Response);
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/fragment");
+    el.setAttribute("target", "fetch-204-target");
+
+    await el.fetch();
+
+    expect(box.innerHTML).toBe("<p>before</p>");
+    expect(el.status).toBe(204);
+    box.remove();
+  });
+
   it("サブタグからボディを収集できる", async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
 

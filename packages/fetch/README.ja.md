@@ -647,7 +647,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `method` | `string` | `GET` | HTTP メソッド |
 | `target` | `string` | — | HTML リプレース対象の DOM 要素 id |
 | `manual` | `boolean` | `false` | 自動実行を無効化 |
-| `response-type` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | `auto` | レスポンスボディの読み取り方。`auto` は Content-Type を推測し、`blob` は加えて管理された `objectURL` を発行する。`target`（HTML リプレース）が優先される |
+| `response-type` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | `auto` | レスポンスボディの読み取り方。`auto` は Content-Type を推測し、`blob` は加えて管理された `objectURL` を発行する。`target`（HTML リプレース）が優先される `HEAD` の要求と `204` / `205` の応答にはボディが無い: 型によらず、`value` は `null` で、`status` が入る。4.26（未リリース）から、`auto` と `json` の `204` / `205` もそう扱う —— 4.25 までは、`Content-Type: application/json` の付いた `204` を JSON として読み、ネットワークの失敗（`status` 0、`errorInfo.code` `network`）として報告していた。4.25 以前に固定したページでは `response-type="text"` を付ける。 |
 
 | プロパティ | 型 | 説明 |
 |------------|------|------|
