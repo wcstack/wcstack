@@ -452,7 +452,23 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: 読める文字で書くとどこにも一致しないために、パーセントエンコードして書いた、または ASCII に限ったルートのパス。手でデコードしていたパラメータ。`.`・`+`・括弧を避けたルートのパス。
 
-## 4.24.2 でもまだ要るもの
+### 4.25.0
+
+2026-11-17 — [CHANGELOG](../CHANGELOG.md#4250--2026-11-17)
+
+- `@wcstack/tilt`: 断られた `requestPermission()` —— iPhone で、タップからでない呼び出しは、問いを出さずに断られる —— は、`permissionState` を元のままにし、`error` を立て、`errorInfo.recoverable` を `true` にする。`"denied"` は利用者の答えだけ。読み込み時の呼び出しの後の `"denied"` を「ボタンを出す」と読んでいたページは、`permissionState !== "granted"` を読む。`DeviceOrientationEvent` がそもそも無い所では、`requestPermission()` と `start()` が `error`（`capability-missing`）を立てる。`requestPermission()` はそれまで `"granted"` と答えていた。
+- `@wcstack/contacts`: 選ばずに閉じたピッカーは `cancelled` を立て、`value` は元のまま（それまでは `value: []` を書いた）。`select()` は `null` で解決する。
+- `@wcstack/credential`: `PasswordCredential` の無いブラウザ（Firefox、Safari）では、`password` か `federated` を求める `get()` と、すべての `store()` が、ブラウザを呼ばずに `capability-missing` で終わる（それまでは `credential-failed`）。`store({ id, password })` は `PasswordCredential` を作る。`preventSilentAccess` がコマンドになった。
+- `@wcstack/accelerometer`・`@wcstack/gyroscope`: センサーのクラスは無いが `devicemotion` はあるブラウザ —— iPhone や iPad の Safari、Firefox —— では、`start()` が `devicemotion` を読む（それまでは `unsupported`）。iPhone の動きの問いのために `requestPermission` / `permissionState` を持つ。デスクトップの Firefox はイベントがあってセンサーが無い: エラーも値も無く、`supported` は `true`。
+- `<wcs-fullscreen>`・`<wcs-pointer-lock>`・`<wcs-pip>`: 切断は `active: false` を出す（state は `true` のままだった）。移動した要素は `false`、次に `true` を報告する。Firefox が断ったポインターの捕捉は `error` を立てる。
+- `@wcstack/websocket`: `close()` は、数でない最初の引数を（`reason` と一緒に）無視する。`@wcstack/idle`: `start()` は数でないものを無視する。どちらも、`on…: $command.x` の束縛が最初に渡すイベントを、その値として受け取っていた。
+- 画面とセンサーの 13 要素の `wcBindable.properties` に `supported`、`<wcs-tilt>` に `heading`、`<wcs-accelerometer>` / `<wcs-gyroscope>` に `permissionState`、`<wcs-permission>` に `unsupportedReason` が加わった: スプレッド（`...: path`）はそれらを受け取る。
+- コンソール: `[wcs/io-error-unobserved]`（`@wcstack/state` の diagnostics: 状態が束ねる要素が失敗を報告し、それを誰も読まない）と `[wcs/frequency-invalid]`（センサー 4 つ）が新しい警告。`<wcs-permission name="ambient-light-sensor">` で、Chromium が `Unrecognized feature: 'ambient-light-sensor'` を出さなくなった。
+- `@wcstack/lint`: `wcs/command-event-argument`・`wcs/frequency-invalid`・`wcs/output-path-written`・`wcs/target-selector` が新しい警告。`wcs/path-readonly`（**error**）は、setter の無い getter に束ねた要素の出力 —— 実行時はそのページを拒んでいた —— と、そう束ねた、`#ro` の無いカスタム要素の双方向のメンバーを報告する（`get total()` に対する `<wcs-storage data-wcs="value: total">`: `value#ro:` か、`#init=element` のアクセサの組を書く）。`wcs/token-undeclared`（**error**）は、`$commandTokens` / `$eventTokens` がそもそも無い state で使ったトークンと、`$eventTokens` に無い `$on` の項目を報告する。これらを持ち、`--errors-only` を通っていたページは、今は通らない。
+
+要らなくなった回避策: ページ自身の `devicemotion` のリスナーと、`DeviceMotionEvent.requestPermission()` の呼び出し。北を出すための `deviceorientationabsolute` / `webkitCompassHeading` のリスナー。`error` が `null` でない `"denied"` を「まだ問うていない」と読むこと。ボタンを出すかを決める手書きの機能検出（`supported`）。ページ自身による `document.permissionsPolicy` の読み取り（`unsupportedReason`）。手で呼ぶ `navigator.credentials.preventSilentAccess()` と、ページが作る `new PasswordCredential(…)`。`<wcs-contacts>` の空の配列を「閉じた」と扱うこと。`<wcs-permission name="ambient-light-sensor">` を囲む `if:`。失敗したセンサーを始め直すために `start` の前に出す `stop`。storage の README の「任意のタイミングで保存する」の例は書き直した: 4.24 まで載せていた形（getter に束ねた `trigger:` と `manual`）は、変更のたびに `[wcs/path-readonly]` を記録し、保存したものを戻さなかった。
+
+## 4.25.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
@@ -465,3 +481,5 @@ README の例が 2 つ誤っていました: notification と speech の README 
 - 絞り込みを変える一覧は、取りに行っているページを中断する（`command.abort:`）: `manual` の `<wcs-fetch>` は `url` が変わっても中断せず、前の絞り込みの行が新しい一覧に入る（[long-lists.ja.md](./long-lists.ja.md)）。
 - ページ自身のスクリプトが `for:` の行に差し込んだノードは、その後ろの要素の委譲ハンドラをずらす: それらは `on*#direct:` で束ねる（state の README、「委譲されるイベント」）。
 - 一覧の行へ戻るページ自身のリンクは、行のフラグメントへ行く（`navigateUrl = "/#photo-" + id`）: `$watch` からの `scrollIntoView()` は、push のナビゲーションが終わるときに打ち消される（router の README）。
+- ページの可視性を報告する要素は無い: 隠れたタブでセンサーを止めるページは、自分で `visibilitychange` を聞く（[long-lived-pages.ja.md](./long-lived-pages.ja.md)）。センサーの要素は、端末にそのセンサーがあるかを言わない: `start` の少し後に値が来なければ、無いと扱う。
+- iPhone の Safari は、動きと向きの答えを、問われたときだけページに教え、タップからしか問わない: 再読み込みの後 `permissionState` はまた `"unknown"` になり、覚えておきたいページは自分でメモを持つ。向きの固定が効くかは、全画面で試すまで分からない。Safari には `lock()` が無い（[device-apis.ja.md](./device-apis.ja.md)）。

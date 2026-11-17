@@ -1652,6 +1652,24 @@
       "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Confirmed from the candidates list. Read through `current()` (the signals README, Keyed lists).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 候補の一覧から確認した。`current()` 越しに読む（signals の README、Keyed lists）。" }
     },
     {
+      "id": "io-error-unobserved",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Binds an I/O node's commands and outputs, and none of its failure outputs (`<wcs-fullscreen data-wcs=\"active: fs; command.requestFullscreen: $command.go\">`, no `error:` / `errorInfo:`).", "ja": "I/O ノードのコマンドと出力を束ね、失敗の出力はどれも束ねない（`<wcs-fullscreen data-wcs=\"active: fs; command.requestFullscreen: $command.go\">`、`error:` も `errorInfo:` も無い）。" },
+      "effect": { "en": "The elements never throw: a command that fails ends in `error` / `errorInfo`, and the page stays as it was — the button did nothing. Since 4.25 the diagnostics add-on names the element once per tag and code when its `data-wcs` reads none of `error`, `errorInfo`, `status`, `connected`, `readyState` and has no event token (`[wcs/io-error-unobserved]`); up to 4.24 nothing said so.", "ja": "要素は投げない: 失敗したコマンドは `error` / `errorInfo` に入って終わり、ページは元のまま — ボタンは何もしなかった。4.25 から、その `data-wcs` が `error`・`errorInfo`・`status`・`connected`・`readyState` のどれも読まず、イベントトークンも無いとき、diagnostics の後付けがその要素をタグと code ごとに 1 回挙げる（`[wcs/io-error-unobserved]`）。4.24 までは何も知らせなかった。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/io-error-unobserved]" }],
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). 17 of 20 mistakes made on purpose got no word from the runtime. Bind `errorInfo` and show it. Not seen: an element in a `for:` row or an `if:` branch, and a page that reads the failure by a listener of its own.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 わざとした間違い 20 個のうち 17 個に、実行時は何も言わなかった。`errorInfo` を束ねて見せる。見ないもの: `for:` の行や `if:` の枝の中の要素と、自前のリスナーで失敗を読むページ。" }
+    },
+    {
+      "id": "command-outside-the-tap",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Emits a command that needs a user gesture from a place that is not one: when the page opens, from a `$watch`, when a response arrives, or after an `await` in the tap's handler (`const file = await this.makePicture(); this.$command.share.emit({ files: [file] })`).", "ja": "ユーザーの操作が要るコマンドを、操作でない所から出す: ページを開いたとき、`$watch` から、応答が届いたとき、タップのハンドラーの `await` の後（`const file = await this.makePicture(); this.$command.share.emit({ files: [file] })`）。" },
+      "effect": { "en": "The browser refuses: `errorInfo.code` is `not-allowed`. In Chromium a tap's activation lasts about five seconds, so it works on a fast network and fails on a slow one. The failure is in `errorInfo`; a page that reads none of it is named by the diagnostics add-on (`[wcs/io-error-unobserved]`, 4.25).", "ja": "ブラウザが断る: `errorInfo.code` は `not-allowed`。Chromium ではタップの効力が約 5 秒続くので、速い回線では動き、遅い回線で失敗する。失敗は `errorInfo` に入る。それをどれも読まないページは、diagnostics の後付けが挙げる（`[wcs/io-error-unobserved]`、4.25）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/io-error-unobserved]" }],
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Emit in the tap's handler before anything is awaited, and prepare what the command needs beforehand (docs/device-apis.md).", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 タップのハンドラーの中で、何かを待つ前に出す。コマンドに要るものは先に用意しておく（docs/device-apis.ja.md）。" }
+    },
+    {
       "id": "command-event-argument",
       "lint": [{ "code": "wcs/command-event-argument", "severity": "warning" }],
       "runtime": "silent", "harm": "broken",
@@ -1661,12 +1679,20 @@
       "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Emit from a state method with the data. Four commands ignore a non-data first argument and may be wired straight: `<wcs-fetch>`'s `fetch`, and since 4.25 `<wcs-ws>`'s `close`, `<wcs-idle>`'s `start`, `<wcs-notify>`'s `close`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 state のメソッドから、データを付けて出す。4 つのコマンドは、データでない最初の引数を無視するので直結できる: `<wcs-fetch>` の `fetch`、4.25 からは `<wcs-ws>` の `close`・`<wcs-idle>` の `start`・`<wcs-notify>` の `close`。" }
     },
     {
+      "id": "ws-close-wired-to-button",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Wires a \"Disconnect\" button straight to `<wcs-ws>`'s `close` (`onclick: $command.bye` with `command.close: $command.bye`).", "ja": "「切断」ボタンを `<wcs-ws>` の `close` に直結する（`onclick: $command.bye` と `command.close: $command.bye`）。" },
+      "effect": { "en": "Up to 4.24 the event reached `WebSocket.close()` as the close code, which threw `InvalidAccessError` out of the command, and an open socket stayed open. Since 4.25 anything that is not a number in `code`'s place is ignored.", "ja": "4.24 までは、イベントが close の code として `WebSocket.close()` に届き、`InvalidAccessError` がコマンドの外へ投げられ、開いたソケットは開いたままだった。4.25 から、`code` の位置にある数でないものは無視される。" },
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Found while listing the commands `wcs/command-event-argument` covers.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `wcs/command-event-argument` が対象にするコマンドを数えていて見つけた。" }
+    },
+    {
       "id": "frequency-invalid",
       "lint": [{ "code": "wcs/frequency-invalid", "severity": "warning" }],
-      "runtime": "silent", "harm": "degraded",
+      "runtime": "loud", "harm": "degraded",
       "mistake": { "en": "Writes a sensor's `frequency` that is not a positive number (`<wcs-accelerometer frequency=\"60hz\">`, `frequency=\"0\"`).", "ja": "センサーの `frequency` に、正の数でない値を書く（`<wcs-accelerometer frequency=\"60hz\">`、`frequency=\"0\"`）。" },
-      "effect": { "en": "The sensor runs at the browser's default rate (about 10 a second), with no error: steps are still counted, a shake may be missed.", "ja": "センサーは、エラーも無く、ブラウザの既定の頻度（毎秒 10 回ほど）で動く: 歩数は数えられるが、振る動きは取りこぼしうる。" },
-      "disposition": "static-only",
+      "effect": { "en": "The sensor runs at the browser's default rate (about 10 a second): steps are still counted, a shake may be missed. Since 4.25 the element warns once at `start()` (`[wcs/frequency-invalid]`) and the lint reports the literal; up to 4.24 nothing said so. A rate above what the browser allows is capped without a word.", "ja": "センサーはブラウザの既定の頻度（毎秒 10 回ほど）で動く: 歩数は数えられるが、振る動きは取りこぼしうる。4.25 から、要素は `start()` で 1 回警告し（`[wcs/frequency-invalid]`）、lint はリテラルを報告する。4.24 までは何も知らせなかった。ブラウザが許す以上の頻度は、何も言わずに頭打ちになる。" },
+      "evidence": [{ "file": "packages/accelerometer/src/components/Accelerometer.ts", "text": "[wcs/frequency-invalid]" }, { "file": "packages/gyroscope/src/components/Gyroscope.ts", "text": "[wcs/frequency-invalid]" }],
       "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Write the number alone: `frequency=\"60\"`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 数だけを書く: `frequency=\"60\"`。" }
     },
     {
@@ -1681,11 +1707,160 @@
     {
       "id": "target-selector",
       "lint": [{ "code": "wcs/target-selector", "severity": "warning" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes an id's name where a selector is wanted (`<wcs-fullscreen target=\"viewer\">` for `<div id=\"viewer\">`), on `<wcs-fullscreen>`, `<wcs-pip>`, `<wcs-pointer-lock>`, `<wcs-intersect>`, `<wcs-resize>`.", "ja": "セレクタを書く所に id の名前を書く（`<div id=\"viewer\">` に対して `<wcs-fullscreen target=\"viewer\">`）。`<wcs-fullscreen>`・`<wcs-pip>`・`<wcs-pointer-lock>`・`<wcs-intersect>`・`<wcs-resize>`。" },
-      "effect": { "en": "`target=\"viewer\"` selects `<viewer>` elements, of which there are none: the button does nothing, and only `error` says `Fullscreen target could not be resolved.`", "ja": "`target=\"viewer\"` は `<viewer>` 要素を選ぶが、そういう要素は無い: ボタンは何もせず、`error` だけが `Fullscreen target could not be resolved.` と言う。" },
-      "disposition": "static-only",
+      "effect": { "en": "`target=\"viewer\"` selects `<viewer>` elements, of which there are none: the button does nothing, and `error` says `Fullscreen target could not be resolved.` Since 4.25 the lint reports it, and a page that reads no failure output is named by the diagnostics add-on (`[wcs/io-error-unobserved]`).", "ja": "`target=\"viewer\"` は `<viewer>` 要素を選ぶが、そういう要素は無い: ボタンは何もせず、`error` が `Fullscreen target could not be resolved.` と言う。4.25 から lint が報告し、失敗の出力を読まないページは diagnostics の後付けが挙げる（`[wcs/io-error-unobserved]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/io-error-unobserved]" }],
       "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Write `target=\"#viewer\"`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `target=\"#viewer\"` と書く。" }
+    },
+    {
+      "id": "control-node-leaves-while-active",
+      "lint": [],
+      "runtime": "designed-out", "harm": "stale",
+      "mistake": { "en": "Puts `<wcs-fullscreen>`, `<wcs-pointer-lock>` or `<wcs-pip>` — with what it controls — inside something the app takes away (a route's content, an `if:`), and takes it away while it is active.", "ja": "`<wcs-fullscreen>`・`<wcs-pointer-lock>`・`<wcs-pip>` を、それが操るものと一緒に、アプリが取り除くもの（ルートの中身、`if:`）の中に置き、働いている最中に取り除く。" },
+      "effect": { "en": "The browser ends the fullscreen or the lock when the target goes. Up to 4.24 the element had stopped listening and state's `active` stayed `true` — a button that says 閉じる on the next page. Since 4.25 a disconnect publishes `active: false`, and the reconnect reads the truth.", "ja": "対象が外れると、ブラウザは全画面や捕捉を解く。4.24 までは、要素が聞くのをやめていて、state の `active` は `true` のままだった — 次のページでもボタンが「閉じる」。4.25 から、切断は `active: false` を出し、再接続は本当の値を読む。" },
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Three browsers. What must go on across pages still lives outside the router.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 3 ブラウザ。ページをまたいで続けたいものは、やはりルーターの外に置く。" }
+    },
+    {
+      "id": "own-flag-for-fullscreen",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Keeps \"is it fullscreen\" (or \"is the pointer captured\", \"is the small window open\") as a flag of the page's own that the buttons flip, instead of binding the element's `active`.", "ja": "「全画面か」（「ポインターを捕捉中か」「小窓が開いているか」）を、要素の `active` を束ねる代わりに、ボタンが反転させるページ自身のフラグとして持つ。" },
+      "effect": { "en": "The user leaves with Escape, a swipe or the window's ×, and the flag does not know: the button still says 閉じる, the orientation lock is never released, and the next tap only flips the flag back.", "ja": "利用者が Escape・スワイプ・窓の × で出ても、フラグは知らない: ボタンは「閉じる」のまま、向きの固定は解かれず、次のタップはフラグを戻すだけ。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Bind `active`; the element is the authority.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `active` を束ねる。権威は要素にある。" }
+    },
+    {
+      "id": "tilt-denied-without-question",
+      "lint": [],
+      "runtime": "designed-out", "harm": "stale",
+      "mistake": { "en": "Reads `<wcs-tilt>`'s `permissionState: \"denied\"` as \"the user refused\" after a `requestPermission()` that did not come from a tap.", "ja": "タップからでない `requestPermission()` の後の、`<wcs-tilt>` の `permissionState: \"denied\"` を「利用者が断った」と読む。" },
+      "effect": { "en": "On an iPhone such a call is refused without the question being shown. Up to 4.24 the element said `\"denied\"`, `recoverable: false`, and the page told the user Safari would not ask again — one tap would have asked. Since 4.25 the state stays as it was, with `error` and `recoverable: true`; `\"denied\"` is the user's answer only.", "ja": "iPhone では、そういう呼び出しは問いを出さずに断られる。4.24 までは、要素が `\"denied\"`・`recoverable: false` と言い、ページは「Safari は二度目を聞きません」と伝えた — タップ 1 回で問いは出た。4.25 から、状態は元のまま、`error` が立って `recoverable: true`。`\"denied\"` は利用者の答えだけ。" },
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Checked with a script that behaves as Safari is documented to; no phone.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 Safari の文書どおりに振る舞うスクリプトで確かめた。実機ではない。" }
+    },
+    {
+      "id": "sensors-started-before-the-question",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Starts the orientation and motion sensors when the page opens, with nothing for the iPhone's question (`start` emitted from `$connectedCallback`, no `requestPermission` from a tap).", "ja": "ページを開いたときに向きと動きのセンサーを始め、iPhone の問いのためのものを何も置かない（`$connectedCallback` から `start` を出し、タップからの `requestPermission` が無い）。" },
+      "effect": { "en": "On an iPhone no reading ever arrives, and nothing says why: the compass has no arrow.", "ja": "iPhone では値が一度も届かず、理由を言うものも無い: コンパスに矢印が出ない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). One button asks and starts, in the tap (`this.$command.ask.emit(); this.$command.start.emit();`).", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 ボタン 1 つで、タップの中で問い、始める（`this.$command.ask.emit(); this.$command.start.emit();`）。" }
+    },
+    {
+      "id": "generic-sensor-on-an-iphone",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Uses `<wcs-accelerometer>` or `<wcs-gyroscope>` on a page iPhones open.", "ja": "iPhone が開くページで、`<wcs-accelerometer>` や `<wcs-gyroscope>` を使う。" },
+      "effect": { "en": "Safari has no Generic Sensor classes: up to 4.24 both were `capability-missing` there, and steps or a shake needed a hand-written `devicemotion` listener. Since 4.25 the two elements read `devicemotion` where their class is missing, with `requestPermission` for the iPhone's motion question.", "ja": "Safari には Generic Sensor のクラスが無い: 4.24 までは、どちらもそこで `capability-missing` になり、歩数や「振る」には手書きの `devicemotion` のリスナーが要った。4.25 から、この 2 つの要素はクラスが無い所で `devicemotion` を読み、iPhone の動きの問いのために `requestPermission` を持つ。" },
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). `<wcs-magnetometer>` and `<wcs-ambient-light-sensor>` have no fallback: `supported` is `false` there.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `<wcs-magnetometer>` と `<wcs-ambient-light-sensor>` にはフォールバックが無い: そこでは `supported` が `false`。" }
+    },
+    {
+      "id": "tilt-alpha-as-a-compass",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Turns a compass needle by `<wcs-tilt>`'s `alpha`.", "ja": "`<wcs-tilt>` の `alpha` でコンパスの針を回す。" },
+      "effect": { "en": "`alpha` is relative to where the page started on both phone platforms (`absolute` is `false`): the needle points somewhere, not north. Since 4.25 `heading` gives north (from `webkitCompassHeading` or `deviceorientationabsolute`), or `null`.", "ja": "`alpha` は、どちらのスマホでも、ページを開いた向きからの相対値（`absolute` は `false`）: 針はどこかを指すが、北ではない。4.25 から、`heading` が北を出す（`webkitCompassHeading` か `deviceorientationabsolute` から）。分からなければ `null`。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Bind `heading`, and show the direction as text while it is `null`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `heading` を束ね、`null` の間は方角を文字で見せる。" }
+    },
+    {
+      "id": "button-for-a-missing-feature",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Offers a button for fullscreen, Picture-in-Picture, the share sheet, the eye dropper, the contact picker or saved passwords without asking whether the page can use it.", "ja": "全画面・Picture-in-Picture・共有シート・スポイト・連絡先ピッカー・保存したパスワードのボタンを、ページがそれを使えるかを尋ねずに出す。" },
+      "effect": { "en": "An iPhone has no element fullscreen, Firefox no Picture-in-Picture, most desktops no share sheet: the tap ends as `capability-missing` and the button does nothing. Since 4.25 each element has `supported`, and a page that reads no failure output is named by the diagnostics add-on (`[wcs/io-error-unobserved]`).", "ja": "iPhone には要素の全画面が無く、Firefox には Picture-in-Picture が無く、多くのデスクトップには共有シートが無い: タップは `capability-missing` で終わり、ボタンは何もしない。4.25 から、各要素が `supported` を持ち、失敗の出力を読まないページは diagnostics の後付けが挙げる（`[wcs/io-error-unobserved]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/io-error-unobserved]" }],
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). `hidden: fsSupported|not` on the button, and a fallback where there is one.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 ボタンに `hidden: fsSupported|not`。代わりの手段があれば出す。" }
+    },
+    {
+      "id": "unsupported-reasons-folded",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Treats \"not in this browser\", \"refused by the user\" and \"forbidden by the page it is embedded in\" as one thing, or decides it once when the page opens.", "ja": "「このブラウザに無い」「利用者が断った」「埋め込み元のページが禁じている」を 1 つに扱う。または、ページを開いたときに 1 回だけ決める。" },
+      "effect": { "en": "In a frame that forbids the feature the user is told their phone cannot do it, when opening the page itself would work; a permission taken away later is never shown. Since 4.25 `<wcs-permission>`'s `unsupportedReason` says `policy-blocked`.", "ja": "機能を禁じた枠の中で、利用者は「この端末ではできない」と言われる — ページそのものを開けば動くのに。後から取り消された許可は表示されない。4.25 から、`<wcs-permission>` の `unsupportedReason` が `policy-blocked` と言う。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Five answers need three sources: `supported`, the question's `permissionState`, and `<wcs-permission>` (docs/device-apis.md).", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 5 つの答えには 3 つの出どころが要る: `supported`、問いの `permissionState`、`<wcs-permission>`（docs/device-apis.ja.md）。" }
+    },
+    {
+      "id": "lock-before-fullscreen",
+      "lint": [],
+      "runtime": "loud", "harm": "degraded",
+      "mistake": { "en": "Locks the screen orientation before the page is fullscreen, or asks for both in the same handler.", "ja": "ページが全画面になる前に画面の向きを固定する。または、同じハンドラーで両方を頼む。" },
+      "effect": { "en": "A lock holds only while the document is fullscreen: asked earlier it is refused (`not-allowed`) and the viewer stays upright. The refusal is in `<wcs-screen-orientation>`'s `errorInfo`; a page that reads none of it is named by the diagnostics add-on (`[wcs/io-error-unobserved]`, 4.25). A headless desktop Chromium grants the lock anywhere, so a test there does not show it.", "ja": "固定が効くのは、文書が全画面の間だけ: それより前に頼むと断られ（`not-allowed`）、ビューアは縦のまま。断りは `<wcs-screen-orientation>` の `errorInfo` に入る。それを読まないページは、diagnostics の後付けが挙げる（`[wcs/io-error-unobserved]`、4.25）。headless のデスクトップの Chromium はどこでも固定を認めるので、そこでのテストでは見えない。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/io-error-unobserved]" }],
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Lock from a `$watch` on the path bound to `<wcs-fullscreen>`'s `active`, and unlock when it goes back.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `<wcs-fullscreen>` の `active` に束ねたパスの `$watch` から固定し、戻ったら解く。" }
+    },
+    {
+      "id": "picker-closed-as-a-failure",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Shows an error when the user closes the share sheet, the eye dropper or the contact picker; or the other way round, throws every failure away as if the user had closed it.", "ja": "利用者が共有シート・スポイト・連絡先ピッカーを閉じたときにエラーを見せる。または逆に、どの失敗も「利用者が閉じた」として捨てる。" },
+      "effect": { "en": "共有できませんでした after the user simply closed the sheet; or a button that does nothing, every time, with no message. The elements keep the two apart: `cancelled` for a close, `error` / `errorInfo` for a failure.", "ja": "利用者がシートを閉じただけで「共有できませんでした」。または、毎回何もせず、何も言わないボタン。要素はこの 2 つを分けている: 閉じたら `cancelled`、失敗は `error` / `errorInfo`。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Bind both; show nothing for `cancelled`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 両方を束ね、`cancelled` には何も見せない。" }
+    },
+    {
+      "id": "contacts-closed-picker",
+      "lint": [],
+      "runtime": "designed-out", "harm": "stale",
+      "mistake": { "en": "Waits for `<wcs-contacts>`'s `cancelled` to learn that the user closed the picker.", "ja": "利用者がピッカーを閉じたことを知るために、`<wcs-contacts>` の `cancelled` を待つ。" },
+      "effect": { "en": "Up to 4.24 it never came: the element waited for an `AbortError`, and the Contact Picker specification resolves a closed picker with an empty list — `value` became `[]`. Since 4.25 an empty result sets `cancelled` and leaves `value` as it was.", "ja": "4.24 までは、それは決して来なかった: 要素は `AbortError` を待っていたが、Contact Picker の仕様は閉じたピッカーを空のリストで解決する — `value` が `[]` になった。4.25 から、空の結果は `cancelled` を立て、`value` は元のまま。" },
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Checked against the specification and a script that follows it; no Android phone.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 仕様と、仕様どおりのスクリプトで確かめた。Android の実機ではない。" }
+    },
+    {
+      "id": "output-bound-into-a-list-the-page-keeps",
+      "lint": [],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Binds a picker's `value` straight into data the page keeps (`<wcs-contacts data-wcs=\"value: members\">`, where `members` is the team's saved list).", "ja": "ピッカーの `value` を、ページが持ち続けるデータにそのまま束ねる（`<wcs-contacts data-wcs=\"value: members\">`。`members` は保存してあるチームの一覧）。" },
+      "effect": { "en": "`value` is an output: when it binds, the element's value — `null` before the first pick — replaces what the path had, so the members typed earlier are gone at page load. After a pick the list holds the picker's shape (`name: [\"山田\"]`), which is then sent to the server.", "ja": "`value` は出力: 束ねたとき、要素の値 — 最初に選ぶまでは `null` — がパスの中身を置き換えるので、前に入力したメンバーはページを開いた時点で消える。選んだ後、一覧はピッカーの形（`name: [\"山田\"]`）になり、それがサーバーへ送られる。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Give the output a slot of its own and make members of it in a `$watch` or an event-token handler.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 出力には専用のスロットを与え、`$watch` かイベントトークンのハンドラーでメンバーを作る。" }
+    },
+    {
+      "id": "sign-out-without-prevent-silent-access",
+      "lint": [],
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Signs the user out without telling the browser, on a page that signs in silently with `<wcs-credential>`.", "ja": "`<wcs-credential>` でサイレントにサインインするページで、ブラウザに伝えずにサインアウトする。" },
+      "effect": { "en": "The next visit's silent `get` signs the same user straight back in: on a shared computer the next person is in someone else's account. Up to 4.24 the element had no command for it; since 4.25, `preventSilentAccess`.", "ja": "次の訪問のサイレントの `get` が、同じ利用者をそのままサインインさせる: 共用の PC では、次の人がほかの人のアカウントに入る。4.24 までは、要素にそのためのコマンドが無かった。4.25 から `preventSilentAccess`。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Emit it with the sign-out. And store a pair only after the server accepted it: a mistyped password saved once is tried silently on every visit.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 サインアウトと一緒に出す。組を保存するのは、サーバーが受け入れた後だけ: 打ち間違えたパスワードを一度保存すると、訪問のたびに黙って試される。" }
+    },
+    {
+      "id": "sensors-left-running",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Leaves the sensors running on pages that do not use them and while the tab is hidden (sensor elements outside the routes, started once).", "ja": "センサーを、使わないページでも、タブが隠れている間も動かしたままにする（ルートの外に置いたセンサーの要素を、1 回始めるだけ）。" },
+      "effect": { "en": "Every reading is still handled: battery spent for nothing, steps counted with the screen off. No sensor element stops by itself when the page is hidden, and none reports visibility.", "ja": "値はすべて処理され続ける: 電池を無駄に使い、画面が消えている間も歩数を数える。どのセンサーの要素も、ページが隠れても自分では止まらず、可視性を報告する要素も無い。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Emit `start` / `stop` from a `$watch` on the route and on the page's visibility (docs/long-lived-pages.md has the visibility recipe).", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 ルートとページの可視性の `$watch` から `start` / `stop` を出す（可視性の書き方は docs/long-lived-pages.ja.md）。" }
+    },
+    {
+      "id": "every-reading-into-state",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Binds every reading of every sensor into state (`x: ax; y: ay; z: az`) and draws an expensive part of the page from it.", "ja": "すべてのセンサーのすべての値を状態に束ね（`x: ax; y: ay; z: az`）、そこからページの重い部分を描く。" },
+      "effect": { "en": "Each reading is a write and a redraw: measured at about twice the script time and a layout per reading (35 a second) against a page that writes only when something shown changes.", "ja": "値 1 つごとに書き込みと描き直しが起きる: 見せるものが変わったときだけ書くページに比べて、スクリプトの時間が約 2 倍、レイアウトが値 1 つごと（毎秒 35 回）と測った。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Take the readings in an event-token handler and write a path only when what is shown changes.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 値はイベントトークンのハンドラーで受け、見せるものが変わるときだけパスに書く。" }
+    },
+    {
+      "id": "pip-video-in-a-route",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Keeps the `<video>` and its `<wcs-pip>` in a route's content and expects the small window to go on while the user reads another page.", "ja": "`<video>` とその `<wcs-pip>` をルートの中身に置き、利用者がほかのページを読んでいる間も小窓が続くと期待する。" },
+      "effect": { "en": "Leaving the route takes the video out of the document. Chromium keeps it playing in the small window — the mistake does not show there — and other browsers may close or pause it; `active` goes to `false` either way (4.25).", "ja": "ルートを離れると、動画は文書から外れる。Chromium は小窓で流し続ける — そこでは間違いが見えない — が、ほかのブラウザは閉じるか止めるかもしれない。どちらでも `active` は `false` になる（4.25）。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Keep the video and its `<wcs-pip>` outside the router, hidden with a class where it is not shown.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 動画と `<wcs-pip>` はルーターの外に置き、見せない所ではクラスで隠す。" }
+    },
+    {
+      "id": "timer-reset-fires-tick",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Handles `<wcs-timer>`'s tick with an event token and restarts it with `reset` then `start` (`eventToken.tick: timeUp`).", "ja": "`<wcs-timer>` の tick をイベントトークンで受け、`reset` と `start` で始め直す（`eventToken.tick: timeUp`）。" },
+      "effect": { "en": "`reset` publishes the change to 0 through `wcs-timer:tick` (`{ count: 0, elapsed: 0 }`), so the handler runs at once: a 2.5-second wait ended the moment it started.", "ja": "`reset` は、0 への変化を `wcs-timer:tick`（`{ count: 0, elapsed: 0 }`）で発行するので、ハンドラーがその場で走る: 2.5 秒の待ちが、始めた瞬間に終わった。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Test `event.detail.count > 0` in the handler. The README says so since 4.25.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 ハンドラーで `event.detail.count > 0` を確かめる。4.25 から README に書いてある。" }
     }
   ],
   "uncounted": [
