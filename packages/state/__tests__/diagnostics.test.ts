@@ -998,3 +998,205 @@ describe("<body> / <html> の data-wcs（wcs/body-binding — docs/seam-apps.md�
     }
   });
 });
+
+describe("誰も読まない失敗（wcs/io-error-unobserved — docs/seam-apps.md、stamp-rally）", () => {
+  const BIND = Symbol.for("wcstack.binder");
+  async function bound(html: string, state: Record<string, any>) {
+    const h = document.createElement(`diag-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state>${html}`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState(state);
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    return { root, el };
+  }
+  /** An I/O node of the page's own: never throws, puts its failure in `error` / `errorInfo` (as `properties` declares). */
+  function node(tag: string, properties: unknown): void {
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties };
+      error: unknown = null;
+      errorInfo: unknown = null;
+      active = false;
+      fail(error: unknown, info: unknown = null): void {
+        this.error = error;
+        this.errorInfo = info;
+        this.dispatchEvent(new CustomEvent(`${tag}:error`, { detail: error }));
+        this.dispatchEvent(new CustomEvent(`${tag}:error-info-changed`, { detail: info }));
+      }
+    });
+  }
+  const outputs = (tag: string, ...names: string[]) => names.map((name) => ({
+    name,
+    event: name === "errorInfo" ? `${tag}:error-info-changed` : name === "error" ? `${tag}:error` : `${tag}:change`,
+  }));
+  let warn: MockInstance<typeof console.warn>;
+  const said = () => warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("io-error-unobserved"));
+  const TAIL = `— and nothing reads it: its data-wcs binds none of error, errorInfo, status and connected, and no event token. Bind errorInfo (errorInfo: path) and show it.`;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    warn.mockRestore();
+  });
+
+  it("束縛はあるのに error・errorInfo・status のどれも束ねていない要素が失敗を出したら、タグと code ごとに 1 回、文面と直し方を付けて知らせる", async () => {
+    node("io-a", outputs("io-a", "active", "error", "errorInfo"));
+    const { root } = await bound(`<io-a data-wcs="active: on"></io-a><io-a data-wcs="active: on"></io-a>`, { on: false });
+    expect(said()).toEqual([]);
+    const [first, second] = [...root.querySelectorAll("io-a")] as any[];
+    first.fail(new TypeError("Permissions check failed"), { code: "not-allowed" });
+    await Promise.resolve();
+    expect(said()).toEqual([
+      `[@wcstack/state] [wcs/io-error-unobserved] <io-a> reported a failure (not-allowed): "Permissions check failed" ${TAIL}`,
+    ]);
+    // 同じタグの同じ code は言い直さない。別の code は言う
+    second.fail(new TypeError("again"), { code: "not-allowed" });
+    await Promise.resolve();
+    expect(said()).toHaveLength(1);
+    second.fail({ message: "Fullscreen API is not supported." }, { code: "capability-missing" });
+    await Promise.resolve();
+    expect(said()[1]).toBe(`[@wcstack/state] [wcs/io-error-unobserved] <io-a> reported a failure (capability-missing): "Fullscreen API is not supported." ${TAIL}`);
+    // 失敗が消えた（null）ときは何も言わない
+    first.fail(null, null);
+    await Promise.resolve();
+    expect(said()).toHaveLength(2);
+  });
+
+  it("失敗の形（{ error: 名前, message }・{ error: 例外 }・文字列・errorInfo だけ）から文面を取り、errorInfo を宣言しない要素は error のイベントで聞く", async () => {
+    node("io-b", outputs("io-b", "active", "error"));
+    node("io-c", outputs("io-c", "active", "errorInfo"));
+    const { root } = await bound(`<io-b data-wcs="active: on"></io-b><io-c data-wcs="active: on"></io-c>`, { on: false });
+    const b = root.querySelector("io-b") as any;
+    const c = root.querySelector("io-c") as any;
+    b.fail({ error: "NotReadableError", message: "Could not connect to a sensor" });
+    await Promise.resolve();
+    expect(said()[0]).toBe(`[@wcstack/state] [wcs/io-error-unobserved] <io-b> reported a failure: "Could not connect to a sensor" ${TAIL}`);
+    c.fail({ error: new Error("needs a tap") }, { code: "c1" });
+    await Promise.resolve();
+    c.fail({ error: "unsupported" }, { code: "c2" });
+    await Promise.resolve();
+    c.fail("plain text", { code: "c3" });
+    await Promise.resolve();
+    c.fail(null, { code: "c4" });
+    await Promise.resolve();
+    expect(said().slice(1).map((w) => w.slice(w.indexOf("failure"), w.indexOf(" — and")))).toEqual([
+      `failure (c1): "needs a tap"`,
+      `failure (c2): "unsupported"`,
+      `failure (c3): "plain text"`,
+      `failure (c4): ""`,
+    ]);
+  });
+
+  it("errorInfo のイベントを error より先に出す要素でも、文面は error から取る（1 マイクロタスク後に読む）", async () => {
+    customElements.define("io-order", class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: outputs("io-order", "active", "error", "errorInfo") };
+      error: unknown = null;
+      errorInfo: unknown = null;
+      fail(): void {
+        this.errorInfo = { code: "first" };
+        this.dispatchEvent(new CustomEvent("io-order:error-info-changed"));
+        this.error = { message: "set after its info" };
+        this.dispatchEvent(new CustomEvent("io-order:error"));
+      }
+    });
+    const { root } = await bound(`<io-order data-wcs="active: on"></io-order>`, { on: false });
+    (root.querySelector("io-order") as any).fail();
+    expect(said()).toEqual([]);
+    await Promise.resolve();
+    expect(said()).toEqual([`[@wcstack/state] [wcs/io-error-unobserved] <io-order> reported a failure (first): "set after its info" ${TAIL}`]);
+  });
+
+  it("ページを離れる間（pagehide から）の失敗は知らせない。bfcache から戻ったら（pageshow）また知らせる。errorInfo の message があればそれを文面にする", async () => {
+    node("io-leave", outputs("io-leave", "active", "error", "errorInfo"));
+    const { root } = await bound(`<io-leave data-wcs="active: on"></io-leave>`, { on: false });
+    const el = root.querySelector("io-leave") as any;
+    window.dispatchEvent(new Event("pagehide"));
+    el.fail(new Event("error"), { code: "connection-error", message: "the stream closed" });
+    await Promise.resolve();
+    expect(said()).toEqual([]);
+    window.dispatchEvent(new Event("pageshow"));
+    el.fail(new Event("error"), { code: "connection-error", message: "the stream closed" });
+    await Promise.resolve();
+    expect(said()).toEqual([`[@wcstack/state] [wcs/io-error-unobserved] <io-leave> reported a failure (connection-error): "the stream closed" ${TAIL}`]);
+  });
+
+  it("window の無い環境（サーバーの描画: グローバルに addEventListener が無い）でも、アドオンの install は投げない", async () => {
+    vi.resetModules();
+    const saved = globalThis.addEventListener;
+    (globalThis as any).addEventListener = undefined;
+    try {
+      const fresh = await import("../src/features/diagnostics");
+      expect(() => fresh.diagnostics.install!()).not.toThrow();
+    } finally {
+      globalThis.addEventListener = saved;
+      vi.resetModules();
+    }
+  });
+
+  it("束ねたときにすでに持っていた失敗は、その場で知らせる", async () => {
+    node("io-d", outputs("io-d", "active", "error", "errorInfo"));
+    const h = document.createElement(`diag-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><io-d data-wcs="active: on"></io-d>`;
+    (root.querySelector("wcs-state") as any).setInitialState({ on: false });
+    customElements.upgrade(root);
+    (root.querySelector("io-d") as any).fail({ message: "at connect" }, { code: "early" });
+    document.body.appendChild(h);
+    await (root.querySelector("wcs-state") as any).connectedCallbackPromise;
+    expect(said()).toEqual([`[@wcstack/state] [wcs/io-error-unobserved] <io-d> reported a failure (early): "at connect" ${TAIL}`]);
+  });
+
+  it("error・errorInfo・status のどれかを束ねた要素、イベントトークンのある要素、スプレッドのある要素、data-wcs-ignore の中、失敗の出力を宣言しない要素、宣言の無い要素、解析できない data-wcs は知らせない", async () => {
+    node("io-e", outputs("io-e", "active", "error", "errorInfo", "status", "connected", "readyState"));
+    node("io-f", outputs("io-f", "active"));
+    customElements.define("io-g", class extends HTMLElement { error: unknown = null; });
+    const { root } = await bound(
+      `<io-e id="e1" data-wcs="active: on; error: err"></io-e>`
+      + `<io-e id="e2" data-wcs="active: on; errorInfo: info"></io-e>`
+      + `<io-e id="e3" data-wcs="active: on; status: st"></io-e>`
+      + `<io-e id="e4" data-wcs="active: on; eventToken.active: changed"></io-e>`
+      + `<io-e id="e8" data-wcs="connected: on"></io-e><io-e id="e9" data-wcs="readyState: st"></io-e>`
+      + `<io-e id="e5" data-wcs="...: bag"></io-e>`
+      + `<div data-wcs-ignore><io-e id="e6" data-wcs="active: on"></io-e></div>`
+      + `<io-e id="e7"></io-e>`
+      + `<io-f id="f" data-wcs="active: on"></io-f>`
+      + `<io-g id="g" data-wcs="attr.title: label"></io-g>`,
+      { on: false, err: null, info: null, st: 0, label: "x", bag: { active: false, error: null, errorInfo: null, status: 0 }, $eventTokens: ["changed"] },
+    );
+    // (歩いた後に書かれた、解析できない data-wcs: 5 秒後の見直しで出会う)
+    root.querySelector("#e7")!.setAttribute("data-wcs", "active");
+    await vi.advanceTimersByTimeAsync(5000);
+    for (const id of ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"]) (root.querySelector(`#${id}`) as any).fail(new Error("x"), { code: "c" });
+    await Promise.resolve();
+    (root.querySelector("#f") as any).fail(new Error("x"), { code: "c" });
+    (root.querySelector("#g") as any).error = new Error("x");
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(said()).toEqual([]);
+  });
+
+  it("後から定義された要素は、ページの準備の 5 秒後に聞き始める。後から入って binder に渡された要素は、入ってから 1 秒後に聞き始める", async () => {
+    const { root } = await bound(`<io-late data-wcs="active: on"></io-late><main id="slot"></main>`, { on: false });
+    node("io-late", outputs("io-late", "active", "error", "errorInfo"));
+    const late = root.querySelector("io-late") as any;
+    customElements.upgrade(late);
+    await vi.advanceTimersByTimeAsync(5000);
+    late.fail(new Error("defined late"), { code: "late" });
+    await Promise.resolve();
+    expect(said()).toEqual([`[@wcstack/state] [wcs/io-error-unobserved] <io-late> reported a failure (late): "defined late" ${TAIL}`]);
+
+    node("io-route", outputs("io-route", "active", "error", "errorInfo"));
+    const slot = root.querySelector("#slot")!;
+    slot.innerHTML = `<io-route data-wcs="active: on"></io-route>`;
+    for (const x of [...slot.children]) (globalThis as any)[BIND].bind(x);
+    const routed = slot.querySelector("io-route") as any;
+    routed.fail(new Error("in a route"), { code: "route" });
+    await Promise.resolve();
+    expect(said()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(said()[1]).toBe(`[@wcstack/state] [wcs/io-error-unobserved] <io-route> reported a failure (route): "in a route" ${TAIL}`);
+  });
+});

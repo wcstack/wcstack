@@ -676,10 +676,72 @@ function lookLater(engine: Engine, phase: string): void {
     if ((e?.element as Element | undefined)?.isConnected) {
       undefinedElements(e!);
       formControls(e!);
+      ioErrors(e!);
     }
   }, UNDEFINED_AFTER);
   if (document.readyState === "complete") look();
   else addEventListener("load", look, { once: true });
+}
+
+// ---------------------------------------------------------------- a failure nothing reads
+
+/** The tags and codes already told about a failure nothing reads. */
+const toldErrors = new Set<string>();
+/** The elements already looked at: listened to, or with nothing to listen for. */
+const errorSeen = new WeakSet<Element>();
+/** The outputs through which a page reads an element's failure (a connection's: whether it is up). */
+const READS_FAILURE = /^(error|errorInfo|status|connected|readyState)$/;
+/** Set while the page is going away: a request the navigation cut, a stream the browser closed, are not the page's to show. */
+let leaving = false;
+
+/** A `data-wcs` that reads its element's failures: one of those outputs, an event token (its handler sees the event), a spread. */
+function readsFailure(text: string): boolean {
+  try {
+    return parseBindTextsForElement(text).some((b) => b.bindingType === "spread" || b.propSegments[0] === "eventToken"
+      || (b.bindingType === "prop" && READS_FAILURE.test(b.propName)));
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * An element that state binds, that declares where its failures go (`errorInfo` or `error` among its
+ * `wcBindable.properties`), and whose `data-wcs` reads none of it: its commands never throw, so a refused
+ * fullscreen, a share with no user gesture, a sensor the page may not use end in an output nobody looks at —
+ * the page stays as it was, without a word (docs/seam-apps.md, stamp-rally: 17 of 20 mistakes made on purpose).
+ * Listened to from the page's elements that still carry their `data-wcs` (a row's and a branch's do not: the plan
+ * holds their bindings), when the root connects, UNDEFINED_AFTER after the page was ready (an element defined
+ * since) and UNBOUND_AFTER after the root's content changes (a route's content). A failure the element already
+ * holds is told at once. Said once per tag and code. Not told: a failure while the page is going away (from its
+ * `pagehide` on: the navigation cut a request, the browser closed a stream), `data-wcs-ignore`, and a failure the page reads
+ * otherwise — a listener of its own, `:state(error)` in CSS — which this cannot see: bind `errorInfo:` to say so.
+ */
+function ioErrors(engine: Engine): void {
+  const attr = config.bindAttributeName;
+  for (const el of (engine.root as ParentNode).querySelectorAll(`[${attr}]`)) {
+    const tag = el.localName;
+    if (!tag.includes("-") || errorSeen.has(el)) continue;
+    const cls = (((el as any).customElementRegistry ?? customElements) as CustomElementRegistry).get(tag) as any;
+    // (not defined yet: looked at again later)
+    if (cls === undefined) continue;
+    errorSeen.add(el);
+    const outputs: unknown = cls.wcBindable?.properties;
+    const named = (name: string): any => (Array.isArray(outputs) ? outputs.find((p) => p?.name === name) : undefined);
+    const out = named("errorInfo") ?? named("error");
+    if (out === undefined || readsFailure(el.getAttribute(attr)!) || el.closest(`[${attr}-ignore]`) !== null) continue;
+    const tell = (): void => {
+      const info = (el as any).errorInfo;
+      const error = (el as any).error;
+      if (leaving || (info ?? error) == null) return;
+      const key = `${tag} ${info?.code}`;
+      if (toldErrors.has(key)) return;
+      toldErrors.add(key);
+      console.warn(`[@wcstack/state] [wcs/io-error-unobserved] <${tag}> reported a failure${info?.code ? ` (${info.code})` : ""}: "${info?.message ?? error?.message ?? error?.error?.message ?? error?.error ?? error ?? ""}" — and nothing reads it: its ${attr} binds none of error, errorInfo, status and connected, and no event token. Bind errorInfo (errorInfo: path) and show it.`);
+    };
+    // (a microtask later: an element may dispatch errorInfo's event before it has set error, or the other way round)
+    el.addEventListener(out.event, () => void Promise.resolve().then(tell));
+    tell();
+  }
 }
 
 // ---------------------------------------------------------------- pages wcstack does not own
@@ -751,11 +813,14 @@ function watchUnbound(engine: Engine, phase: string): void {
   const c = new WeakRef(container);
   const present = new WeakSet(container.querySelectorAll(`[${config.bindAttributeName}]`));
   let due = false;
+  ioErrors(engine);
   const observer = new MutationObserver(() => {
     if (due) return;
     due = true;
     setTimeout(() => {
       due = false;
+      const now = e.deref();
+      if (now !== undefined) ioErrors(now);
       lookUnbound(e, r, c, present, observer);
     }, UNBOUND_AFTER);
   });
@@ -1060,6 +1125,9 @@ export const diagnostics: Feature = {
     hooks.listSynced = chain(chain(hooks.listSynced, listValue), rowsArrived);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
     watchInputs();
+    // (a page restored from the back/forward cache is not leaving any more; a server render has no window to hear)
+    globalThis.addEventListener?.("pagehide", () => void (leaving = true));
+    globalThis.addEventListener?.("pageshow", () => void (leaving = false));
   },
 };
 export default diagnostics;
