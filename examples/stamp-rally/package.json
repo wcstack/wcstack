@@ -1,0 +1,17 @@
+{
+  "name": "wcstack-stamp-rally",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a town-walk stamp rally opened on the walker's own phone — the screen and sensor elements: a device check that keeps five answers apart, saved passwords, the eye dropper and the contact picker, a compass, steps and a shake to stamp, fullscreen held in landscape, a guide video in a small window across pages, the share sheet, and the city's portal showing it in an iframe.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/server": "^4.25.0",
+    "@wcstack/state": "^4.25.0",
+    "@wcstack/testing": "^4.25.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.0.5"
+  }
+}

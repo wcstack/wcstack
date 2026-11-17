@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <base href="/">
+  <title>みどり市 まち歩きスタンプラリー</title>
+  <link rel="stylesheet" href="app.css">
+  <!-- every I/O package first, state last (wcstack-app skill §2) -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/credential/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/gyroscope/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/magnetometer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/ambient-light-sensor/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/geolocation/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fullscreen/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/screen-orientation/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/picture-in-picture/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/pointer-lock/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/share/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/contacts/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/eyedropper/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/clipboard/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/media-query/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<div class="app" data-wcs="attr.data-theme: theme">
+
+<wcs-state src="state.js"></wcs-state>
+
+<!-- ======================================================= I/O nodes (outside the router: they outlive navigation) -->
+<wcs-storage key="sr.session" data-wcs="value#init=element: session"></wcs-storage>
+<wcs-storage key="sr.steps" data-wcs="value#init=element: savedSteps"></wcs-storage>
+<wcs-storage key="sr.theme" data-wcs="value#init=element: themeOverride"></wcs-storage>
+<wcs-storage key="sr.iosAnswer" data-wcs="value#init=element: iosAnswer"></wcs-storage>
+
+<wcs-fetch data-wcs="url: spotsUrl; value: spotsValue; error: spotsError; eventToken.value: spotsResponded"></wcs-fetch>
+<wcs-fetch data-wcs="...: meFetch; url: meUrl; trigger: meReload; eventToken.value: meResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch method="POST" manual
+  data-wcs="url: loginUrl; body: loginBody; trigger: loginTrigger; loading: loginLoading; error: loginError; eventToken.value: loginResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<!-- the answer is a 204 whose Content-Type says JSON, with no body: read as text — <wcs-fetch>'s automatic reading
+     parses it as JSON and reports a network failure for a request that succeeded (found landing the app) -->
+<wcs-fetch method="POST" manual response-type="text" data-wcs="url: logoutUrl; trigger: logoutTrigger">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch method="PUT" manual
+  data-wcs="url: teamUrl; body: teamBody; trigger: teamTrigger; loading: teamLoading; error: teamError; eventToken.value: teamResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch method="POST" manual
+  data-wcs="url: stampUrl; body: stampBody; trigger: stampTrigger; loading: stampLoading; error: stampError; status: stampStatus; eventToken.value: stampResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<!-- saved passwords: one element asks (silently, from js/auth.js), one stores — they would supersede each other -->
+<wcs-credential id="cred-silent" data-wcs="eventToken.value: credSilent"></wcs-credential>
+<wcs-credential id="cred-store" data-wcs="supported: passwordSupported; error: credStoreError;
+  command.store: $command.credStore; command.preventSilentAccess: $command.credSignOut"></wcs-credential>
+
+<!-- sensors: inert until state starts them (sensorPlan). On an iPhone the orientation (<wcs-tilt>) and the motion
+     (<wcs-accelerometer>, which reads devicemotion there, as <wcs-gyroscope> does) are two questions, asked in one tap -->
+<wcs-tilt data-wcs="supported: tiltSupported; permissionState: tiltPermission; error: tiltError;
+  eventToken.alpha: tiltReading; eventToken.heading: headingReading;
+  command.requestPermission: $command.tiltAsk; command.start: $command.tiltStart; command.stop: $command.tiltStop"></wcs-tilt>
+<wcs-accelerometer frequency="30" data-wcs="supported: accelSupported; permissionState: motionPermission; errorInfo: accelErrorInfo;
+  eventToken.x: accelReading;
+  command.requestPermission: $command.motionAsk; command.start: $command.accelStart; command.stop: $command.accelStop"></wcs-accelerometer>
+<wcs-gyroscope frequency="30" data-wcs="supported: gyroSupported; errorInfo: gyroErrorInfo; eventToken.x: gyroReading;
+  command.start: $command.gyroStart; command.stop: $command.gyroStop"></wcs-gyroscope>
+<wcs-magnetometer frequency="10" data-wcs="supported: magSupported; errorInfo: magErrorInfo; eventToken.x: magReading;
+  command.start: $command.magStart; command.stop: $command.magStop"></wcs-magnetometer>
+<wcs-ambient-light-sensor frequency="2" data-wcs="supported: lightSupported; errorInfo: lightErrorInfo; eventToken.illuminance: lightReading;
+  command.start: $command.lightStart; command.stop: $command.lightStop"></wcs-ambient-light-sensor>
+<wcs-timer interval="2500" once manual data-wcs="command.start: $command.probeStart; command.reset: $command.probeReset; eventToken.tick: probeTimeUp"></wcs-timer>
+
+<!-- unsupportedReason "policy-blocked": the page this one is in forbids the feature (where the browser lets a page read
+     its policy: Chromium) -->
+<wcs-permission name="accelerometer" data-wcs="state: permAccelerometer; unsupportedReason: whyAccelerometer"></wcs-permission>
+<wcs-permission name="gyroscope" data-wcs="state: permGyroscope; unsupportedReason: whyGyroscope"></wcs-permission>
+<wcs-permission name="magnetometer" data-wcs="state: permMagnetometer; unsupportedReason: whyMagnetometer"></wcs-permission>
+<wcs-permission name="ambient-light-sensor" data-wcs="state: permLight; unsupportedReason: whyLight"></wcs-permission>
+<wcs-permission name="geolocation" data-wcs="state: permGeolocation"></wcs-permission>
+<wcs-permission name="clipboard-write" data-wcs="unsupportedReason: whyClipboard"></wcs-permission>
+
+<wcs-geo manual high-accuracy data-wcs="latitude: lat; longitude: lng; accuracy: geoAccuracy; error: geoError;
+  command.watchPosition: $command.geoStart; command.clearWatch: $command.geoStop"></wcs-geo>
+<wcs-wakelock data-wcs="active: keepAwake; held: wakeHeld; errorInfo: wakeErrorInfo"></wcs-wakelock>
+<wcs-screen-orientation data-wcs="angle: screenAngle; type: orientType; portrait: portrait; errorInfo: lockErrorInfo;
+  command.lock: $command.orientLock; command.unlock: $command.orientUnlock"></wcs-screen-orientation>
+<wcs-fullscreen target="#viewer" data-wcs="supported: fsSupported; active: viewerFs; error: fsError; errorInfo: fsErrorInfo;
+  command.requestFullscreen: $command.viewerFsRequest; command.exitFullscreen: $command.viewerFsExit"></wcs-fullscreen>
+<wcs-fullscreen target="#certificate" data-wcs="active: certFs;
+  command.requestFullscreen: $command.certFsRequest; command.exitFullscreen: $command.certFsExit"></wcs-fullscreen>
+<wcs-pointer-lock target="#viewer-strip" data-wcs="supported: pointerLockSupported; active: pointerLocked; errorInfo: pointerLockErrorInfo;
+  command.requestPointerLock: $command.pointerLockRequest; command.exitPointerLock: $command.pointerLockExit"></wcs-pointer-lock>
+<wcs-pip target="#guide-video" data-wcs="supported: pipSupported; active: pipActive; errorInfo: pipErrorInfo;
+  command.requestPictureInPicture: $command.pipRequest; command.exitPictureInPicture: $command.pipExit"></wcs-pip>
+<wcs-share data-wcs="supported: shareSupported; loading: shareLoading; cancelled: shareCancelled; error: shareError; eventToken.value: shared; command.share: $command.share"></wcs-share>
+<wcs-clipboard data-wcs="error: copyError; command.writeText: $command.copy"></wcs-clipboard>
+<wcs-contacts data-wcs="supported: contactsSupported; loading: contactsLoading; cancelled: contactsCancelled; error: contactsError;
+  eventToken.value: contactsPicked; command.select: $command.contactsSelect"></wcs-contacts>
+<wcs-eyedropper data-wcs="supported: eyedropperSupported; loading: picking; cancelled: pickCancelled; error: pickError;
+  eventToken.value: colorPicked; command.open: $command.colorPick"></wcs-eyedropper>
+<wcs-media-query query="(prefers-color-scheme: dark)" data-wcs="matched: prefersDark"></wcs-media-query>
+<wcs-media-query query="(prefers-contrast: more)" data-wcs="matched: prefersContrast"></wcs-media-query>
+<wcs-media-query query="(pointer: fine)" data-wcs="matched: prefersFinePointer"></wcs-media-query>
+<wcs-network data-wcs="offline: offline"></wcs-network>
+
+<!-- ======================================================= header -->
+<header class="site">
+  <wcs-link to="/" class="brand">みどり市 まち歩きスタンプラリー</wcs-link>
+  <span class="team" data-wcs="hidden: hasTeam|not">
+    <span class="chip" data-wcs="style.backgroundColor: teamColor"></span><span data-wcs="textContent: teamName"></span>
+  </span>
+  <span class="count" aria-label="集めたスタンプ" data-wcs="textContent: stampLabel"></span>
+  <nav>
+    <wcs-link to="/walk">コンパス</wcs-link>
+    <wcs-link to="/card">スタンプ帳</wcs-link>
+    <wcs-link to="/team">チーム</wcs-link>
+    <span data-wcs="hidden: loggedIn"><wcs-link to="/login">ログイン</wcs-link></span>
+    <button type="button" class="linkish" data-wcs="hidden: loggedIn|not; onclick: logout">ログアウト</button>
+  </nav>
+</header>
+<p class="pip-bar" data-wcs="hidden: pipActive|not"><span data-wcs="textContent: pipLabel"></span>
+  <button type="button" data-wcs="onclick: closePip">戻す</button></p>
+<p class="offline-bar" data-wcs="hidden: offline|not">電波がありません。つながると元にもどります。</p>
+
+<main id="main">
+  <p class="visually-hidden" role="status" data-wcs="textContent: liveMessage"></p>
+  <wcs-router focus="heading" announce="title"
+    data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query; data: routeData; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <!-- ================================================= はじめに + 端末のチェック -->
+      <wcs-route path="/" name="home">
+        <wcs-head><title>はじめに — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section>
+          <h1>まち歩きスタンプラリー</h1>
+          <p>みどり市の古い町なみに残る8つの場所を歩いて回り、それぞれの場所でスタンプを集めます。歩けない方は、おうちのパソコンからも参加できます。</p>
+          <ol class="places">
+            <template data-wcs="for: spots">
+              <li><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .name"></span></wcs-link>
+                <span class="done" data-wcs="hidden: .stamped|not">済</span></li>
+            </template>
+          </ol>
+          <p><wcs-link to="/walk" class="button primary">はじめる</wcs-link></p>
+
+          <h2 id="check-title">端末のチェック</h2>
+          <p class="hint">このページが使う機能が、この端末とこのページで使えるかどうかです。</p>
+          <p class="framed" data-wcs="hidden: anyPolicyBlocked|not">このページは別のページの中に表示されているため、使えない機能があります。
+            <a target="_blank" rel="noopener" data-wcs="attr.href: newTabUrl">新しいタブで開く</a></p>
+          <table class="check" aria-labelledby="check-title">
+            <tbody>
+              <template data-wcs="for: checkRows">
+                <tr data-wcs="attr.data-key: .key; attr.data-status: .status">
+                  <th scope="row" data-wcs="textContent: .label"></th>
+                  <td>
+                    <span class="status" data-wcs="textContent: .text"></span>
+                    <span class="advice" data-wcs="textContent: .advice"></span>
+                    <button type="button" class="ask" data-wcs="hidden: .canAsk|not; onclick: askSensors; disabled: asking">許可する</button>
+                    <a class="newtab" target="_blank" rel="noopener" data-wcs="hidden: .offerNewTab|not; attr.href: newTabUrl">新しいタブで開く</a>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </section>
+      </wcs-route>
+
+      <!-- ================================================= ログイン -->
+      <wcs-route path="/login" name="login">
+        <wcs-head><title>ログイン — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section>
+          <h1>ログイン</h1>
+          <p class="notice" data-wcs="hidden: notice|falsy; textContent: notice"></p>
+          <form class="login" method="post" action="/login" data-wcs="onsubmit#prevent: login">
+            <p><label>参加者番号 <input name="username" inputmode="numeric" autocomplete="username" required data-wcs="value: loginForm.number"></label></p>
+            <p><label>あいことば <input name="password" type="password" autocomplete="current-password" required data-wcs="value: loginForm.phrase"></label></p>
+            <p><button type="submit" class="primary" data-wcs="disabled: loginLoading">ログイン</button></p>
+            <p class="error" role="alert" data-wcs="textContent: loginErrorMessage"></p>
+          </form>
+        </section>
+      </wcs-route>
+
+      <!-- ================================================= チーム -->
+      <wcs-route path="/team" name="team">
+        <wcs-guard-handler>
+          <script type="module">
+            export default async function (toPath, fromPath, context) {
+              const { memberGuard } = await import(new URL("/js/auth.js", location.href).href);
+              return memberGuard(toPath, fromPath, context);
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>チーム — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section>
+          <h1>チーム</h1>
+          <form class="team-form" novalidate data-wcs="onsubmit#prevent: saveTeam">
+            <p><label>チームの名前 <input name="team-name" maxlength="40" data-wcs="value: teamForm.name"></label>
+              <span class="error field-error" data-field="name" data-wcs="textContent: nameError"></span></p>
+            <fieldset>
+              <legend>チームの色</legend>
+              <div class="swatches">
+                <template data-wcs="for: swatches">
+                  <button type="button" class="swatch" data-wcs="style.backgroundColor: .color; class.selected: .selected; attr.aria-pressed: .selected; attr.aria-label: .label; onclick: pickSwatch"></button>
+                </template>
+              </div>
+              <p>選んだ色：<span class="chip big" data-wcs="style.backgroundColor: teamForm.color"></span> <code data-wcs="textContent: teamForm.color"></code>
+                <span class="error field-error" data-field="color" data-wcs="textContent: colorError"></span></p>
+              <div data-wcs="hidden: canPickColor|not">
+                <button type="button" class="pick-color" data-wcs="onclick: pickColor; disabled: picking">画面から色を拾う</button>
+                <p class="hint">下のポスターからも拾えます。</p>
+                <img class="poster" src="/poster.svg" alt="スタンプラリーのポスター" width="400" height="200">
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>メンバー（5人まで）</legend>
+              <ul class="members">
+                <template data-wcs="for: members">
+                  <li class="member">
+                    <input aria-label="名前" data-wcs="value: .name">
+                    <input aria-label="メール" type="email" data-wcs="value: .email">
+                    <button type="button" data-wcs="onclick: removeMember">外す</button>
+                    <span class="error" data-wcs="textContent: .emailError"></span>
+                  </li>
+                </template>
+              </ul>
+              <p class="error field-error" data-field="members" data-wcs="textContent: membersError"></p>
+              <p class="add-member" data-wcs="hidden: membersFull">
+                <input aria-label="新しいメンバーの名前" placeholder="名前" data-wcs="value: newMember.name">
+                <input aria-label="新しいメンバーのメール" placeholder="メール" type="email" data-wcs="value: newMember.email">
+                <button type="button" data-wcs="onclick: addMember">加える</button>
+              </p>
+              <p data-wcs="hidden: canPickContacts|not"><button type="button" class="pick-contacts" data-wcs="onclick: pickContacts; disabled: contactsLoading">連絡先から選ぶ</button></p>
+              <p class="message contacts-message" data-wcs="textContent: contactsMessage"></p>
+            </fieldset>
+            <p><button type="submit" class="primary" data-wcs="disabled: teamLoading">保存</button>
+              <span class="message team-message" data-wcs="textContent: teamMessage"></span></p>
+          </form>
+        </section>
+      </wcs-route>
+
+      <!-- ================================================= コンパス -->
+      <wcs-route path="/walk" name="walk">
+        <wcs-guard-handler>
+          <script type="module">
+            export default async function (toPath, fromPath, context) {
+              const { memberGuard } = await import(new URL("/js/auth.js", location.href).href);
+              return memberGuard(toPath, fromPath, context);
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>コンパス — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section class="walk">
+          <h1>つぎの場所</h1>
+          <p class="next-name" data-wcs="textContent: nextName"></p>
+          <div class="compass">
+            <div class="arrow" aria-hidden="true" data-wcs="hidden: showArrow|not; style.transform: arrowTransform">▲</div>
+            <p class="direction" data-wcs="hidden: showArrow; textContent: directionLabel"></p>
+            <p class="distance" data-wcs="textContent: nextDistanceText"></p>
+          </div>
+          <p class="note north-note" data-wcs="textContent: northNote"></p>
+          <p class="note location-note" data-wcs="textContent: locationNote"></p>
+          <p class="warning mag-warning" role="alert" data-wcs="textContent: magWarning"></p>
+          <p class="note wake-note" data-wcs="textContent: wakeNote"></p>
+
+          <h2>スタンプを押す</h2>
+          <p class="hint" data-wcs="textContent: stampHint"></p>
+          <p><label>看板の番号 <input class="code" inputmode="numeric" maxlength="4" autocomplete="off" data-wcs="value: codeInput"></label></p>
+          <p><button type="button" class="primary stamp" data-wcs="onclick: stampButton; disabled: canStamp|not">スタンプを押す</button>
+            <button type="button" class="retry" data-wcs="hidden: stampFailed|not; onclick: retryStamp">もう一度</button></p>
+          <p class="message stamp-message" data-wcs="textContent: stampMessage"></p>
+
+          <h2>歩数</h2>
+          <p class="steps"><span data-wcs="textContent: steps"></span> 歩</p>
+          <p class="note steps-note" data-wcs="textContent: stepsNote"></p>
+
+          <h2>明るさ</h2>
+          <p class="theme-switch" role="radiogroup" aria-label="画面の明るさ">
+            <label><input type="radio" name="theme" value="auto" data-wcs="radio: themeChoice"> 自動</label>
+            <label><input type="radio" name="theme" value="light" data-wcs="radio: themeChoice"> 明るい</label>
+            <label><input type="radio" name="theme" value="dark" data-wcs="radio: themeChoice"> 暗い</label>
+            <label><input type="radio" name="theme" value="contrast" data-wcs="radio: themeChoice"> くっきり</label>
+          </p>
+        </section>
+      </wcs-route>
+
+      <!-- ================================================= 場所 -->
+      <wcs-route path="/spots/:id(int)" name="spot">
+        <wcs-head><title data-wcs="textContent: spotTitle">場所 — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section class="spot">
+          <h1 data-wcs="textContent: spot.name"></h1>
+          <p class="kana" data-wcs="textContent: spot.kana"></p>
+          <p class="stamped" data-wcs="hidden: spotStamped|not">スタンプ済み</p>
+          <p class="story" data-wcs="textContent: spot.story"></p>
+          <p class="share">
+            <button type="button" class="share-spot" data-wcs="hidden: canShare|not; onclick: shareSpot; disabled: shareLoading">この場所を共有</button>
+            <button type="button" class="copy-link" data-wcs="hidden: showCopy|not; onclick: copyLink">リンクをコピー</button>
+            <span class="plain-url" data-wcs="hidden: showPlainUrl|not">この場所の URL：<code data-wcs="textContent: spotUrl"></code></span>
+            <span class="message share-message" data-wcs="textContent: shareMessage"></span>
+          </p>
+        </section>
+      </wcs-route>
+
+      <!-- ================================================= スタンプ帳 -->
+      <wcs-route path="/card" name="card">
+        <wcs-guard-handler>
+          <script type="module">
+            export default async function (toPath, fromPath, context) {
+              const { memberGuard } = await import(new URL("/js/auth.js", location.href).href);
+              return memberGuard(toPath, fromPath, context);
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>スタンプ帳 — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section class="card">
+          <h1>スタンプ帳</h1>
+          <p class="finished" data-wcs="hidden: allStamped|not">完歩！</p>
+          <p>チーム：<span data-wcs="textContent: teamName"></span>　歩数：<span data-wcs="textContent: steps"></span> 歩</p>
+          <ol class="stamps">
+            <template data-wcs="for: spots">
+              <li data-wcs="class.stamped: .stamped"><span data-wcs="textContent: .name"></span>
+                <span class="when" data-wcs="textContent: .stampedAt"></span></li>
+            </template>
+          </ol>
+          <p><button type="button" class="share-card" data-wcs="onclick: shareCard; disabled: cardImageReady|not; textContent: cardShareLabel"></button>
+            <span class="message share-message" data-wcs="textContent: shareMessage"></span></p>
+          <p><button type="button" class="goal" data-wcs="onclick: openCertificate">ゴールで見せる</button></p>
+        </section>
+      </wcs-route>
+
+      <!-- ================================================= ポータル -->
+      <wcs-route path="/portal" name="portal">
+        <wcs-head><title>市のポータル — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section>
+          <h1>市のポータルで見る</h1>
+          <p>市のポータルは、このスタンプラリーを自分のページの中に表示します。</p>
+          <ul>
+            <li><a href="/portal/allowed">必要な機能を許可しているポータル</a></li>
+            <li><a href="/portal/forbidden">何も許可していないポータル</a></li>
+          </ul>
+        </section>
+      </wcs-route>
+
+      <wcs-route fallback name="not-found">
+        <wcs-head><title>見つかりません — みどり市 まち歩きスタンプラリー</title></wcs-head>
+        <section><h1>ページが見つかりません</h1><p><wcs-link to="/">はじめにへ</wcs-link></p></section>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+
+  <!-- ======================================================= the place's media: outside the router, so the small
+       window's video and the fullscreen viewer are not taken out of the page by a navigation (docs/device-apis.md, "Across a navigation") -->
+  <section class="spot-media" data-wcs="class.offstage: onSpot|not; inert: onSpot|not; attr.aria-hidden: offstageHidden">
+    <h2>むかしの風景</h2>
+    <div id="viewer" class="viewer" data-wcs="class.fullscreen: viewerFs">
+      <div id="viewer-strip" class="strip" tabindex="0" role="img" aria-label="むかしの風景（左右に動かして見回せます）"
+        data-wcs="style.backgroundImage: panoUrl; style.backgroundPositionX: stripPosition; attr.data-angle: viewAngleRounded;
+          onpointerdown#direct: viewerPointerDown; onpointermove#direct: viewerPointerMove; onpointerup#direct: viewerPointerUp;
+          onpointercancel#direct: viewerPointerUp; onmousemove#direct: viewerMouseMove; onkeydown: viewerKey"></div>
+      <p class="viewer-hint" data-wcs="textContent: mouseLookHint"></p>
+      <button type="button" class="viewer-fs" data-wcs="hidden: canFullscreen|not; onclick: toggleViewerFs; textContent: viewerButtonLabel"></button>
+    </div>
+    <h2>案内の動画</h2>
+    <p class="video-caption" data-wcs="textContent: videoCaption"></p>
+    <video id="guide-video" class="guide" controls playsinline preload="metadata" muted width="320" height="180"
+      data-wcs="attr.src: videoSrc; onloadedmetadata: videoLoaded"></video>
+    <p class="pip-controls">
+      <button type="button" class="pip-open" data-wcs="hidden: canPip|not; onclick: openPip; disabled: pipHere">小窓で見る</button>
+      <span class="pip-status" data-wcs="hidden: pipHere|not">小窓で再生中 <button type="button" class="pip-back" data-wcs="onclick: closePip">戻す</button></span>
+    </p>
+  </section>
+
+  <!-- ======================================================= finisher's certificate -->
+  <section id="certificate" class="certificate" data-wcs="class.open: certOpen" aria-label="完歩証">
+    <h2>完歩証</h2>
+    <p class="cert-team" data-wcs="textContent: teamName"></p>
+    <p class="cert-count" data-wcs="textContent: stampLabel"></p>
+    <p>みどり市 まち歩きスタンプラリー</p>
+    <button type="button" class="cert-close" data-wcs="onclick: closeCertificate">閉じる</button>
+  </section>
+</main>
+</div>
+</body>
+</html>
