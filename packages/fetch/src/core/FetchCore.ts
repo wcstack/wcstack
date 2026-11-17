@@ -385,8 +385,10 @@ export class FetchCore extends EventTarget {
       // CommitGuard's epoch/CAS check and writes nothing, even if the body still
       // resolved. HEAD carries no body by spec.
       let value: any = null;
-      if (method === "HEAD") {
-        // HEAD responses carry no body — reading it would throw a parse error.
+      if (method === "HEAD" || response.status === 204 || response.status === 205) {
+        // HEAD responses, 204 No Content and 205 Reset Content carry no body: reading one as JSON would throw,
+        // and a success was reported as a network failure (status 0) — a server that labels its empty 204
+        // `Content-Type: application/json`, under the default "auto" (docs/seam-apps.md, stamp-rally).
       } else if (!response.ok) {
         // HTTP error: read the body text for the error envelope. Handled below.
       } else if (forceText) {

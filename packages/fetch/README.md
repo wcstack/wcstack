@@ -657,7 +657,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `method` | `string` | `GET` | HTTP method |
 | `target` | `string` | — | DOM element id for HTML replace mode |
 | `manual` | `boolean` | `false` | Disable auto-fetch |
-| `response-type` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | `auto` | How to read the response body. `auto` sniffs Content-Type; `blob` additionally publishes a managed `objectURL`. `target` (HTML-replace) overrides this |
+| `response-type` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | `auto` | How to read the response body. `auto` sniffs Content-Type; `blob` additionally publishes a managed `objectURL`. `target` (HTML-replace) overrides this A `HEAD` request and a `204` / `205` response have no body: `value` is `null` and `status` is set, whatever the type. Since 4.26 (not released yet) that holds for `204` / `205` under `auto` and `json` too — up to 4.25 a `204` labelled `Content-Type: application/json` was read as JSON and reported as a network failure (`status` 0, `errorInfo.code` `network`); set `response-type="text"` on a page pinned to 4.25 or earlier. |
 
 | Property | Type | Description |
 |----------|------|-------------|

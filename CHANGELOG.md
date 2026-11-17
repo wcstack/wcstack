@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/fetch`: **a successful `204` was reported as a network failure** when the server labelled it `Content-Type: application/json`: under the default `response-type` (`auto`, and `json`) the empty body was read with `json()`, which threw — `status` 0, `errorInfo.code` `network` (recoverable), and a page that retries on that error sent the request again. A `204` / `205` is now read like a `HEAD`: no body, `value` `null`, `status` set, no error; a `<wcs-fetch target>` leaves its target as it was. Found when `[wcs/io-error-unobserved]` named the `stamp-rally` seam app's sign-out while it was landed in `examples/`; Chromium and Firefox.
+
 ## [4.25.0] — 2026-11-17
 
 A minor from the `stamp-rally` seam app, the fifth app of the third round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a town-walk stamp rally opened on the walker's own phone — the screen and sensor APIs, the thirteen tags no seam app had used ([docs/seam-apps.md](./docs/seam-apps.md)). A first-time author built it on 4.24.2 from the public documents, with no phone on the machine: Chromium's DevTools protocol fed the sensors, and scripts stood in for the iPhone's permission question, the share sheet, the contact picker and saved passwords. The lint reported none of 20 mistakes made on purpose for what it is, and the runtime spoke for three. The author's seven decisions are in v4-direction §5.20. `@wcstack/state`'s `core.min.js` is unchanged at 20,474 B.
