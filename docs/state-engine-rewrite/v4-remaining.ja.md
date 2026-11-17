@@ -1945,3 +1945,35 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - worktree の残骸（著者に削除を頼んだ）: `ext-2.18.0`、`agent-adb32aebb8b16c9d4`、`agent-a859fd1943ce54c04`。
   - 止める目安には当たっていない。3 巡目の次は 5 本目「画面とセンサーの API」。
   - ほかは 4.24.0 の「残り」のまま。
+
+### 4.25.0 の公開（2026-11-17）
+
+- **中身**: minor。継ぎ目アプリ stamp-rally（3 巡目の 5 本目、画面とセンサーの API — 歩く人が自分のスマホで開くまち歩きスタンプラリーと、家の PC から参加するページ。これまでの継ぎ目アプリが使っていなかった 13 のタグ）から。発見と著者の決定は [docs/seam-apps.ja.md](../seam-apps.ja.md) の「stamp-rally」と [docs/v4-direction-2026-10.md](../v4-direction-2026-10.md) §5.20。
+  - `@wcstack/state`: diagnostics の `[wcs/io-error-unobserved]` — 状態が束ねる要素が失敗を報告し、その `data-wcs` が `error`・`errorInfo`・`status`・`connected`・`readyState` のどれも読まないとき、タグと code ごとに 1 回。わざとした間違い 20 個のうち 17 個に実行時は何も言わなかった。
+  - I/O: 画面とセンサーの 13 要素に `supported`。`<wcs-permission>` に `unsupportedReason`。`<wcs-tilt>` に `heading`、問うのを断られただけなら `"denied"` にしない、`DeviceOrientationEvent` が無ければ `capability-missing`。`<wcs-accelerometer>` / `<wcs-gyroscope>` は Generic Sensor のクラスが無い所で `devicemotion` を読み、`requestPermission` / `permissionState` を持つ。`<wcs-fullscreen>` / `<wcs-pointer-lock>` / `<wcs-pip>` は文書から外れると `active: false` を出す（タイミング契約 §16.6）、Firefox の `pointerlockerror`。`<wcs-contacts>` は閉じたピッカーを `cancelled` に。`<wcs-credential>` の `preventSilentAccess`・`store({ id, password })`・`capability-missing`。センサーの `[wcs/frequency-invalid]` と `error` イベントの後の `start()`。共有のヘルパは、ポリシーが知らない名前を尋ねない（Chromium の `Unrecognized feature` の警告）。
+  - 途中で見つけた欠陥: `<wcs-ws>` の `close` をボタンに直結すると、イベントが close の code として届いて例外になり、ソケットが開いたままだった。`<wcs-idle>` の `start` も同じ形。どちらも数でない引数を無視する。
+  - lint: `wcs/command-event-argument`・`wcs/frequency-invalid`・`wcs/output-path-written`・`wcs/target-selector`（warning）。`wcs/path-readonly` は setter の無い getter に束ねた要素の出力、`wcs/token-undeclared` は `$commandTokens` / `$eventTokens` がそもそも無い state と `$eventTokens` に無い `$on` も報告する。要素の出力が書くスロットの下のパスは、`wcs/binding-path-missing` ではなく `wcs/path-dynamic-unknown` の info 1 つ。
+  - 文書: `docs/device-apis.md`（日英）。タイミング契約 §8・§9・§11.5・§16.6〜16.8・§22.4 と新しい §27（`supported`）・§28・§29（日英）。storage の README の「任意のタイミングで保存する」の例は、書いてあるとおりには動かなかった（3 回の選択で `[wcs/path-readonly]` が 167 回、再読み込みで保存した設定が戻らない）ので書き直した — 広げた lint が README 自身の例を報告して見つかった。
+- **著者の決定（2026-11-17）**: 7 つの問いを推奨の案に決めた（§5.20）。
+- **実装**: I/O #700（merge commit 1a493ce2）、state #701（2f5ead25）、lint #702（ab54968b）、記録 #703（1d05535f）、目録と準備 #704（cb0936de。目録は 222 項目 — design 26、runtime 92、lint だけ 34、文書だけ 70）。I/O と lint の実装は、同じ作業ツリーで 4 つのエージェントがパッケージを分けて行い、差分を確かめ、ビルドして 3 ブラウザで動かしてから PR に分けた。
+  - core は 20,474 B のまま（上限まで 6 B）。diagnostics は 13,297 → 13,689 B（+392 B）。既存の e2e に掛けて、正しいページ 2 つ（`connected` で読む SSE、遷移が切った fetch）への警告と、サーバーの描画で止まる不具合（素の `addEventListener`）を、出す前に直した。
+  - 作者の主張のうち 1 つは再現しなかった（`<wcs-state src>` のモジュールが 2 回評価される — 作者のテストが文書を 2 つ読み込んでいた）。
+  - スマホの実機は無い: iPhone の許可の問い・共有シート・連絡先ピッカー・保存したパスワードは、仕様と文書どおりに振る舞う代役で確かめた。`accelerationIncludingGravity` の符号、答えの決まった問いに Safari がタップなしで答えるか、スマホでの向きの固定は未確認として README に書いた。
+  - e2e: `io-screen-sensors`（Chromium と Firefox）、`state-io-error-unobserved`。e2e 全体は 632 件すべて通過してから出した。
+- **準備**: PR #704 に含めた。CHANGELOG を `[4.25.0] — 2026-11-17` として締め、docs/upgrading-4x.md（日英）に 4.25.0 の節と「まだ要るもの」の 2 項目を書き、固定版 18 か所を動かした。
+- **main で `minor`（run 44092656881）**: 成功した。版を上げたコミット 0372a191、タグ `v4.25.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約を足した）。
+  - 検証は 1 回目で済んだ: npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・文書の固定 URL 8/8。
+- **公開後の作業**:
+  - PR #705（merge commit 6efd787f）: サイズの基準値を 4.25.0 の dist で取り直した。`core.min.js` 20,474 B（残り 6 B）、diagnostics 13,689 B、分割の core 24,799 B、`index.esm.js` 60,088 B、`auto.min.js` 56,724 B。結合の基準値は変わらない。CLAUDE.md・AGENTS.md。拡張の版を 2.20.0 に。
+  - 拡張 2.20.0: 6efd787f の main の作業ツリーからそのまま作った（packages/state の dist はリリースのビルド）。試験 72 ファイル通過、vsix の SHA-256 `fce9f88475f4998b8d6ab832276270a2f4cbb8a0cb723803a8e1c5eccfaefd33`。
+  - wcstack-skill: PR #70（merge commit ae5c340）と注釈付きタグ `v4.25.0`。`references/device-apis.md`（新規）、カタログの 14 行、落とし穴の表に 8 行、lint の 4.25 の文。公開された 4.25.0 を jsDelivr から読む案内の例を 3 ブラウザで、`[wcs/io-error-unobserved]` を CDN のビルドで、新しい規則を `@wcstack/lint@4.25.0` で確かめてから刻印した。
+  - LP（wcstack.github.io de6cced）: リリースの表示、v4.25.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-yckL9h…`、gzip 85,234 B ＝約 83 KB）、llms。`llms-full.txt` に `device-apis.md` を含めた。ローカル 7/7、本番 8/9（落ちる 1 つは前回と同じ、静的なチュートリアルのアプリの API の 404）。
+  - 例の取り込み: PR #706（merge commit 4b995920）。`examples/stamp-rally` と `e2e/tests/stamp-rally.spec.ts`（ポートは 8300 + 10 × ワーカーの番号）。4.25.0 で要らなくなった回避策を外した（自作の `<sr-motion>` と `<sr-heading>`、tilt の `"denied"` の読み替え、手書きの `preventSilentAccess` と `PasswordCredential`、`<wcs-permission>` を囲む `if:`、`globalThis` のメモ）。`examples/state-tilt-maze` と `signals-tilt-maze` に `command.requestPermission` を足した（iPhone の `devicemotion` の経路は問いが要る）。
+  - 拡張 2.20.0: 著者が公開した。Marketplace の vsix の SHA-256 は手元のものと一致し、注釈付きタグ `vscode-wcs-v2.20.0` を 6efd787f に付けた。
+  - **取り込みの中で欠陥が 1 つ見つかり、直した: PR #707。** `<wcs-fetch>` は、`Content-Type: application/json` の付いた 204 を、既定の `response-type`（`auto`、`json` も）で `json()` で読み、空のボディで投げて、成功した要求をネットワークの失敗（`status` 0、`errorInfo.code` `network`）として報告していた。作者のアプリのサインアウトを `[wcs/io-error-unobserved]` が名指しして見つかった（Chromium と Firefox）。4.25 より前からの振る舞い。204 / 205 は HEAD と同じく読まない。公開を patch にするか次の minor に入れるかは著者が決める。
+  - 取り込みで分かったほかのこと: `[wcs/io-error-unobserved]` は `<wcs-wakelock>` も名指しした（headless の Chromium が断り、作者のページは何も束ねていなかった — 正しい報告）。設計の問いとして記録: 「禁じられていて、しかも無い」を言う要素は無い（フラグの奥の Chromium の `Magnetometer` を禁じた枠）。
+- **残り**:
+  - #707 の修正の公開（patch か次の minor か、著者の決定）。
+  - core の残りは 6 B。diagnostics は基準値の取り直しで上限に余裕が戻った。
+  - 記録だけ: ページの可視性の要素、センサーの「動いている」の出力、ポリシーで禁じられたページでの `share()` のエラーの種類、全画面を禁じた枠の中で `fullscreenEnabled` を読むたびに WebKit が記録するエラー。
+  - 止める目安には当たっていない。3 巡目の 5 本はこれで終わり。次は 3 巡目の予備（TypeScript で書く作者、静的に書き出したサイト）か、4 巡目の候補を著者と決める。
