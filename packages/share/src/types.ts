@@ -65,6 +65,12 @@ export interface WcsShareCoreValues {
   cancelled: boolean;
   /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
   errorInfo: WcsIoErrorInfo | null;
+  /**
+   * `true` when this page can use the Web Share API: `navigator.share` is there and
+   * no Permissions-Policy (`web-share`) or insecure context forbids it. It does not
+   * say that a particular `data` can be shared — ask `canShare(data)` for that.
+   */
+  supported: boolean;
 }
 
 /**

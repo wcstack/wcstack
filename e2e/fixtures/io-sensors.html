@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: the iPhone's sensor question, north, devicemotion, a closed contact picker, why unsupported</title>
+  <!-- The stamp-rally seam app (docs/seam-apps.md), 4.25:
+       - <wcs-tilt> said permissionState "denied" when the browser had refused to ask (no tap): it keeps its
+         state now, with error not-allowed / recoverable.
+       - `heading`: north from webkitCompassHeading (an iPhone) or deviceorientationabsolute (Android).
+       - <wcs-accelerometer> / <wcs-gyroscope> read `devicemotion` where the browser has no sensor class, and
+         ask DeviceMotionEvent.requestPermission.
+       - <wcs-contacts>: a picker closed without a choice resolves an empty list — that is `cancelled`.
+       - <wcs-permission>'s unsupportedReason, and `supported` read when the bindings attach.
+       One token asks all three questions and one starts all three (one tap). ?auto=<button id> clicks from
+       the page's own timer: a call with no user activation. The spec installs the stand-ins. -->
+  <script type="module" src="/packages/tilt/dist/auto.min.js"></script>
+  <script type="module" src="/packages/accelerometer/dist/auto.min.js"></script>
+  <script type="module" src="/packages/gyroscope/dist/auto.min.js"></script>
+  <script type="module" src="/packages/contacts/dist/auto.min.js"></script>
+  <script type="module" src="/packages/permission/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        $commandTokens: ["ask", "start", "pick"],
+        tiltOk: false, accelOk: false, contactsOk: false,
+        tiltPerm: "", accelPerm: "", gyroPerm: "",
+        heading: null, ax: null, gx: null,
+        tiltInfo: null, accelInfo: null, gyroInfo: null,
+        picked: null, cancelled: false, picks: 0,
+        permState: "", permWhy: "",
+        $watch: { picked() { this.picks++; } },
+        allow() { this.$command.ask.emit(); this.$command.start.emit(); },
+        pick() { this.$command.pick.emit(["name", "email"], { multiple: true }); },
+        get tiltCode() { return this["tiltInfo.code"] ?? ""; },
+        get tiltRecoverable() { return String(this["tiltInfo.recoverable"] ?? ""); },
+        get pickedNames() { return (this.picked ?? []).map((c) => c.name?.[0] ?? c.email?.[0] ?? "?").join(","); },
+        get gxRounded() { return this.gx == null ? "" : this.gx.toFixed(4); },
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-tilt data-wcs="supported: tiltOk; permissionState: tiltPerm; heading: heading; errorInfo: tiltInfo; command.requestPermission: $command.ask; command.start: $command.start"></wcs-tilt>
+  <wcs-accelerometer data-wcs="supported: accelOk; permissionState: accelPerm; x: ax; errorInfo: accelInfo; command.requestPermission: $command.ask; command.start: $command.start"></wcs-accelerometer>
+  <wcs-gyroscope data-wcs="permissionState: gyroPerm; x: gx; errorInfo: gyroInfo; command.requestPermission: $command.ask; command.start: $command.start"></wcs-gyroscope>
+  <wcs-contacts data-wcs="supported: contactsOk; value: picked; cancelled: cancelled; command.select: $command.pick"></wcs-contacts>
+  <wcs-permission name="no-such-permission" data-wcs="state: permState; unsupportedReason: permWhy"></wcs-permission>
+
+  <p>
+    <button id="allow" data-wcs="onclick: allow">allow</button>
+    <button id="ask" data-wcs="onclick: $command.ask">ask</button>
+    <button id="pick" data-wcs="onclick: pick">contacts</button>
+  </p>
+  <p>supported: <output id="tiltOk" data-wcs="textContent: tiltOk"></output> <output id="accelOk" data-wcs="textContent: accelOk"></output> <output id="contactsOk" data-wcs="textContent: contactsOk"></output></p>
+  <p>permission: <output id="tiltPerm" data-wcs="textContent: tiltPerm"></output> <output id="accelPerm" data-wcs="textContent: accelPerm"></output> <output id="gyroPerm" data-wcs="textContent: gyroPerm"></output>
+    · <output id="tiltCode" data-wcs="textContent: tiltCode"></output> <output id="tiltRecoverable" data-wcs="textContent: tiltRecoverable"></output></p>
+  <p>heading: <output id="heading" data-wcs="textContent: heading"></output> · ax: <output id="ax" data-wcs="textContent: ax"></output> · gx: <output id="gx" data-wcs="textContent: gxRounded"></output></p>
+  <p>contacts: <output id="pickedNames" data-wcs="textContent: pickedNames"></output> · cancelled: <output id="cancelled" data-wcs="textContent: cancelled"></output> · picks: <output id="picks" data-wcs="textContent: picks"></output></p>
+  <p>permission element: <output id="permState" data-wcs="textContent: permState"></output> <output id="permWhy" data-wcs="textContent: permWhy"></output></p>
+  <script>
+    { const id = new URLSearchParams(location.search).get("auto"); if (id) setTimeout(() => document.getElementById(id).click(), 600); }
+  </script>
+</body>
+</html>

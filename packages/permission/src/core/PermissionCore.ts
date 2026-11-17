@@ -1,5 +1,5 @@
 import {
-  IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor,
+  IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor, WcsPermissionUnsupportedReason,
 } from "../types.js";
 import { featureUnavailable } from "./platformCapability.js";
 
@@ -20,6 +20,12 @@ import { featureUnavailable } from "./platformCapability.js";
  * from one `wcs-geo:position` event), so a binding like `hidden@granted` works
  * directly. The live `change` event of the PermissionStatus is tracked so a grant
  * flipping in browser settings flows into the declarative state.
+ *
+ * `"unsupported"` folds four different things — the page is forbidden (a
+ * Permissions-Policy), the context is insecure, the browser has no Permissions API,
+ * the browser rejected the name (or the name is empty). `unsupportedReason` says
+ * which, through its own event (`wcs-permission:unsupported-reason-changed`),
+ * dispatched before the state's event with both values already in place.
  */
 export class PermissionCore extends EventTarget {
   static wcBindable: IWcBindable = {
@@ -31,6 +37,9 @@ export class PermissionCore extends EventTarget {
       { name: "denied", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "denied" },
       { name: "prompt", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "prompt" },
       { name: "unsupported", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "unsupported" },
+      // Why `state` is "unsupported" (null while it is not). Its own event, with the
+      // reason as detail, so a `state` binding does not re-fire for a reason change.
+      { name: "unsupportedReason", event: "wcs-permission:unsupported-reason-changed", semantics: "state" },
     ],
     // No commands: the Permissions API is read-only (query-only). See class docs.
     commands: [],
@@ -40,6 +49,10 @@ export class PermissionCore extends EventTarget {
   private _descriptor: WcsPermissionDescriptor | null = null;
 
   private _state: PermissionStateOrUnsupported = "prompt";
+
+  // Why `_state` is "unsupported"; null whenever it is anything else. Written only
+  // by _setState, together with the state.
+  private _unsupportedReason: WcsPermissionUnsupportedReason | null = null;
 
   // Live PermissionStatus handle (when the Permissions API is available), kept so
   // the `change` listener can be removed on dispose().
@@ -96,6 +109,16 @@ export class PermissionCore extends EventTarget {
     return this._state === "unsupported";
   }
 
+  /**
+   * Why `state` is `"unsupported"`: `"policy-blocked"` (a Permissions-Policy turns
+   * the feature off for this page), `"insecure-context"`, `"no-permissions-api"`
+   * (no `navigator.permissions.query`) or `"unknown-name"` (the browser rejected the
+   * name, or it is empty). `null` while `state` is anything else.
+   */
+  get unsupportedReason(): WcsPermissionUnsupportedReason | null {
+    return this._unsupportedReason;
+  }
+
   /** Resolves once the current (or initial) query settles. */
   get ready(): Promise<void> {
     return this._ready;
@@ -103,15 +126,30 @@ export class PermissionCore extends EventTarget {
 
   // --- State setter with event dispatch ---
 
-  private _setState(state: PermissionStateOrUnsupported): void {
-    // Same-value guard: `state` is the only stored value and the derived booleans
-    // change in lockstep with it, so suppressing identical re-dispatches is safe.
-    if (this._state === state) return;
+  // `reason` is why the state is "unsupported"; it is kept only with that state
+  // (any other state clears it). Both values are in place before either event is
+  // dispatched, and the reason's event goes first — so a listener of either event,
+  // and a binding of either output, reads a consistent pair.
+  private _setState(state: PermissionStateOrUnsupported, reason: WcsPermissionUnsupportedReason | null = null): void {
+    const nextReason = state === "unsupported" ? reason : null;
+    // Same-value guards: `state` and the derived booleans change in lockstep, and
+    // the reason has its own event, so suppressing identical re-dispatches is safe.
+    const stateChanged = this._state !== state;
+    const reasonChanged = this._unsupportedReason !== nextReason;
     this._state = state;
-    this._target.dispatchEvent(new CustomEvent("wcs-permission:change", {
-      detail: state,
-      bubbles: true,
-    }));
+    this._unsupportedReason = nextReason;
+    if (reasonChanged) {
+      this._target.dispatchEvent(new CustomEvent("wcs-permission:unsupported-reason-changed", {
+        detail: nextReason,
+        bubbles: true,
+      }));
+    }
+    if (stateChanged) {
+      this._target.dispatchEvent(new CustomEvent("wcs-permission:change", {
+        detail: state,
+        bubbles: true,
+      }));
+    }
   }
 
   // --- Public API ---
@@ -165,7 +203,7 @@ export class PermissionCore extends EventTarget {
     // to "unsupported" without issuing a doomed query so the misconfiguration
     // surfaces deterministically and no listener is attached.
     if (!this._descriptor || !this._descriptor.name) {
-      this._setState("unsupported");
+      this._setState("unsupported", "unknown-name");
       return Promise.resolve();
     }
     // A feature this page cannot use — not a secure context, or turned off by a
@@ -174,9 +212,10 @@ export class PermissionCore extends EventTarget {
     // tell: Chromium answers "granted" in a policy-blocked frame and "denied" on an
     // insecure origin, the same as a user's refusal, which the site settings would
     // fix and these cannot. Neither changes while the page lives, so nothing is
-    // subscribed.
-    if (featureUnavailable(this._descriptor.name) !== null) {
-      this._setState("unsupported");
+    // subscribed. Which of the two it is goes out as `unsupportedReason`.
+    const unavailable = featureUnavailable(this._descriptor.name);
+    if (unavailable !== null) {
+      this._setState("unsupported", unavailable);
       return Promise.resolve();
     }
     // The Permissions API is optional. When absent (or it rejects, e.g. the
@@ -186,7 +225,7 @@ export class PermissionCore extends EventTarget {
       // Route through _setState (not a bare assignment) so observers stay in sync
       // with the public state. The same-value guard means no redundant dispatch
       // when the state does not actually change.
-      this._setState("unsupported");
+      this._setState("unsupported", "no-permissions-api");
       // Intentionally does NOT set _permissionSubscribed: there is no listener to
       // tear down, so a reconnect simply re-probes (idempotent — the same-value
       // guard suppresses any dispatch and no listener is ever attached). Mirrors
@@ -210,7 +249,10 @@ export class PermissionCore extends EventTarget {
       },
       () => {
         if (gen !== this._permGen) return;
-        this._setState("unsupported");
+        // The browser has the API and rejected this descriptor: it does not know
+        // the name (Firefox and the sensor names, for one). That is not the same as
+        // the feature being absent.
+        this._setState("unsupported", "unknown-name");
       },
     );
   }

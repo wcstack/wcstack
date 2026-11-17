@@ -23,6 +23,11 @@ export interface FakePointerLockDoc {
   setLockedElement(el: Element | null): void;
   /** Dispatch `pointerlockchange` (and legacy alias) without changing state. */
   fireChange(): void;
+  /**
+   * Dispatch `pointerlockerror` (and `webkitpointerlockerror` when legacy names
+   * are installed) on `document`, as a browser does for a refused request.
+   */
+  fireError(): void;
   /** Remove all installed properties/stubs from `document`/`Element.prototype`. */
   remove(): void;
 }
@@ -50,6 +55,15 @@ export function installPointerLockDoc(
     }
     if (legacy) {
       document.dispatchEvent(new Event("webkitpointerlockchange"));
+    }
+  };
+
+  const dispatchError = () => {
+    if (standard) {
+      document.dispatchEvent(new Event("pointerlockerror"));
+    }
+    if (legacy) {
+      document.dispatchEvent(new Event("webkitpointerlockerror"));
     }
   };
 
@@ -114,8 +128,50 @@ export function installPointerLockDoc(
       dispatchChange();
     },
     fireChange: dispatchChange,
+    fireError: dispatchError,
     remove: () => removePointerLockDoc(),
   };
+}
+
+/**
+ * Find the prototype-chain link that actually owns `name` as an own property
+ * (mirroring what the `in` operator checks). happy-dom defines the `on…`
+ * handlers on `Document`'s prototype, which is not `Object.getPrototypeOf(document)`
+ * — walking the chain keeps this correct if that depth shifts.
+ */
+function findDocumentPropertyOwner(name: string): object | null {
+  let proto: object | null = document as unknown as object;
+  while (proto) {
+    if (Object.prototype.hasOwnProperty.call(proto, name)) {
+      return proto;
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  return null;
+}
+
+/**
+ * Temporarily remove the named `on…` handler properties from wherever they live
+ * on `document`'s prototype chain, run `fn` (sync or async), then always restore
+ * them — so a test can make `"onpointerlockerror" in document` false and drive
+ * the legacy (`webkit`-prefixed) event-name branch. A name that is already
+ * absent is skipped (nothing to remove or restore).
+ */
+export async function withoutDocumentHandlers(names: string[], fn: () => void | Promise<void>): Promise<void> {
+  const removed: Array<{ owner: object; name: string; descriptor: PropertyDescriptor }> = [];
+  for (const name of names) {
+    const owner = findDocumentPropertyOwner(name);
+    if (!owner) continue;
+    removed.push({ owner, name, descriptor: Object.getOwnPropertyDescriptor(owner, name)! });
+    delete (owner as any)[name];
+  }
+  try {
+    await fn();
+  } finally {
+    for (const { owner, name, descriptor } of removed) {
+      Object.defineProperty(owner, name, descriptor);
+    }
+  }
 }
 
 /** Remove all Pointer Lock stubs installed by installPointerLockDoc(), restoring an unsupported environment. */

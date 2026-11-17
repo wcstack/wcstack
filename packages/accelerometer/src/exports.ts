@@ -5,7 +5,7 @@ export { WcsAccelerometer } from "./components/Accelerometer.js";
 
 export type {
   IWritableConfig, IWritableTagNames, WcsAccelerometerReading, WcsAccelerometerErrorDetail,
-  WcsAccelerometerCoreValues, WcsAccelerometerValues,
+  WcsAccelerometerPermissionState, WcsAccelerometerCoreValues, WcsAccelerometerValues,
 } from "./types.js";
 
 // Error taxonomy: `errorInfo` is an additive wc-bindable property, so its value

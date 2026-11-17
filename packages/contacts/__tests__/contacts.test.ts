@@ -32,6 +32,48 @@ describe("Contacts (Shell)", () => {
     expect(el.loading).toBe(false);
     expect(el.error).toBeNull();
     expect(el.cancelled).toBe(false);
+    expect(el.supported).toBe(false);
+  });
+
+  it("supported は Core に委譲され、接続時に wcs-contacts:supported-changed が流れる（再接続では同じ値を流さない）", () => {
+    installSelect(() => Promise.resolve([]));
+    const el = createContacts();
+    // 接続前でも、束縛が読む値は正しい
+    expect(el.supported).toBe(true);
+    const events: boolean[] = [];
+    el.addEventListener("wcs-contacts:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+
+    el.remove();
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+  });
+
+  it("navigator.contacts の無いページでは supported は false のままで、イベントも流れない", () => {
+    removeContacts();
+    const el = createContacts();
+    const events: boolean[] = [];
+    el.addEventListener("wcs-contacts:supported-changed", (e) => events.push((e as CustomEvent).detail));
+    document.body.appendChild(el);
+    expect(el.supported).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it("ピッカーを選ばずに閉じる（空の配列）と cancelled が true になり、value は書かれない", async () => {
+    installSelect(() => Promise.resolve([]));
+    const el = createContacts();
+    document.body.appendChild(el);
+    const completes: unknown[] = [];
+    el.addEventListener("wcs-contacts:complete", (e) => completes.push((e as CustomEvent).detail));
+
+    const result = await el.select(["name"]);
+
+    expect(result).toBeNull();
+    expect(el.cancelled).toBe(true);
+    expect(el.value).toBeNull();
+    expect(completes).toEqual([]);
   });
 
   it("hasConnectedCallbackPromise が true で connectedCallbackPromise が即 settle する（SSR）", async () => {
@@ -105,7 +147,7 @@ describe("Contacts (Shell)", () => {
     expect(WcsContacts.wcBindable.inputs).toEqual([]);
     expect(WcsContacts.wcBindable.commands).toEqual([{ name: "select", async: true }]);
     expect(WcsContacts.wcBindable.properties.map((p) => p.name)).toEqual([
-      "value", "loading", "error", "cancelled", "errorInfo",
+      "value", "loading", "error", "cancelled", "errorInfo", "supported",
     ]);
   });
 

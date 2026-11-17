@@ -32,6 +32,33 @@ describe("Eyedropper (Shell)", () => {
     expect(el.loading).toBe(false);
     expect(el.error).toBeNull();
     expect(el.cancelled).toBe(false);
+    expect(el.supported).toBe(false);
+  });
+
+  it("supported は Core に委譲され、接続時に wcs-eyedropper:supported-changed が流れる（再接続では同じ値を流さない）", () => {
+    installEyeDropper();
+    const el = createEyedropper();
+    // 接続前でも、束縛が読む値は正しい
+    expect(el.supported).toBe(true);
+    const events: boolean[] = [];
+    el.addEventListener("wcs-eyedropper:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+
+    el.remove();
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+  });
+
+  it("EyeDropper の無いページでは supported は false のままで、イベントも流れない", () => {
+    removeEyeDropper();
+    const el = createEyedropper();
+    const events: boolean[] = [];
+    el.addEventListener("wcs-eyedropper:supported-changed", (e) => events.push((e as CustomEvent).detail));
+    document.body.appendChild(el);
+    expect(el.supported).toBe(false);
+    expect(events).toEqual([]);
   });
 
   it("hasConnectedCallbackPromise が true で connectedCallbackPromise が即 settle する（SSR）", async () => {
@@ -141,7 +168,7 @@ describe("Eyedropper (Shell)", () => {
       { name: "abort" },
     ]);
     expect(WcsEyedropper.wcBindable.properties.map((p) => p.name)).toEqual([
-      "value", "loading", "error", "cancelled", "errorInfo",
+      "value", "loading", "error", "cancelled", "errorInfo", "supported",
     ]);
   });
 

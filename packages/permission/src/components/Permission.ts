@@ -1,4 +1,6 @@
-import { IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor } from "../types.js";
+import {
+  IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor, WcsPermissionUnsupportedReason,
+} from "../types.js";
 import { PermissionCore } from "../core/PermissionCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
@@ -146,6 +148,10 @@ export class WcsPermission extends HTMLElement {
 
   get unsupported(): boolean {
     return this._core.unsupported;
+  }
+
+  get unsupportedReason(): WcsPermissionUnsupportedReason | null {
+    return this._core.unsupportedReason;
   }
 
   // wc-bindable connectedCallbackPromise protocol: resolves once the connect-time

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: fullscreen / pointer lock leaving the document, and a refusal</title>
+  <!-- The stamp-rally seam app (docs/seam-apps.md), 4.25:
+       - <wcs-fullscreen> / <wcs-pointer-lock> taken out of the document while active (an if: branch) left
+         state's `active` at true: the element stopped listening and the browser's end of the fullscreen was
+         never reported. A disconnect publishes active: false.
+       - a pointer lock Firefox refuses arrives as the document's `pointerlockerror`, with no rejected promise:
+         `error` stayed null.
+       ?auto=<button id> clicks that button from the page's own timer: a call with no user activation
+       (Playwright's own clicks and evaluate() both count as one). -->
+  <script type="module" src="/packages/fullscreen/dist/auto.min.js"></script>
+  <script type="module" src="/packages/pointer-lock/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        $commandTokens: ["fsGo", "plGo"],
+        show: true,
+        fs: false, fsOk: false, fsInfo: null,
+        pl: false, plInfo: null,
+        hide() { this.show = false; },
+        unhide() { this.show = true; },
+        get fsCode() { return this["fsInfo.code"] ?? ""; },
+        get plCode() { return this["plInfo.code"] ?? ""; },
+      };
+    </script>
+  </wcs-state>
+
+  <template data-wcs="if: show">
+    <section id="zone">
+      <wcs-fullscreen data-wcs="active: fs; supported: fsOk; errorInfo: fsInfo; command.requestFullscreen: $command.fsGo">
+        <div id="box" style="width:200px;height:100px;background:#cde">box</div>
+      </wcs-fullscreen>
+      <wcs-pointer-lock data-wcs="active: pl; errorInfo: plInfo; command.requestPointerLock: $command.plGo">
+        <div id="pad" style="width:200px;height:100px;background:#edc">pad</div>
+      </wcs-pointer-lock>
+    </section>
+  </template>
+
+  <p>
+    <button id="fsGo" data-wcs="onclick: $command.fsGo">fullscreen</button>
+    <button id="plGo" data-wcs="onclick: $command.plGo">lock</button>
+    <button id="hide" data-wcs="onclick: hide">hide</button>
+    <button id="unhide" data-wcs="onclick: unhide">unhide</button>
+  </p>
+  <p>fs: <output id="fs" data-wcs="textContent: fs"></output> · supported: <output id="fsOk" data-wcs="textContent: fsOk"></output> · code: <output id="fsCode" data-wcs="textContent: fsCode"></output></p>
+  <p>lock: <output id="pl" data-wcs="textContent: pl"></output> · code: <output id="plCode" data-wcs="textContent: plCode"></output></p>
+  <script>
+    { const id = new URLSearchParams(location.search).get("auto"); if (id) setTimeout(() => document.getElementById(id).click(), 600); }
+  </script>
+</body>
+</html>

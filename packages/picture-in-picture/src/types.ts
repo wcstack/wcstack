@@ -27,7 +27,9 @@ export type {
  * `wcBindable.properties` with change events: `wcs-pip:change` / `:error` /
  * `:error-info-changed`), so a wc-bindable binding core delivers a request/exit
  * failure. `errorInfo` is the additive serializable failure taxonomy derived
- * from `error` (README "Output state").
+ * from `error` (README "Output state"). `supported`
+ * (`wcs-pip:supported-changed`) says whether this page can use
+ * Picture-in-Picture at all.
  *
  * @example
  * ```typescript
@@ -40,11 +42,13 @@ export interface WcsPipCoreValues {
   error: any;
   /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
   errorInfo: WcsIoErrorInfo | null;
+  /** Whether this page can use Picture-in-Picture (API present, not forbidden by a policy). */
+  supported: boolean;
 }
 
 /**
  * Value types for the Shell (`<wcs-pip>`) — identical value surface to the
- * Core (`active` / `error` / `errorInfo` all observable). The Shell adds the
+ * Core (`active` / `error` / `errorInfo` / `supported` all observable). The Shell adds the
  * `target` input (attribute-mirrored) and no additional observable
  * properties.
  */

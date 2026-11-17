@@ -40,6 +40,10 @@ export class EyedropperCore extends EventTarget {
       // Fires its own `wcs-eyedropper:error-info-changed` event; no getter, so the
       // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
       { name: "errorInfo", event: "wcs-eyedropper:error-info-changed", semantics: "state" },
+      // Whether this page can use the EyeDropper API (the constructor is there).
+      // Computed at call time; the event carries the boolean and fires from
+      // observe() when it differs from the last value dispatched.
+      { name: "supported", event: "wcs-eyedropper:supported-changed", semantics: "state" },
     ],
     commands: [
       { name: "open", async: true },
@@ -56,6 +60,9 @@ export class EyedropperCore extends EventTarget {
   private _error: any = null;
   private _cancelled: boolean = false;
   private _errorInfo: WcsIoErrorInfo | null = null;
+  // `supported` as last dispatched (never the value itself — the getter probes at
+  // call time). Starts at false, so observe() announces a page that has the API.
+  private _supportedPublished: boolean = false;
   // Concurrency lane (io-core). `latest`: a new open() supersedes + aborts the
   // in-flight one (switchMap). `withSignal: true`: the lane owns the per-attempt
   // AbortController whose signal is passed to EyeDropper.open(). dispose() bumps
@@ -101,9 +108,11 @@ export class EyedropperCore extends EventTarget {
   }
 
   /**
-   * Whether the required platform capability (`web.eyedropper`) is available right
-   * now — decided by call-time feature detection, not User-Agent. Core-only,
-   * additive.
+   * Whether this page can use the EyeDropper API right now: the `EyeDropper`
+   * constructor is there (call-time feature detection, not User-Agent — browsers
+   * expose the constructor in secure contexts only, so an insecure page reads
+   * false). It does not say the user will pick a color. A wc-bindable output
+   * (event `wcs-eyedropper:supported-changed`).
    */
   get supported(): boolean {
     return requiredCapabilitiesAvailable(this.platformAssessment, EyedropperCore.REQUIRED_CAPABILITIES);
@@ -122,10 +131,12 @@ export class EyedropperCore extends EventTarget {
   }
 
   // Lifecycle (§3.5). EyeDropper is command-driven with no subscription to
-  // establish, so observe() is an idempotent no-op that resolves once ready;
+  // establish, so observe() only publishes `supported` (when it differs from the
+  // last value dispatched) and resolves once ready — idempotent;
   // dispose() bumps the lane's owner generation (invalidating any in-flight open())
   // and aborts its AbortController.
   observe(): Promise<void> {
+    this._publishSupported();
     return this._ready;
   }
 
@@ -144,6 +155,20 @@ export class EyedropperCore extends EventTarget {
     if (this._lane.canCommit(ticket)) {
       step();
     }
+  }
+
+  // `supported` is probed at call time, so there is no stored value to set: this
+  // dispatches the current one when it differs from the last one dispatched
+  // (same-value guard). A state binding reads the property when it attaches; the
+  // event is for every other listener.
+  private _publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-eyedropper:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
   }
 
   private _setLoading(loading: boolean): void {

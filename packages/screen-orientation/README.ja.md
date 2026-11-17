@@ -9,7 +9,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-screen-orientation>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し — `screen.orientation` は設定すべきものを持たない単一のグローバル
-- **出力 state サーフェス**: `type`、`angle`、`portrait`、`landscape`、`error`、`errorInfo`
+- **出力 state サーフェス**: `type`、`angle`、`portrait`、`landscape`、`error`、`errorInfo`、そして 4.25（未リリース）から `supported`
 
 ## なぜ存在するか — このバッチで唯一のmonitor/command非対称性
 
@@ -69,6 +69,34 @@ export default {
 
 この例のような通常タブでは、ボタンを押しても実際にはロックされません: ドキュメントがフルスクリーンであるか、インストール済みPWAとして動作していない限り、現行ブラウザは`lock()`をrejectします（`lockError`に現れます）。実際にロックが効くのを確認するには、`<wcs-fullscreen>`のようなフルスクリーントリガーと組み合わせ、フルスクリーンに入った後で`lock()`を呼んでください（詳細はNotes & limitationsを参照）。
 
+### 3. 固定する向きがあるところでだけ、固定を出す
+
+4.25（未リリース）から、出力 `supported` が「このページに `screen.orientation` があるか」を言います。無いところでは固定ボタンは失敗するだけなので、隠します:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["lockLandscape"],
+      orientationSupported: false,
+      lockError: null,
+      lockLandscape() {
+        this.$command.lockLandscape.emit("landscape");
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-screen-orientation
+  data-wcs="supported: orientationSupported; command.lock: $command.lockLandscape; error: lockError"
+></wcs-screen-orientation>
+
+<button data-wcs="hidden: orientationSupported|not; onclick: lockLandscape">横向きに固定</button>
+<p data-wcs="hidden: lockError|falsy">ここでは向きを固定できませんでした。</p>
+```
+
+`supported: true` は、固定が効くことを**意味しません** — `lockError` の行は残してください。下の [`supported`](#supported--言うことと言わないこと) を参照。
+
 ## 観測可能プロパティ（出力）
 
 | プロパティ  | イベント                  | 説明 |
@@ -79,8 +107,15 @@ export default {
 | `landscape` | `wcs-orientation:change`   | `type`が`"landscape"`で始まれば`true`。 |
 | `error`     | `wcs-orientation:error`    | 直近の`lock()`/`unlock()`の失敗、無ければ`null`。 |
 | `errorInfo` | `wcs-orientation:error-info-changed` | `error`から派生した、失敗のserializableなtaxonomy（`WcsIoErrorInfo`: 安定した`code` / `phase` / `recoverable`）、無ければ`null`。additive —— `error`の形状は不変。 |
+| `supported` | `wcs-orientation:supported-changed` | 4.25（未リリース）から。このページに見張れる`screen.orientation`があれば`true`。`lock()`が効くことは言わない — 下記参照。 |
 
 `type`/`angle`/`portrait`/`landscape`は全て単一の`wcs-orientation:change`イベントから派生します。
+
+### `supported` — 言うことと、言わないこと
+
+4.25（未リリース）から。`supported` は `screen.orientation` があるときに `true` です: `type`・`angle`・`portrait`・`landscape` は実際の値で、端末の向きに追従します。`false` のところでは、それらは `null` / `false` のままで、`lock()` / `unlock()` は `capability-missing` で終わります。値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-orientation:supported-changed`（`detail` は boolean）を流します。
+
+**`lock()` が効くことは言いません。** Safari には `screen.orientation` があり、`lock()` がありません。デスクトップのブラウザには `lock()` があり、拒否します。スマートフォンでも、効くのはドキュメントがフルスクリーン（またはインストール済み PWA）の間だけです。これらを事前に見分けるプロパティはありません: 固定が効くかどうかは、フルスクリーンで実際に試し、その後の `error` / `errorInfo` を読んで初めて分かります。組み合わせ方（先にフルスクリーンに入り、有効になってから固定する）は [`<wcs-fullscreen>` の README](../fullscreen/README.ja.md#fullscreen-の間画面の向きを固定する) にあります。
 
 ## コマンド
 
@@ -88,6 +123,8 @@ export default {
 | -------- | ------ | ---- |
 | `lock`   | はい   | 特定の向きへのロックを要求（例: `"landscape"`、`"portrait-primary"`）。値は素通し——never-throw、未知の文字列や非対応環境は`error`へ。 |
 | `unlock` | いいえ | 直前のロックを解除。プラットフォームAPIと同じく同期的。 |
+
+> **`lock` はボタンに直結せず、state のメソッドを通して配線してください。** `<button data-wcs="onclick: $command.lockLandscape">` は DOM イベントを第 1 引数にしてトークンを emit するので、要素は `lock(event)` として呼ばれます — ブラウザは `Event` を向きとして受け付けず、`TypeError` で拒否します（`error`、`errorInfo.code: "orientation-error"`）。このコマンドが取るのは向きです。クイックスタートの `lockLandscape()` のように、メソッドから emit してください（`this.$command.lockLandscape.emit("landscape")`）。`unlock` は引数を取らないので、`onclick: $command.unlockOrientation` で構いません。
 
 ## 属性 / 入力
 
@@ -175,6 +212,8 @@ console.log(core.error);
 // 後始末:
 core.dispose();
 ```
+
+4.25（未リリース）から、`core.supported` はいつでも読めます。`core.observe()` は、最後に流した値と違っていれば `wcs-orientation:supported-changed` を（スナップショットの `wcs-orientation:change` より先に）流します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

@@ -28,6 +28,8 @@ export type {
  * `:error` / `:error-info-changed`), so a wc-bindable binding core delivers a
  * request/exit failure. `errorInfo` is the additive serializable failure
  * taxonomy derived from `error` (docs/pointer-lock-tag-design.md §2, README).
+ * `supported` (`wcs-pointer-lock:supported-changed`) says whether this page has
+ * the Pointer Lock API at all.
  *
  * @example
  * ```typescript
@@ -40,11 +42,13 @@ export interface WcsPointerLockCoreValues {
   error: any;
   /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
   errorInfo: WcsIoErrorInfo | null;
+  /** Whether this page has the Pointer Lock API (an element has `requestPointerLock()`). */
+  supported: boolean;
 }
 
 /**
  * Value types for the Shell (`<wcs-pointer-lock>`) — identical value surface
- * to the Core (`active` / `error` / `errorInfo` all observable). The Shell
+ * to the Core (`active` / `error` / `errorInfo` / `supported` all observable). The Shell
  * additionally accepts a `target` attribute
  * (see docs/pointer-lock-tag-design.md / docs/fullscreen-tag-design.md §1).
  */

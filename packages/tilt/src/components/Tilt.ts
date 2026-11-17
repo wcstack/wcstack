@@ -95,6 +95,10 @@ export class WcsTilt extends HTMLElement {
     return this._core.absolute;
   }
 
+  get heading(): number | null {
+    return this._core.heading;
+  }
+
   get permissionState(): TiltPermissionState {
     return this._core.permissionState;
   }
@@ -105,6 +109,11 @@ export class WcsTilt extends HTMLElement {
 
   get errorInfo(): WcsIoErrorInfo | null {
     return this._core.errorInfo;
+  }
+
+  // Computed at call time: a binding reads it when it binds, with no event.
+  get supported(): boolean {
+    return this._core.supported;
   }
 
   get connectedCallbackPromise(): Promise<void> {
@@ -131,6 +140,7 @@ export class WcsTilt extends HTMLElement {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
+    // Subscribes to nothing; publishes `supported` when it differs from the value last dispatched.
     this._connectedCallbackPromise = this._core.observe();
   }
 

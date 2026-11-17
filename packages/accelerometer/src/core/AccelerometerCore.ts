@@ -1,13 +1,23 @@
-import { IWcBindable, WcsAccelerometerReading, WcsAccelerometerErrorDetail } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import {
+  IWcBindable, WcsAccelerometerReading, WcsAccelerometerErrorDetail, WcsAccelerometerPermissionState,
+} from "../types.js";
+import { WcsIoErrorInfo, featureUnavailable } from "./platformCapability.js";
 import { deriveAccelerometerErrorInfo } from "./accelerometerCapabilities.js";
 
 const NULL_READING: WcsAccelerometerReading = Object.freeze({ x: null, y: null, z: null });
 
+type SensorLike = EventTarget & { start(): void; stop(): void };
+
+interface DeviceMotionEventCtor {
+  requestPermission?: () => Promise<string>;
+}
+
 /**
  * Headless Accelerometer primitive. A thin, framework-agnostic wrapper around
  * the Generic Sensor API's `Accelerometer` class exposed through the
- * wc-bindable protocol.
+ * wc-bindable protocol — and, where the browser has no such class (iPhone and
+ * iPad Safari, Firefox on Android), around `window`'s `devicemotion` event,
+ * whose `accelerationIncludingGravity` is the same quantity in the same unit.
  *
  * The platform `Sensor` base class (shared by `Accelerometer` / `Gyroscope` /
  * `Magnetometer` / `AmbientLightSensor`) reports failure through an `'error'`
@@ -34,10 +44,16 @@ const NULL_READING: WcsAccelerometerReading = Object.freeze({ x: null, y: null, 
  * subscribe/unsubscribe toggle with no asynchronous probe whose stale
  * resolution could race a dispose() — see docs/sensor-tag-design.md §1.5
  * (the same reasoning as NetworkCore, docs/network-tag-design.md §5).
+ * `requestPermission()` does await the browser's answer, but what it writes
+ * afterwards is a plain `permissionState` / `error` value with no subscription
+ * or resource to race — the same benign shape as `<wcs-tilt>`'s
+ * (docs/timing-and-firing-contract.md §8.2).
  *
  * Permissions: this Core does not query `navigator.permissions` itself.
- * Compose with `<wcs-permission name="accelerometer">` instead — see
- * docs/sensor-tag-design.md §"2番目の決定: Permissions APIとの合成".
+ * Compose with `<wcs-permission name="accelerometer">` for the Generic Sensor's
+ * own permission — see docs/sensor-tag-design.md §"2番目の決定: Permissions APIとの合成".
+ * `permissionState` here is only the answer to iOS's `DeviceMotionEvent.requestPermission()`,
+ * which no Permissions API entry reports.
  */
 export class AccelerometerCore extends EventTarget {
   static wcBindable: IWcBindable = {
@@ -47,26 +63,42 @@ export class AccelerometerCore extends EventTarget {
       { name: "x", event: "wcs-accelerometer:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.x },
       { name: "y", event: "wcs-accelerometer:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.y },
       { name: "z", event: "wcs-accelerometer:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.z },
+      // What the browser answered to requestPermission(): "unknown" until it answers.
+      { name: "permissionState", event: "wcs-accelerometer:permission-changed", semantics: "state" },
       { name: "error", event: "wcs-accelerometer:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the Error.name /
       // "unsupported"); the existing `error` property/event are unchanged. Fires
       // wcs-accelerometer:error-info-changed. No lane — the sensor is a monitor.
       { name: "errorInfo", event: "wcs-accelerometer:error-info-changed", semantics: "state" },
+      // This page can use the sensor: an API is there (the class, or `devicemotion`)
+      // and neither a Permissions-Policy nor an insecure context forbids it. Not
+      // whether the device has a sensor, and not whether the user will allow it.
+      { name: "supported", event: "wcs-accelerometer:supported-changed", semantics: "state" },
     ],
-    commands: [{ name: "start" }, { name: "stop" }],
+    commands: [{ name: "requestPermission", async: true }, { name: "start" }, { name: "stop" }],
   };
 
   private _target: EventTarget;
   private _reading: WcsAccelerometerReading = NULL_READING;
+  private _permissionState: WcsAccelerometerPermissionState = "unknown";
   private _error: WcsAccelerometerErrorDetail | null = null;
   private _errorInfo: WcsIoErrorInfo | null = null;
+  // The value the last wcs-accelerometer:supported-changed carried (none yet: false).
+  private _supportedPublished = false;
 
   // The live sensor instance while started (null otherwise), kept so stop()
   // can remove its listeners precisely and so start() can detect "already
   // started" without a separate boolean (docs/async-io-node-guidelines.md §3.5
   // idempotency).
-  private _sensor: (EventTarget & { start(): void; stop(): void }) | null = null;
+  private _sensor: SensorLike | null = null;
+
+  // The `devicemotion` fallback: true while subscribed. `_motionGap` is the
+  // shortest time in ms between two published readings (0: every event), and
+  // `_motionLast` the `timeStamp` of the event last published.
+  private _motion = false;
+  private _motionGap = 0;
+  private _motionLast = -Infinity;
 
   constructor(target?: EventTarget) {
     super();
@@ -85,6 +117,10 @@ export class AccelerometerCore extends EventTarget {
     return this._reading.z;
   }
 
+  get permissionState(): WcsAccelerometerPermissionState {
+    return this._permissionState;
+  }
+
   get error(): WcsAccelerometerErrorDetail | null {
     return this._error;
   }
@@ -97,6 +133,16 @@ export class AccelerometerCore extends EventTarget {
    */
   get errorInfo(): WcsIoErrorInfo | null {
     return this._errorInfo;
+  }
+
+  /**
+   * Whether this page can use the sensor: the `Accelerometer` class or
+   * `DeviceMotionEvent` is there, and neither an insecure context nor a
+   * Permissions-Policy that forbids `accelerometer` is in the way. Read at call
+   * time, never cached. It cannot say whether the device has a sensor.
+   */
+  get supported(): boolean {
+    return this._api() !== null && featureUnavailable("accelerometer") === null;
   }
 
   /** No asynchronous probe to await: start()/stop() are synchronous
@@ -119,7 +165,18 @@ export class AccelerometerCore extends EventTarget {
     }));
   }
 
-  private _setError(error: WcsAccelerometerErrorDetail | null): void {
+  private _setPermissionState(state: WcsAccelerometerPermissionState): void {
+    if (this._permissionState === state) return;
+    this._permissionState = state;
+    this._target.dispatchEvent(new CustomEvent("wcs-accelerometer:permission-changed", {
+      detail: state,
+      bubbles: true,
+    }));
+  }
+
+  // `askRefused`: the failure is the browser refusing to ask (a rejected
+  // requestPermission()), which a call from a tap can still turn around.
+  private _setError(error: WcsAccelerometerErrorDetail | null, askRefused = false): void {
     // Same-value guard (by error name + message): error is state-like, unlike
     // reading — a repeated identical error (same name and message) must not
     // redispatch.
@@ -128,7 +185,7 @@ export class AccelerometerCore extends EventTarget {
     // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
     // error name (or null on clear). Fires before the `error` event so an observer
     // binding both sees the classification first, mirroring the io-node family.
-    this._commitErrorInfo(error === null ? null : deriveAccelerometerErrorInfo(error.error, error.message));
+    this._commitErrorInfo(error === null ? null : deriveAccelerometerErrorInfo(error.error, error.message, askRefused));
     this._target.dispatchEvent(new CustomEvent("wcs-accelerometer:error", {
       detail: error,
       bubbles: true,
@@ -149,10 +206,75 @@ export class AccelerometerCore extends EventTarget {
   // --- Public API ---
 
   /**
+   * Dispatch `wcs-accelerometer:supported-changed` when `supported` differs
+   * from the value last dispatched (false before the first). The Shell calls it
+   * on connect, so a listener other than a binding — which reads the property
+   * when it binds — learns the value too.
+   */
+  publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-accelerometer:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
+  }
+
+  /**
+   * Ask for what start() needs, where there is a question to ask. Only iOS
+   * Safari has one, and only on the `devicemotion` fallback: the static,
+   * tap-gated `DeviceMotionEvent.requestPermission()`. Everywhere else the
+   * sensor can be started (the Generic Sensor class, or `devicemotion` without
+   * the gate) this resolves to `"granted"` at once without asking anything, so
+   * a page writes one `requestPermission()` → `start()` flow for every browser.
+   * The Generic Sensor's own permission is not asked here: `start()` reports a
+   * refusal through `error`, and `<wcs-permission name="accelerometer">` watches it.
+   *
+   * `permissionState` changes only when the browser answers. A rejection is
+   * not an answer: iOS rejects (`NotAllowedError`) when the call does not come
+   * from a tap, without showing the question. It leaves `permissionState` as it
+   * was, lands in `error` (never-throw, §3.6) and resolves to the unchanged
+   * state — as does a browser with neither API (`unsupported`). An answer
+   * clears an `error` left by an earlier attempt, as in `<wcs-tilt>`.
+   */
+  async requestPermission(): Promise<WcsAccelerometerPermissionState> {
+    const api = this._api();
+    if (api === null) {
+      this._setError({ error: "unsupported", message: "Accelerometer is not supported" });
+      return this._permissionState;
+    }
+    const Ctor: DeviceMotionEventCtor | undefined = api === "motion" ? (globalThis as any).DeviceMotionEvent : undefined;
+    if (typeof Ctor?.requestPermission !== "function") {
+      this._setError(null);
+      this._setPermissionState("granted");
+      return "granted";
+    }
+    try {
+      const result = await Ctor.requestPermission();
+      const state: WcsAccelerometerPermissionState = result === "granted" ? "granted" : "denied";
+      this._setError(null);
+      this._setPermissionState(state);
+      return state;
+    } catch (e: any) {
+      // never-throw. The browser refused to ask: the user was not asked, so
+      // nothing is known about the permission that was not known before.
+      this._setError({ error: e?.name ?? "error", message: e?.message ?? String(e) }, true);
+      return this._permissionState;
+    }
+  }
+
+  /**
    * Start the sensor at the given `frequency` (Hz), or the platform default
    * when omitted. Idempotent while already started: a redundant start() does
    * not construct a second sensor instance (which would leak the first).
    * Restart with a different frequency via stop() + start().
+   *
+   * Where the browser has no `Accelerometer` class but has `devicemotion`, it
+   * subscribes to that instead; which of the two is decided at each start().
+   * `devicemotion` has its own rate, so there `frequency` only thins: a reading
+   * arriving sooner than `1000 / frequency` ms after the last published one is
+   * dropped.
    *
    * Synchronous, mirroring the native `Sensor.start()` — never throws
    * (docs/async-io-node-guidelines.md §3.6): both "unsupported" and a
@@ -160,7 +282,14 @@ export class AccelerometerCore extends EventTarget {
    * block) are converted to the `error` property instead of propagating.
    */
   start(frequency?: number): void {
-    if (this._sensor) return;
+    if (this._sensor || this._motion) return;
+    if (this._api() === "motion") {
+      this._motionGap = frequency !== undefined && frequency > 0 ? 1000 / frequency : 0;
+      this._motionLast = -Infinity;
+      this._motion = true;
+      globalThis.window?.addEventListener("devicemotion", this._onMotion);
+      return;
+    }
     const sensor = this._createSensor(frequency);
     if (!sensor) return;
     sensor.addEventListener("reading", this._onReading as EventListener);
@@ -173,21 +302,27 @@ export class AccelerometerCore extends EventTarget {
       // (failures surface via the 'error' event), but never-throw is a hard
       // requirement here, so guard against a non-conformant implementation
       // too.
-      this._teardownSensor();
+      this._teardownSensor(sensor);
       this._setError({ error: e?.name ?? "error", message: e?.message ?? String(e) });
     }
   }
 
   /** Stop the sensor and detach its listeners. Safe to call when not started. */
   stop(): void {
+    if (this._motion) {
+      this._motion = false;
+      globalThis.window?.removeEventListener("devicemotion", this._onMotion);
+      return;
+    }
     if (!this._sensor) return;
+    const sensor = this._sensor;
     try {
-      this._sensor.stop();
+      sensor.stop();
     } catch {
       // Never-throw defensive guard, symmetric with start(). Teardown below
       // still runs so listeners are detached regardless.
     }
-    this._teardownSensor();
+    this._teardownSensor(sensor);
   }
 
   /** Lifecycle alias for start(), so the Shell's connectedCallback can drive
@@ -205,13 +340,26 @@ export class AccelerometerCore extends EventTarget {
 
   // --- Internal ---
 
-  // Both call sites (start()'s catch, stop()) only ever invoke this once
-  // `this._sensor` is already known non-null, so there is no null-guard here
-  // (nothing to defend against).
-  private _teardownSensor(): void {
-    this._sensor!.removeEventListener("reading", this._onReading as EventListener);
-    this._sensor!.removeEventListener("error", this._onError as EventListener);
-    this._sensor = null;
+  // Which API a start() uses, decided at each call (docs/async-io-node-guidelines.md
+  // §3.7): the Generic Sensor class where the browser has it, `devicemotion`
+  // where it has only that, null where it has neither.
+  private _api(): "sensor" | "motion" | null {
+    const g = globalThis as any;
+    if (typeof g.Accelerometer === "function") return "sensor";
+    if (typeof g.DeviceMotionEvent === "function") return "motion";
+    return null;
+  }
+
+  // Detach a sensor that is finished: stopped, failed in start(), or reported
+  // an `error` event. A sensor whose `error` event arrives while its start()
+  // is still running, and whose start() then throws, is torn down twice: the
+  // second time its listeners are already off, which removeEventListener
+  // takes — and a start() from an `error` listener may have put a newer
+  // sensor in its place by then, which stays.
+  private _teardownSensor(sensor: SensorLike | null): void {
+    sensor?.removeEventListener("reading", this._onReading as EventListener);
+    sensor?.removeEventListener("error", this._onError as EventListener);
+    if (this._sensor === sensor) this._sensor = null;
   }
 
   /**
@@ -223,7 +371,7 @@ export class AccelerometerCore extends EventTarget {
    * re-checked on every start(), never cached, so tests can install/remove the
    * global freely and an unsupported environment is always reported correctly.
    */
-  private _createSensor(frequency?: number): (EventTarget & { start(): void; stop(): void }) | null {
+  private _createSensor(frequency?: number): SensorLike | null {
     const Ctor = (globalThis as any).Accelerometer;
     if (typeof Ctor !== "function") {
       this._setError({ error: "unsupported", message: "Accelerometer is not supported" });
@@ -246,8 +394,25 @@ export class AccelerometerCore extends EventTarget {
     this._setReading({ x: sensor.x, y: sensor.y, z: sensor.z });
   };
 
+  // The `devicemotion` fallback. `accelerationIncludingGravity` is in m/s² along
+  // the device's x / y / z axes, what `Accelerometer` reports.
+  private _onMotion = (event: Event): void => {
+    const a = (event as any).accelerationIncludingGravity as
+      { x: number | null; y: number | null; z: number | null } | null | undefined;
+    // A device without the sensor (a PC) still fires the event, with null in every field.
+    if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(a.z)) return;
+    if (event.timeStamp - this._motionLast < this._motionGap) return;
+    this._motionLast = event.timeStamp;
+    this._setReading({ x: a.x, y: a.y, z: a.z });
+  };
+
   private _onError = (event: Event): void => {
     const err = (event as any).error as { name?: string; message?: string } | undefined;
+    // The sensor that reported the error is finished (the platform deactivates
+    // it): detach it before publishing, so the next start() builds a fresh one
+    // instead of taking this one for "already started". It is `_sensor`: this
+    // listener is on a sensor only while that sensor is the current one.
+    this._teardownSensor(this._sensor);
     // Fallback is a meaningful constant, NOT String(err): a SensorErrorEvent
     // without an `error` field would otherwise stringify `undefined` into the
     // literal message "undefined" (aligned across the sensor family).

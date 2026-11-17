@@ -55,6 +55,9 @@ export interface WcsEyedropperCoreValues {
   cancelled: boolean;
   // Last failure's serializable taxonomy (stable code/phase/recoverable), or null.
   errorInfo: WcsIoErrorInfo | null;
+  // `true` when this page can use the EyeDropper API (the `EyeDropper` constructor
+  // is there). It does not say the user will pick a color.
+  supported: boolean;
 }
 
 /**

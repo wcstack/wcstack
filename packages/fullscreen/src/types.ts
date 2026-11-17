@@ -28,6 +28,8 @@ export type {
  * `:error` / `:error-info-changed`), so a wc-bindable binding core delivers a
  * request/exit failure. `errorInfo` is the additive serializable failure
  * taxonomy derived from `error` (docs/fullscreen-tag-design.md §8, README).
+ * `supported` (`wcs-fullscreen:supported-changed`) says whether this page can
+ * use element fullscreen at all.
  *
  * @example
  * ```typescript
@@ -40,11 +42,13 @@ export interface WcsFullscreenCoreValues {
   error: any;
   /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
   errorInfo: WcsIoErrorInfo | null;
+  /** Whether this page can use element fullscreen (API present, not forbidden by a policy). */
+  supported: boolean;
 }
 
 /**
  * Value types for the Shell (`<wcs-fullscreen target="...">`) — identical
- * value surface to the Core (`active` / `error` / `errorInfo` all observable).
+ * value surface to the Core (`active` / `error` / `errorInfo` / `supported` all observable).
  * The Shell adds the `target` input (attribute-mirrored) that resolves which
  * element requestFullscreen()/exitFullscreen() operate on
  * (docs/fullscreen-tag-design.md §1/§9).

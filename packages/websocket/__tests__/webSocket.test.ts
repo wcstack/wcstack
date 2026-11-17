@@ -878,6 +878,28 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
+    it("ボタンに直結したトークンが渡すイベントは close の code にしない（WebSocket.close(event) は InvalidAccessError を投げる）", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      MockWebSocket.instances[0].simulateOpen();
+
+      (el as any).close(new Event("click"), 0);
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalledWith(undefined, undefined);
+      el.remove();
+    });
+
+    it("code が数なら、文字列でない reason だけを落とす", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      MockWebSocket.instances[0].simulateOpen();
+
+      (el as any).close(1000, 7);
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalledWith(1000, undefined);
+      el.remove();
+    });
+
     it("開く途中の close コマンドは、終わりをその場で知らせ、開いてから code / reason で閉じる", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);

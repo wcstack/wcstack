@@ -75,6 +75,79 @@ describe("ScreenOrientationCore", () => {
     });
   });
 
+  describe("supported（このページで screen.orientation を見張れるか）", () => {
+    it("screen.orientation の有無を呼び出し時に読む（キャッシュしない）", () => {
+      removeOrientation();
+      const core = new ScreenOrientationCore();
+      expect(core.supported).toBe(false);
+      installOrientation();
+      expect(core.supported).toBe(true);
+      removeOrientation();
+      expect(core.supported).toBe(false);
+    });
+
+    it("lock() の有無は見ない（lock の無い Safari でも、見張れるなら true）", () => {
+      const orientation = installOrientation();
+      (orientation as any).lock = undefined;
+      const core = new ScreenOrientationCore();
+      expect(core.supported).toBe(true);
+    });
+
+    it("wcBindable に supported が state として宣言され、event は wcs-orientation:supported-changed（detail が値）", () => {
+      const prop = ScreenOrientationCore.wcBindable.properties.find((p) => p.name === "supported")!;
+      expect(prop.event).toBe("wcs-orientation:supported-changed");
+      expect(prop.semantics).toBe("state");
+      expect(prop.getter).toBeUndefined();
+    });
+
+    it("observe() は、最後に知らせた値（初期は false）と違うときだけ supported-changed を流し、snapshot の change より先に流す", () => {
+      installOrientation({ type: "landscape-primary", angle: 90 });
+      const core = new ScreenOrientationCore();
+      const order: string[] = [];
+      const events: Array<{ detail: boolean; bubbles: boolean }> = [];
+      core.addEventListener("wcs-orientation:supported-changed", (e) => {
+        order.push("supported");
+        events.push({ detail: (e as CustomEvent).detail, bubbles: e.bubbles });
+      });
+      core.addEventListener("wcs-orientation:change", () => order.push("change"));
+
+      core.observe();
+      expect(events).toEqual([{ detail: true, bubbles: true }]);
+      expect(order).toEqual(["supported", "change"]);
+
+      // 同じ値は流さない（購読中の再呼び出しでも、dispose をまたいでも）
+      core.observe();
+      core.dispose();
+      core.observe();
+      expect(events).toHaveLength(1);
+
+      // 使えなくなったら false を流す
+      core.dispose();
+      removeOrientation();
+      core.observe();
+      expect(events.map((e) => e.detail)).toEqual([true, false]);
+    });
+
+    it("screen.orientation の無いページの observe() は何も流さない（初期値 false と同じ）", () => {
+      removeOrientation();
+      const core = new ScreenOrientationCore();
+      const events: boolean[] = [];
+      core.addEventListener("wcs-orientation:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      core.observe();
+      expect(events).toEqual([]);
+    });
+
+    it("target 指定時は supported-changed が target に流れる", () => {
+      installOrientation();
+      const target = new EventTarget();
+      const core = new ScreenOrientationCore(target);
+      const events: boolean[] = [];
+      target.addEventListener("wcs-orientation:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      core.observe();
+      expect(events).toEqual([true]);
+    });
+  });
+
   describe("change イベントの追従と同値ガード", () => {
     it("screen.orientation の change で値が更新され再 dispatch する", () => {
       const orientation = installOrientation({ type: "portrait-primary", angle: 0 });

@@ -5,7 +5,7 @@ export { WcsGyroscope } from "./components/Gyroscope.js";
 
 export type {
   IWritableConfig, IWritableTagNames, WcsGyroscopeReading, WcsGyroscopeErrorDetail,
-  WcsGyroscopeCoreValues, WcsGyroscopeValues,
+  WcsGyroscopePermissionState, WcsGyroscopeCoreValues, WcsGyroscopeValues,
 } from "./types.js";
 
 // Error taxonomy: `errorInfo` is an additive wc-bindable property, so its value

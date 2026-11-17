@@ -1,21 +1,35 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { AccelerometerCore } from "../src/core/AccelerometerCore";
-import { FakeSensor, installSensor, installThrowingSensor, removeSensor } from "./mocks";
+import {
+  FakeSensor, installSensor, installThrowingSensor, removeSensor,
+  installDeviceMotionEvent, removeDeviceMotionEvent, restoreDeviceMotionEvent, emitDeviceMotion,
+} from "./mocks";
 
 const GLOBAL_NAME = "Accelerometer";
 
 describe("AccelerometerCore", () => {
+  // happy-dom は DeviceMotionEvent を持つ。センサーのクラスだけを外したテストが devicemotion の
+  // フォールバックに入らないよう、既定では外しておく（フォールバックのテストは自分で入れる）。
+  beforeEach(() => {
+    removeDeviceMotionEvent();
+  });
+
   afterEach(() => {
     removeSensor(GLOBAL_NAME);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    delete (document as { featurePolicy?: unknown }).featurePolicy;
+    restoreDeviceMotionEvent();
   });
 
   describe("初期状態（start 前）", () => {
-    it("x/y/z/error は既定値", () => {
+    it("x/y/z/error は既定値、permissionState は 'unknown'", () => {
       const core = new AccelerometerCore();
       expect(core.x).toBeNull();
       expect(core.y).toBeNull();
       expect(core.z).toBeNull();
       expect(core.error).toBeNull();
+      expect(core.permissionState).toBe("unknown");
     });
 
     it("ready は即 resolve する（非同期 probe が無いため）", async () => {
@@ -25,10 +39,19 @@ describe("AccelerometerCore", () => {
   });
 
   describe("start() — 非対応環境", () => {
-    it("globalThis.Accelerometer が無ければ unsupported エラーになる（例外は投げない）", () => {
+    it("globalThis.Accelerometer も DeviceMotionEvent も無ければ unsupported エラーになる（例外は投げない）", () => {
       removeSensor(GLOBAL_NAME);
+      const addSpy = vi.spyOn(window, "addEventListener");
       const core = new AccelerometerCore();
       expect(() => core.start()).not.toThrow();
+      expect(core.error).toEqual({ error: "unsupported", message: "Accelerometer is not supported" });
+      expect(addSpy).not.toHaveBeenCalledWith("devicemotion", expect.anything());
+    });
+
+    it("DeviceMotionEvent が関数でない（オブジェクトだけある）場合もフォールバックに入らない", () => {
+      vi.stubGlobal("DeviceMotionEvent", {});
+      const core = new AccelerometerCore();
+      core.start();
       expect(core.error).toEqual({ error: "unsupported", message: "Accelerometer is not supported" });
     });
   });
@@ -188,6 +211,8 @@ describe("AccelerometerCore", () => {
       expect(events).toHaveLength(1);
     });
 
+    // error イベントを出したセンサーは片付けられる（下の「error イベントの後の start()」）ので、
+    // 2 回目の error は start() し直した新しいセンサーから出す。
     it("同値の error は同値ガードで再 dispatch しない", () => {
       const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
       const core = new AccelerometerCore();
@@ -196,6 +221,7 @@ describe("AccelerometerCore", () => {
 
       core.start();
       handle.current!.emitError("NotReadableError", "msg");
+      core.start();
       handle.current!.emitError("NotReadableError", "msg");
 
       expect(events).toHaveLength(1);
@@ -209,6 +235,7 @@ describe("AccelerometerCore", () => {
 
       core.start();
       handle.current!.emitError("NotReadableError", "first message");
+      core.start();
       handle.current!.emitError("NotReadableError", "second message");
 
       expect(events).toHaveLength(2);
@@ -227,6 +254,7 @@ describe("AccelerometerCore", () => {
 
       core.start();
       handle.current!.emitError("NotReadableError", "same message");
+      core.start();
       handle.current!.emitError("SecurityError", "same message");
 
       expect(events).toHaveLength(2);
@@ -269,6 +297,548 @@ describe("AccelerometerCore", () => {
 
       // The prior error stays put — a successful start does not clear it.
       expect(core.error).toEqual({ error: "unsupported", message: "Accelerometer is not supported" });
+    });
+  });
+
+  describe("error イベントの後の start()", () => {
+    it("error イベントを出したセンサーは片付けられ、次の start() が新しいセンサーを作る（stop() を挟まなくてよい）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new AccelerometerCore();
+      const readings: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => readings.push((e as CustomEvent).detail));
+
+      core.start();
+      const failed = handle.current!;
+      failed.emitError("NotReadableError", "could not read from the sensor");
+
+      core.start();
+      const fresh = handle.current!;
+      expect(fresh).not.toBe(failed);
+      expect(fresh.started).toBe(true);
+
+      fresh.emitReading({ x: 1, y: 2, z: 3 });
+      expect(readings).toEqual([{ x: 1, y: 2, z: 3 }]);
+
+      // 片付けたセンサーの listener は外れている: 後から何が来ても届かない
+      failed.emitReading({ x: 9, y: 9, z: 9 });
+      failed.emitError("SecurityError", "late");
+      expect(core.x).toBe(1);
+      // error は据え置き（成功した再開では消えない）
+      expect(core.error).toEqual({ error: "NotReadableError", message: "could not read from the sensor" });
+    });
+
+    it("wcs-accelerometer:error のリスナーの中からの start() も新しいセンサーを作る（片付けは dispatch の前）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new AccelerometerCore();
+      let restarted = false;
+      core.addEventListener("wcs-accelerometer:error", () => {
+        if (restarted) return;
+        restarted = true;
+        core.start();
+      });
+
+      core.start();
+      const failed = handle.current!;
+      failed.emitError("NotReadableError", "x");
+
+      expect(handle.current).not.toBe(failed);
+      expect(handle.current!.started).toBe(true);
+    });
+
+    it("error イベントの後の stop() は安全な no-op（片付け済み）", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new AccelerometerCore();
+      core.start();
+      const failed = handle.current!;
+      failed.emitError("NotReadableError", "x");
+
+      expect(() => core.stop()).not.toThrow();
+      expect(failed.stopped).toBe(false);
+    });
+
+    it("start() の最中に error イベントが来て、さらに start() が throw しても never-throw（二重の片付け）", () => {
+      const constructed: FakeSensor[] = [];
+      (globalThis as any)[GLOBAL_NAME] = function (this: any, options?: { frequency?: number }) {
+        const sensor = new FakeSensor({ x: 0, y: 0, z: 0 }, options);
+        if (constructed.length === 0) {
+          sensor.start = () => {
+            sensor.emitError("NotReadableError", "during start");
+            throw new Error("boom");
+          };
+        }
+        constructed.push(sensor);
+        return sensor;
+      };
+      const core = new AccelerometerCore();
+
+      expect(() => core.start()).not.toThrow();
+      expect(core.error).toEqual({ error: "Error", message: "boom" });
+
+      core.start();
+      expect(constructed).toHaveLength(2);
+      expect(constructed[1].started).toBe(true);
+    });
+
+    it("start() の最中の error イベントのリスナーが start() し直し、その後で元の start() が throw しても、新しいセンサーは現役のまま", () => {
+      const constructed: FakeSensor[] = [];
+      (globalThis as any)[GLOBAL_NAME] = function (this: any, options?: { frequency?: number }) {
+        const sensor = new FakeSensor({ x: 0, y: 0, z: 0 }, options);
+        if (constructed.length === 0) {
+          sensor.start = () => {
+            sensor.emitError("NotReadableError", "during start");
+            throw new Error("boom");
+          };
+        }
+        constructed.push(sensor);
+        return sensor;
+      };
+      const core = new AccelerometerCore();
+      const readings: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => readings.push((e as CustomEvent).detail));
+      let restarted = false;
+      core.addEventListener("wcs-accelerometer:error", () => {
+        if (restarted) return;
+        restarted = true;
+        core.start();
+      });
+
+      expect(() => core.start()).not.toThrow();
+      expect(constructed).toHaveLength(2);
+
+      // 2 つ目が現役: もう一度 start() しても 3 つ目は作られず、読み取りは 1 回ずつ届き、stop() で止まる
+      core.start();
+      expect(constructed).toHaveLength(2);
+      constructed[1].emitReading({ x: 1, y: 2, z: 3 });
+      expect(readings).toEqual([{ x: 1, y: 2, z: 3 }]);
+      core.stop();
+      expect(constructed[1].stopped).toBe(true);
+    });
+  });
+
+  describe("devicemotion フォールバック（Accelerometer クラスの無いブラウザ: iPhone / iPad の Safari、Android の Firefox）", () => {
+    it("クラスが無く DeviceMotionEvent があれば、start() は window の devicemotion を購読する（error は出さない）", () => {
+      installDeviceMotionEvent();
+      const addSpy = vi.spyOn(window, "addEventListener");
+      const core = new AccelerometerCore();
+
+      core.start();
+
+      expect(addSpy.mock.calls.filter((c) => c[0] === "devicemotion")).toHaveLength(1);
+      expect(core.error).toBeNull();
+      core.stop();
+    });
+
+    it("accelerationIncludingGravity が x/y/z（m/s²）として同じ reading イベントで届く", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-accelerometer:reading", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
+
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 0.5, y: -1.25, z: 9.8 } });
+
+      expect(core.x).toBe(0.5);
+      expect(core.y).toBe(-1.25);
+      expect(core.z).toBe(9.8);
+      expect(events).toEqual([{ x: 0.5, y: -1.25, z: 9.8 }]);
+      expect(bubbles).toBe(true);
+      core.stop();
+    });
+
+    it("同値の reading でも毎回 dispatch される（センサーの経路と同じ）", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 2, z: 3 } });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 2, z: 3 } });
+
+      expect(events).toHaveLength(2);
+      core.stop();
+    });
+
+    it("値の無いイベント（PC が出す）は読み飛ばす: オブジェクトが null、または有限の数でない軸がある", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: null });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: null, y: null, z: null } });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: NaN, y: 0, z: 0 } });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 0, y: null, z: 0 } });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 0, y: 0, z: Infinity } });
+      const noField = new Event("devicemotion");
+      window.dispatchEvent(noField);
+
+      expect(events).toEqual([]);
+      expect(core.x).toBeNull();
+      core.stop();
+    });
+
+    it("frequency があれば間引く: 最後に出した reading から 1000 / frequency ms 未満のものは落とす（event.timeStamp）", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail.x));
+
+      core.start(10); // 100ms に 1 回まで
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 0, z: 0 }, timeStamp: 1000 });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 2, y: 0, z: 0 }, timeStamp: 1016 });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 3, y: 0, z: 0 }, timeStamp: 1099 });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 4, y: 0, z: 0 }, timeStamp: 1100 });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 5, y: 0, z: 0 }, timeStamp: 1150 });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 6, y: 0, z: 0 }, timeStamp: 1200 });
+
+      expect(events).toEqual([1, 4, 6]);
+      expect(core.x).toBe(6);
+      core.stop();
+    });
+
+    it("読み飛ばした（値の無い）イベントは間引きの基準にならない", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail.x));
+
+      core.start(10);
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 0, z: 0 }, timeStamp: 1000 });
+      emitDeviceMotion({ accelerationIncludingGravity: null, timeStamp: 1099 });
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 2, y: 0, z: 0 }, timeStamp: 1100 });
+
+      expect(events).toEqual([1, 2]);
+      core.stop();
+    });
+
+    it("frequency が無ければ（または正の数でなければ）すべてのイベントを出す", () => {
+      installDeviceMotionEvent();
+      for (const frequency of [undefined, 0, -5, NaN]) {
+        const core = new AccelerometerCore();
+        const events: any[] = [];
+        core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail.x));
+
+        core.start(frequency);
+        emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 0, z: 0 }, timeStamp: 1000 });
+        emitDeviceMotion({ accelerationIncludingGravity: { x: 2, y: 0, z: 0 }, timeStamp: 1000 });
+        emitDeviceMotion({ accelerationIncludingGravity: { x: 3, y: 0, z: 0 }, timeStamp: 1001 });
+
+        expect(events).toEqual([1, 2, 3]);
+        core.stop();
+      }
+    });
+
+    it("start() は冪等 — 二重呼び出しで二重に購読しない", () => {
+      installDeviceMotionEvent();
+      const addSpy = vi.spyOn(window, "addEventListener");
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 2, z: 3 } });
+
+      expect(addSpy.mock.calls.filter((c) => c[0] === "devicemotion")).toHaveLength(1);
+      expect(events).toHaveLength(1);
+      core.stop();
+    });
+
+    it("stop() / dispose() で購読を外す。値は最後の reading のまま", () => {
+      installDeviceMotionEvent();
+      const removeSpy = vi.spyOn(window, "removeEventListener");
+      const core = new AccelerometerCore();
+
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 2, z: 3 } });
+      core.stop();
+      expect(removeSpy.mock.calls.filter((c) => c[0] === "devicemotion")).toHaveLength(1);
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 9, y: 9, z: 9 } });
+      expect(core.x).toBe(1);
+
+      core.start();
+      core.dispose();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 8, y: 8, z: 8 } });
+      expect(core.x).toBe(1);
+
+      // 止まっているときの stop() は no-op
+      expect(() => core.stop()).not.toThrow();
+      expect(removeSpy.mock.calls.filter((c) => c[0] === "devicemotion")).toHaveLength(2);
+    });
+
+    it("stop() の後の start() は間引きをやり直す（前の reading の時刻を引き継がない）", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail.x));
+
+      core.start(10);
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 0, z: 0 }, timeStamp: 1000 });
+      core.stop();
+      core.start(10);
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 2, y: 0, z: 0 }, timeStamp: 1001 });
+
+      expect(events).toEqual([1, 2]);
+      core.stop();
+    });
+
+    it("Accelerometer クラスがあればそちらを使う（DeviceMotionEvent があっても devicemotion は購読しない）", () => {
+      installDeviceMotionEvent();
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const addSpy = vi.spyOn(window, "addEventListener");
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:reading", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      expect(handle.current?.started).toBe(true);
+      expect(addSpy).not.toHaveBeenCalledWith("devicemotion", expect.anything());
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 2, z: 3 } });
+      expect(events).toEqual([]);
+      core.stop();
+    });
+
+    it("stop() の後の start() は、どちらの経路を使うかをその場で決め直す", () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+
+      // 1 回目: クラスが無い → devicemotion
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 1, y: 2, z: 3 } });
+      expect(core.x).toBe(1);
+      core.stop();
+
+      // 2 回目: クラスがある → センサー。devicemotion はもう読まない
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      core.start();
+      expect(handle.current?.started).toBe(true);
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 7, y: 7, z: 7 } });
+      expect(core.x).toBe(1);
+      handle.current!.emitReading({ x: 4, y: 5, z: 6 });
+      expect(core.x).toBe(4);
+      const sensor = handle.current!;
+      core.stop();
+      expect(sensor.stopped).toBe(true);
+
+      // 3 回目: クラスが消えた → また devicemotion
+      removeSensor(GLOBAL_NAME);
+      core.start();
+      emitDeviceMotion({ accelerationIncludingGravity: { x: 2, y: 2, z: 2 } });
+      expect(core.x).toBe(2);
+      core.stop();
+    });
+  });
+
+  describe("requestPermission() と permissionState", () => {
+    it("フォールバックで DeviceMotionEvent.requestPermission がある（iOS）: 呼んで、'granted' を反映する", async () => {
+      const ask = installDeviceMotionEvent(() => Promise.resolve("granted"))!;
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-accelerometer:permission-changed", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
+
+      const result = await core.requestPermission();
+
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(result).toBe("granted");
+      expect(core.permissionState).toBe("granted");
+      expect(events).toEqual(["granted"]);
+      expect(bubbles).toBe(true);
+      expect(core.error).toBeNull();
+    });
+
+    it("iOS で 'denied' が返れば 'denied'。'granted' 以外で resolve した値も 'denied'", async () => {
+      installDeviceMotionEvent(() => Promise.resolve("denied"));
+      const core = new AccelerometerCore();
+      expect(await core.requestPermission()).toBe("denied");
+      expect(core.permissionState).toBe("denied");
+
+      installDeviceMotionEvent(() => Promise.resolve("default"));
+      const other = new AccelerometerCore();
+      expect(await other.requestPermission()).toBe("denied");
+      expect(other.permissionState).toBe("denied");
+    });
+
+    it("reject（iOS: タップの外では質問が出ない）は利用者の拒否ではない: 状態はそのまま、error が載り、not-allowed / recoverable=true", async () => {
+      const refusal = new Error("Requesting device motion access requires a user gesture to prompt");
+      refusal.name = "NotAllowedError";
+      installDeviceMotionEvent(() => Promise.reject(refusal));
+      const core = new AccelerometerCore();
+      const states: any[] = [];
+      core.addEventListener("wcs-accelerometer:permission-changed", (e) => states.push((e as CustomEvent).detail));
+
+      const result = await core.requestPermission();
+
+      expect(result).toBe("unknown");
+      expect(core.permissionState).toBe("unknown");
+      expect(states).toEqual([]);
+      expect(core.error).toEqual({ error: "NotAllowedError", message: refusal.message });
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: true, message: refusal.message });
+    });
+
+    it("reject は前の答えも変えない。その後、タップからの呼び出しが許可されれば 'granted' になり error は消える", async () => {
+      installDeviceMotionEvent(() => Promise.resolve("denied"));
+      const core = new AccelerometerCore();
+      await core.requestPermission();
+
+      const refusal = new Error("needs a user gesture");
+      refusal.name = "NotAllowedError";
+      installDeviceMotionEvent(() => Promise.reject(refusal));
+      expect(await core.requestPermission()).toBe("denied");
+      expect(core.permissionState).toBe("denied");
+      expect(core.error).not.toBeNull();
+
+      installDeviceMotionEvent(() => Promise.resolve("granted"));
+      expect(await core.requestPermission()).toBe("granted");
+      expect(core.permissionState).toBe("granted");
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("name/message を持たない reject でもフォールバック文字列に変換される（sensor-error / recoverable=false）", async () => {
+      installDeviceMotionEvent(() => Promise.reject("plain string"));
+      const core = new AccelerometerCore();
+      expect(await core.requestPermission()).toBe("unknown");
+      expect(core.error).toEqual({ error: "error", message: "plain string" });
+      expect(core.errorInfo).toEqual({ code: "sensor-error", phase: "execute", recoverable: false, message: "plain string" });
+    });
+
+    it("フォールバックで requestPermission が無い（Android の Firefox など）: 質問が無いので即 'granted'", async () => {
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      expect(await core.requestPermission()).toBe("granted");
+      expect(core.permissionState).toBe("granted");
+      expect(core.error).toBeNull();
+    });
+
+    it("Accelerometer クラスがある: 質問が無いので即 'granted'（DeviceMotionEvent.requestPermission があっても呼ばない）", async () => {
+      const ask = installDeviceMotionEvent(() => Promise.resolve("denied"))!;
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new AccelerometerCore();
+      expect(await core.requestPermission()).toBe("granted");
+      expect(ask).not.toHaveBeenCalled();
+      expect(core.permissionState).toBe("granted");
+    });
+
+    it("どちらの API も無い: unsupported の error、状態はそのまま", async () => {
+      const core = new AccelerometerCore();
+      const states: any[] = [];
+      core.addEventListener("wcs-accelerometer:permission-changed", (e) => states.push((e as CustomEvent).detail));
+
+      expect(await core.requestPermission()).toBe("unknown");
+      expect(core.permissionState).toBe("unknown");
+      expect(states).toEqual([]);
+      expect(core.error).toEqual({ error: "unsupported", message: "Accelerometer is not supported" });
+      expect(core.errorInfo?.code).toBe("capability-missing");
+    });
+
+    it("同値の permissionState が続けて確定しても再 dispatch しない（同値ガード）", async () => {
+      installDeviceMotionEvent(() => Promise.resolve("granted"));
+      const core = new AccelerometerCore();
+      await core.requestPermission();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:permission-changed", (e) => events.push((e as CustomEvent).detail));
+
+      await core.requestPermission();
+      expect(events).toEqual([]);
+    });
+
+    it("答えが出ると、前の試みの error（start() の失敗も）は消える", async () => {
+      installThrowingSensor(GLOBAL_NAME, "SecurityError", "Permission denied");
+      const core = new AccelerometerCore();
+      core.start();
+      expect(core.error).not.toBeNull();
+
+      await core.requestPermission(); // クラスがある → 即 'granted'
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("start() は許可を確かめない（許可の前でも購読する）", () => {
+      installDeviceMotionEvent(() => Promise.resolve("denied"));
+      const addSpy = vi.spyOn(window, "addEventListener");
+      const core = new AccelerometerCore();
+      core.start();
+      expect(addSpy.mock.calls.filter((c) => c[0] === "devicemotion")).toHaveLength(1);
+      expect(core.permissionState).toBe("unknown");
+      core.stop();
+    });
+  });
+
+  describe("supported（このページでセンサーを使えるか）", () => {
+    function policy(blocked: string[]): void {
+      (document as any).featurePolicy = { allowsFeature: (f: string) => !blocked.includes(f) };
+    }
+
+    it("Accelerometer クラスがあれば true", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      expect(new AccelerometerCore().supported).toBe(true);
+    });
+
+    it("クラスが無くても DeviceMotionEvent（フォールバック）があれば true", () => {
+      installDeviceMotionEvent();
+      expect(new AccelerometerCore().supported).toBe(true);
+    });
+
+    it("どちらも無ければ false（呼ぶたびに判定する）", () => {
+      const core = new AccelerometerCore();
+      expect(core.supported).toBe(false);
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      expect(core.supported).toBe(true);
+    });
+
+    it("Permissions-Policy が accelerometer を切っていれば、API があっても false", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      installDeviceMotionEvent();
+      const core = new AccelerometerCore();
+      policy(["accelerometer"]);
+      expect(core.supported).toBe(false);
+      policy(["gyroscope"]);
+      expect(core.supported).toBe(true);
+    });
+
+    it("安全でないコンテキストでは false", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      vi.stubGlobal("isSecureContext", false);
+      expect(new AccelerometerCore().supported).toBe(false);
+    });
+
+    it("publishSupported() は、最後に dispatch した値（初めは false）と違うときだけ wcs-accelerometer:supported-changed を出す", () => {
+      installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-accelerometer:supported-changed", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
+
+      core.publishSupported();
+      expect(events).toEqual([true]);
+      expect(bubbles).toBe(true);
+      core.publishSupported();
+      expect(events).toEqual([true]);
+
+      policy(["accelerometer"]);
+      core.publishSupported();
+      expect(events).toEqual([true, false]);
+    });
+
+    it("使えない環境では、初めの値（false）と同じなので何も dispatch しない", () => {
+      const core = new AccelerometerCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-accelerometer:supported-changed", (e) => events.push((e as CustomEvent).detail));
+      core.publishSupported();
+      expect(events).toEqual([]);
     });
   });
 
@@ -438,8 +1008,21 @@ describe("AccelerometerCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("commands は start/stop", () => {
-      expect(AccelerometerCore.wcBindable.commands).toEqual([{ name: "start" }, { name: "stop" }]);
+    it("commands は requestPermission(async)/start/stop", () => {
+      expect(AccelerometerCore.wcBindable.commands).toEqual([
+        { name: "requestPermission", async: true }, { name: "start" }, { name: "stop" },
+      ]);
+    });
+
+    it("properties は x/y/z/permissionState/error/errorInfo/supported（すべて semantics: state）", () => {
+      const props = AccelerometerCore.wcBindable.properties;
+      expect(props.map((p) => p.name)).toEqual(["x", "y", "z", "permissionState", "error", "errorInfo", "supported"]);
+      expect(props.every((p) => p.semantics === "state")).toBe(true);
+      const byName = (n: string) => props.find((p) => p.name === n)!;
+      expect(byName("permissionState").event).toBe("wcs-accelerometer:permission-changed");
+      expect(byName("permissionState").getter).toBeUndefined();
+      expect(byName("supported").event).toBe("wcs-accelerometer:supported-changed");
+      expect(byName("supported").getter).toBeUndefined();
     });
 
     it("x/y/z の getter が reading イベントの detail から値を取り出す", () => {

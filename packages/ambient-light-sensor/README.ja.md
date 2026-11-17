@@ -9,7 +9,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-ambient-light-sensor>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `frequency`（サンプリングレート、Hz）
-- **出力 state サーフェス**: `illuminance`、`error`、`errorInfo`
+- **出力 state サーフェス**: `illuminance`、`error`、`errorInfo`、そして 4.25（未リリース）から `supported`
 
 明るさ駆動のUI（自動ダークモード、画面減光）を、`AmbientLightSensor`/`reading`/`error`リスナーの配線コードを書かずにHTML上で宣言的に表現できます。
 
@@ -96,7 +96,7 @@ npm install @wcstack/ambient-light-sensor
 
 | 属性        | 型     | 既定値 | 説明 |
 | ----------- | ------ | ------ | ---- |
-| `frequency` | number | —      | サンプリングレート（Hz）。`AmbientLightSensor`コンストラクタへそのまま渡る。 |
+| `frequency` | number | —      | サンプリングレート（Hz）。`AmbientLightSensor`コンストラクタへそのまま渡る。4.25（未リリース）から: 正の数でない値は `start()` のときにコンソールへ 1 回言います（`[wcs/frequency-invalid]`、注意・制限を参照）。 |
 
 **`null` と `undefined`。** 属性に対応する入力（`frequency`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（プラットフォームのサンプリングレート）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
 
@@ -107,13 +107,33 @@ npm install @wcstack/ambient-light-sensor
 | `illuminance`  | `wcs-ambient-light-sensor:reading`       | 周囲の明るさ（lux）。初回読み取り前は`null`。 |
 | `error`        | `wcs-ambient-light-sensor:error`         | 正規化された`{ error, message }`、無ければ`null`。 |
 | `errorInfo`    | `wcs-ambient-light-sensor:error-info-changed` | シリアライズ可能な失敗分類（`WcsIoErrorInfo` — 安定した `code` / `phase` / `recoverable`）、無ければ`null`。`error`から派生する追加的な出力で、既存の`error`の形状は不変。 |
+| `supported` | `wcs-ambient-light-sensor:supported-changed` | 4.25（未リリース）から。このページでセンサーを使えるなら`true`。[`supported`](#supported--このページで使えるか)を参照。 |
 
 ## コマンド
 
 | コマンド | 非同期 | 説明 |
 | -------- | ------ | ---- |
-| `start`  | いいえ | センサーを構築（never-throw: コンストラクタの同期例外はキャッチし`error`へ）し読み取りを開始する。 |
+| `start`  | いいえ | センサーを構築（never-throw: コンストラクタの同期例外はキャッチし`error`へ）し読み取りを開始する。4.25（未リリース）から: センサー自身の`error`イベントの後は次の`start()`が新しいセンサーを作る。 |
 | `stop`   | いいえ | センサーを停止しリスナーを解除する。未開始でも安全に呼べる。 |
+
+## `supported` — このページで使えるか
+
+4.25（未リリース）から。`supported` は、このページでセンサーを使えるときに `true` です: ブラウザに `AmbientLightSensor` クラスがあり、ページが secure context で、Permissions-Policy が `ambient-light-sensor` を切っていない（サーバーのヘッダ、または `allow="ambient-light-sensor"` の無い `<iframe>`——ページが自分のポリシーを読めるブラウザ、つまり Chromium で分かります）。`false` のところでは `start()` は動かず、タップしても変わりません: 機能を出さないでください。
+
+利用者が許可するかどうかは**言いません**（それは `<wcs-permission name="ambient-light-sensor">` が見ます）。そして**端末にセンサーがあるかどうかは言えません**: PC には API があってセンサーがありません。そこでは読み取りが来ないだけか、センサーが `error` で知らせます。
+
+値は聞かれるたびにブラウザから読むので、バインドは張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に dispatch した値（初めは `false`）と違っていれば `wcs-ambient-light-sensor:supported-changed`（`detail` はその boolean）を dispatch します。
+
+```html
+<wcs-ambient-light-sensor data-wcs="supported: sensorSupported; command.start: $command.startSensor"></wcs-ambient-light-sensor>
+<button data-wcs="hidden: sensorSupported|not; onclick: $command.startSensor">開始</button>
+```
+
+（state に `sensorSupported: false` と `$commandTokens: ["startSensor"]`。）
+
+## iPhone では
+
+iPhone / iPad の Safari には `AmbientLightSensor` クラスが無く、明るさを運ぶほかのイベントもないので、`<wcs-ambient-light-sensor>` にはフォールバックがありません。4.25（未リリース）から、iPhone では `supported` が `false` になり、ページは何かを出す前にそれを読めます。`start()` はこれまでどおり `unsupported`（`errorInfo.code: "capability-missing"`）で終わります。
 
 ## `:state()` による CSS スタイリング
 
@@ -169,7 +189,9 @@ wcs-ambient-light-sensor:state(error) ~ .fallback { display: block; }
 
 - **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。
 - **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。
+- **`error`イベントの後、`start()`はまた動きます。** 4.25（未リリース）から、センサーが自分の`error`イベント（たとえば`NotReadableError`）を出すと、失敗したセンサーは片付けられ、次の`start()`が新しいセンサーを作ります。4.24までは、そのエラーの後の`start()`は`stop()`を呼ぶまで何もせず、それを知らせるものもありませんでした。`error`そのものは上記のとおり残ります。
 - **`errorInfo` 分類（taxonomy）。** 同じ失敗をシリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-ambient-light-sensor:error-info-changed`）で、`error`の形状は変更しません。正規化された error 名に応じて対応づけます: `unsupported` → `capability-missing`（phase `probe`）、`SecurityError` / `NotAllowedError` → `not-allowed`（phase `start`）、`NotReadableError` → `not-readable`（phase `execute`）、その他のセンサー失敗 → `sensor-error`（phase `execute`）。いずれも `recoverable: false` です。`errorInfo` は `error` と完全に同じタイミングで遷移するため、同様に **sticky** で、`error` が `null` に戻るときにのみ `null` に戻ります。共有の `WcsIoErrorInfo` 型と `WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE` 定数はエクスポートされます。
+- **使えない`frequency`は知らせます。** 4.25（未リリース）から、空でなく正の数でもない`frequency`属性（`frequency="60hz"`、`frequency="0"`）で`start()`が走ると、コンソールに要素ごとに 1 回警告が出ます: `[@wcstack/ambient-light-sensor] [wcs/frequency-invalid] <wcs-ambient-light-sensor> frequency="60hz" is not a positive number of Hz: the sensor runs at the browser's default rate. Write a number, e.g. frequency="30".` センサーは既定の頻度で開始します——これまでも同じでしたが、何も言いませんでした。ブラウザが許す上限を超える頻度はブラウザが丸め、それを知らせるものはありません。
 - **生の`new AmbientLightSensor(...)`は唯一のガード付き構築ヘルパー以外では呼ばない。** 権限拒否・Permissions-Policyブロックは同期的に例外を投げます。
 - 権限状態（`granted`/`denied`/`prompt`）は意図的にこのノードでは重複実装していません — `<wcs-permission name="ambient-light-sensor">`と合成してください。
 - **採用前に現在のブラウザ対応状況を必ず確認してください** — 上記「なぜ存在するか」参照。
@@ -188,6 +210,8 @@ core.start();
 // 後始末:
 core.dispose();
 ```
+
+4.25（未リリース）から、`core.supported` はいつでも読め、`core.publishSupported()` は最後に dispatch した値と違うときに `wcs-ambient-light-sensor:supported-changed` を dispatch します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

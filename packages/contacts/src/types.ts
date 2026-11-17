@@ -75,21 +75,27 @@ export interface ContactInfo {
  * ```
  */
 export interface WcsContactsCoreValues {
-  // The array of contacts the user picked. `multiple` does not change the
-  // shape — even a single selection resolves to a one-element array
+  // The array of contacts the user picked — never empty. `multiple` does not
+  // change the shape — even a single selection resolves to a one-element array
   // (docs/contact-picker-tag-design.md §3). `null` before any successful
-  // select().
+  // select(); a picker closed without a choice leaves it as it was.
   value: ContactInfo[] | null;
   loading: boolean;
   // A true platform failure (anything other than the user cancelling the
   // picker). `null` when there has been no failure yet or after a reset.
   error: any;
-  // `true` when the user dismissed the contact picker (AbortError). Kept
+  // `true` when the user closed the contact picker without choosing: the
+  // browser resolves select() with an empty list (the specification has no
+  // rejection for it; an `AbortError` rejection is treated the same). Kept
   // separate from `error`, mirroring `@wcstack/share`'s `cancelled`
   // (docs/contact-picker-tag-design.md §1).
   cancelled: boolean;
   // Last failure's serializable taxonomy (stable code/phase/recoverable), or null.
   errorInfo: WcsIoErrorInfo | null;
+  // `true` when this page can use the Contact Picker: `navigator.contacts.select`
+  // is there and the page is top-level (the specification refuses frames). It
+  // does not say the user will pick anyone.
+  supported: boolean;
 }
 
 /**

@@ -110,6 +110,12 @@ export class WcsScreenOrientation extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Probed at call time by the Core (never cached), so a binding that reads it when
+  // it attaches gets the right value without waiting for an event.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   get connectedCallbackPromise(): Promise<void> {
     return this._connectedCallbackPromise;
   }
@@ -130,6 +136,8 @@ export class WcsScreenOrientation extends HTMLElement {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
+    // observe() publishes `supported` (wcs-orientation:supported-changed) when it
+    // differs from the last value dispatched, then the snapshot.
     this._connectedCallbackPromise = this._core.observe();
   }
 

@@ -1,5 +1,5 @@
 import { IWcBindable } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import { WcsIoErrorInfo, featureUnavailable } from "./platformCapability.js";
 import { derivePictureInPictureErrorInfo, PictureInPictureErrorKind } from "./pictureInPictureCapabilities.js";
 
 /**
@@ -42,6 +42,11 @@ export class PipCore extends EventTarget {
       // drives a referenced `<video>`, not a competing operation (fullscreen と同型)。
       { name: "error", event: "wcs-pip:error", semantics: "state" },
       { name: "errorInfo", event: "wcs-pip:error-info-changed", semantics: "state" },
+      // Whether this page can use Picture-in-Picture (the API is there and no
+      // Permissions-Policy forbids it). Computed at call time; the event carries
+      // the boolean and fires from observe() when it differs from the last value
+      // dispatched.
+      { name: "supported", event: "wcs-pip:supported-changed", semantics: "state" },
     ],
     commands: [
       { name: "requestPictureInPicture", async: true },
@@ -62,6 +67,10 @@ export class PipCore extends EventTarget {
   // and each async command start. A completion that lands after dispose() (or
   // after a superseding call) is stale and MUST NOT write state.
   private _gen = 0;
+
+  // `supported` as last dispatched (never the value itself — the getter probes at
+  // call time). Starts at false, so observe() announces a page that can use it.
+  private _supportedPublished = false;
 
   // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
@@ -93,6 +102,28 @@ export class PipCore extends EventTarget {
     return this._errorInfo;
   }
 
+  /**
+   * Whether this page can use Picture-in-Picture right now: the document says it
+   * is enabled, a `<video>` has `requestPictureInPicture()`, and no
+   * Permissions-Policy (`picture-in-picture`: the server's header, an `<iframe>`
+   * whose `allow` turns it off) forbids it. Probed at call time, never cached.
+   * It does not say that a request will succeed (that still needs a user gesture
+   * and a video that can be shown, and a `<video disablepictureinpicture>`
+   * refuses). Firefox has no Picture-in-Picture API for pages, so this is
+   * `false` there. A wc-bindable output (event `wcs-pip:supported-changed`).
+   */
+  get supported(): boolean {
+    // The policy is asked first, and `pictureInPictureEnabled` is read only when
+    // it did not forbid: Chromium logs a console error for merely reading it in a
+    // document the policy forbids. Only "policy-blocked" decides here:
+    // Picture-in-Picture does not need a secure context (a plain http: page can
+    // use it), so "insecure-context" is not a reason — `pictureInPictureEnabled`,
+    // which follows the policy itself, gives the answer there.
+    if (featureUnavailable("picture-in-picture") === "policy-blocked") return false;
+    return (document as any).pictureInPictureEnabled === true
+      && typeof (HTMLVideoElement.prototype as any).requestPictureInPicture === "function";
+  }
+
   // --- Lifecycle (§3.5) ---
 
   /**
@@ -100,9 +131,11 @@ export class PipCore extends EventTarget {
    * `element` (the Shell's resolved `<video>` target). Idempotent when called
    * again with the same element; re-wires the listeners when the element
    * changes (e.g. the `target` attribute was changed), detaching from the
-   * previous element first so no stale listener lingers.
+   * previous element first so no stale listener lingers. Also publishes
+   * `supported` when it differs from the last value dispatched.
    */
   observe(element: HTMLVideoElement | null): Promise<void> {
+    this._publishSupported();
     if (this._video === element) {
       return this._ready;
     }
@@ -120,6 +153,12 @@ export class PipCore extends EventTarget {
     this._gen++;
     this._detach();
     this._video = null;
+    // A disposed Core hears no leavepictureinpicture, so it can no longer vouch
+    // for `active`: publish false through the normal setter (timing contract §22
+    // — a disconnect publishes what it changes). The small window is not closed
+    // here; observe() re-reads the truth — publishing true again — on the next
+    // connect.
+    this._setActive(false);
   }
 
   // --- Commands (§3.6 never-throw) ---
@@ -240,6 +279,20 @@ export class PipCore extends EventTarget {
   }
 
   // --- State setters with event dispatch (§3.3 same-value guard) ---
+
+  // `supported` is probed at call time, so there is no stored value to set: this
+  // dispatches the current one when it differs from the last one dispatched
+  // (same-value guard). A state binding reads the property when it attaches; the
+  // event is for every other listener.
+  private _publishSupported(): void {
+    const supported = this.supported;
+    if (this._supportedPublished === supported) return;
+    this._supportedPublished = supported;
+    this._target.dispatchEvent(new CustomEvent("wcs-pip:supported-changed", {
+      detail: supported,
+      bubbles: true,
+    }));
+  }
 
   private _setActive(active: boolean): void {
     if (this._active === active) return;

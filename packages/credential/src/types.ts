@@ -41,9 +41,25 @@ export interface CredentialGetOptions {
 export type StorableCredential = Credential;
 
 /**
+ * A password credential as plain data, for `store()`: when the argument is not a
+ * `Credential` instance and has a string `id` and `password`, the element builds
+ * `new PasswordCredential(...)` from it (only the members given) and stores that.
+ * Lets a state method pass `{ id, password }` without touching a browser class
+ * that exists in Chromium only.
+ */
+export interface WcsPasswordCredentialData {
+  id: string;
+  password: string;
+  name?: string;
+  iconURL?: string;
+}
+
+/**
  * Value types for CredentialCore (headless) — the observable state properties.
  */
 export interface WcsCredentialCoreValues {
+  // The credential of the last successful get()/store(). A password credential
+  // carries the password: bind `value` into state only where that is intended.
   value: Credential | null;
   loading: boolean;
   // A true platform failure (anything other than the user cancelling the
@@ -57,6 +73,10 @@ export interface WcsCredentialCoreValues {
   cancelled: boolean;
   // Last failure's serializable taxonomy (stable code/phase/recoverable), or null.
   errorInfo: WcsIoErrorInfo | null;
+  // `true` when this page can use password credentials: `navigator.credentials`
+  // is there and so is the `PasswordCredential` class (Chromium only). It does not
+  // say a credential is saved, or that the user will choose one.
+  supported: boolean;
 }
 
 /**

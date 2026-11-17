@@ -208,17 +208,17 @@ arbiter が預からない —— `run()` の中で同期的に適用し、順�
 
 ---
 
-## 8. @wcstack/tilt — `requestPermission()` と `change` の発火契約
+## 8. @wcstack/tilt — `requestPermission()`・`change`・`heading` の発火契約
 
 参照: [`packages/tilt/src/core/TiltCore.ts`](../packages/tilt/src/core/TiltCore.ts)、[`README`](../packages/tilt/README.md)、[device-orientation-tag-design.md](./device-orientation-tag-design.md)
 
 ### 8.1 `connectedCallback` は購読しない — screen-orientation §7.1 の「初回スナップショット消失」はここでは起きない
-`observe()` は `_ready`（`Promise.resolve()` 固定）を返すだけの同期 no-op で、`deviceorientation` の購読も現在値の読み出しもしない（§6 決定 4）。`screen.orientation` と異なり Device Orientation には同期的に読める「現在値」がそもそも存在しない（値はイベント経由でしか手に入らない）ため、screen-orientation §7.1 が抱える「`connectedCallback` 中の同期 dispatch が、まだ張られていない data-wcs リスナーに届かず消える」という問題は構造的に発生しない。`start()` を呼ぶまで `wcs-tilt:change` は一切飛ばない。
+`observe()` は `_ready`（`Promise.resolve()` 固定）を返し、何も購読しない——`deviceorientation` も `deviceorientationabsolute` も——し、現在値の読み出しもしない（§6 決定 4）。4.25 からすることは 1 つだけ: `supported` が最後に dispatch した値（初めは `false`）と違うとき、同期的に `wcs-tilt:supported-changed` を dispatch する。後から張られる data-wcs バインドはこのイベントを取りこぼし、代わりにプロパティを読む（§7.1）。`supported` は読まれるたびに計算する（§8.6）。`screen.orientation` と異なり Device Orientation には同期的に読める「現在値」がそもそも存在しない（値はイベント経由でしか手に入らない）ため、screen-orientation §7.1 が抱える「`connectedCallback` 中の同期 dispatch が、まだ張られていない data-wcs リスナーに届かず消える」という問題は構造的に発生しない。`start()` を呼ぶまで `wcs-tilt:change` は一切飛ばない。
 
 → **帰結**: 初期値を気にする必要が無い。`start()` は必ず `requestPermission()` の後（多くは利用者の gesture ハンドラの中）で呼ばれるため、その頃には `@wcstack/state` の data-wcs バインドは（§4.1 の別 microtask を経て）確立済みなのが通常のフローであり、screen-orientation の README Quick Start（§7.1）のような `$connectedCallback` 経由の pull 対応は不要（tilt 自身の README にこのパターンは存在しない）。
 
 ### 8.2 `requestPermission()` の post-await 書き込みは benign — `_gen` を持たない
-`requestPermission()` は async（`await Ctor.requestPermission()`）だが、`start`/`stop` と異なり `_gen`/`AbortController` を一切使わない。post-await の書き込み先は `permissionState`/`error` という単純なプロパティ設定＋dispatch のみで、購読やコールバック登録のような「生存管理が必要なリソース」を作らない。要素が disconnect 済みでも、この書き込みは新しい購読を復活させたり二重登録を起こしたりしない——誰も購読していなければ `dispatchEvent` は無害に空振りするだけである（`<wcs-idle>` の `requestPermission()` と同型、[idle-detection-tag-design.md](./idle-detection-tag-design.md) §4.1）。
+`requestPermission()` は async（`await Ctor.requestPermission()`）だが、`start`/`stop` と異なり `_gen`/`AbortController` を一切使わない。post-await の書き込み先は `permissionState`/`error` という単純なプロパティ設定＋dispatch のみで、購読やコールバック登録のような「生存管理が必要なリソース」を作らない。要素が disconnect 済みでも、この書き込みは新しい購読を復活させたり二重登録を起こしたりしない——誰も購読していなければ `dispatchEvent` は無害に空振りするだけである（`<wcs-idle>` の `requestPermission()` と同型、[idle-detection-tag-design.md](./idle-detection-tag-design.md) §4.1）。4.25 から、reject が書くのは `error` だけである: `permissionState` は promise が resolve したときにだけ書かれ（`"granted"`、それ以外の値は `"denied"`）、コマンドはその時点の `permissionState` で resolve する（§8.4）。
 
 → **帰結**: `requestPermission()` を連続で呼んだ場合（通常は gesture 制約で起こりにくいが）、`_gen` によるスーパーシードが無いため「呼び出し順」ではなく「resolve した順」で `permissionState`/`error` が確定する。ブラウザの許可ダイアログは初回以降キャッシュされた結果を即座に返すため、実務上この順序の入れ替わりが可視化されることはほぼ無い。
 
@@ -228,9 +228,21 @@ arbiter が預からない —— `run()` の中で同期的に適用し、順�
 → **帰結**: デバイスが静止している間、ネイティブの `deviceorientation` は高頻度で発火し続けてもプラットフォームによっては同一値が続くことがあるが、`wcs-tilt:change` は値が実際に変わったときだけ届く。
 
 ### 8.4 `wcs-tilt:error` は同値ガード（`===` 参照比較）— 成功 settle は必ず `null` にクリア
-`_setError` は `this._error === error` のときは再 dispatch しない。`requestPermission()` の reject（gesture 文脈外呼び出し等）は catch のたびに新しいオブジェクトリテラル（`{ error: e }`）を作るため参照が毎回変わり、失敗のたびに発火する。一方、例外なく settle した呼び出し（granted / 素の denied / 非 gating 環境の即時 granted）は catch を経ないため、`_setError(null)` を無条件に先に呼ぶ——直前が非 null なら `wcs-tilt:error(null)` が飛び、直前がすでに null ならガードに掛かり dispatch しない。
+`_setError` は `this._error === error` のときは再 dispatch しない。`requestPermission()` の reject（gesture 文脈外呼び出し等）は catch のたびに新しいオブジェクトリテラル（`{ error: e }`）を作るため参照が毎回変わり、失敗のたびに発火する。例外は、`DeviceOrientationEvent` そのものが無いブラウザのための合成の失敗である（4.25、§8.6）: `requestPermission()` と `start()` はモジュールスコープの定数 1 つ（`{ error: { name: "unsupported", message } }`、`errorInfo.code: "capability-missing"`）を渡すので、何度呼んでも発火は 1 回だけになる——§7.4 と同じ形。一方、例外なく settle した呼び出し（granted / 素の denied / 非 gating 環境の即時 granted）は catch を経ないため、`_setError(null)` を無条件に先に呼ぶ——直前が非 null なら `wcs-tilt:error(null)` が飛び、直前がすでに null ならガードに掛かり dispatch しない。
 
-→ **帰結**: `error` に古い失敗が残ったまま `permissionState` だけ更新される、という不整合は起きない——settle 成功は必ず先に `error` をクリアしてから `permissionState` を更新する（`TiltCore.requestPermission()` 内の呼び出し順）。
+→ **帰結**: `error` に古い失敗が残ったまま `permissionState` だけ更新される、という不整合は起きない——settle 成功は必ず先に `error` をクリアしてから `permissionState` を更新する（`TiltCore.requestPermission()` 内の呼び出し順）。4.25 からは逆も起きない: reject は `permissionState` を変えない。iOS はタップの外からの呼び出しを、質問を出さずに `NotAllowedError` で reject する。これは質問を出せなかったのであって、利用者の拒否ではない（`errorInfo`: `not-allowed`、`recoverable: true`——タップからの呼び出しなら許可されうる）。したがって `permissionState: "denied"` は、必ずブラウザがそう答えたことを意味する。4.24 までは reject が `"denied"` にしていたため、ページは、聞かれてもいない利用者に「拒否しました」と告げていた（継ぎ目アプリ `stamp-rally` が見つけた、2026-11-17、[seam-apps.ja.md](./seam-apps.ja.md)）。
+
+### 8.5 `wcs-tilt:heading-changed` は独立したイベントで、同値ガードあり（4.25）
+`heading`——端末の上端が向いている方角を北からの時計回りの度数で表した値、分かるまでは `null`——は、ネイティブイベントごとに次の順で書かれる: 有限の数の `webkitCompassHeading` を持つ `deviceorientation` イベント（iOS Safari。そこでは `alpha` は相対値）→ その数。`deviceorientationabsolute` イベント（Android Chrome。そこでは `deviceorientation` は相対値）、または `absolute === true` の `deviceorientation` イベントで、`alpha` が有限の数 → `(360 - alpha) % 360`。それ以外のイベントは `heading` を変えない。`start()` は `"ondeviceorientationabsolute" in window` のとき `deviceorientationabsolute` も購読し、`stop()` / `dispose()` は両方の listener を外す。absolute のイベントが書くのは `heading` だけで——`alpha`/`beta`/`gamma`/`absolute` は決して書かない——`wcs-tilt:change` も dispatch しない。`deviceorientation` イベントでは `wcs-tilt:change`、次に `wcs-tilt:heading-changed` の順になる。`_setHeading` は値が直前と `===` のとき dispatch をスキップする。
+
+→ **帰結**: 北を運ぶイベントが新しい角度を運ぶとは限らず、逆も同じなので、2 つの出力は 2 つのイベントを持ち、`heading` のバインドは傾きが変わるたびに再評価されない。`stop()` と disconnect は `heading` とスナップショットを最後の値のまま残すので、§22 が publish するものは無い。要素は `heading` を画面の回転についても傾きについても補正しない（tilt README「コンパス」）。
+
+### 8.6 `DeviceOrientationEvent` が無いことは「granted」ではない — そして `supported`（4.25）
+`typeof DeviceOrientationEvent !== "function"` の環境（一部のデスクトップブラウザ、Windows 上の Playwright の WebKit）では、`start()` は共有の `unsupported` エラー（§8.4。`errorInfo`: `capability-missing`、phase `probe`、recoverable でない）をセットし、何も購読せず、再開可能なままにする——後の `start()` はもう一度判定する。そこでの `requestPermission()` は同じエラーをセットし、変わっていない `permissionState` で resolve する。4.24 までは、そこで `"granted"` と答え、`start()` は来るはずのないイベントをエラーも無く待っていた。クラスはあるが `requestPermission` が無い環境（Android、デスクトップ）が即 `"granted"` になるのは変わらない。`start()` は `permissionState` を確かめず、`error` もクリアしない。
+
+`supported` は、`typeof DeviceOrientationEvent === "function"` で、かつ `featureUnavailable("accelerometer")` も `featureUnavailable("gyroscope")` も理由を返さない（安全でないコンテキスト、または Chromium が `deviceorientation` を送らなくなる Permissions-Policy）ことである。読まれるたびに計算し、キャッシュしない。`publishSupported()`——`observe()` が呼ぶので connect 時に走る——は、値が最後に dispatch したものと違うときだけ `wcs-tilt:supported-changed` を dispatch する。
+
+→ **帰結**: `supported: false` は、値が決して来ず、タップしても変わらないことを意味する。`supported: true` は端末にセンサーがあるとは言わない: PC には API があってセンサーが無く（そこでの Chromium は角度が `null` のイベントを 1 回出し、その後は何も出さない）、ページがそれを知る方法は待つことだけである。
 
 ---
 
@@ -238,24 +250,51 @@ arbiter が預からない —— `run()` の中で同期的に適用し、順�
 
 参照: [`packages/accelerometer/src/core/AccelerometerCore.ts`](../packages/accelerometer/src/core/AccelerometerCore.ts)（4兄弟は同型。gyroscope / magnetometer / ambient-light-sensor も同じ契約）、[sensor-tag-design.md](./sensor-tag-design.md)
 
-4兄弟は Core / Shell とも同一形状で、契約も完全に共有する。差分は観測値の形（x/y/z の3軸 vs ambient-light-sensor の `illuminance` 単一スカラー）のみ。
+4兄弟は `Sensor` の経路を Core / Shell とも完全に共有する。そこでの差分は観測値の形（x/y/z の3軸 vs ambient-light-sensor の `illuminance` 単一スカラー）のみ。4.25 から、accelerometer と gyroscope にはそれに加えて `devicemotion` のフォールバック（§9.6）と、`requestPermission()` コマンド・`permissionState` 出力（§9.7）がある。magnetometer と ambient-light-sensor には無い。`supported`（§9.8）は4兄弟すべてが持つ。
 
 ### 9.1 connect では何も始まらない — `start` コマンドを発火するまで完全に不活性
-Shell の `connectedCallback` は `observe()` を呼ばない（`display: none` の設定と SSR 用 promise の張り替えのみ、sensor-tag-design.md §1.3）。バインドしただけでは `x`/`y`/`z`（`illuminance`）は初期値 `null` のままで、`wcs-*:reading` は一切飛ばない。screen-orientation §7.1 の「初回スナップショット消失」は構造的に発生しない（connect 時に dispatch するものが無い）。`disconnectedCallback` は `dispose()`（= `stop()`）を呼ぶため、**要素の reparent はセンサー停止を意味し、自動再開はない**——再度 `start` を発火するまで値は最終サンプルで凍結する。
+Shell の `connectedCallback` は `observe()` を呼ばない（`display: none` の設定、SSR 用 promise の張り替え、そして 4.25 から `publishSupported()` の呼び出し。sensor-tag-design.md §1.3）。バインドしただけでは `x`/`y`/`z`（`illuminance`）は初期値 `null` のままで、`wcs-*:reading` は一切飛ばない。screen-orientation §7.1 の「初回スナップショット消失」は読み取りについては発生しない（connect 時に dispatch する読み取りが無い）。connect が dispatch しうるイベントは `wcs-*:supported-changed` だけで、後から張られるバインドはプロパティを読んでそれを補う（§9.8）。`disconnectedCallback` は `dispose()`（= `stop()`。フォールバックでは `devicemotion` の購読解除）を呼ぶため、**要素の reparent はセンサー停止を意味し、自動再開はない**——再度 `start` を発火するまで値は最終サンプルで凍結する。
 
 → **帰結**: tilt §8.1 と同じ理由で `$connectedCallback` 経由の pull 対応は不要。`start` は通常 `requestPermission` 系の gesture フローの後に発火されるため、その時点で data-wcs バインドは確立済み。
 
 ### 9.2 `reading` は同値ガード**なし**（毎サンプル発火）/ `error` は同値ガード**あり**（name＋message 複合キー）
-`reading` はイベント性（毎回新しいサンプル）であり、値がたまたま同一でも**毎回** dispatch する（sensor-tag-design.md §1.1）。`x`/`y`/`z` は単一の `wcs-*:reading` イベントからの派生 getter（1回のネイティブ `reading` で全軸が同時更新）。一方 `error` は状態性であり、`_setError` は「`error`（name）と `message` の**両方**が直前と一致」する場合のみ再 dispatch を抑止する——name だけ違う・message だけ違う場合はどちらも再 dispatch される。
+`reading` はイベント性（毎回新しいサンプル）であり、値がたまたま同一でも**毎回** dispatch する（sensor-tag-design.md §1.1）。`x`/`y`/`z` は単一の `wcs-*:reading` イベントからの派生 getter（1回のネイティブ `reading` で全軸が同時更新）。一方 `error` は状態性であり、`_setError` は「`error`（name）と `message` の**両方**が直前と一致」する場合のみ再 dispatch を抑止する——name だけ違う・message だけ違う場合はどちらも再 dispatch される。`devicemotion` のフォールバック（§9.6）では、値を持ち `frequency` の間引きを通ったイベントごとに `wcs-*:reading` が飛ぶ——こちらも同値ガードは無い。
 
 ### 9.3 `error` は sticky — 成功した (再)start / reading 受信ではクリアされない
-screen-orientation の `lock()` が成功時に `_setError(null)` するのと異なり、監視系センサー4兄弟は成功パスで `error` を**書き換えない**。失敗（`unsupported` / コンストラクタの `SecurityError` 等）→ リトライ成功のあとも直前の `error` は残り続ける（各 README「注意・制限」）。クリア・再解釈は利用側 state の責務。
+screen-orientation の `lock()` が成功時に `_setError(null)` するのと異なり、監視系センサー4兄弟は `start()` の成功パスで `error` を**書き換えない**。失敗（`unsupported` / コンストラクタの `SecurityError` 等）→ リトライ成功のあとも直前の `error` は残り続ける（各 README「注意・制限」）。クリア・再解釈は利用側 state の責務。4.25 から、`null` を書く経路が 1 つだけある（accelerometer と gyroscope のみ）: `requestPermission()` は、ブラウザが答えたとき（granted / denied / 聞くことの無い環境の即時 granted）に `_setError(null)` を呼ぶ（tilt §8.4 と同じ）——質問を出せなかったことの `error` が、許可されたタップの後まで残らないようにするためである。reject は `error` をセットし、`permissionState` は変えない（§9.7）。`start()` と reading がクリアしないことは変わらない。
 
 ### 9.4 `_gen` 無し・全パス同期・never-throw の3点セット
-`start()`/`stop()` は同期的な購読/購読解除のトグルで、非同期 probe が存在しないため `_gen` 世代ガードは不要（sensor-tag-design.md §1.5、network §5 と同根拠）。never-throw の担い方は3経路: ① API 不在 → `{ error: "unsupported", ... }`、② コンストラクタの同期例外（権限拒否・Permissions-Policy ブロック）→ catch して `error` へ、③ 非準拠実装の `sensor.start()` 同期 throw → catch して **teardown**（失敗インスタンスの listener を外し `_sensor` を null 復帰）した上で `error` へ——teardown により次の `start()` は新しいセンサーで再試行できる。`start()` は稼働中は冪等（二重生成しない）で、`frequency` は `start()` 時にのみ読まれる。
+`start()`/`stop()` は同期的な購読/購読解除のトグルで、非同期 probe が存在しないため `_gen` 世代ガードは不要（sensor-tag-design.md §1.5、network §5 と同根拠）。await する呼び出しは accelerometer / gyroscope の `requestPermission()` だけで（4.25）、その post-await 書き込みは §8.2 と同じ benign な値設定であり、そこにも `_gen` は無い。never-throw の担い方は4経路: ① API 不在——クラスが無く、accelerometer / gyroscope では `DeviceMotionEvent` も無い——→ `{ error: "unsupported", ... }`、② コンストラクタの同期例外（権限拒否・Permissions-Policy ブロック）→ catch して `error` へ、③ 非準拠実装の `sensor.start()` 同期 throw → catch して **teardown**（失敗インスタンスの listener を外し `_sensor` を null 復帰）した上で `error` へ——teardown により次の `start()` は新しいセンサーで再試行できる、④ 4.25 から、センサー自身の `error` イベント: `_onError` は `error` を publish する**前に**同じ teardown を行うので、次の `start()`——`wcs-*:error` の listener の中から呼ばれたものも——は新しいセンサーを作る。4.24 までは失敗したセンサーが `_sensor` に残り、`start()` は `stop()` を呼ぶまで no-op で、それを知らせるものも無かった。teardown が `_sensor` をクリアするのは、それがまだそのセンサーであるときだけである: 非準拠実装の `sensor.start()` がまだ走っている間に、`error` の listener が新しいセンサーを開始していることがありうる。`start()` は稼働中は冪等（二重生成しない）で、`frequency` は `start()` 時にのみ読まれる。4.25 から、`frequency` 属性があり、空白でなく、正の有限数でもないとき、Shell は `start()` で要素ごとに 1 回警告する（`[wcs/frequency-invalid]`）。開始はブラウザの既定の頻度で続く（これまでは何も言わずにそうしていた）。
 
 ### 9.5 `error` イベントの message フォールバックは定数 `"Sensor error"`
 ネイティブ `error` イベントが `error` フィールドを持たない場合、`{ error: "error", message: "Sensor error" }` に正規化する（`String(undefined)` 由来の文字列 `"undefined"` を格納しない）。4兄弟で同一文言。
+
+### 9.6 accelerometer / gyroscope: `devicemotion` のフォールバックは `start()` のたびに選ぶ（4.25）
+iPhone / iPad の Safari には Generic Sensor のクラスが無く、同じデータが `devicemotion` として存在する。`start()` は毎回判定する: クラス（`Accelerometer` / `Gyroscope`）が関数ならそれ——上記の経路そのまま。そうでなく `DeviceMotionEvent` が関数なら `window` の `devicemotion`。どちらでもなければ `unsupported` エラー。判定はキャッシュしない: `stop()` の後の `start()` はもう一度判定する。フォールバックでも `start()` は冪等で、`stop()` / `dispose()` は購読を外す。
+
+フォールバックでの読み取りは、同じ `wcs-*:reading` イベントで publish される: accelerometer はイベントの `accelerationIncludingGravity`（`x`/`y`/`z`、m/s²）、gyroscope は `rotationRate` を度/秒から換算したもの（`x = beta·π/180`、`y = gamma·π/180`、`z = alpha·π/180`。端末の x / y / z 軸まわりの rad/s）。オブジェクトが `null` のイベント、または 3 つの値のどれかが有限の数でないイベントは読み飛ばす——センサーの無い PC がそういうイベントを出す。`devicemotion` の頻度はブラウザのものなので、`frequency` は頻度を決める代わりに間引く: 正の `frequency` があるとき、最後に **publish した**イベントから `timeStamp` で `1000 / frequency` ms 経たないイベントは落とす。読み飛ばしたイベントはその基準を動かさず、`start()` のたびに基準は新しくなる。`frequency` が無ければ、値のあるイベントはすべて publish する。
+
+→ **帰結**: フォールバックに失敗の経路は無い——`devicemotion` はエラーを知らせず、センサーの無い端末は何も送らないだけ——ので、そこでの `error` は `requestPermission()`（§9.7）からしか来ない。`unsupported` を「センサーが無い」と読んでいたページは、`DeviceMotionEvent` があってセンサーの無いブラウザ（デスクトップの Firefox）ではそれを受け取らなくなる: 何も届かず、何も知らされない。フォールバックでの各軸の符号は実機で確かめていない（README にその旨を書いている）。
+
+### 9.7 accelerometer / gyroscope: `requestPermission()` が `permissionState` を書くのは、ブラウザが答えたときだけ（4.25）
+`permissionState` は `"granted"` / `"denied"` / `"unknown"`（初期値 `"unknown"`）で、`wcs-accelerometer:permission-changed` / `wcs-gyroscope:permission-changed` で publish され、同値ガードされる。これは iOS の `DeviceMotionEvent.requestPermission()` への答えであり、それ以外の何でもない: この答えを知らせる Permissions API のエントリは無く、Generic Sensor 自身の許可は `<wcs-permission name="accelerometer">` / `"gyroscope"` の担当のままである。`requestPermission()` は async で、reject しない。呼び出しの後の `permissionState` で resolve する。結果は次のとおり:
+
+| どこで | すること | `permissionState` | `error` |
+|---|---|---|---|
+| 要素がフォールバックを使い、`DeviceMotionEvent.requestPermission` が関数（iPhone / iPad の Safari）——promise が `"granted"` で resolve | それを呼ぶ | `"granted"` | `null` にクリア |
+| 同上——それ以外の値で resolve | それを呼ぶ | `"denied"` | `null` にクリア |
+| 同上——reject（iOS は、呼び出しがタップの中でないとき、質問を出さずに `NotAllowedError` で reject する） | それを呼ぶ | 変えない | `{ error: <name>, message }`。`errorInfo`: `not-allowed`、phase `start`、`recoverable: true` |
+| Generic Sensor のクラスがある、または `DeviceMotionEvent` はあるが `requestPermission` が無い（Chromium、Android の Firefox） | 何も呼ばない——質問が無い | 同期的に即 `"granted"` | `null` にクリア |
+| どちらの API も無い | 何も呼ばない | 変えない | `{ error: "unsupported", ... }`。`errorInfo`: `capability-missing` |
+
+それ以外の name の reject は、いつもどおり兄弟共通の taxonomy を通る——通常は `sensor-error`（phase `execute`、recoverable でない）。`start()` は `permissionState` を確かめない: すぐに購読し、iOS では利用者が許可してから読み取りが届き始める。tilt（§8.2）と同じく、post-await 書き込みは `_gen` を持たない単純な値設定なので、連続で呼ぶと resolve した順に確定する。
+
+→ **帰結**: `permissionState: "denied"` は、利用者（または利用者に代わってブラウザ）がそう答えたことを意味する。質問を出せなかった場合は元の値のままで、`recoverable: true` と言う——同じ呼び出しをタップから行えば許可されうるからである。`<wcs-tilt>` の質問（`DeviceOrientationEvent.requestPermission()`）は別のメソッドなので、両方の要素を使うページは 1 つのタップのハンドラの中で両方のコマンドを呼ぶ。ページの読み込みをまたいで覚えるものは無い: 再読み込みの後、`permissionState` はまた `"unknown"` である。
+
+### 9.8 `supported` は読まれるたびに計算し、connect で publish する（4.25）
+`supported` は、このページでその機能を使える——API があり、ページがその使用を禁じられていない——ことを表し、4兄弟すべてが持つ: accelerometer は（`Accelerometer` か `DeviceMotionEvent` が関数）かつ `featureUnavailable("accelerometer") === null`、gyroscope は（`Gyroscope` か `DeviceMotionEvent`）かつ `"gyroscope"`、magnetometer は `Magnetometer` かつ `"magnetometer"`、ambient-light-sensor は `AmbientLightSensor` かつ `"ambient-light-sensor"`。`featureUnavailable` が理由を返すのは、安全でないコンテキストと、機能を切る Permissions-Policy（ページが自分のポリシーを読めるブラウザで）である。getter はキャッシュしない。Shell の `connectedCallback` が呼ぶ `publishSupported()` は、値が最後に dispatch したもの（初めは `false`）と違うときだけ `wcs-*:supported-changed` を dispatch する。
+
+→ **帰結**: バインドは張られた時点で正しい値を読み（§7.1）、再接続は値が変わっていなければ何も dispatch しない。`supported: true` は、センサーがあることも、利用者が許可することも言わない。magnetometer と ambient-light-sensor にはフォールバックが無いので、iPhone では `supported: false` である。
 
 ---
 
@@ -280,8 +319,8 @@ Shell の `connectedCallback` は `observe()` を呼び、`observe()` は購読�
 
 参照: [`packages/permission/src/core/PermissionCore.ts`](../packages/permission/src/core/PermissionCore.ts)、[`README`](../packages/permission/README.md)
 
-### 11.1 pure monitor（`commands: []`）— 観測面は `state` 1本、他4値は同一イベントからの派生 getter
-`granted` / `denied` / `prompt` / `unsupported` はすべて単一の `wcs-permission:change` イベントからの派生 getter（detail は `state` の生値）。`_setState` は同値ガード付きで、`state` が実際に変わったときだけ1回 dispatch する — 派生4値は `state` とロックステップで変わるため、これで全プロパティの通知が揃う。
+### 11.1 pure monitor（`commands: []`）— `state` と、そのイベントからの派生 getter 4値。`unsupportedReason` は専用のイベントを持つ
+`granted` / `denied` / `prompt` / `unsupported` はすべて単一の `wcs-permission:change` イベントからの派生 getter（detail は `state` の生値）。`_setState` は同値ガード付きで、`state` が実際に変わったときだけ1回 dispatch する — 派生4値は `state` とロックステップで変わるため、これでこの5つのプロパティの通知が揃う。4.25 からは6つ目の出力 `unsupportedReason` があり、`state` が `"unsupported"` である理由を言う。専用のイベントを持つので、理由だけが変わったときに `state` のバインドは再評価されない（§11.5）。
 
 ### 11.2 対応環境の初回確定は `query()` の resolve 時（非同期）/ unsupported の一部だけが connect 中の同期 dispatch
 対応環境では `observe(descriptor)` が `navigator.permissions.query()` を発行し、初回の `change` は query の resolve 時に飛ぶ（connect 中の同期 dispatch ではない。ただし resolve と data-wcs バインド確立（§4.1 の別 microtask）の順序自体は保証されない）。一方 **API 不在または descriptor `name` 欠落**のときは、初期値 `"prompt"` → `"unsupported"` の遷移が `connectedCallback` 中に**同期**で dispatch され、§7.1 と同型で data-wcs には届かない（query の reject 由来の `"unsupported"` は resolve 時＝非同期）。
@@ -293,6 +332,11 @@ Shell の `connectedCallback` は `observe()` を呼び、`observe()` は購読�
 
 ### 11.4 `_permGen` — query ごと＋`dispose()` で bump（stale query は listener を張らない）
 in-flight の query は捕捉した世代が古くなっていたら resolve 時に bail する（listener を張らず状態も書かない）。高速 disconnect→reconnect で先行 query が後から resolve しても、現行購読だけが listener を持つ。購読中はライブの `PermissionStatus` の `change`（ブラウザ設定での grant 切替）が流れ込み続ける。
+
+### 11.5 `unsupportedReason` は先に出て、その時点で両方の値が揃っている（4.25）
+継ぎ目アプリ `stamp-rally` が必要を見つけた（2026-11-17、[seam-apps.ja.md](./seam-apps.ja.md)）。`"unsupported"` は 4 つの状況を畳んでいる — Permissions-Policy がこのページでその機能を切っている（`"policy-blocked"`）、コンテキストが安全でない（`"insecure-context"`）、ブラウザに `navigator.permissions.query` が無い（`"no-permissions-api"`）、ブラウザが名前を拒否した・または `name` が空（`"unknown-name"`） — が、ページはそのどれなのかを利用者に伝えられなかった。`unsupportedReason` は、`state` が `"unsupported"` の間はこの 4 つのどれかで、それ以外では `null` である。`_setState(state, reason)` は何かを dispatch する前に両方のフィールドを書き、その後で `wcs-permission:unsupported-reason-changed`（detail は理由。理由が変わったとき）、続けて `wcs-permission:change`（state が変わったとき）を dispatch する。同値ガードはそれぞれにある。state が `"unsupported"` のまま理由だけが変わったとき（空の `name` での `observe()` の後、ポリシーに切られた名前での `observe()`）は、理由のイベントだけが出る。stale な query（§11.4）はどちらも書かない。
+
+→ **帰結**: どちらのイベントのハンドラも、どちらの出力のバインドも、つじつまの合った組を読む — 理由が `null` の `"unsupported"` も、`"granted"` の横に残った理由も見えない。ほかの 5 つと同じく `unsupportedReason` は output-only なので、バインドは確立時にプロパティを読む（§11.2）。`"no-permissions-api"` と `"unknown-name"` は「ブラウザが答えられない」であって、機能が無いという意味ではない。ページのポリシーに聞いてもログは出ない: ブラウザのポリシーが挙げていない名前（`features()`）は聞かない — 聞けば Chromium は `Unrecognized feature` を出す。単体テストは、両方のイベントの時点での順序と組を確かめる（`packages/permission/__tests__/permissionCore.test.ts`）。実ブラウザでは `e2e/tests/io-screen-sensors.spec.ts` が、Chromium・Firefox・WebKit で `unknown-name` を読む。
 
 ---
 
@@ -378,19 +422,28 @@ denied 環境では visibility 復帰のたびの再取得 reject が**毎回 fr
 参照: [`packages/fullscreen/src/core/FullscreenCore.ts`](../packages/fullscreen/src/core/FullscreenCore.ts)、[`packages/pointer-lock/src/core/PointerLockCore.ts`](../packages/pointer-lock/src/core/PointerLockCore.ts)、[`packages/picture-in-picture/src/core/PipCore.ts`](../packages/picture-in-picture/src/core/PipCore.ts)、[fullscreen-tag-design.md](./fullscreen-tag-design.md)（アーキタイプ。他2ノードはその差分）
 
 ### 16.1 `active` は「document 全域値 === 自分の resolved target」の自己フィルタ導出（同値ガード付き）
-bindable なのは `active`（`wcs-fullscreen:change` / `wcs-pointer-lock:change` / `wcs-pip:change`）のみ。各インスタンスは「何かが fullscreen / lock / PiP 中か」ではなく「**自分の** resolved target がそれか」を判定するため、複数インスタンス並存でも正しく分かれる（fullscreen-tag-design.md §2.1）。detail 形状は fullscreen / PiP が `{ active }`＋getter、pointer-lock は素の boolean（既知の族設計差）。
+`active` は `wcs-fullscreen:change` / `wcs-pointer-lock:change` / `wcs-pip:change` で知らせる。各インスタンスは「何かが fullscreen / lock / PiP 中か」ではなく「**自分の** resolved target がそれか」を判定するため、複数インスタンス並存でも正しく分かれる（fullscreen-tag-design.md §2.1）。detail 形状は fullscreen / PiP が `{ active }`＋getter、pointer-lock は素の boolean（既知の族設計差）。
 
-### 16.2 `error` は非 bindable（専用イベント無し・pull-only）— 3ノード共通の意図的設計
-`_setError` は代入のみで dispatch せず、`wcBindable.properties` にも宣言されない。コマンドの promise settle 後に `element.error` を命令的に読む（3ノードとも README に明記）。error を event 化する族多数派に対する既知の例外3件で、揃える場合は3ノード同時＋README 更新のセットで行うこと（本書は現状の契約を記述する）。
+### 16.2 `error` / `errorInfo` は bindable（イベント付き・参照で同値ガード）— 3ノード共通
+どちらも `wcBindable.properties` に宣言されている（`semantics: "state"`）: `wcs-fullscreen:error` / `wcs-fullscreen:error-info-changed`、`wcs-pointer-lock:error` / `wcs-pointer-lock:error-info-changed`、`wcs-pip:error` / `wcs-pip:error-info-changed`。`_setError` は参照でガードする（失敗は毎回新しいオブジェクト、クリアはリテラルの `null` を渡すので、落ちるのは余分な `null` → `null` だけ）。`errorInfo` を確定して `…:error-info-changed` を先に、続いて `…:error` を dispatch する。成功した request / exit は両方を `null` に戻す。バインドしてもよく（`error: fsError; errorInfo: fsErrorInfo`）、コマンドの promise settle 後に要素から読んでもよい — ただしイベントで届く拒否（§16.7）は、その後に届く。（本節は 2026-11-17 まで「`error` は pull-only でイベント無し」と書いていた。コードと3ノードの README は、すでに両方を bindable にしていた。）
 
 ### 16.3 購読場所: fullscreen / pointer-lock は document、PiP は `<video>` 自身
 fullscreen は `fullscreenchange`（webkit fallback あり）、pointer-lock は `pointerlockchange`（同）を document に張る。PiP は `enterpictureinpicture` / `leavepictureinpicture` を resolved `<video>` に張り、target 変更時に re-wire する。PiP は `requestPictureInPicture()` 自体も呼び出し時に `observe(element)` で re-wire する（connect 時に未解決だった後発 `<video>` でも `active` が追従する）。
 
 ### 16.4 connect 時の初回発火は「既に active な状態で（再）接続した場合」だけ起きる
-connect 時の `observe()` / target 解決は `active` を再導出するが、通常は false→false で同値ガードに掛かり dispatch は無い。既に fullscreen / lock / PiP 中の要素を指した状態で（再）接続した場合に限り connect 中の同期 dispatch が起き、§7.1 と同じ理由で data-wcs には届かない。request 系 API が user gesture 必須のため、実務でこの状況になるのは主に reparent 時。
+connect 時の `observe()` / target 解決は `active` を再導出するが、通常は false→false で同値ガードに掛かり dispatch は無い。既に fullscreen / lock / PiP 中の要素を指した状態で（再）接続した場合に限り connect 中の同期 dispatch が起き、§7.1 と同じ理由で data-wcs には届かない。request 系 API が user gesture 必須のため、実務でこの状況になるのは主に reparent 時。4.25 からは、active 中に切断した後の普通の経路になる（§16.6）。state がすでにバインドしていて戻ってきた要素（ルートのノード、移動された要素）は、その `true` をイベントで届ける。初めてバインドされる要素は、バインド時に読まれる。
 
 ### 16.5 async コマンドは `_gen` 後勝ち / exit 系の no-op チェックは bump より先 / pointer-lock の exit は同期
-`requestFullscreen()` / `requestPictureInPicture()` は呼び出しごとに `_gen` を bump＋capture する（screen-orientation §7.2 と同じ後勝ち。`dispose()` も bump）。`exitFullscreen()` / `exitPictureInPicture()` は「既に非 active」「API 不在」の silent no-op 判定を **`_gen` bump より先**に行う — 何もしない呼び出しが in-flight の request を stale 化してその error / active 更新を握りつぶさないため。pointer-lock の `exitPointerLock()` は同期 platform API（`void` 返し）なので `_gen` を持たず、防御的 try/catch のみ。
+`requestFullscreen()` / `requestPictureInPicture()` は呼び出しごとに `_gen` を bump＋capture する（screen-orientation §7.2 と同じ後勝ち。`dispose()` も bump）。`exitFullscreen()` / `exitPictureInPicture()` は「既に非 active」「API 不在」の silent no-op 判定を **`_gen` bump より先**に行う — 何もしない呼び出しが in-flight の request を stale 化してその error / active 更新を握りつぶさないため。pointer-lock の `exitPointerLock()` は同期 platform API（`void` 返し）なので `_gen` を持たず、防御的 try/catch のみ。4.25 から、promise を返さない呼び出しで出した request（Firefox の `requestPointerLock()`、接頭辞付きの fullscreen API）は await しない。呼び出しの中で同期的に `error` をクリアして `active` を再導出し、その後は document のイベントを待つ（§16.7）。実際に走った `exitFullscreen()`（no-op でないもの）は、pending の promise を stale にするのと同じく、待っている request も捨てる。
+
+### 16.6 切断は `active: false` を知らせ、再接続は本当の値を読む（4.25）
+継ぎ目アプリ `stamp-rally` が見つけた（2026-11-17、[seam-apps.ja.md](./seam-apps.ja.md)）。`dispose()` はリスナー（fullscreen / pointer-lock は document、PiP は `<video>`）を外し、その後で通常の setter を通して `active` を `false` にする。`true` だったときは変化のイベントが出る。文書の外にある要素には何も聞こえず、その値をもう保証できないからである。これまでは、target が要素と一緒に去ってブラウザが fullscreen や lock を終わらせても、誰もそれを知らせず、state は `true` のままだった。切断は何も exit しない。`connectedCallback` は target を解決し直して `active` を再導出し、target がまだ active なら `true` を知らせる。移動された要素（ここには `connectedMoveCallback` が無い。target は要素のある場所で決まる）は `false`、`true` の順に知らせる。active でないときの切断は何も出さない。
+
+### 16.7 イベントで届く拒否は `error` を立てる — promise の無い request に限る（4.25）
+購読中、fullscreen は `fullscreenerror`（`onfullscreenerror` が無ければ `webkitfullscreenerror`）を、pointer-lock は `pointerlockerror`（同じく `webkitpointerlockerror`）を聞く。request は、platform の呼び出しが promise を返したかを覚えておく。返したものには、その promise だけが答える。Chromium と WebKit は同じ拒否についてイベントも発火し、WebKit は非同期に断るとき reject より先に発火する（`WrongDocumentError: Pointer lock requires the window to have focus.`）。理由を持っているのは reject の例外のほうである。何も返さなかったもの — Firefox の `requestPointerLock()`、接頭辞付きの fullscreen API — は document を待つ。インスタンスを active にする change イベントが待ちを終わらせ、error イベントは `error` を `new DOMException("The browser refused the … request.", "NotAllowedError")` にする（`not-allowed`、`recoverable: true`。イベントは理由を運ばない）。こうして 1 つの拒否は、どのブラウザでも 1 回だけ報告される。このインスタンスの request が待っていないときの error イベントは別のインスタンスのもので、無視する。後から出した request、`dispose()`、（fullscreen では）実際に走った exit は、待っている request を捨てる。この error はコマンドの promise が settle した後に届く。PiP にはこのイベントが無い。
+
+### 16.8 `supported` は読むたびに計算し、connect 時に知らせる（4.25）
+`supported`（`wcs-fullscreen:supported-changed` / `wcs-pointer-lock:supported-changed` / `wcs-pip:supported-changed`、`detail` は boolean そのもの）は、読むたびにブラウザを調べる getter である。`observe()` は、最後に dispatch した値（初期値 `false`）と違うときにイベントを dispatch する。fullscreen: Permissions-Policy が禁じておらず、`document.fullscreenEnabled ?? document.webkitFullscreenEnabled` が `true` で、`Element.prototype` に `requestFullscreen` / `webkitRequestFullscreen` がある。PiP: ポリシーが禁じておらず、`document.pictureInPictureEnabled === true` で、`HTMLVideoElement.prototype.requestPictureInPicture` がある。pointer-lock: `Element.prototype` に `requestPointerLock` / `webkitRequestPointerLock` がある（これを扱うポリシーは無い）。ブラウザがポリシーを公開している場合（Chromium）は、`fullscreenEnabled` / `pictureInPictureEnabled` を読む前にポリシーに聞く。WebKit と Firefox は公開しておらず、WebKit は禁じられたフレームで `fullscreenEnabled` を読むたびにコンソールへエラーを出す。fullscreen も Picture-in-Picture も安全なコンテキストを要らないので、安全でないコンテキストであることだけでは `false` にならない。
 
 ## 17. 横断契約: カスタム状態（CustomStateSet / `:state()`）は「最後に発火したイベントの同期写像」
 
@@ -528,6 +581,7 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 | upload | `loading` |
 | audio（4.17） | `voices`（0）、`state` / `running` / `suspended`（`"unsupported"` でなければ `"suspended"`）— 外したルートは context を持たないので、最初の操作の前と同じに読める。入れ直しの `setPatch()` が context の状態を知らせ直す |
 | midi（4.17） | `devices`（`[]`。`close()` も）— `connected` は以前から |
+| fullscreen、pointer-lock、picture-in-picture（4.25） | `active`（`false`）— 要素は聞くのをやめるので、その値をもう保証できない。何も exit しない。入れ直しの target 解決が、target がまだ active なら `true` を知らせ直す（§16.6） |
 
 ほかのノードは、切断で変えるものをすでにすべて知らせていたか、切断で何も変えない。audio と midi もそうだと思われていたが、継ぎ目アプリ `music-room` が、`voices`・`running`・`devices` が残るのを見つけた（4.17、[seam-apps.ja.md](./seam-apps.ja.md)）。
 
@@ -655,3 +709,54 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 ### 26.5 テスト
 `packages/fetch/__tests__/townArchive.test.ts` はフレームを手で進める（happy-dom の `requestAnimationFrame` では「2 フレーム後」と「その場」を区別できない）。実ブラウザでは、README の例を書かれたとおりに、スクロールと 4,000 px の高さのウィンドウで、Chromium・Firefox・WebKit。遅れて届く報告は、単体テストでは偽のオブザーバの `takeRecords()`、`e2e/tests/fetch-infinite-scroll.spec.ts` ではパッケージの例で最初のページが届く瞬間に ↓ を 2 回押す — 4.24.0 では、このテストは単独（ワーカー 1 つ）で走らせると落ちる。ほかのテストで忙しいマシンでは、報告は遅れなかった。
+
+## 27. 横断契約: `supported` — このページでその機能を使えるか（2026-11-17）
+
+対象: `<wcs-share>`・`<wcs-contacts>`・`<wcs-credential>`・`<wcs-eyedropper>`・`<wcs-screen-orientation>`・`<wcs-tilt>`・`<wcs-accelerometer>`・`<wcs-gyroscope>`・`<wcs-magnetometer>`・`<wcs-ambient-light-sensor>`・`<wcs-fullscreen>`・`<wcs-pointer-lock>`・`<wcs-pip>`。継ぎ目アプリ `stamp-rally` が見つけた（[seam-apps.ja.md](./seam-apps.ja.md)）。この 13 は、多くのブラウザに無い API、またはページが使用を禁じられることのある API を包んでいるが、どれも、コマンドを試すまでそれを言わなかった: ページがそれを知るのは、動くはずのないタップの `error` からで — iPhone で、Firefox で、ポータルの `<iframe>` の中で — ボタンを出さないでおくことができなかった。README は、作者に自分でブラウザを調べる（`typeof EyeDropper`・`typeof navigator.share`）か、コマンドを試してエラーを読むように言っていた。4.25 から、13 のそれぞれが、そのための出力 `supported` を 1 つ持つ。
+
+### 27.1 言うことと、言わないこと
+`supported` は boolean で、`semantics: "state"`、output-only である。`true` は**このページでその機能を使える**ことを意味する: API があり、ページがその使用を禁じられていない — Permissions-Policy（サーバーのヘッダ、`allow` の無い `<iframe>`）にも、フレームを認めない規則（`<wcs-contacts>`）にも、そして機能が安全なコンテキストを要る場合は安全でないコンテキストにも。`false` は理由を問わず「ここでは使えない」である: このページで使えない機能は unsupported、という `<wcs-permission>` が 4.5 から従っている規則に合わせている。
+
+利用者が許可すること、要求が成功すること（タップが要るかもしれない）、ロックが効くこと（`<wcs-screen-orientation>`: Safari には `lock()` が無く、デスクトップは拒否する）、センサーが実際にあること（PC には `DeviceOrientationEvent` があってセンサーが無い）、特定のデータを扱えること（`<wcs-share>`: `canShare(data)`）は言わない。それらは試して初めて分かり、`error` / `errorInfo` に出る。
+
+Permissions-Policy に聞くのは、ページが自分のポリシーを読めるブラウザ（Chromium）で、そのポリシーが挙げている機能についてだけである。それ以外では API の有無で決まる（§9.8、§16.8）。
+
+### 27.2 読まれるたびに調べ、接続時に知らせる
+getter は読まれるたびにブラウザを調べ、何も保存しない。だから値は要素を接続する前から正しく、バインド — output-only なので authority は `element` — は張られた時点でそれを読み（§7.1）、イベントを待たない。イベント `<prefix>:supported-changed`（detail は boolean、`bubbles: true`）は、それ以外のリスナーのためにある。接続時に、値が最後に dispatch したものと違うときに dispatch する。最後に dispatch した値は `false` から始まるので、機能を使えないページには何も聞こえず、使えるページには `true` が 1 回聞こえる。切断は何も変えず、何も dispatch しない（§22.3）。再接続は、その間に値が変わっていたときだけ dispatch する。これを反映するカスタム状態（`:state()`）は無い（§17）。
+
+§27.3 の 5 つのノードでは、Core の `observe()` が dispatch する: Shell は `connectedCallback` からそれを呼び、要素なしの Core は自分の `observe()` でイベントを受け取る。`<wcs-screen-orientation>` は、同じ `observe()` の中で、スナップショットの `wcs-orientation:change` より先にこれを dispatch する。
+
+### 27.3 ノードごとの定義
+
+| 要素 | イベント | `supported` が `true` になる条件 |
+|---|---|---|
+| `<wcs-share>` | `wcs-share:supported-changed` | `navigator.share` が関数で、`featureUnavailable("web-share") === null`: 安全でないコンテキストではなく、`web-share` を切る Permissions-Policy も無い（ブラウザのポリシーがその機能を知っている場合。デスクトップの Chromium のポリシーは知らないので、聞かない）。禁じるポリシーの下でも `share()` 自体はブラウザに渡り、`share-failed` で終わる |
+| `<wcs-contacts>` | `wcs-contacts:supported-changed` | `navigator.contacts.select` が関数で、ページが最上位（`window.top === window`。throw した場合と `window` が無い場合は最上位でないとする）: Contact Picker の仕様はフレームを認めない。フレームの中でも `select()` はブラウザに聞き、ブラウザは `InvalidStateError`（`select-failed`）で答える |
+| `<wcs-credential>` | `wcs-credential:supported-changed` | `navigator.credentials != null` で `typeof PasswordCredential === "function"` — Chromium だけ。Firefox と Safari は WebAuthn 用に container を持つ。`false` のところでは、`password` / `federated` を求める `get()` とすべての `store()` が、ブラウザを呼ばずに `capability-missing` で終わる |
+| `<wcs-eyedropper>` | `wcs-eyedropper:supported-changed` | `typeof EyeDropper === "function"` — `open()` がする確認と同じ（ブラウザはこのコンストラクタを安全なコンテキストでだけ公開する） |
+| `<wcs-screen-orientation>` | `wcs-orientation:supported-changed` | `screen.orientation` がある。つまり `type` / `angle` を見張れる。`lock()` については何も言わない |
+
+残りの 8 つは、それぞれの節で定義している: `<wcs-tilt>` は §8.6、Generic Sensor の 4 ノードは §9.8、`<wcs-fullscreen>` / `<wcs-pointer-lock>` / `<wcs-pip>` は §16.8。そこで dispatch するのは `publishSupported()` — tilt では `observe()` が呼び、センサーでは Shell の `connectedCallback` が呼ぶ（センサーは接続時に observe しない） — か、トリオでは `observe()` である。
+
+### 27.4 テスト
+§27.3 の 5 つのノードそれぞれに、2 回の読み取りの間で API を入れたり外したりするテスト（getter はキャッシュしない）、`observe()` と接続が、最後に dispatch した値から変わったときだけ dispatch することを確かめるテスト — 機能を使えないページでは何も出さず、再接続でももう一度は出さない — 、Shell のプロパティが接続前から正しいことを確かめるテストがある（`__tests__/<name>Core.test.ts`・`__tests__/<name>.test.ts`）。ポリシーやフレームで決まるところは、偽の `document.featurePolicy` や `top` が代役をする。残りの 8 つは、それぞれのスイートで同じことを確かめる。実ブラウザでは `e2e/tests/io-screen-sensors.spec.ts`（Chromium・Firefox・WebKit）が、`<wcs-contacts>` の `supported` を、代役のピッカーがあれば `true`、無ければ `false` と読む。
+
+## 28. `<wcs-contacts>`: 選ばずに閉じたピッカーは `cancelled`（2026-11-17）
+
+継ぎ目アプリ `stamp-rally` から（[seam-apps.ja.md](./seam-apps.ja.md)）。Contact Picker の仕様には、閉じられたピッカーのための reject が無い: `select()` は**空のリストで resolve し**、reject するのは `InvalidStateError`（最上位のページでない、ピッカーがすでに出ている、ピッカーが失敗した）、`SecurityError`（ユーザー操作が無い）、`TypeError`（プロパティが空、または非対応）だけである。4.24 までの要素は `AbortError` を待っていたので、`cancelled` が `true` になることはなく、閉じたピッカーは直前の選択の上に `value: []` を書いていた。
+
+### 28.1 空の結果がキャンセルである
+4.25 から、`select()` が空の配列で resolve すると、要素は `wcs-contacts:cancelled-changed`（`true`）、続けて `wcs-contacts:loading-changed`（`false`）を dispatch する。`wcs-contacts:complete` は dispatch せず、`value` は元のまま。コマンドは `null` で resolve し、lane の終端の結果は `aborted` になる。空でない結果はこれまでどおり — `complete`、続けて `loading-changed`（`false`） — で、`cancelled` はその `select()` が始まった時点で `false` に戻っている。`AbortError` での reject は、引き続きキャンセルとして読む。`dispose()` の後に届いた完了は、このどれも書かない（§22.2）。
+
+### 28.2 テスト
+`packages/contacts/__tests__/contactsCore.test.ts`: イベント、前の `value` が残ること、次の選択、`dispose()` の後の完了。実ブラウザでは `e2e/tests/io-screen-sensors.spec.ts` の代役のピッカー。
+
+## 29. `<wcs-credential>`: `preventSilentAccess()` は operation lane の外にある（2026-11-17）
+
+継ぎ目アプリ `stamp-rally` から（[seam-apps.ja.md](./seam-apps.ja.md)）: ページにはサインアウトする手段が無かった — 次に開いたときの `get({ password: true, mediation: "silent" })` が、利用者をそのままサインインし直していた。4.25 から、要素はコマンド `preventSilentAccess()`（`navigator.credentials.preventSilentAccess()`）を持つ。
+
+### 29.1 何とも競合せず、書くのは `error` / `errorInfo` だけ
+`get()` と `store()` は 1 つの `latest` の lane を共有し、後の呼び出しが前の呼び出しを追い越す。`preventSilentAccess()` はそこに入らない — 競合する結果を持たない — ので、進行中の `get()` / `store()` を追い越さず、追い越されもせず、`loading`・`value`・`cancelled` のどれにも触れない。ブラウザの promise が resolve すると、`errorInfo` と `error` を `null` に消す（`wcs-credential:error-info-changed`、続けて `wcs-credential:error`。どちらも同値ガード付きなので、エラーが無かったときは何も出ない）。reject は、名前を問わず — `NotAllowedError` も含む: 閉じるべき選択 UI が無い — それらをセットする（`credential-failed`、phase `execute`、`recoverable: true`）。`navigator.credentials` かこのメソッドが無いところでは、コマンドは何も呼ばず、何も書かずに resolve する: サインアウトはどこでも動く。呼び出しの前に lane の owner generation を捕捉するので、`dispose()` の後に届いた完了は何も書かない（§22.2）。
+
+### 29.2 テスト
+`packages/credential/__tests__/credentialCore.test.ts`: 呼び出し、エラーが消えること、reject、同期的な throw、container が無い場合とメソッドが無い場合、進行中の `get()` が追い越されないこと、`dispose()` の後の完了。

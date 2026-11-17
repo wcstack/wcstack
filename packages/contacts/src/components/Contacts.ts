@@ -12,7 +12,7 @@ import { upgradeProperties } from "../protocol/upgradeProperties.js";
  *
  * **Android Chrome only.** Desktop browsers entirely lack `navigator.contacts`
  * — treat `unsupported` as the default state, not an edge case, in any
- * example or consuming UI.
+ * example or consuming UI (`supported` says it ahead of time).
  */
 export class WcsContacts extends HTMLElement {
   // SSR (§4.4): observe() completes synchronously, but the Shell still exposes
@@ -105,6 +105,12 @@ export class WcsContacts extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Probed at call time by the Core (never cached), so a binding that reads it when
+  // it attaches gets the right value without waiting for an event.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   get connectedCallbackPromise(): Promise<void> {
     return this._connectedCallbackPromise;
   }
@@ -121,6 +127,8 @@ export class WcsContacts extends HTMLElement {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
+    // observe() publishes `supported` (wcs-contacts:supported-changed) when it
+    // differs from the last value dispatched.
     this._connectedCallbackPromise = this._core.observe();
   }
 

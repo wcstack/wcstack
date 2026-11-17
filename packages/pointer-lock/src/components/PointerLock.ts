@@ -132,6 +132,13 @@ export class WcsPointerLock extends HTMLElement {
     return this._core.errorInfo;
   }
 
+  // Whether this page has the Pointer Lock API — probed at call time by the
+  // Core (never cached), so a state binding that reads it when it attaches gets
+  // the right value without waiting for `wcs-pointer-lock:supported-changed`.
+  get supported(): boolean {
+    return this._core.supported;
+  }
+
   // --- Commands ---
 
   /**
@@ -161,6 +168,10 @@ export class WcsPointerLock extends HTMLElement {
     this._applyDisplayAndObserve();
   }
 
+  // dispose() publishes `active: false` when it was true (timing contract §22):
+  // out of the document this element hears no pointerlockchange, and the browser
+  // releases the lock when the target leaves with it. Nothing is released here;
+  // the next connectedCallback re-reads the truth through observe().
   disconnectedCallback(): void {
     this._core.dispose();
   }

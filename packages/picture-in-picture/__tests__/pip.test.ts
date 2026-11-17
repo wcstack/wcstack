@@ -11,6 +11,8 @@ import {
   removeExitPictureInPicture,
   emitEnter,
   emitLeave,
+  installPipSupport,
+  removePipSupport,
 } from "./mocks.js";
 
 beforeAll(() => {
@@ -31,6 +33,7 @@ describe("<wcs-pip>", () => {
   afterEach(() => {
     removePictureInPictureElement();
     removeExitPictureInPicture();
+    removePipSupport();
     document.body.innerHTML = "";
     vi.restoreAllMocks();
   });
@@ -357,6 +360,128 @@ describe("<wcs-pip>", () => {
       await promise;
 
       expect(el.error).toBeNull();
+    });
+  });
+
+  describe("文書を離れるとき — active の公開（timing contract §22）", () => {
+    // ルーターの外に置いた <video id="player"> を、ルートの中の <wcs-pip> が指す形。
+    function activeEl(): { el: WcsPip; video: HTMLVideoElement; events: any[] } {
+      const video = makeVideo();
+      video.id = "player";
+      document.body.appendChild(video);
+      installPictureInPictureElement(video);
+      const el = makeEl({ target: "#player" });
+      document.body.appendChild(el);
+      expect(el.active).toBe(true);
+      const events: any[] = [];
+      el.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+      return { el, video, events };
+    }
+
+    it("PiP 中に切断すると change を false で発火し、active は false（:state(active) も外れる）。小窓は閉じない", () => {
+      const { el, video, events } = activeEl();
+      const exit = vi.fn(() => Promise.resolve());
+      installExitPictureInPicture(exit);
+      expect(el.debugStates).toEqual(["active"]);
+
+      el.remove();
+
+      expect(events).toEqual([{ active: false }]);
+      expect(el.active).toBe(false);
+      expect(el.debugStates).toEqual([]);
+      expect(exit).not.toHaveBeenCalled();
+      expect((document as any).pictureInPictureElement).toBe(video);
+    });
+
+    it("video がまだ PiP のまま再接続すると true を公開し直す", () => {
+      const { el, events } = activeEl();
+      el.remove();
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([{ active: false }, { active: true }]);
+      expect(el.active).toBe(true);
+    });
+
+    it("切断のあいだに PiP が終わっていれば、再接続しても false のまま", () => {
+      const { el, video, events } = activeEl();
+      el.remove();
+      setPictureInPictureElement(null);
+      emitLeave(video); // 購読していないので届かない
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([{ active: false }]);
+      expect(el.active).toBe(false);
+    });
+
+    it("PiP 中でないときの切断は何も発火しない", () => {
+      installPictureInPictureElement(null);
+      const video = makeVideo();
+      const el = makeEl();
+      el.appendChild(video);
+      document.body.appendChild(el);
+      const events: any[] = [];
+      el.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+
+      el.remove();
+
+      expect(events).toEqual([]);
+      expect(el.active).toBe(false);
+    });
+
+    it("移動（切断 → 接続）は false、true の順に 2 回（video を子に持つ形でも同じ）", () => {
+      const video = makeVideo();
+      const el = makeEl();
+      el.appendChild(video);
+      document.body.appendChild(el);
+      installPictureInPictureElement(video);
+      emitEnter(video);
+      expect(el.active).toBe(true);
+      const events: any[] = [];
+      el.addEventListener("wcs-pip:change", (e) => events.push((e as CustomEvent).detail));
+      const host = document.createElement("section");
+      document.body.appendChild(host);
+
+      host.appendChild(el); // moveBefore の無いブラウザの移動: 切断してから接続
+
+      expect(events).toEqual([{ active: false }, { active: true }]);
+      expect(el.active).toBe(true);
+    });
+  });
+
+  describe("supported", () => {
+    it("Core の値をそのまま返す（呼ぶたびに調べ直す）", () => {
+      const el = makeEl();
+      expect(el.supported).toBe(false);
+      installPipSupport();
+      expect(el.supported).toBe(true);
+    });
+
+    it("使えるページでは、接続時に supported-changed を true で 1 回発火する（再接続や target の変更では出ない）", () => {
+      installPipSupport();
+      const el = makeEl({ target: "#none" });
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pip:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+
+      el.setAttribute("target", "#elsewhere");
+      el.remove();
+      document.body.appendChild(el);
+      expect(events).toEqual([true]);
+    });
+
+    it("使えないページ（Firefox 相当）では接続しても発火しない（最後に発火した値の初期値は false）", () => {
+      const el = makeEl({ target: "#none" });
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pip:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+      document.body.appendChild(el);
+
+      expect(events).toEqual([]);
+      expect(el.supported).toBe(false);
     });
   });
 

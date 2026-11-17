@@ -10,7 +10,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-eyedropper>` はパス契約で直接バインドできます:
 
 - **command サーフェス**: `open()` — `command.open:` / `$command.<name>` で起動、`abort()` — `command.abort:` / `$command.<name>` で起動
-- **出力 state サーフェス**: `value`（拾った色）、`loading`、`error`、`cancelled`
+- **出力 state サーフェス**: `value`（拾った色）、`loading`、`error`、`cancelled`、そして 4.25（未リリース）から `supported`
 
 `@wcstack/eyedropper` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
@@ -20,7 +20,7 @@
 
 ## なぜ存在するか — `@wcstack/share` と同じアーキタイプに `abort` を足したもの
 
-`<wcs-eyedropper>` は [`@wcstack/share`](https://www.npmjs.com/package/@wcstack/share) とアーキテクチャを共有しています。`FetchCore._doFetch` の簡約版（`docs/eyedropper-tag-design.md`、`docs/web-share-tag-design.md` §2 を参照）を土台とした、状態が薄い command 専用ノードです — 単一 `_gen` 世代ガード、同値ガード付き private setter、never-throw な try/catch。
+`<wcs-eyedropper>` は [`@wcstack/share`](https://www.npmjs.com/package/@wcstack/share) とアーキテクチャを共有しています。`FetchCore._doFetch` の簡約版（`docs/eyedropper-tag-design.md`、`docs/web-share-tag-design.md` §2 を参照）を土台とした、状態が薄い command 専用ノードです — 呼び出しは共有 io-core の operation lane を通り、private setter は同値ガード付き、try/catch は never-throw。
 
 意図的な違いが1つあります。**`EyeDropper.open()` は `{signal}` という `AbortSignal` オプションを受け付けます**（`navigator.share()` には無い機能です）。これにより呼び出し元は進行中の色選択を中断する実在のプラットフォーム機構を得られるため、この Core は `FetchCore`（`packages/fetch/src/core/FetchCore.ts`）から `AbortController`/`abort()` を復元しています。ローカルに保持した controller への identity チェックも含み、これにより素早い `abort()` → `open()` の連打でも、古い controller が新しい呼び出しの controller を誤って null 化することがありません。
 
@@ -28,7 +28,7 @@
 
 ## Chromium 限定・デスクトップ向け
 
-2026年時点で、EyeDropper API は Chromium 系ブラウザ（Chrome、Edge、Opera 等）にのみ実装されています — Firefox と Safari は未対応です。画面上の任意ピクセルを拾うという操作は、タッチ文脈でも本質的に意味を持ちません（指先での精密なピクセル単位のポインティングは困難で、モバイル版 Chrome にもこの API の実装がありません）。UI は **デスクトップ限定の漸進的強化機能**として設計してください — API が普遍的に使えると仮定せず、初回利用時に即座に `error` が発火したら「色を拾う」ボタンを隠す（あるいは `<input type="color">` のフォールバックを提供する）形にしてください。
+2026年時点で、EyeDropper API は Chromium 系ブラウザ（Chrome、Edge、Opera 等）にのみ実装されています — Firefox と Safari は未対応です。画面上の任意ピクセルを拾うという操作は、タッチ文脈でも本質的に意味を持ちません（指先での精密なピクセル単位のポインティングは困難で、モバイル版 Chrome にもこの API の実装がありません）。UI は **デスクトップ限定の漸進的強化機能**として設計してください — API が普遍的に使えると仮定せず、`supported` が `false` のところ（4.25（未リリース）から。4.24 までは `typeof EyeDropper` が `"function"` でないところ）では「色を拾う」ボタンを隠す（あるいは `<input type="color">` のフォールバックを提供する）形にしてください。
 
 ## インストール
 
@@ -101,16 +101,29 @@ npm install @wcstack/eyedropper
 
 ### 3. 非対応ブラウザではボタンを隠す
 
-`<wcs-eyedropper>` は専用の `supported` フラグを持ちません — `typeof EyeDropper` を直接確認するか、単に `open()` を試して即座の `error` に反応させてください:
+4.25（未リリース）から、出力 `supported` が「このページに EyeDropper API があるか」を言います。束縛して、`true` のところでだけボタンを出し、それ以外では素の `<input type="color">` を出します:
 
 ```html
-<script type="module">
-  const supported = typeof EyeDropper !== "undefined";
-  // #pick-button は例1の「色を拾う」ボタン。
-  document.querySelector("#pick-button").hidden = !supported;
-  // 非対応のモバイル/Firefox/Safari では <input type="color"> のフォールバックを提供する。
-</script>
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["open"],
+      canPick: false,
+      pickColor() {
+        this.$command.open.emit();
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-eyedropper data-wcs="command.open: $command.open; supported: canPick"></wcs-eyedropper>
+
+<button data-wcs="hidden: canPick|not; onclick: pickColor">色を拾う</button>
+<!-- Firefox・Safari・モバイル: スポイトが無いので、代わりにブラウザの色入力を出す -->
+<input type="color" data-wcs="hidden: canPick">
 ```
+
+4.24 まではこの出力がありません。自分で `typeof EyeDropper === "function"` を確認するか、`open()` を試して即座の `error` に反応させてください。
 
 ## 観測可能プロパティ（出力）
 
@@ -121,6 +134,9 @@ npm install @wcstack/eyedropper
 | `error`     | `wcs-eyedropper:error`              | 真のプラットフォーム障害（ピッカーがキャンセルされた場合を除く全て）。まだ失敗が無い場合、または次の `open()` 呼び出しでリセットされた後は `null`。 |
 | `cancelled` | `wcs-eyedropper:cancelled-changed`  | 選択が完了しなかった場合に `true` — ユーザーが Escape を押した場合と、呼び出し元が `abort()` を呼んだ場合の両方。どちらも同じ `AbortError` として現れ、区別されない。 |
 | `errorInfo` | `wcs-eyedropper:error-info-changed` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は unsupported なら `capability-missing`、真の失敗なら `pick-failed`。キャンセルは `cancelled` であり `errorInfo` ではない。 |
+| `supported` | `wcs-eyedropper:supported-changed`  | 4.25（未リリース）から。このページで EyeDropper API を使えるなら `true`。下記参照。 |
+
+**`supported`**（4.25（未リリース）から）は、`EyeDropper` コンストラクタがあるとき（`typeof EyeDropper === "function"`）に `true` です — `open()` がするのと同じ確認です。ブラウザはこのコンストラクタを安全なコンテキストでだけ公開するので、そうでないページ（`localhost` 以外の素の `http:`）は、API の無いブラウザと同じく `false` になります。値は読まれるたびにブラウザから読むので、束縛は張られた時点で正しい値を受け取ります。要素は接続されたときにも、最後に流した値（初期値は `false`）と違っていれば `wcs-eyedropper:supported-changed`（`detail` は boolean）を流します。選択が完了することは**言いません**: 利用者は <kbd>Escape</kbd> を押せますし（`cancelled`）、`open()` にはユーザー操作が要ります。
 
 `cancelled` と `error` はどちらも、次の `open()` 呼び出しの **開始時** にリセットされる（`false` / `null`）ため、前回の呼び出しの古い結果が次回の結果に残り続けることはありません。
 
@@ -145,8 +161,8 @@ io-core lane を `latest` policy で用いる（`<wcs-fetch>` と同様）: 新�
 - **`abort()` は進行中の `open()` を中断する。** ユーザーが Escape を押した場合も、呼び出し元が `abort()` を呼んだ場合も、同じ `cancelled` という結果に解決される — 両者を区別する方法は無く、その必要もない。
 - **同時に開けるピッカーはプラットフォーム全体で1つ。** 仕様の `InvalidStateError` は大域排他 — 別の eye dropper が既に開いている場合（2つ目の `<wcs-eyedropper>` インスタンスや別タブ）、`open()` はこのエラーで reject され、`cancelled` ではなく `error` に着地する。単一インスタンス内では発生しない — 新しい `open()` は先に前回の進行中の選択を中断するため。
 - **素早い `abort()` → `open()` の連打でも `AbortController` が混線しない。** 新しい `open()` 呼び出しは前回の進行中の呼び出しを中断し、新しい `AbortController` を発行する。前回呼び出しの後始末は、自身がまだ所有しているフィールドのみをクリアする（`FetchCore` の identity チェックと同型）。
-- **対応判定。** 専用の `supported` フラグは持たない。`open()` は呼び出し時に `typeof EyeDropper === "function"` を確認し、無ければ即座に `error` を設定する（非同期処理を開始しないため `_gen` は進めず、`new EyeDropper()` も構築されない）。
-- **`_gen` 世代ガード。** `dispose()` 後（例: ピッカーが有効な間の高速切断）に解決した `open()` 呼び出しは stale であり、破棄済みの要素へ状態を書き込まない。
+- **対応判定。** `supported`（4.25（未リリース）から）が事前に言う。`open()` も同じ確認 — 呼び出し時の `typeof EyeDropper === "function"` — をし、無ければ即座に `error` を設定する（`errorInfo.code: "capability-missing"`。非同期処理を開始しないため、この呼び出しは operation lane に入らず、`new EyeDropper()` も構築されない）。
+- **`dispose()` の後の完了は捨てる。** `dispose()` は進行中の `open()` を中断し、operation lane の上で無効にする（owner generation）。だから、その後（例: ピッカーが有効な間の高速切断）に解決した `open()` 呼び出しは stale であり、破棄済みの要素へ状態を書き込まない。
 - **`autoTrigger` を持たない。** `@wcstack/share` と同様、`open()` は実際のユーザー操作の文脈内から呼び出す必要がある。クリックハンドラを直接 `$command.open.emit()` に配線すること。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開する。非同期 probe が無いため、常に即座に settle する。
 - **同値ガード。** `value`/`loading`/`error`/`cancelled` の setter は値が実際に変化したときのみ発火する。
@@ -224,6 +240,8 @@ const result = await eyedropper.open();
 // 進行中の選択を中断する:
 eyedropper.abort();
 ```
+
+4.25（未リリース）から、`eyedropper.supported` はいつでも読めます。`eyedropper.observe()` は、最後に流した値と違っていれば `wcs-eyedropper:supported-changed` を流します。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

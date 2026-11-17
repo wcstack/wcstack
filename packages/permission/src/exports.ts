@@ -5,7 +5,7 @@ export { WcsPermission } from "./components/Permission.js";
 
 export type {
   IWritableConfig, IWritableTagNames, PermissionStateOrUnsupported,
-  WcsPermissionDescriptor, WcsPermissionCoreValues, WcsPermissionValues,
+  WcsPermissionUnsupportedReason, WcsPermissionDescriptor, WcsPermissionCoreValues, WcsPermissionValues,
   WcsPermissionInputs
 } from "./types.js";
 

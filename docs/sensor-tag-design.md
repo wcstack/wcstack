@@ -99,6 +99,8 @@ private _createSensor(frequency?: number): Accelerometer | null {
   この構造は`fetch`パッケージの`_doFetch`が`try { ... } catch (e: any) { this._setError(e); }`で例外を吸収する構造（[FetchCore.ts:213-213](../packages/fetch/src/core/FetchCore.ts#L213), [FetchCore.ts:287-301](../packages/fetch/src/core/FetchCore.ts#L287-L301)）と同じ形であり、「非同期処理のtry/catch」ではなく「同期的なコンストラクタ呼び出しのtry/catch」という点だけが異なる
 - **`error`はSTICKY（成功しても直前のエラーをクリアしない）**: `_setError(null)`を呼ぶ箇所はどのCoreにも存在しない。つまり、一度`error`に値が入ると、後続の`start()`が（不支援環境が解消される等で）成功し`reading`が正常に流れ始めても、その値は自動的にはクリアされない。監視系センサー族（Accelerometer/Gyroscope/Magnetometer/AmbientLightSensor）は`error`を「直近1回の通知」ではなく「最後に観測した失敗状態」として意図的に保持し続ける設計であり、これは本節冒頭の`_gen`世代ガード不要の判断とは独立した、`_setError()`自体の実装上の決定である。再試行が成功したこと自体は`reading`イベントの到来で判別できるため、`error`側に「クリアされた」という追加のシグナルを重ねて用意する必要はない、という判断に基づく
 
+> **4.25 から（2026-11-17、継ぎ目アプリ stamp-rally）**: §1.3〜§1.5 のうち次の点は現在の挙動ではない。(1) センサー自身の`error`イベントの後、失敗したセンサーは`error`を publish する前に片付けられ（teardown）、次の`start()`が新しいセンサーを作る——それまでは`stop()`を呼ぶまで`start()`が no-op だった。(2) accelerometer / gyroscope は、Generic Sensor のクラスが無く`DeviceMotionEvent`があるブラウザ（iPhone / iPad の Safari など）では`devicemotion`を読む（`start()`のたびに判定）。`unsupported`になるのはどちらも無いときだけである。(3) その 2 つには`requestPermission()`コマンドと`permissionState`出力が加わった。これは iOS の`DeviceMotionEvent.requestPermission()`への答えだけを表し、Generic Sensor の許可は引き続き`<wcs-permission>`との合成で扱う。`requestPermission()`は await するが、post-await 書き込みは benign な値設定なので`_gen`は持たない。ブラウザが答えたときには`_setError(null)`を呼ぶ——`error`に`null`を書く唯一の経路で、`start()`と`reading`がクリアしないことは変わらない。(4) 4 兄弟すべてに`supported`出力が加わり、正の数でない`frequency`は`start()`で要素ごとに 1 回警告する（`[wcs/frequency-invalid]`）。現在の契約は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §9。
+
 ---
 
 ## 2. 差分表: Gyroscope / Magnetometer / AmbientLightSensor
@@ -175,6 +177,8 @@ class FakeSensor extends EventTarget {
 | §2 AmbientLightSensorの優先度 | **最低**。fingerprinting対策で対応状況が悪化・削除されつつあり、着手前に対応表の再確認必須 |
 | §3 テスト戦略 | `FakeSensor extends EventTarget`をreadingフィールドでパラメータ化し4パッケージ共有 |
 | パッケージ/タグ | `@wcstack/accelerometer` `<wcs-accelerometer>` / `@wcstack/gyroscope` `<wcs-gyroscope>` / `@wcstack/magnetometer` `<wcs-magnetometer>` / `@wcstack/ambient-light-sensor` `<wcs-ambient-light-sensor>` |
+
+> **4.25 から（2026-11-17、継ぎ目アプリ stamp-rally）**: この表の §1.3（commands）・Permissions API 連携・§1.4（対応環境）・§1.5（`_gen`世代ガード）の行は、accelerometer / gyroscope の`devicemotion`フォールバックと`requestPermission()` / `permissionState`、4 兄弟の`supported`、`error`イベント後の teardown が加わる前の決定である。現在の挙動は §1.5 末尾の注記と [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §9。
 
 ---
 

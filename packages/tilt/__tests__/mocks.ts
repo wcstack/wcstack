@@ -19,7 +19,10 @@ export function removeRequestPermission(): void {
   delete (globalThis as any).DeviceOrientationEvent.requestPermission;
 }
 
-/** Temporarily remove the global DeviceOrientationEvent entirely (very old browsers). Returns a restore function. */
+/**
+ * Temporarily remove the global DeviceOrientationEvent entirely (some desktop browsers, Playwright's
+ * WebKit on Windows). Returns a restore function.
+ */
 export function removeDeviceOrientationEventCtor(): () => void {
   const saved = (globalThis as any).DeviceOrientationEvent;
   delete (globalThis as any).DeviceOrientationEvent;
@@ -28,17 +31,44 @@ export function removeDeviceOrientationEventCtor(): () => void {
   };
 }
 
-/** Dispatch a `deviceorientation` event on `window` with the given fields. */
-export function emitDeviceOrientation(fields: {
+/**
+ * Temporarily remove `window.ondeviceorientationabsolute` (happy-dom has it), so that
+ * `"ondeviceorientationabsolute" in window` is false, as in a browser without the event (iOS Safari).
+ * Returns a restore function.
+ */
+export function removeAbsoluteOrientationHandler(): () => void {
+  const saved = Object.getOwnPropertyDescriptor(window, "ondeviceorientationabsolute")!;
+  delete (window as any).ondeviceorientationabsolute;
+  return () => {
+    Object.defineProperty(window, "ondeviceorientationabsolute", saved);
+  };
+}
+
+interface OrientationFields {
   alpha?: number | null;
   beta?: number | null;
   gamma?: number | null;
   absolute?: boolean;
-} = {}): void {
-  const event = new Event("deviceorientation") as any;
+  /** iOS Safari's non-standard compass heading. Left off the event when not given. */
+  webkitCompassHeading?: unknown;
+}
+
+function emitOrientation(type: string, fields: OrientationFields): void {
+  const event = new Event(type) as any;
   event.alpha = fields.alpha ?? null;
   event.beta = fields.beta ?? null;
   event.gamma = fields.gamma ?? null;
   event.absolute = fields.absolute ?? false;
+  if ("webkitCompassHeading" in fields) event.webkitCompassHeading = fields.webkitCompassHeading;
   window.dispatchEvent(event);
+}
+
+/** Dispatch a `deviceorientation` event on `window` with the given fields. */
+export function emitDeviceOrientation(fields: OrientationFields = {}): void {
+  emitOrientation("deviceorientation", fields);
+}
+
+/** Dispatch a `deviceorientationabsolute` event on `window` (Android Chrome: `absolute` is true there). */
+export function emitDeviceOrientationAbsolute(fields: OrientationFields = {}): void {
+  emitOrientation("deviceorientationabsolute", { absolute: true, ...fields });
 }

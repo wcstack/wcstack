@@ -244,7 +244,7 @@ this._wireStates({ [`${prefix}:pending-changed`]: (d) => ({ pending: d === true 
 | `wcs-debounce` / `wcs-throttle` | `pending` | dynamic eventPrefix (§3.4) |
 | `wcs-clipboard` | `loading` `monitoring` `error` | the two permission surfaces have no getter → out of v1 |
 | `wcs-contacts` / `wcs-credential` / `wcs-eyedropper` / `wcs-share` | `loading` `cancelled` `error` | the four pickers are the same shape |
-| `wcs-fullscreen` | `active` | error not exposed (and will not be) |
+| `wcs-fullscreen` | `active` | `error` / `errorInfo` are bindable outputs with their own events, but are not reflected onto `:state()`; nor is `supported` (4.25) |
 | `wcs-pointer-lock` | `active` | same |
 | `wcs-pip` | `active` | same |
 | `wcs-network` | `save-data` `supported` | the only instance of kebab-case conversion |

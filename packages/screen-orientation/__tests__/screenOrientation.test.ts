@@ -47,6 +47,39 @@ describe("ScreenOrientation (Shell)", () => {
     expect(el.portrait).toBe(false);
     expect(el.landscape).toBe(false);
     expect(el.error).toBeNull();
+    expect(el.supported).toBe(false);
+  });
+
+  it("supported は Core に委譲され、接続時に wcs-orientation:supported-changed が流れる（再接続では同じ値を流さない）", () => {
+    installOrientation();
+    const el = createScreenOrientation();
+    // 接続前でも、束縛が読む値は正しい
+    expect(el.supported).toBe(true);
+    const events: boolean[] = [];
+    el.addEventListener("wcs-orientation:supported-changed", (e) => events.push((e as CustomEvent).detail));
+
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+
+    el.remove();
+    document.body.appendChild(el);
+    expect(events).toEqual([true]);
+  });
+
+  it("screen.orientation の無いページでは supported は false のままで、イベントも流れない", () => {
+    removeOrientation();
+    const el = createScreenOrientation();
+    const events: boolean[] = [];
+    el.addEventListener("wcs-orientation:supported-changed", (e) => events.push((e as CustomEvent).detail));
+    document.body.appendChild(el);
+    expect(el.supported).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it("properties は Core を継承し、supported を含む", () => {
+    expect(WcsScreenOrientation.wcBindable.properties.map((p) => p.name)).toEqual([
+      "type", "angle", "portrait", "landscape", "error", "errorInfo", "supported",
+    ]);
   });
 
   it("hasConnectedCallbackPromise が true で connectedCallbackPromise が即 settle する（SSR）", async () => {

@@ -411,7 +411,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 |--------|-------------|
 | `connect()` | Open the WebSocket connection |
 | `sendMessage(data)` | Send data over the connection |
-| `close(code?, reason?)` | Close the connection |
+| `close(code?, reason?)` | Close the connection. Since 4.25 (not released yet), anything that is not a number in `code`'s place is ignored, and `reason` with it — the event an `on…: $command.x` binding emits first: a "Disconnect" button wired straight to the token closes the connection (the event reached `WebSocket.close()`, which threw, and the socket stayed open) |
 
 ## wc-bindable-protocol
 
