@@ -39,6 +39,12 @@ export interface WcsMessageCatalog {
   eventTokenUndeclared(tokenName: string): string;
   commandRhsFormat(): string;
   commandTokenUndeclared(tokenPath: string): string;
+  /** `$command.<name>` used while the state has no `$commandTokens` at all (`name`: the token's name). */
+  commandTokensAbsent(tokenPath: string, name: string): string;
+  /** `eventToken.<member>: <name>` while the state has no `$eventTokens` at all. */
+  eventTokensAbsent(tokenName: string): string;
+  /** A `$on` entry whose name `$eventTokens` does not declare (`absent`: the state has no `$eventTokens`): the state fails to load. */
+  onEntryUndeclared(tokenName: string, absent: boolean): string;
   streamPathMissing(path: string): string;
   pathMissing(path: string): string;
   /** stateSchema が宣言された state で、パスが schema 上に確定的に存在しない（error）。 */
@@ -123,6 +129,11 @@ export interface WcsMessageCatalog {
    */
   pathDynamicUnknownValue(path: string, count: number, name?: string, from?: string): string;
   /**
+   * A slot an output of a custom element writes (`member` of `<tag>`), with bindings under it: what it holds is what
+   * the element gives, so those paths are not checked.
+   */
+  pathDynamicUnknownOutput(path: string, count: number, tag: string, member: string): string;
+  /**
    * A key seeded with an object literal whose keys are read but for a spread the analyzer could not read
    * (`draft: { ...makeDraft() }`), with bindings under it: those paths are not checked. `spread` as written, `from` the
    * specifier its name is imported from.
@@ -134,6 +145,14 @@ export interface WcsMessageCatalog {
   stateAbsent(stateTag: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
   pathReadonlyTwoWay(path: string, property: string): string;
+  /**
+   * A member of a custom element that the element writes (`member` of `<tag>`, declared in `wcBindable.properties`)
+   * bound to a getter without a setter (`path`). `atInit`: the element writes when it is bound, so the state fails to
+   * initialize; otherwise the write fails each time the element reports a value. `twoWay`: the member is an input
+   * too (`#ro` makes the binding one-way); otherwise it is output-only. `spread`: the spread that binds the member
+   * (`...: lock`), when it is not written out.
+   */
+  pathReadonlyOutput(path: string, tag: string, member: string, atInit: boolean, twoWay: boolean, spread?: string): string;
   /** A script writes a getter without a setter (`this.total = 0`, `$setAll` / `$update` / `$resolve` on its path). */
   pathReadonlyWrite(path: string): string;
   /** A getter writes a path while it is evaluated (`via`: through the method it calls). */
@@ -194,6 +213,30 @@ export interface WcsMessageCatalog {
    * the value with `px` added to its unitless numbers, or null when that does not make it valid.
    */
   rootMarginUnit(tag: string, value: string, refused: readonly string[], suggested: string | null): string;
+  /**
+   * A literal `frequency` (`value`) on a sensor tag (`tag`) that is not a positive finite number: the element reads it
+   * as "none" and the sensor runs at the browser's default rate. `suggested`: the number the value starts with, when it
+   * starts with a positive one (`60` for `60hz`), or null.
+   */
+  frequencyInvalid(tag: string, value: string, suggested: string | null): string;
+  /**
+   * A literal `target` (`value`) on a tag that takes a CSS selector there (`tag`), written as a bare word: it selects
+   * `<value>` elements, the document has none, and it has an element with that id.
+   */
+  targetSelector(tag: string, value: string): string;
+  // --- commandArgumentValidator ---
+  /**
+   * An `on*:` binding (`property`, without modifiers) that emits a command token (`token`, `$command.<name>`) straight
+   * from the event: every subscriber is called with the event as its first argument, and `method` of `<tag>` — bound
+   * with `command.<method>: <token>` — declares parameters. `more`: how many other such subscribers the document has.
+   */
+  commandEventArgument(property: string, token: string, tag: string, method: string, more: number): string;
+  // --- outputPathValidator ---
+  /**
+   * A script assigns `true` to `path`, which is bound only to outputs of custom elements — `member` of `<tag>`.
+   * `commands`: the commands that element declares (empty: it has none).
+   */
+  outputPathWritten(path: string, tag: string, member: string, commands: readonly string[]): string;
   filterUnknown(name: string): string;
   /** 4.0 で外れたフィルタの旧名（`uc` → `upper`。ランタイムは `[wcs/filter-unknown]`）。 */
   filterRemoved(name: string, canonical: string): string;
@@ -415,6 +458,22 @@ export type RecursionNodePathProblem =
 export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself' | 'structural';
 
 /** 単位の無い 0（`0`・`0.0`・`-0`）— root margin では 0 にも単位が要る、と言い添えるため。 */
+/** What a tag does when its `target` selects nothing (`wcs/target-selector`). */
+const TARGET_EFFECT_JA: Readonly<Record<string, string>> = {
+  'wcs-fullscreen': 'requestFullscreen() は失敗し、それを知らせるのは error の出力だけです',
+  'wcs-pip': 'requestPictureInPicture() は失敗し、それを知らせるのは error の出力だけです',
+  'wcs-pointer-lock': 'requestPointerLock() は失敗し、それを知らせるのは error の出力だけです',
+  'wcs-intersect': '要素は何も監視せず、observing は false のままです',
+  'wcs-resize': '要素は何も監視せず、observing は false のままです',
+};
+const TARGET_EFFECT_EN: Readonly<Record<string, string>> = {
+  'wcs-fullscreen': 'requestFullscreen() fails, and only the error output says so',
+  'wcs-pip': 'requestPictureInPicture() fails, and only the error output says so',
+  'wcs-pointer-lock': 'requestPointerLock() fails, and only the error output says so',
+  'wcs-intersect': 'the element observes nothing and observing stays false',
+  'wcs-resize': 'the element observes nothing and observing stays false',
+};
+
 function isUnitlessZero(token: string): boolean {
   return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
 }
@@ -439,6 +498,12 @@ const ja: WcsMessageCatalog = {
   eventTokenUndeclared: (t) => `イベントトークン "${t}" は $eventTokens に宣言されていません`,
   commandRhsFormat: () => `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
   commandTokenUndeclared: (t) => `コマンドトークン "${t}" は $commandTokens に宣言されていません`,
+  commandTokensAbsent: (t, name) =>
+    `コマンドトークン "${t}" は宣言されていません。この state には $commandTokens がありません。state に $commandTokens: ["${name}"] を足してください`,
+  eventTokensAbsent: (t) =>
+    `イベントトークン "${t}" は宣言されていません。この state には $eventTokens がありません。state に $eventTokens: ["${t}"] を足してください`,
+  onEntryUndeclared: (t, absent) =>
+    `$on のエントリ "${t}" は $eventTokens に宣言されていません${absent ? '（この state には $eventTokens がありません）' : ''}。state は読み込みで失敗し、ページは初期化されません（$on entry "${t}" is not declared in $eventTokens）。${absent ? `$eventTokens: ["${t}"] を足してください` : `$eventTokens に "${t}" を足してください`}`,
   streamPathMissing: (p) => `パス "${p}" は $stream 宣言に存在しません`,
   pathMissing: (p) => `パス "${p}" は状態定義に存在しません`,
   pathNonexistent: (p) => `パス "${p}" は宣言された stateSchema に存在しません`,
@@ -522,12 +587,22 @@ const ja: WcsMessageCatalog = {
     `このファイルには束縛がありますが <${tag}> が無いので、束縛のパスは検査していません（ページが取り込む断片や、state をスクリプトで作るページ）。state のあるページを検査するか、このファイルの隣（か上）の wcstack.manifest.json の stateSchema にパスを宣言すると検査されます`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
+  pathDynamicUnknownOutput: (path, n, tag, member) =>
+    `"${path}" は <${tag}> の出力 "${member}" が書くので、中身は要素が渡すものです。その形は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに形を表す JSDoc の @type を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
     `${sp} が持ち込むキーは静的に読めないので、この state のパスは検査していません（束縛・getter の中の読み・$watch のキー）。キーを wcstack.manifest.json の stateSchema に宣言すると検査されます。npx wcs-schema（@wcstack/typescript）が state の型（JSDoc・TypeScript）から作れます`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) =>
     `${sp}${from === undefined ? '' : `（"${from}" から import）`}が "${path}" に持ち込むキーは静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。オブジェクトリテラルを束縛するモジュールの const を spread するか、キーに形を表す JSDoc の @type を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathReadonlyTwoWay: (p, prop) =>
     `"${p}" は setter の無い getter ですが、${prop}: は読者の入力を書き戻すので、入力のたびに書き込みが失敗します（"${p}" is a getter without a setter）。setter を足す（set "${p}"(v) { … }）か、#ro で一方向にしてください（${prop}#ro: ${p}）`,
+  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) =>
+    `"${p}" は setter の無い getter ですが、${spread === undefined ? '' : `"${spread}" が束ねる `}"${member}" は <${tag}> が書くメンバー（${twoWay ? '入力でもある出力' : '出力'}）です。要素はその値を "${p}" に書くので、${atInit ? '束ねた時点の書き込みが失敗し、state の初期化が失敗します' : '要素が値を知らせるたびに書き込みが失敗します'}（"${p}" is a getter without a setter）。${spread !== undefined
+      ? `setter を足す（set "${p}"(v) { … }）か、spread の後ろで "${member}" をデータのパスに束ねてください（${spread}; ${member}: <データのキー>）`
+      : !twoWay
+        ? `データのパスを束ねてそれを getter から読む（${member}: <データのキー>）か、setter を足してください（set "${p}"(v) { … }）`
+        : atInit
+          ? `setter を足す（set "${p}"(v) { … }）か、最初の値を state から取ってください（#init=element を外す）`
+          : `setter を足す（set "${p}"(v) { … }）か、#ro で一方向にしてください（${member}#ro: ${p} — state から要素へは今までどおり書かれます）`}`,
   submitWithoutPrevent: (h) =>
     `onsubmit に #prevent が無く、"${h}" も preventDefault を呼びません。ブラウザはフォームも送るので、ページが読み直されるか、router があれば GET が欄の値（パスワードも）を URL と履歴に載せます。onsubmit#prevent: ${h} と書くか、ハンドラで event.preventDefault() を呼んでください`,
   guardReadsAtModuleTop: (r) =>
@@ -569,6 +644,16 @@ const ja: WcsMessageCatalog = {
     const effect = tag === 'wcs-intersect' ? '要素は何も監視せず、observing は false のままです' : '要素は何も監視せず、次のページは読み込まれません';
     return `ブラウザは root-margin="${value}" を拒みます（rootMargin must be specified in pixels or percent）: ${why}。そのため${effect}。${suggested === null ? '1〜4 個の値を、それぞれ px か % の付いた数値で書いてください' : `root-margin="${suggested}" と書いてください`}`;
   },
+  frequencyInvalid: (tag, value, suggested) =>
+    `frequency="${value}" は正の数値ではないので、<${tag}> はこれを「指定なし」として読み、センサーはブラウザの既定の頻度で動きます（何も知らせません）。${suggested === null ? '正の数値（Hz）を書くか、既定の頻度でよければ属性を外してください' : `数値だけを書いてください: frequency="${suggested}"`}`,
+  targetSelector: (tag, value) =>
+    `<${tag}> の target は CSS セレクタです。target="${value}" は <${value}> 要素を選びますが、この文書にその要素は無く、id="${value}" の要素があります。対象が見つからないので、${TARGET_EFFECT_JA[tag] ?? '要素は何もしません'}。id を指すなら target="#${value}" と書いてください`,
+  commandEventArgument: (property, token, tag, method, more) =>
+    `"${property}: ${token}" はトークンをイベントから直接 emit するので、受け側のコマンドはイベントを第 1 引数として呼ばれます。<${tag}> の ${method}() は引数を取るコマンドで、${method}(event) になります${more > 0 ? `（ほかに ${more} 件の受け側も同じです）` : ''}。state のメソッドから emit してください — ${property}: <メソッド> と書き、<メソッド>() { this.${token}.emit(…) } で ${method}() が受け取る値を渡します（渡す値が無ければ引数なしで emit します）`,
+  outputPathWritten: (path, tag, member, commands) =>
+    `"${path}" は <${tag}> の出力 "${member}" に束ねてあります。出力は要素が書くもので、スクリプトの書き込みは要素に届きません。true を代入しても要素は何もせず、ページだけがそうなったことにします。${commands.length === 0
+      ? `<${tag}> にコマンドは無く、この値は要素が知らせるものです。代入を外してください`
+      : `要素にはコマンドで頼んでください（${commands.join('・')} — command.<メソッド>: $command.<名前> を束ね、ここで this.$command.<名前>.emit() を呼ぶ）。"${path}" は要素が書きます`}`,
   filterUnknown: (n) => `フィルタ "${n}" は組み込みフィルタに存在しません`,
   filterRemoved: (n, c) => `フィルタ "${n}" は 4.0 で外れました（"${c}" の 3.x の旧名）。"${c}" と書いてください`,
   substrRemoved: (rewrite) =>
@@ -666,7 +751,7 @@ const ja: WcsMessageCatalog = {
   storagePairClobber: (path) =>
     `<wcs-storage> の value を #init=element なしでアクセサペア "${path}" に束ねています。state の側が先に書くので、読み込みのたびに getter の最初の値が保存値の上に保存され、setter は保存値を受け取れません — #init=element を付けてください（\`value#init=element: ${path}\`）`,
   inputNestedWrite: (tag, input, path, example) =>
-    `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されないので、下への書き込みは <${tag}> に届きません — フィールドをパスで読んで新しい値を返す getter（\`this["${example}"]\`・\`$getAll\`）を束ねるか、下へ書かずに "${path}" を差し替えてください`,
+    `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されないので、下への書き込みは <${tag}> に届きません — フィールドをパスで読んで新しい値を返す getter（\`this["${example}"]\`・\`$getAll\`）を束ねてください: 要素の値も受け取るなら、setter を添えたアクセサペアを ${input}#init=element: <getter> で。要素の値を受け取らないなら、一方向に ${input}#ro: <getter> で（setter も #ro も無いと、要素が知らせる値の書き戻しが getter に拒まれます — wcs/path-readonly）。または、下へ書かずに "${path}" を差し替えてください`,
   inputNestedWriteOneShot: (tag, input, path, example) =>
     `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されず、<${tag}> は要求のたびに "${input}" を null に戻すので、次の要求は "${input}" なしで送られます — 要求を始めるハンドラで新しいオブジェクトを作って代入し（\`this.submitBody = { … }\`）、それを束ねてください`,
   devtoolsAfterState: () =>
@@ -814,6 +899,12 @@ const en: WcsMessageCatalog = {
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
+  commandTokensAbsent: (t, name) =>
+    `Command token "${t}" is not declared: this state has no $commandTokens. Add $commandTokens: ["${name}"] to the state`,
+  eventTokensAbsent: (t) =>
+    `Event token "${t}" is not declared: this state has no $eventTokens. Add $eventTokens: ["${t}"] to the state`,
+  onEntryUndeclared: (t, absent) =>
+    `The $on entry "${t}" is not declared in $eventTokens${absent ? ' (this state has none)' : ''}, so the state fails to load and the page is not initialized ($on entry "${t}" is not declared in $eventTokens). ${absent ? `Add $eventTokens: ["${t}"]` : `Add "${t}" to $eventTokens`}`,
   streamPathMissing: (p) => `Path "${p}" does not exist in the $stream declaration`,
   pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
   pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
@@ -897,12 +988,22 @@ const en: WcsMessageCatalog = {
     `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathDynamicUnknownOutput: (path, n, tag, member) =>
+    `"${path}" is written by "${member}" of <${tag}>, an output, so it holds whatever the element gives: its shape cannot be read statically, and the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>
     `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) =>
     `The keys ${sp}${from === undefined ? '' : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathReadonlyTwoWay: (p, prop) =>
     `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { … }), or bind it one way with #ro (${prop}#ro: ${p})`,
+  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) =>
+    `"${p}" is a getter without a setter, but "${member}"${spread === undefined ? '' : `, which "${spread}" binds,`} is ${twoWay ? 'a member <' + tag + '> writes too (an output as well as an input)' : 'an output of <' + tag + '>'}: the element writes its value to "${p}", and ${atInit ? 'the write made when it is bound fails, so the state fails to initialize' : 'that write fails each time the element reports a value'} ("${p}" is a getter without a setter). ${spread !== undefined
+      ? `Add a setter (set "${p}"(v) { … }), or bind "${member}" to a data path after the spread (${spread}; ${member}: <a data key>)`
+      : !twoWay
+        ? `Bind a data path and read it in the getter (${member}: <a data key>), or add a setter (set "${p}"(v) { … })`
+        : atInit
+          ? `Add a setter (set "${p}"(v) { … }), or take the first value from the state (remove #init=element)`
+          : `Add a setter (set "${p}"(v) { … }), or bind it one way with #ro (${member}#ro: ${p} — the state still writes the element)`}`,
   submitWithoutPrevent: (h) =>
     `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   guardReadsAtModuleTop: (r) =>
@@ -944,6 +1045,16 @@ const en: WcsMessageCatalog = {
     const effect = tag === 'wcs-intersect' ? 'the element observes nothing and observing stays false' : 'the element observes nothing and no page is loaded';
     return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? 'Write one to four values, each a number with px or %' : `Write root-margin="${suggested}"`}`;
   },
+  frequencyInvalid: (tag, value, suggested) =>
+    `frequency="${value}" is not a positive number, so <${tag}> reads it as "none" and the sensor runs at the browser's default rate, without a word. ${suggested === null ? 'Write a positive number (Hz), or remove the attribute for the default rate' : `Write the number alone: frequency="${suggested}"`}`,
+  targetSelector: (tag, value) =>
+    `The target of <${tag}> is a CSS selector: target="${value}" selects <${value}> elements, and this document has none — it has an element with id="${value}". No target is found, so ${TARGET_EFFECT_EN[tag] ?? 'the element does nothing'}. To name the id, write target="#${value}"`,
+  commandEventArgument: (property, token, tag, method, more) =>
+    `"${property}: ${token}" emits the token straight from the event, so the commands that receive it are called with the event as their first argument. ${method}() of <${tag}> takes an argument there, and gets the event: ${method}(event)${more > 0 ? ` (and ${more} more such ${more === 1 ? 'receiver' : 'receivers'})` : ''}. Emit from a state method instead — write ${property}: <method>, with <method>() { this.${token}.emit(…) } passing what ${method}() takes (emit with no argument when there is nothing to pass)`,
+  outputPathWritten: (path, tag, member, commands) =>
+    `"${path}" is bound to "${member}" of <${tag}>, an output: the element writes it, and a write from a script does not reach the element. Assigning true makes the element do nothing — only the page now says so. ${commands.length === 0
+      ? `<${tag}> has no command: the value is the element's to report. Remove the assignment`
+      : `Ask the element with a command (${commands.join(', ')} — bind command.<method>: $command.<name> and call this.$command.<name>.emit() here), and let the element write "${path}"`}`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
   filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") — write "${c}"`,
   substrRemoved: (rewrite) =>
@@ -1041,7 +1152,7 @@ const en: WcsMessageCatalog = {
   storagePairClobber: (path) =>
     `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it — add #init=element (\`value#init=element: ${path}\`)`,
   inputNestedWrite: (tag, input, path, example) =>
-    `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> — bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
+    `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> — bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value: with a setter beside it to take the element's value in as well (the accessor pair, ${input}#init=element: <getter>), or one way when the element's value is not taken in (${input}#ro: <getter> — with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "${path}" instead of writing below it`,
   inputNestedWriteOneShot: (tag, input, path, example) =>
     `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it — build a new object in the handler that starts the request (\`this.submitBody = { … }\`) and bind that`,
   devtoolsAfterState: () =>

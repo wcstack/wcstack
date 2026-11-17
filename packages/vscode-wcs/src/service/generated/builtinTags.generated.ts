@@ -25,6 +25,11 @@ export interface BuiltinTagContract {
   readonly commands: readonly string[];
   /** semantics: "handle" の出力（生きたリソース — 値として束ねない）。あるタグにだけある。 */
   readonly handles?: readonly string[];
+  /**
+   * command 名 → そのメソッドが宣言する引数の数（`Class.prototype[name].length` — 既定値・rest より前の引数）。
+   * command のあるタグにだけある。
+   */
+  readonly commandArity?: Readonly<Record<string, number>>;
 }
 
 export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
@@ -45,7 +50,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "start",
       "stop"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0
+    }
   },
   "wcs-ambient-light-sensor": {
     "package": "ambient-light-sensor",
@@ -62,7 +71,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "start",
       "stop"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0
+    }
   },
   "wcs-audio": {
     "package": "audio",
@@ -95,7 +108,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "noteOn",
       "noteOff",
       "allNotesOff"
-    ]
+    ],
+    "commandArity": {
+      "resume": 0,
+      "suspend": 0,
+      "noteOn": 2,
+      "noteOff": 1,
+      "allNotesOff": 0
+    }
   },
   "wcs-voice": {
     "package": "audio",
@@ -302,7 +322,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     ],
     "commands": [
       "sample"
-    ]
+    ],
+    "commandArity": {
+      "sample": 0
+    }
   },
   "wcs-broadcast": {
     "package": "broadcast",
@@ -323,7 +346,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "open",
       "post",
       "close"
-    ]
+    ],
+    "commandArity": {
+      "open": 0,
+      "post": 1,
+      "close": 0
+    }
   },
   "wcs-camera": {
     "package": "camera",
@@ -362,7 +390,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     ],
     "handles": [
       "streamReady"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "switchCamera": 0
+    }
   },
   "wcs-recorder": {
     "package": "camera",
@@ -392,7 +425,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "stop",
       "pause",
       "resume"
-    ]
+    ],
+    "commandArity": {
+      "attachStream": 1,
+      "start": 0,
+      "stop": 0,
+      "pause": 0,
+      "resume": 0
+    }
   },
   "wcs-clipboard": {
     "package": "clipboard",
@@ -421,7 +461,15 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "read",
       "startMonitor",
       "stopMonitor"
-    ]
+    ],
+    "commandArity": {
+      "writeText": 1,
+      "write": 1,
+      "readText": 0,
+      "read": 0,
+      "startMonitor": 0,
+      "stopMonitor": 0
+    }
   },
   "wcs-contacts": {
     "package": "contacts",
@@ -437,7 +485,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     ],
     "commands": [
       "select"
-    ]
+    ],
+    "commandArity": {
+      "select": 2
+    }
   },
   "wcs-credential": {
     "package": "credential",
@@ -454,7 +505,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "get",
       "store"
-    ]
+    ],
+    "commandArity": {
+      "get": 1,
+      "store": 1
+    }
   },
   "wcs-debounce": {
     "package": "debounce",
@@ -476,7 +531,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "trigger",
       "cancel",
       "flush"
-    ]
+    ],
+    "commandArity": {
+      "trigger": 0,
+      "cancel": 0,
+      "flush": 0
+    }
   },
   "wcs-throttle": {
     "package": "debounce",
@@ -498,7 +558,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "trigger",
       "cancel",
       "flush"
-    ]
+    ],
+    "commandArity": {
+      "trigger": 0,
+      "cancel": 0,
+      "flush": 0
+    }
   },
   "wcs-defined": {
     "package": "defined",
@@ -538,7 +603,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "open",
       "abort"
-    ]
+    ],
+    "commandArity": {
+      "open": 0,
+      "abort": 0
+    }
   },
   "wcs-fetch": {
     "package": "fetch",
@@ -567,7 +636,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "fetch",
       "abort"
-    ]
+    ],
+    "commandArity": {
+      "fetch": 2,
+      "abort": 0
+    }
   },
   "wcs-fetch-header": {
     "package": "fetch",
@@ -616,7 +689,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "requestFullscreen",
       "exitFullscreen"
-    ]
+    ],
+    "commandArity": {
+      "requestFullscreen": 0,
+      "exitFullscreen": 0
+    }
   },
   "wcs-geo": {
     "package": "geolocation",
@@ -648,7 +725,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "getCurrentPosition",
       "watchPosition",
       "clearWatch"
-    ]
+    ],
+    "commandArity": {
+      "getCurrentPosition": 0,
+      "watchPosition": 0,
+      "clearWatch": 0
+    }
   },
   "wcs-gyroscope": {
     "package": "gyroscope",
@@ -667,7 +749,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "start",
       "stop"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0
+    }
   },
   "wcs-idle": {
     "package": "idle",
@@ -687,7 +773,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "requestPermission",
       "start",
       "stop"
-    ]
+    ],
+    "commandArity": {
+      "requestPermission": 0,
+      "start": 1,
+      "stop": 0
+    }
   },
   "wcs-intersect": {
     "package": "intersection",
@@ -721,7 +812,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "unobserve",
       "disconnect",
       "reset"
-    ]
+    ],
+    "commandArity": {
+      "observe": 0,
+      "reobserve": 0,
+      "unobserve": 0,
+      "disconnect": 0,
+      "reset": 0
+    }
   },
   "wcs-magnetometer": {
     "package": "magnetometer",
@@ -740,7 +838,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "start",
       "stop"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0
+    }
   },
   "wcs-media-query": {
     "package": "media-query",
@@ -794,7 +896,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "request",
       "close",
       "send"
-    ]
+    ],
+    "commandArity": {
+      "request": 0,
+      "close": 0,
+      "send": 2
+    }
   },
   "wcs-network": {
     "package": "network",
@@ -846,7 +953,13 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "notify",
       "close",
       "closeAll"
-    ]
+    ],
+    "commandArity": {
+      "request": 0,
+      "notify": 2,
+      "close": 1,
+      "closeAll": 0
+    }
   },
   "wcs-permission": {
     "package": "permission",
@@ -883,7 +996,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "requestPictureInPicture",
       "exitPictureInPicture"
-    ]
+    ],
+    "commandArity": {
+      "requestPictureInPicture": 0,
+      "exitPictureInPicture": 0
+    }
   },
   "wcs-pointer-lock": {
     "package": "pointer-lock",
@@ -902,7 +1019,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "requestPointerLock",
       "exitPointerLock"
-    ]
+    ],
+    "commandArity": {
+      "requestPointerLock": 0,
+      "exitPointerLock": 0
+    }
   },
   "wcs-raf": {
     "package": "raf",
@@ -931,7 +1052,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "reset",
       "pause",
       "resume"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "reset": 0,
+      "pause": 0,
+      "resume": 0
+    }
   },
   "wcs-resize": {
     "package": "resize",
@@ -960,7 +1088,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "observe",
       "unobserve",
       "disconnect"
-    ]
+    ],
+    "commandArity": {
+      "observe": 0,
+      "unobserve": 0,
+      "disconnect": 0
+    }
   },
   "wcs-screen-orientation": {
     "package": "screen-orientation",
@@ -978,7 +1111,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "lock",
       "unlock"
-    ]
+    ],
+    "commandArity": {
+      "lock": 1,
+      "unlock": 0
+    }
   },
   "wcs-share": {
     "package": "share",
@@ -994,7 +1131,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     ],
     "commands": [
       "share"
-    ]
+    ],
+    "commandArity": {
+      "share": 1
+    }
   },
   "wcs-speak": {
     "package": "speech",
@@ -1025,7 +1165,13 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "cancel",
       "pause",
       "resume"
-    ]
+    ],
+    "commandArity": {
+      "speak": 1,
+      "cancel": 0,
+      "pause": 0,
+      "resume": 0
+    }
   },
   "wcs-listen": {
     "package": "speech",
@@ -1054,7 +1200,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "start",
       "stop",
       "abort"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "abort": 0
+    }
   },
   "wcs-sse": {
     "package": "sse",
@@ -1086,7 +1237,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "connect",
       "close"
-    ]
+    ],
+    "commandArity": {
+      "connect": 0,
+      "close": 0
+    }
   },
   "wcs-storage": {
     "package": "storage",
@@ -1115,7 +1270,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "load",
       "save",
       "remove"
-    ]
+    ],
+    "commandArity": {
+      "load": 0,
+      "save": 0,
+      "remove": 0
+    }
   },
   "wcs-tilt": {
     "package": "tilt",
@@ -1135,7 +1295,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "requestPermission",
       "start",
       "stop"
-    ]
+    ],
+    "commandArity": {
+      "requestPermission": 0,
+      "start": 0,
+      "stop": 0
+    }
   },
   "wcs-timer": {
     "package": "timer",
@@ -1163,7 +1328,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "reset",
       "pause",
       "resume"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "stop": 0,
+      "reset": 0,
+      "pause": 0,
+      "resume": 0
+    }
   },
   "wcs-upload": {
     "package": "upload",
@@ -1195,7 +1367,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "upload",
       "abort"
-    ]
+    ],
+    "commandArity": {
+      "upload": 0,
+      "abort": 0
+    }
   },
   "wcs-upload-header": {
     "package": "upload",
@@ -1232,7 +1408,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     ],
     "commands": [
       "skip"
-    ]
+    ],
+    "commandArity": {
+      "skip": 0
+    }
   },
   "wcs-wakelock": {
     "package": "wakelock",
@@ -1254,7 +1433,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "request",
       "release"
-    ]
+    ],
+    "commandArity": {
+      "request": 0,
+      "release": 0
+    }
   },
   "wcs-ws": {
     "package": "websocket",
@@ -1288,7 +1471,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "connect",
       "sendMessage",
       "close"
-    ]
+    ],
+    "commandArity": {
+      "connect": 0,
+      "sendMessage": 1,
+      "close": 2
+    }
   },
   "wcs-worker": {
     "package": "worker",
@@ -1316,6 +1504,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "start",
       "post",
       "terminate"
-    ]
+    ],
+    "commandArity": {
+      "start": 0,
+      "post": 2,
+      "terminate": 0
+    }
   }
 } as const;

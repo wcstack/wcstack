@@ -45,7 +45,8 @@ describe('外部 state（<wcs-state src>）にもスクリプトの規則をか�
     const found = validateDocument(html, { locale: 'en', fileReader: reader({ './state.js': STATE }) });
     expect(codes(found)).toEqual(codes(inline));
     const inFile = found.filter((d) => d.origin !== undefined);
-    expect(codes(inFile)).toEqual(['wcs/array-mutation', 'wcs/command-token-unbound', 'wcs/nested-assign', 'wcs/on-handler-this', 'wcs/updated-callback-unbound']);
+    // (the `$on` entry `tick` has no `$eventTokens`: wcs/token-undeclared, in the file too)
+    expect(codes(inFile)).toEqual(['wcs/array-mutation', 'wcs/command-token-unbound', 'wcs/nested-assign', 'wcs/on-handler-this', 'wcs/token-undeclared', 'wcs/updated-callback-unbound']);
     const value = html.indexOf('./state.js');
     for (const d of inFile) {
       expect([d.start, d.end]).toEqual([value, value + './state.js'.length]);
@@ -74,7 +75,7 @@ describe('外部 state（<wcs-state src>）にもスクリプトの規則をか�
       { source: 'app/b.html', text: html, kind: 'html', fileReader },
     ], { locale: 'en' });
     const inState = result.lines.filter((l) => l.startsWith('app/state.js:'));
-    expect(inState).toHaveLength(5);
+    expect(inState).toHaveLength(6);
     const nested = STATE.indexOf('this.items[0].on');
     const { line, column } = at(STATE, nested);
     expect(inState).toContain(result.lines.find((l) => l.startsWith(`app/state.js:${line}:${column} error wcs/nested-assign `)));
@@ -82,8 +83,9 @@ describe('外部 state（<wcs-state src>）にもスクリプトの規則をか�
     for (const page of ['app/a.html', 'app/b.html']) {
       expect(result.lines.filter((l) => l.startsWith(`${page}:`)).map((l) => l.split(' ')[2])).toEqual(['wcs/submit-without-prevent', 'wcs/binding-path-missing']);
     }
-    // the file's 3 errors once (not once per page), and each page's wcs/submit-without-prevent (an error since 4.21)
-    expect(result.errorCount).toBe(5);
+    // the file's 4 errors once (not once per page — the fourth is the `$on` entry with no `$eventTokens`), and each
+    // page's wcs/submit-without-prevent (an error since 4.21)
+    expect(result.errorCount).toBe(6);
     expect(result.exitCode).toBe(1);
   });
 

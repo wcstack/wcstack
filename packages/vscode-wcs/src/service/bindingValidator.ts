@@ -29,6 +29,9 @@ import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from '.
 import { candidateKeyOf, classifyIndexParam, hasIndexSegment, hasUnsafeSegment, isIndexSegment, MAX_INDEX_PARAM, toWildcardForm } from './indexPath.js';
 import { removedFilterMessage } from './removedNames.js';
 import { booleanAttributeText } from './attributeValues.js';
+import { createContractLookup, initModifier, memberRole, type ElementContract } from './elementMembers.js';
+import { isDirectionalSyncDisabled } from './stateBehavior.js';
+import { documentDeclaresNoTokens, type TokenKey } from './tokenDeclarations.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -201,7 +204,7 @@ export function validateBindings(
   // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
   // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
   // The parts in a state the validator could not read (an unreadable volume's subtree, …) — see the verdict below
-  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader, attrName);
   const statePaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
 
   // バインド属性を全て検出
@@ -223,6 +226,16 @@ export function validateBindings(
     preventDefaultHandlers ??= collectPreventDefaultHandlers(pathIndex.elements, html, fileReader);
     return preventDefaultHandlers;
   };
+  // A token named in a binding while no state of the document declares any (no `$commandTokens` / `$eventTokens` key,
+  // in states read in full — tokenDeclarations.ts): whether the binding is one a state binds is judged after the loop
+  const absentTokenCandidates: { offset: number; start: number; end: number; message: string; severity: 'error' | 'warning' }[] = [];
+  const noTokens: Partial<Record<TokenKey, boolean>> = {};
+  const declaresNoTokens = (key: TokenKey): boolean => (noTokens[key] ??= documentDeclaresNoTokens(html, pathIndex.elements, key));
+  // the members of the document's custom elements (the built-in tags' catalog, the page's own declarations)
+  const contractOf = createContractLookup(html, fileReader);
+  // `$behavior: { enableDirectionalInitialSync: false }`: an output is not written when it is bound (dom/wc.ts)
+  let directionalOff: boolean | null = null;
+  const seedsFromElement = (): boolean => !(directionalOff ??= isDirectionalSyncDisabled(html, stateTagName, fileReader));
 
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
@@ -254,7 +267,7 @@ export function validateBindings(
 
     let pos = 0;
 
-    for (const binding of bindings) {
+    for (const [bindingIndex, binding] of bindings.entries()) {
       const bindingStart = attr.valueStart + pos;
 
       // パスとフィルタを抽出
@@ -393,6 +406,16 @@ export function validateBindings(
             message: msgs.eventTokenUndeclared(tokenName),
             severity: 'warning',
           });
+        } else if (tokenName && tokenNames.size === 0 && declaresNoTokens('$eventTokens')) {
+          // no `$eventTokens` at all: the runtime has no such token either, and logs #1301 each time the event fires
+          const pathStart = bindingStart + binding.indexOf(parsed.path!);
+          absentTokenCandidates.push({
+            offset: attr.valueStart,
+            start: pathStart,
+            end: pathStart + tokenName.length,
+            message: msgs.eventTokensAbsent(tokenName),
+            severity: 'warning',
+          });
         }
         pos += binding.length + 1;
         continue;
@@ -439,13 +462,50 @@ export function validateBindings(
               end: pathStart + tokenPath.length,
               message: msgs.commandTokenUndeclared(tokenPath),
               // ランタイムは取り付けで #1302 として throw し、root では初期化が失敗する
-              // （eventToken. と `on*: $command.x` はイベントのたびに #1301 を記録するだけなので warning のまま）
+              // （eventToken. と `on*: $command.x` はイベントのたびに #1301 / #1302 を記録するだけなので warning のまま）
+              severity: 'error',
+            });
+          } else if (commandNames.size === 0 && declaresNoTokens('$commandTokens')) {
+            // no `$commandTokens` at all: #1302 all the same — the contacts README's Quick Start as it was (stamp-rally)
+            absentTokenCandidates.push({
+              offset: attr.valueStart,
+              start: pathStart,
+              end: pathStart + tokenPath.length,
+              message: msgs.commandTokensAbsent(tokenPath, tokenPath.slice('$command.'.length)),
               severity: 'error',
             });
           }
         }
         pos += binding.length + 1;
         continue;
+      }
+
+      // `on*: $command.<name>` emits the token when the event fires. An undeclared name is not a missing path: the
+      // runtime reports `[wcs/token-undeclared]` (#1302) each time the event fires, and the page still initializes —
+      // so the runtime's code, and a warning (it was `wcs/binding-path-missing` with this text)
+      const emitsCommand = propNoMod.startsWith('on') && (parsed.path?.trim().startsWith('$command.') ?? false);
+      if (emitsCommand) {
+        const tokenPath = parsed.path!.trim();
+        const pathStart = bindingStart + binding.indexOf(parsed.path!);
+        if (commandNames.size > 0) {
+          if (!commandNames.has(tokenPath) && !isUnresolvedPath(tokenPath, pathIndex.scopes)) {
+            diagnostics.push({
+              code: WcsDiagnosticCode.TokenUndeclared,
+              start: pathStart,
+              end: pathStart + tokenPath.length,
+              message: msgs.commandTokenUndeclared(tokenPath),
+              severity: 'warning',
+            });
+          }
+        } else if (declaresNoTokens('$commandTokens')) {
+          absentTokenCandidates.push({
+            offset: attr.valueStart,
+            start: pathStart,
+            end: pathStart + tokenPath.length,
+            message: msgs.commandTokensAbsent(tokenPath, tokenPath.slice('$command.'.length)),
+            severity: 'warning',
+          });
+        }
       }
 
       if (parsed.path && scopedPaths.length > 0) {
@@ -471,7 +531,7 @@ export function validateBindings(
           const refusedByParser = hasUnsafeSegment(pathTrimmed)
             && !pathTrimmed.startsWith('$command.')
             && !(propNoMod.startsWith('on') && !pathTrimmed.includes('.'));
-          if (checkPath && !refusedByParser) {
+          if (checkPath && !refusedByParser && !emitsCommand) {
             const schema = applicationSchema;
             // `**` はオーサリング層だけの記号（$recursion 宣言・再帰 getter のキー・
             // $getAll / $setAll のパス引数）。data-wcs に書くとランタイムは PathInfo の
@@ -516,6 +576,29 @@ export function validateBindings(
                   start: pathStart,
                   end: pathStart + pathTrimmed.length,
                   message: msgs.pathReadonlyTwoWay(checkPath, propNoMod),
+                  severity: 'error',
+                });
+              }
+            } else {
+              // an output of a custom element on a getter without a setter: the element's write is refused — when it
+              // is bound (the state fails to initialize) or each time it reports a value (dom/wc.ts attachProperty)
+              const contract = contractOf(attr.tagName);
+              for (const write of contract === null ? [] : outputWrites(contract, propNoMod, parsed.property, bindings.slice(bindingIndex + 1))) {
+                const written = write.member === null ? checkPath : `${checkPath}.${write.member}`;
+                const target = scopedPaths.find((p) => p.path === written);
+                if (target === undefined || target.kind !== 'computed' || target.settable === true) continue;
+                // (the page's `$behavior` is read only now: a getter without a setter is what this is about)
+                const atInit = write.seeds && seedsFromElement();
+                if (!atInit && !write.listens) continue;
+                const pathStart = bindingStart + binding.indexOf(parsed.path);
+                diagnostics.push({
+                  code: WcsDiagnosticCode.PathReadonly,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.pathReadonlyOutput(
+                    written, attr.tagName!, write.name, atInit, write.twoWay,
+                    write.member === null ? undefined : `...: ${pathTrimmed}`,
+                  ),
                   severity: 'error',
                 });
               }
@@ -739,13 +822,19 @@ export function validateBindings(
     }
   }
 
-  if (outerCandidates.length > 0 || currentTargetCandidates.length > 0) {
+  if (outerCandidates.length > 0 || currentTargetCandidates.length > 0 || absentTokenCandidates.length > 0) {
     const contexts = analyzeElementContexts(
       html,
-      [...outerCandidates, ...currentTargetCandidates].map((c) => c.offset),
+      [...outerCandidates, ...currentTargetCandidates, ...absentTokenCandidates].map((c) => c.offset),
       attrName,
       stateTagName,
     );
+    // a token no state of the document declares, in a binding a state binds (the content of a `<template>` that only
+    // app code clones may be given a state the lint does not see)
+    for (const c of absentTokenCandidates) {
+      if (contexts.get(c.offset)?.bound !== true) continue;
+      diagnostics.push({ code: WcsDiagnosticCode.TokenUndeclared, start: c.start, end: c.end, message: c.message, severity: c.severity });
+    }
     // for / if テンプレートの行や枝が持つノードを、要素ごと置き換える束縛（#203）
     for (const c of outerCandidates) {
       if (contexts.get(c.offset)?.rowOrBranch !== true) continue;
@@ -779,6 +868,66 @@ export function validateBindings(
 // ============================================================
 // Internal helpers
 // ============================================================
+
+/** One write an element makes into the path a binding names: the member written out, or one a spread binds. */
+interface OutputWrite {
+  /** The member's name. */
+  readonly name: string;
+  /** For a spread: the member, written under the spread's path (`<path>.<member>`). Null for a member written out. */
+  readonly member: string | null;
+  /**
+   * The element writes when it is bound, so the state fails to initialize — unless the page turned
+   * `enableDirectionalInitialSync` off (the caller's to read: only a binding on a getter needs it).
+   */
+  readonly seeds: boolean;
+  /** The element writes each time it reports a value (no `#ro`). */
+  readonly listens: boolean;
+  /** The member is an input too (`#ro` makes its binding one-way); otherwise it is output-only. */
+  readonly twoWay: boolean;
+}
+
+/**
+ * The writes a custom element makes through one binding, as the runtime wires it (state's dom/wc.ts `attachProperty`
+ * — checked against the runtime, __tests__/stampRallyLint.test.ts):
+ *   - an output-only member (in `properties`, not in `inputs`) is written when it is bound — unless `#init=none`, or
+ *     the page turned `enableDirectionalInitialSync` off — and each time its event fires, unless `#ro`
+ *   - a two-way member (in both) is written each time its event fires, unless `#ro`, and when it is bound only with
+ *     `#init=element` (`#init=auto` writes when the state's value is undefined, which cannot be known here)
+ *   - an input-only member is never written by its element; an event binding, `class.` / `attr.` / `style.` and a
+ *     member the element does not declare are not member bindings
+ * A spread binds every declared member but one bound explicitly after it (`later`, the bindings that follow), with
+ * no modifiers. `property` is the left side without modifiers, `written` as written. A binding through which the
+ * element writes nothing (`#ro,init=none`, a two-way member's `#ro`) gives no write.
+ */
+function outputWrites(
+  contract: ElementContract,
+  property: string,
+  written: string,
+  later: readonly string[],
+): OutputWrite[] {
+  if (property === '...') {
+    const explicit = new Set(later.map((b) => parseBindingExpression(b).property.replace(/#.*$/, '').trim().replace(/^\./, '')));
+    return contract.properties
+      .filter((name) => !explicit.has(name))
+      .map((name) => {
+        const twoWay = memberRole(contract, name) === 'two-way';
+        return { name, member: name, seeds: !twoWay, listens: true, twoWay };
+      });
+  }
+  const explicitForm = property.startsWith('.');
+  const name = explicitForm ? property.slice(1) : property;
+  // (`once:` without the dot is an event binding — wcs/on-prefixed-member; a dotted name is a namespace)
+  if (name.includes('.') || (!explicitForm && /^on\w/.test(name))) return [];
+  const role = memberRole(contract, name);
+  if (role === null || role === 'input') return [];
+  const modifiers = modifiersOf(written);
+  const init = initModifier(modifiers);
+  // (`#init=state` / `#init=auto` on an output-only member: the runtime refuses the binding for that, not for the path)
+  if (role === 'output' && (init === 'state' || init === 'auto')) return [];
+  const seeds = role === 'output' ? init === null || init === 'element' : init === 'element';
+  const listens = !modifiers.includes('ro');
+  return seeds || listens ? [{ name, member: null, seeds, listens, twoWay: role === 'two-way' }] : [];
+}
 
 /** The start tag holding the attribute value at `valueStart` (from its `<` to the value). */
 function openTagBefore(html: string, valueStart: number): string {

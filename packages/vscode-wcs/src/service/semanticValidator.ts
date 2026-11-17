@@ -622,7 +622,7 @@ function validateGetterAmbientReads(script: string, scriptStart: number, locale?
  * `$on` のハンドラが state を受ける第 1 引数の名前（`cardEvent(state, event) { … }` の `state`）。メソッド記法なら
  * 本体の前の引数リストから、値（function 式・アロー関数）ならその先頭から読む。読めなければ null。
  */
-function onHandlerStateParam(script: string, handler: WatchHandlerSource): string | null {
+export function onHandlerStateParam(script: string, handler: WatchHandlerSource): string | null {
   if (handler.kind === 'body') {
     const head = script.slice(Math.max(0, handler.start - 400), handler.start);
     return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;

@@ -154,11 +154,24 @@ function isDefine(callee: AnyNode): boolean {
     || (o.type === 'MemberExpression' && keyName(o.property as AnyNode, o.computed) === 'customElements');
 }
 
+/** The last document read: several validators ask for the same page's contracts in one run (the scripts are parsed once). */
+let lastRead: { html: string; fileReader: FileReader | undefined; contracts: ReadonlyMap<string, PageElementContract> } | null = null;
+
 /**
  * The contracts of the custom elements the page defines, by tag. Only elements whose contract is certain are in
  * it (see the module comment). `wcs-*` tags are the catalog's and are left out.
+ *
+ * The answer for the last document is kept — the same text read through the same reader — as the validators of one
+ * run each ask for it (a run makes its own reader, so a file changed between two runs is read again).
  */
-export function collectPageElementContracts(html: string, fileReader?: FileReader): Map<string, PageElementContract> {
+export function collectPageElementContracts(html: string, fileReader?: FileReader): ReadonlyMap<string, PageElementContract> {
+  if (lastRead !== null && lastRead.fileReader === fileReader && lastRead.html === html) return lastRead.contracts;
+  const contracts = readPageElementContracts(html, fileReader);
+  lastRead = { html, fileReader, contracts };
+  return contracts;
+}
+
+function readPageElementContracts(html: string, fileReader?: FileReader): Map<string, PageElementContract> {
   const { inline, srcs } = pageScripts(html);
   const programs: AnyNode[] = [];
   const read = new Set<string>();

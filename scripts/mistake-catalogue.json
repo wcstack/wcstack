@@ -456,7 +456,7 @@
       "lint": [{ "code": "wcs/token-undeclared", "severity": "varies" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Uses a command or event token the state does not declare.", "ja": "state が宣言しないコマンドかイベントのトークンを使う。" },
-      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires (the lint: warning). In a script, `this.$command.x` of an undeclared name is `undefined`: `.emit()` throws a TypeError that names nothing (the lint: error).", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。" },
+      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` logs `#1301` and `onclick: $command.x` logs `#1302` each time the event fires (the lint: warning). In a script, `this.$command.x` of an undeclared name is `undefined`: `.emit()` throws a TypeError that names nothing (the lint: error). A `$on` entry that is not in `$eventTokens` fails the state when it loads (the lint: error, since 4.25). Since 4.25 the lint reports all of these also when the state has no `$commandTokens` / `$eventTokens` key at all; before, it said nothing there.", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。イベントのたびに、`eventToken.` は `#1301` を、`onclick: $command.x` は `#1302` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。`$eventTokens` に無い `$on` の項目は、state の読み込みを失敗させる（lint は error、4.25 から）。4.25 から、lint は、state に `$commandTokens` / `$eventTokens` のキーがそもそも無いときにも、これらをすべて報告する。以前は、そこでは何も言わなかった。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-undeclared\"" }]
     },
     {
@@ -1650,6 +1650,42 @@
       "effect": { "en": "A keyed row is kept while its key is, so the first argument stays the record the row was built with: after a bulk change the notice says it was done and the row still shows the old value, until the row leaves the window and comes back.", "ja": "キー付きの行はキーがある間は保たれるので、最初の引数は行を作ったときのレコードのまま: 一括変更の後、完了の知らせは出るのに行は古い値を見せ続ける。行が窓から出て戻るまで。" },
       "disposition": "docs-only",
       "note": { "en": "Found by the town-archive seam app (docs/seam-apps.md). Confirmed from the candidates list. Read through `current()` (the signals README, Keyed lists).", "ja": "継ぎ目アプリ town-archive が見つけた（docs/seam-apps.ja.md）。 候補の一覧から確認した。`current()` 越しに読む（signals の README、Keyed lists）。" }
+    },
+    {
+      "id": "command-event-argument",
+      "lint": [{ "code": "wcs/command-event-argument", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Wires `on…: $command.x` straight to a command that takes data (`<button data-wcs=\"onclick: $command.share\">` with `command.share: $command.share` on `<wcs-share>`; likewise `lock`, `select`, `get`, `sendMessage`, `speak`).", "ja": "データを受け取るコマンドに、`on…: $command.x` を直結する（`<wcs-share>` の `command.share: $command.share` に `<button data-wcs=\"onclick: $command.share\">`。`lock`・`select`・`get`・`sendMessage`・`speak` も同じ）。" },
+      "effect": { "en": "An `on…:` binding emits `(event, ...listIndexes)`, so the command gets the DOM event as its data: the share sheet, the orientation lock or the contact picker never opens and only `error` holds the browser's `TypeError`; `<wcs-credential>`'s `get(event)` resolves `null` with no error at all.", "ja": "`on…:` の束縛は `(event, ...listIndexes)` を出すので、コマンドは DOM のイベントをデータとして受け取る: 共有シートも向きの固定も連絡先ピッカーも開かず、ブラウザの `TypeError` が `error` に入るだけ。`<wcs-credential>` の `get(event)` は、エラーも無く `null` で解決する。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Emit from a state method with the data. Four commands ignore a non-data first argument and may be wired straight: `<wcs-fetch>`'s `fetch`, and since 4.25 `<wcs-ws>`'s `close`, `<wcs-idle>`'s `start`, `<wcs-notify>`'s `close`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 state のメソッドから、データを付けて出す。4 つのコマンドは、データでない最初の引数を無視するので直結できる: `<wcs-fetch>` の `fetch`、4.25 からは `<wcs-ws>` の `close`・`<wcs-idle>` の `start`・`<wcs-notify>` の `close`。" }
+    },
+    {
+      "id": "frequency-invalid",
+      "lint": [{ "code": "wcs/frequency-invalid", "severity": "warning" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Writes a sensor's `frequency` that is not a positive number (`<wcs-accelerometer frequency=\"60hz\">`, `frequency=\"0\"`).", "ja": "センサーの `frequency` に、正の数でない値を書く（`<wcs-accelerometer frequency=\"60hz\">`、`frequency=\"0\"`）。" },
+      "effect": { "en": "The sensor runs at the browser's default rate (about 10 a second), with no error: steps are still counted, a shake may be missed.", "ja": "センサーは、エラーも無く、ブラウザの既定の頻度（毎秒 10 回ほど）で動く: 歩数は数えられるが、振る動きは取りこぼしうる。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Write the number alone: `frequency=\"60\"`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 数だけを書く: `frequency=\"60\"`。" }
+    },
+    {
+      "id": "output-path-written",
+      "lint": [{ "code": "wcs/output-path-written", "severity": "warning" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Assigns `true` to the path an element's output is bound to, expecting the element to act (`this.isFullscreen = true` with `active: isFullscreen` on `<wcs-fullscreen>`).", "ja": "要素の出力に束ねたパスへ `true` を代入し、要素が動くことを期待する（`<wcs-fullscreen>` の `active: isFullscreen` に対して `this.isFullscreen = true`）。" },
+      "effect": { "en": "An output is what the element reports: a write from a script does not reach it. Nothing fills the screen, and everything that reads the flag now says it did — the button says 閉じる, the orientation lock is asked for.", "ja": "出力は要素が報告するもので、スクリプトからの書き込みは要素に届かない。画面は全画面にならず、そのフラグを読むものはすべて「なった」と言う — ボタンは「閉じる」になり、向きの固定が頼まれる。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Ask the element with its command (`command.requestFullscreen: $command.x`, `this.$command.x.emit()`), and let it write the path.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 要素にはコマンドで頼み（`command.requestFullscreen: $command.x`、`this.$command.x.emit()`）、パスは要素に書かせる。" }
+    },
+    {
+      "id": "target-selector",
+      "lint": [{ "code": "wcs/target-selector", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes an id's name where a selector is wanted (`<wcs-fullscreen target=\"viewer\">` for `<div id=\"viewer\">`), on `<wcs-fullscreen>`, `<wcs-pip>`, `<wcs-pointer-lock>`, `<wcs-intersect>`, `<wcs-resize>`.", "ja": "セレクタを書く所に id の名前を書く（`<div id=\"viewer\">` に対して `<wcs-fullscreen target=\"viewer\">`）。`<wcs-fullscreen>`・`<wcs-pip>`・`<wcs-pointer-lock>`・`<wcs-intersect>`・`<wcs-resize>`。" },
+      "effect": { "en": "`target=\"viewer\"` selects `<viewer>` elements, of which there are none: the button does nothing, and only `error` says `Fullscreen target could not be resolved.`", "ja": "`target=\"viewer\"` は `<viewer>` 要素を選ぶが、そういう要素は無い: ボタンは何もせず、`error` だけが `Fullscreen target could not be resolved.` と言う。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Write `target=\"#viewer\"`.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 `target=\"#viewer\"` と書く。" }
     }
   ],
   "uncounted": [

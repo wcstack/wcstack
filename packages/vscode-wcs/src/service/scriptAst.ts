@@ -85,6 +85,11 @@ export interface GetterRead {
    * 書かれたままのパス（`.name`）。`path`・`chain` の先頭・`indexed` は展開後。
    */
   readonly relative?: string;
+  /**
+   * 単純代入（`form: 'write'`）の右辺がリテラルの `true` のとき true（`this.viewerFs = true`）。出力だけに束ねたパスへの
+   * 「要素に頼んだつもり」の書き込みを見分ける（`wcs/output-path-written`）。
+   */
+  readonly assignsTrue?: true;
   readonly start: number;
   readonly end: number;
 }
@@ -110,6 +115,12 @@ export interface CollectOptions {
    * 書かれたまま（`.name`）で集まる — 先頭が空のセグメントなので、存在の検査は従来どおり読み飛ばす。
    */
   readonly row?: string | null;
+  /**
+   * 本体が `$on` のハンドラのもの: state は第 1 引数（この名前）で渡され、`this` は state ではない（ランタイムは
+   * `handler(state, event, …)` と呼ぶ）。その名前を通した読み書きを集める（`state.count = 1`）。本体の中で同じ名前を
+   * 束縛し直していれば、従来の別名の規則どおり黙る。
+   */
+  readonly stateParam?: string;
 }
 
 const PREFIX = '(async function* () {\n';
@@ -141,10 +152,11 @@ export function collectGetterReads(body: string, options: CollectOptions = {}): 
   const fn = unwrapWrapper(program);
   if (fn === null) return null;
   const out: GetterRead[] = [];
-  const root: Scope = { thisIsState: true, aliases: new Set(), nested: false };
+  const thisIsState = options.stateParam === undefined;
+  const root: Scope = { thisIsState, aliases: new Set(thisIsState ? [] : [options.stateParam!]), nested: false };
   collecting = options;
   try {
-    visit(fn.body, enterFunction(fn, root, true, false), out);
+    visit(fn.body, enterFunction(fn, root, thisIsState, false), out);
   } finally {
     collecting = {};
   }
@@ -378,6 +390,8 @@ interface EmitOptions {
   readonly form: GetterRead['form'];
   readonly callee: boolean;
   readonly written: boolean;
+  /** 単純代入の右辺がリテラルの `true`（GetterRead.assignsTrue）。 */
+  readonly assignsTrue?: boolean;
 }
 
 function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOptions, start: number, end: number, scope: Scope): void {
@@ -398,6 +412,7 @@ function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOpti
     path: root, chain, form: options.form, callee: options.callee, written: options.written,
     ...(lists !== undefined ? { indexed: lists } : {}),
     ...(scope.nested ? { nested: true as const } : {}),
+    ...(options.assignsTrue === true ? { assignsTrue: true as const } : {}),
     start: start - PREFIX.length, end: end - PREFIX.length,
   });
 }
@@ -440,7 +455,7 @@ function visit(node: AnyNode, scope: Scope, out: GetterRead[]): void {
     case 'AssignmentExpression':
       // `self = this` は enterFunction が解決済み（値として使った this ではない）
       if (node.operator === '=' && node.left.type === 'Identifier' && isThisRoot(node.right, scope)) return;
-      if (node.operator === '=') visitWriteTarget(node.left, scope, out);
+      if (node.operator === '=') visitWriteTarget(node.left, scope, out, node.right.type === 'Literal' && node.right.value === true);
       else visitReadWriteTarget(node.left, scope, out);
       visit(node.right, scope, out);
       return;
@@ -521,7 +536,7 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
  * 単純代入の左辺。`this` ルートのチェーンは読みではないので集めない（動的添字の式だけ走査）。
  * `CollectOptions.writes` のときは書き込み（`form: 'write'`）として集める。
  */
-function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: GetterRead[]): void {
+function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: GetterRead[], assignsTrue = false): void {
   const unwrapped = unwrapChain(target);
   if (unwrapped.type !== 'MemberExpression') {
     visit(unwrapped, scope, out);
@@ -529,7 +544,7 @@ function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: Gette
   }
   const { segments, base } = resolveChain(unwrapped);
   if (!isThisRoot(base, scope)) visit(base, scope, out);
-  else if (collecting.writes) emit(out, segments, { form: 'write', callee: false, written: false }, unwrapped.start, unwrapped.end, scope);
+  else if (collecting.writes) emit(out, segments, { form: 'write', callee: false, written: false, assignsTrue }, unwrapped.start, unwrapped.end, scope);
   for (const segment of segments) {
     if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }

@@ -22,9 +22,11 @@ describe('wcs/token-undeclared — スクリプトの $command.<名前> を $com
     expect(found[0].message).toContain('Did you mean "listMove"?');
   });
 
-  it('宣言した名前・$commandTokens が読めない（無い）state・コメントと文字列の中は黙る', () => {
+  it('宣言した名前・$commandTokens が読めない state・コメントと文字列の中は黙る', () => {
     expect(find(page(`$commandTokens: ["a"],\n  go() { this.$command.a.emit(); },`, `<i data-wcs="command.focus: $command.a"></i>`), WcsDiagnosticCode.TokenUndeclared)).toEqual([]);
-    expect(find(page(`go() { this.$command.a.emit(); },`), WcsDiagnosticCode.TokenUndeclared)).toEqual([]);
+    // リストがリテラルでない・トップレベルの spread が持ち込みうる: 名前は分からない
+    expect(find(page(`$commandTokens: TOKENS,\n  go() { this.$command.a.emit(); },`), WcsDiagnosticCode.TokenUndeclared)).toEqual([]);
+    expect(find(page(`...tokens,\n  go() { this.$command.a.emit(); },`), WcsDiagnosticCode.TokenUndeclared)).toEqual([]);
     expect(find(page(`$commandTokens: ["a"],\n  go() { /* this.$command.b */ const s = "this.$command.c"; this.$command.a.emit(); },`, `<i data-wcs="command.focus: $command.a"></i>`), WcsDiagnosticCode.TokenUndeclared)).toEqual([]);
   });
 });

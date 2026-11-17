@@ -2,6 +2,20 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+継ぎ目アプリ stamp-rally（画面とセンサーの API のスタンプラリー — 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止）が見つけた lint の穴を直した。作者がわざとした 20 の間違いに、lint は 1 つも報告しなかった。著者が lint の検査にすると決めた 7 つ:
+
+- `wcs/path-readonly`: カスタム要素が書くメンバー（`wcBindable.properties` のメンバー）を、setter の無い getter に束ねた形も報告する（error）— `<wcs-wakelock data-wcs="held: keepAwake">` と `get keepAwake()`。出力だけのメンバーは束ねた時点で要素の値を書くので、ランタイムはページごと初期化を拒む。lint は 0 件だった。判定はランタイム（state の `attachProperty`）と同じ: 出力だけのメンバーは `#ro` でも束ねた時点で書かれ、`#init=none` ならイベントのたび、`#ro,init=none` だけが何も書かない。入力でもあるメンバー（`<wcs-storage>` の `value`・`trigger`）はイベントのたび（`#ro` なら書かない）と `#init=element` の束ねた時点。spread が束ねるメンバーも同じ。組み込みの `wcs-*` タグと、ページがリテラルの `static wcBindable` で定義する要素が対象。
+- `wcs/token-undeclared`: state に `$commandTokens` / `$eventTokens` **そのものが無い**ときも報告する — `command.<method>: $command.x`（error）・スクリプトの `this.$command.x`（error）・`on*: $command.x` と `eventToken.<member>: name`（warning）。宣言したリストに名前が無いときだけ報告していて、トークンが 1 つも無い state（contacts の README の Quick Start を写したページ）では黙っていた。「無い」と言うのは宣言を全部読める state だけ（トップレベルに spread の無い `export default { … }` か JSON で、キーが無いか空のリスト）。`$eventTokens` に無い `$on` のエントリも報告する（error — ランタイムは state の読み込みを拒む）。
+- `wcs/token-undeclared`: 未宣言の `on*: $command.x` を、`wcs/binding-path-missing` ではなくこの code で報告する（warning のまま — ランタイムはイベントのたびに `[wcs/token-undeclared]` を報告し、初期化は通る）。
+- `wcs/command-event-argument`（新規、warning）: `on*: $command.x` を、引数を取る組み込みタグのコマンドに直結した。トークンは `(event, ...添字)` で emit され、`<wcs-screen-orientation>` の `lock(event)`・`<wcs-share>` の `share(event)` はブラウザの TypeError が `error` に出るだけ、`<wcs-credential>` の `get(event)` は何も言わず `null` になる。state のメソッドから emit する形を言う。組み込みタグの目録が、各コマンドのメソッドの宣言引数の数（`commandArity`）を持つようになった。引数の無いコマンド・ネイティブ要素のコマンドと、受け取る種類でない第 1 引数を無視する 4 つのコマンド — `<wcs-fetch>` の `fetch`・`<wcs-ws>` の `close`・`<wcs-idle>` の `start`・`<wcs-notify>` の `close` — には出さない。
+- `wcs/frequency-invalid`（新規、warning）: センサーのタグ（`<wcs-accelerometer>` / `<wcs-gyroscope>` / `<wcs-magnetometer>` / `<wcs-ambient-light-sensor>`）の、正の数値でないリテラルの `frequency`（`"60hz"`・`"0"`・`"-5"`）。要素はそれを「指定なし」として読み、センサーは既定の頻度で黙って動く。
+- `wcs/output-path-written`（新規、warning）: 出力に束ねたパスへ、スクリプトがリテラルの `true` を代入する（`<wcs-fullscreen data-wcs="active: viewerFs">` と `this.viewerFs = true`）。代入は要素に届かず、その値を表示する束縛（`class.fullscreen: viewerFs`）だけが変わる — ページが、要素のしていないことを言う。わざと狭い: `true` の代入だけ。state の値を自分のものとして受け取る束縛 — カスタム要素の入力・双方向のメンバー、ネイティブ要素の双方向の束縛（`checked: flag`）、宣言を読めないカスタム要素のメンバー — にも束ねたパスと、アクセサのあるパスには言わない。
+- `wcs/target-selector`（新規、warning）: `target` を CSS セレクタとして読むタグ（`<wcs-fullscreen>` / `<wcs-pip>` / `<wcs-pointer-lock>` / `<wcs-intersect>` / `<wcs-resize>`）の、裸の語の `target`（`target="viewer"`）。文書にその id の要素があり、そのタグ名の要素が無いとき — `#viewer` のつもり。
+- `wcs/input-nested-write`: 文面の直し方を、`wcs/path-readonly` にならない形で言う — setter を添えたアクセサペア（`value#init=element: <getter>`）か、保存した値を戻さないなら一方向の `value#ro: <getter>`。「getter を束ねる」とだけ言っていて、そのとおりに setter も `#ro` も無い getter を束ねると、要素が知らせる値（別のタブでのキーの変更）の書き戻しが拒まれた。報告する条件は変えていない。
+- 出力だけのメンバーが書くスロットの下のパスを「存在しない」と言わない。`picked: null` と `<wcs-contacts data-wcs="value: picked">` の `picked.0.name.0`（contacts の README の例そのもの）、`<wcs-fetch>` の `value:` や spread が書く `<パス>.value` の下が、1 件ずつ偽の `wcs/binding-path-missing` になっていた。値を読めないキーと同じく、その下を束ねていればスロットのキーの上に `wcs/path-dynamic-unknown`（info）を 1 回出す。キーに JSDoc の `@type` があれば、その形で検査する。リポジトリの例のページでは、13 件の warning が 4 件の info になる。
+
 ## 2.19.0 — 2026-11-15
 
 `@wcstack/state` 4.24.0 から作った（npm の `@wcstack/lint` 4.24.0・`@wcstack/typescript` 4.24.0 と同じ判定）。継ぎ目アプリ town-archive（写真 12,000 点のアーカイブ — 無限スクロールの長い一覧と、職員の表）が見つけた lint の穴を直した。作者がわざとした 25 の間違いに、lint は 1 つも報告しなかった。

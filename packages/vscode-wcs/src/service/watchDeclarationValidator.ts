@@ -28,7 +28,7 @@ import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type PathCa
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
 import { toWildcardForm } from './indexPath.js';
 import {
-  isUnresolvedPath, moduleLocationOf, opaquePathsOf, resolveStatePathIndex, scriptReadable, type FileReader, type StatePathIndex, type StatePathScopes,
+  isUnresolvedPath, moduleLocationOf, opaquePathsOf, openOutputSlots, resolveStatePathIndex, scriptReadable, type FileReader, type StatePathIndex, type StatePathScopes,
 } from './statePathResolver.js';
 
 /** 他 state を指す区切り（@wcstack/state define.ts の STATE_NAME_SEPARATOR）。 */
@@ -51,6 +51,7 @@ export function validateWatchDeclarations(
   stateTagName: string = 'wcs-state',
   locale?: string,
   fileReader?: FileReader,
+  bindAttribute?: string,
 ): WcsDiagnostic[] {
   const msgs = getMessages(locale);
   const out: WcsDiagnostic[] = [];
@@ -101,11 +102,15 @@ export function validateWatchDeclarations(
       }
       const paths = volumes !== null && volumes.volumePaths.length > 0 ? [...own, ...volumes.volumePaths] : own;
       const pathSet = new Set(paths.map(p => p.path));
+      const opaque = [...opaquePathsOf(own), ...(volumes?.scopes.opaquePaths ?? [])];
       const scopes: StatePathScopes = {
         mounts: volumes?.scopes.mounts ?? [],
         unresolvedMounts: volumes?.scopes.unresolvedMounts ?? NO_MOUNTS,
         rootUnresolved: !scriptReadable(block.content, own),
-        opaquePaths: [...opaquePathsOf(own), ...(volumes?.scopes.opaquePaths ?? [])],
+        // (with the bind attribute: a slot an element's output writes — a key under it names what the element gives)
+        opaquePaths: bindAttribute === undefined
+          ? opaque
+          : [...opaque, ...openOutputSlots(html, bindAttribute, fileReader, paths, opaque).map((slot) => slot.path)],
       };
 
       for (const entry of entries) {
