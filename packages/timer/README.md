@@ -127,7 +127,7 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 | --------- | ----------------------------------------------------------------------- |
 | `start`   | Begin ticking (no-op if already running).                               |
 | `stop`    | Stop ticking; `tick` / `elapsed` are retained.                          |
-| `reset`   | Stop and reset `tick` / `elapsed` to `0`.                               |
+| `reset`   | Stop and reset `tick` / `elapsed` to `0`. The change is published: `wcs-timer:tick` is dispatched with `{ count: 0, elapsed: 0 }`, so an `eventToken.tick` handler runs for a reset too — test `event.detail.count > 0` where only a real tick should act. |
 | `pause`   | Suspend ticking, preserving the partial period and elapsed time.        |
 | `resume`  | Continue from a `pause`, honoring the remaining time of the period.     |
 
