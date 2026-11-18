@@ -157,9 +157,11 @@ export default { never: true };`,
     expect(bare.resolveName('t')).toBeNull();
   });
 
-  it('パースできないモジュール（TypeScript の型注釈）では何も辿らないこと', () => {
+  it('TypeScript のモジュールは型を消して辿り、パースできないモジュールでは何も辿らないこと（4.26、lending-desk）', () => {
     const ts = new ModuleScope('const A: { a: number } = { a: 1 };\nexport default { A };', undefined);
-    expect(ts.resolveName('A')).toBeNull();
+    expect(ts.resolveName('A')?.text).toBe('{ a: 1 }');
+    const broken = new ModuleScope('const A = { a: 1 ;\nexport default { A };', undefined);
+    expect(broken.resolveName('A')).toBeNull();
   });
 });
 

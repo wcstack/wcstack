@@ -17,13 +17,14 @@
  *   - a JSDoc `@type {typeof import("./en.js").default}` before the declaration names the value it stands for: the way
  *     to give a computed dictionary (`mergeAndFreeze(fallback, current)`) the full catalog's shape.
  * What it cannot follow — a call or another computed expression, a `let` / `var`, a namespace import itself, a bare specifier
- * or a URL, a module it cannot read or parse (TypeScript) — is null, and the caller treats the key's contents as
+ * or a URL, a module it cannot read or parse (TypeScript is read with its types erased — typeErasure.ts) — is null, and the caller treats the key's contents as
  * unknown (statePathResolver's opaque paths): nothing under it is reported missing.
  *
  * pure (acorn; the files come through the reader).
  */
 
-import { parse, type AnyNode } from 'acorn';
+import type { AnyNode } from 'acorn';
+import { parseErasingTypes } from './typeErasure.js';
 import { readJsDocTypeBefore } from './jsdocType.js';
 
 /** Reads a file by the path the page's reader takes (relative to the page). undefined when it cannot. */
@@ -61,7 +62,7 @@ function parseModule(text: string): AnyNode | null {
   if (programs.has(text)) return programs.get(text) as AnyNode | null;
   let program: AnyNode | null;
   try {
-    program = parse(text, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true, allowAwaitOutsideFunction: true });
+    program = parseErasingTypes(text, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true, allowAwaitOutsideFunction: true });
   } catch {
     program = null;
   }

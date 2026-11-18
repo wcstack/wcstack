@@ -95,6 +95,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 ```
 
 - **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
+- **schema を当てるページ**（4.26（未リリース）から）: schema を作った state のファイルを記した manifest — `wcstack.application.stateSource`、manifest からの相対で、`wcs-schema emit` が書きます — は、そのファイルを root の `<wcs-state src>` で読むページだけの契約です（同じパスの `.js` と `.ts`、`.mjs` と `.mts` は同じファイル）。state がインラインのページや別のファイルのページは、発見した manifest でも引数に渡した manifest でも、manifest が無いものとして検査します。4.25 までは、アプリの schema をその下のすべてのページに当てていたので、アプリの隣で自前のインラインの state を持つページの正しいパスが `wcs/path-nonexistent` の error になっていました。`stateSource` の無い manifest（手書き・それより前の `wcs-schema` が作ったもの）は、これまでどおりすべてのページに当てます。
 - **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
 - **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state も検査できません。4.7 から、それを属性の上で 1 回だけ言います（`wcs/state-src-unread`、info）。4.6 までは何も言いませんでした。`src` はページからの相対パスで読むので、ファイルはサーバーと同じ並びに置き、/ から始まるパスには 4.10 から `--root=<dir>` を渡してください。
 - **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイル（または JSDoc で型を付けた JavaScript のファイル）から `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
@@ -157,6 +158,22 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 - **`wcs/input-nested-write`** は、代わりに束ねる形を言います: アクセサペア（`value#init=element: <getter>`）か、一方向の `value#ro: <getter>`。setter も `#ro` も無い getter は保存はしますが、要素が知らせる値の書き戻しを拒まれます。
 
 広がった `wcs/path-readonly` と `wcs/token-undeclared` の error は `--errors-only` にも出ます。新しい 4 つの warning は `--strict` で失敗します。
+
+## TypeScript で書くチームに言うこと
+
+4.26（未リリース）から、継ぎ目アプリ lending-desk — TypeScript で書くチームの備品の貸出窓口: `.ts` の state、生成した `stateSchema`、`.ts` のモジュールで定義する要素、1 つの共有ファイルに置いた API の型。そのページは、比較の綴り違いのステータス、ステッパーに無いメンバーへの束縛、読むものの半分しか追跡しない getter、manifest には残っている 3 つの改名したキーなどを抱えたまま、この lint を 0 error・0 warning で通っていました。そこへ行き着くために、ハンドラの戻りの型も外していました。いま言うこと:
+
+- **`.ts` の state の戻りの型を読みます。** `get total(): number {`・`submit(e: Event): void {`・`$watch` の `count(cur: number): void {` — オブジェクト型・合併・`Promise<…>`・型引数・型述語も — でメンバーが隠れなくなりました。4.25 までは、そのメンバーを読まず: ページに束ねた getter やメソッドは `wcs/binding-path-missing`（`stateSchema` があれば `wcs/path-nonexistent` — メソッドは schema に無い）、ハンドラの引数の `cur:` は `$watch` のキー（`wcs/watch-path-missing "cur"`）になり、スクリプトの規則（`wcs/getter-untracked-read`・`wcs/nested-assign`・`wcs/array-mutation` …）は型付きの getter を飛ばしていました。TypeScript の構文のある本体（`x as T`・`y!`・型付きの局所変数）・state が import する `.ts` のモジュール・ページの `.ts` のモジュールは、Node の `module.stripTypeScriptTypes` で型を消して読みます（Node 22.13 以降。それより古い Node では従来どおり検査しません）。パッケージは足していません: `@wcstack/lint` は依存ゼロのままです。
+- **`wcs/tag-member-unknown` は TypeScript で定義した要素も読みます。** `<script type="module" src="./main.ts">` とそれが import する `.ts`（`./x.js` の import は `.js` が無ければ `./x.ts`、拡張子の無い import は `./x.ts` → `./x.js`）: `static wcBindable = { … } as const satisfies Decl` もリテラルです。4.25 までは `.js` / `.mjs` のモジュールだけを読んでいたので、`max` を宣言するステッパーへの `maximum:` が通り、ステッパーは上限を持ちませんでした。
+- **`wcs/filter-arg-enum`**（warning） — 比べる値が決して取らないリテラルを引数にした比較のフィルタ（`eq` / `ne`）: 型が `"pending" | "approved" | "denied"` のときの `class.st-approved: .status|eq('aproved')`（`stateSchema` の `enum` / `const` / `anyOf` の const、JSDoc のリテラルの合併 — `@typedef` や import した型を通しても）。`eq` は決して真にならず（`ne` はいつも真）、バッジの色は黙って出ません。取りうる値と綴りの近い値を挙げます。パスに最初にかけたフィルタだけを見ます。
+- **`wcs/filter-input-type` は、持っている型を使います。** 行のパス（`for: rows` の中の `.label|toFixed(0)`）は、展開した行のフィールドの型 — リテラルの行・JSDoc の型・`stateSchema`（getter も: schema が string と言う `.depositLabel|toFixed(0)`）— で読みます。日付のフィルタ（`date`・`time`・`datetime`・`ymd`・`hms`）はランタイムと同じく `Date` だけを受けます（null 以外はランタイムが throw する）: ISO の文字列への `.at|date` を報告します。4.25 までは、リテラルの種を持つ書き切ったパスだけを検査していました。
+- **別モジュールの JSDoc の型を読みます。** `/** @type {import("./api.ts").Reservation[]} */`・getter の `@returns {import("./api.ts").Reservation[]}`・`@typedef {import("./api").Reservation} Reservation`: 型をそのファイル — `.ts` / `.d.ts` の `interface` と `type`、`.js` の `@typedef` — から読み、その下に束ねた行を検査します。読めない型（ファイルが無い・名前が無い）のキーの下は検査せず、1 回だけそう言います（`wcs/path-dynamic-unknown`、info）— 分からないのであって、無いのではありません。4.25 までは、そのリストの下に束ねたフィールドが 1 件ずつ偽の `wcs/binding-path-missing` でした。
+- **`[]` に落ちる getter の行を「無い」と言いません。** `get pickups() { return this.counter ? this.counter.pickups : []; }`（`X ?? []`・`X || []`・早い `return []` も）で `X` の形が分からないとき、行は分からないものとし、getter の上で 1 回言います（`wcs/path-dynamic-unknown`）。4.25 までは `[]` が行のフィールドをすべて `wcs/binding-path-missing` にしていました。行の分かるリスト（`this.items ?? []`）はこれまでどおり検査します。
+- **`wcs/watch-path-missing` は `stateSchema` を見ます。** 束縛と同じく、schema が持つキーは報告せず、確かに持たないキーだけを報告します。
+- **`wcs/drift-state-key`**（warning） — このページに当てた `stateSchema` と root の state のスクリプトの、トップレベルのキーの食い違い: `.ts` で `get displayName()` に名前を変え、manifest にはまだ `headerName` がある。古い schema はスクリプトに勝ち — 古い名前に残った束縛が通り（0 error・0 warning）、その後に足したキーは `wcs/path-nonexistent` でした。`<wcs-state>` の開始タグの上で 1 回、両側のキーを挙げ、作り直しの `wcs-schema emit` を案内します — CI ではこの lint の前に `wcs-schema check` を走らせてください。両側が分かるときだけ: 読み切れる root の state のスクリプト（トップレベルの spread・計算したキー・`$stream` / `$scan` が無い）と schema のトップレベルの properties。ボリュームのマウントの根は数えません。
+- **schema はその state のページに当てます** — 上の「schema を当てるページ」。
+
+`--errors-only` には TypeScript で新たに見つかる error（`.ts` のモジュールで定義した要素の `wcs/tag-member-unknown`・型付きの getter の `wcs/getter-untracked-read` …）が出ます。`--strict` は新しい 2 つの warning と、広がった `wcs/filter-input-type` でも失敗します。
 
 ## 生成 → 検証 → 修正ループでの利用
 

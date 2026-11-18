@@ -141,6 +141,8 @@ export function validateScriptReads(
           end: block.contentStart + span.end,
           message: candidate.opaque?.spread !== undefined
             ? msgs.pathDynamicUnknownObjectSpread(path, count, candidate.opaque.spread, candidate.opaque.from)
+            : candidate.opaque?.type !== undefined
+            ? msgs.pathDynamicUnknownType(path, count, candidate.opaque.type)
             : msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
           severity: 'info',
         });

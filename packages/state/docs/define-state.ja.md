@@ -63,19 +63,23 @@ export default defineState({
 
 ブラウザでは bare specifier に import map のエントリが必要です — たとえば `"@wcstack/state/define": "https://cdn.jsdelivr.net/npm/@wcstack/state@4/dist/define.js"`（jsDelivr の `/npm/` パスは `exports` を読まないので、ファイル名まで書きます）。
 
+インラインスクリプトは JavaScript です — ブラウザは JavaScript として実行します。4.26（未リリース）から、`wcs-tsc` と VS Code 拡張も JavaScript として検査します: JSDoc の型が効き（`/** @type {Reservation[]} */ pickups: []`、`/** @param {number} n */`、`/** @typedef {import("./api").Reservation} Reservation */`）、TypeScript の構文 — `const n: number`・`set(v: string)`・`items: [] as string[]`・`import type` — はエラー（TS8010 など）になります。ブラウザでは `SyntaxError` になるからです。4.25 までは TypeScript として読んでいたので、JSDoc は無視され、TypeScript の構文が通っていました。JSDoc のコメントは独立した行に書いてください: TypeScript は、同じ行の `{` や `,` に続くコメントを次の宣言の JSDoc にしません。（[docs/typescript.ja.md](../../../docs/typescript.ja.md) §4）
+
 ## 仕組み
 
 `defineState<T>()` は渡されたオブジェクトリテラルから型 `T` を推論します。`ThisType<WcsThis<T>>` を適用することで、メソッドや getter 内の `this` が以下の型になります:
 
 ```
-WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>
+WcsThis<T, N> = T & WcsStateApi<N> & WcsPathAccessor<T>
 ```
 
 | レイヤー | 提供する型 |
 |---|---|
 | `T` | 直接プロパティ — `this.count`, `this.users`, `this["users.*.ageCategory"]` |
-| `WcsStateApi` | Proxy API — `this.$getAll()`, `this.$postUpdate()`, `this.$1`〜`$9`, `this["$streamStatus.<name>"]` |
+| `WcsStateApi<N>` | Proxy API — `this.$getAll()`, `this.$postUpdate()`, `this.$1`〜`$9`, `this["$streamStatus.<name>"]`, `this.$command.<name>` |
 | `WcsPathAccessor<T>` | ドットパス解決 — `this["users.*.name"]`, `this["cart.items.*.price"]` |
+
+`N` は `$commandTokens` に書いた名前の union です（4.26（未リリース）から）。`defineState` が推論するので、`this.$command` は宣言した token だけを持ちます。`$commandTokens` が無いとき、または型引数を `<T>` だけ渡したとき（`defineState<MyState>({ … })`）は `N` が `string` で、`$command` は今までどおり `Record<string, …>` です。3 つ目の型引数 `S` は `$on` のハンドラに型を付けるためのもので（[event token のハンドラ（`$on`）](#event-token-のハンドラon)）、書くことはありません。
 
 何でも受け付ける索引シグネチャはありません: ブラケットアクセスに型が付くのは、キーが上のいずれかのパスであるときだけです。そのため存在しないパス（`this["users.*.nmae"]`）は型エラーになり、動的パスも同様です（[動的パスには型が付かない](#動的パスには型が付かない)）。例外が 1 つあります: 戻り値の型が推論される getter の中では、戻り値が依存する読みが `any` になります（[戻り値の型が推論される getter](#戻り値の型が推論される-getter)）。
 
@@ -206,7 +210,7 @@ export default defineState({
 | API | 型 | 説明 |
 |---|---|---|
 | `$stateElement` | `HTMLElement` | `<wcs-state>` 要素への参照 |
-| `$command` | `Record<string, { emit(...args: any[]): any }>` | `$commandTokens` で宣言した command token |
+| `$command` | `Record<N, { emit(...args: any[]): any }>` | `$commandTokens` で宣言した command token。4.26（未リリース）から `N` は宣言した名前: token の綴りの誤りは型エラーになり、`noUncheckedIndexedAccess` でも `this.$command.reload` は「undefined かもしれない」になりません。`$commandTokens` が無ければ `Record<string, …>` |
 | `$streamStatus` / `$streamError` | `Record<string, …>` | `$stream` のコンパニオン名前空間（このオブジェクト経由の読みは依存を登録しない） |
 | `this["$streamStatus.<name>"]` / `this["$streamError.<name>"]` | `"idle" \| "active" \| "done" \| "error"` / `unknown` | getter 内で使う、追跡される形 |
 | `$1` 〜 `$9` | `number` | ループインデックス変数（値は0始まり、名前は1始まり）。ランタイムは `$128` まで解決しますが、型は `$9` までです |
@@ -234,6 +238,34 @@ defineState({
 ```
 
 3.x の名前 `$updatedCallback` は状態の読み込み時に throw します。`$renderedCallback` と書いてください。
+
+### event token のハンドラ（`$on`）
+
+`$on` のハンドラは `handler(state, event, ...listIndexes)` と呼ばれます — state の Proxy、`eventToken.<property>:` の結び付けで要素が発火したイベント、続いてループのインデックス — そして中の `this` は `undefined` です。4.26（未リリース）から `defineState` がこれらの引数に型を付けるので、`strict` でもハンドラに注釈は要りません:
+
+```typescript
+export default defineState({
+  count: 0,
+  $commandTokens: ["reload"],
+  $eventTokens: ["picked", "loaded"],
+  add(n: number) { this.count += n; },
+  $on: {
+    picked(state, event, index) {          // state: state、event: CustomEvent、index: number
+      state.count = index;                 // 型が付く。state.cuont はエラー
+      state.add(1);
+      state.$command.reload.emit(event.detail);
+    },
+    loaded: (state, event: CustomEvent<{ total: number }>) => {   // event を絞る注釈も書ける
+      state.count = event.detail.total;
+    },
+  },
+});
+```
+
+- `state` は state のデータの型・getter・Proxy API・ドットパスを持ちます。メソッドは呼べますが型は `any` で、そこでは引数を検査しません（state 全体から `state` の型を作ると、TypeScript が state の型を推論できなくなるため。メソッドと getter の `this` は完全な型のままです）。
+- `event` は `detail` が `any` の `CustomEvent` です — wc-bindable の既定の getter が読むものです。絞るには注釈を書きます（`CustomEvent<{ total: number }>`、ふつうのイベントを発火する要素なら `Event`）。
+- `this` は `void` です: 使うと型エラーになります。実行時には throw するからです（diagnostics の後付けは `[wcs/on-handler-this]` と言います）。
+- 4.25 までは引数が暗黙の `any` で、定義そのものから `state` の型を作る（`WcsThis<typeof state>`）と循環します（TS7022）。
 
 ## `$stream` 宣言
 
@@ -400,7 +432,7 @@ defineState({
 });
 ```
 
-メソッドは影響を受けません。戻り値が依存しない読みも同様です。getter の本体を型チェックさせたいときは、戻り値の型を注釈してください。インラインの `<wcs-state>` のスクリプトは JavaScript なので注釈を書けません。4.6.2 から、`wcs-tsc` と VS Code 拡張は、検査するコードの中で `this` を読む getter の戻り値の型を `any` にするので、その本体も検査されます（[docs/typescript.ja.md](../../../docs/typescript.ja.md) §4）。
+メソッドは影響を受けません。戻り値が依存しない読みも同様です。getter の本体を型チェックさせたいときは、戻り値の型を注釈してください — JavaScript では JSDoc で（`/** @returns {number} */ get total() { … }`）。インラインの `<wcs-state>` のスクリプトでは書かなくてもかまいません: 4.6.2 から、`wcs-tsc` と VS Code 拡張は、検査するコードの中で `this` を読み JSDoc の戻り値の型を持たない getter の戻り値の型を `any` にするので（4.26（未リリース）からは JSDoc の `/** @returns {any} */`）、その本体も検査されます（[docs/typescript.ja.md](../../../docs/typescript.ja.md) §4）。
 
 ### 動的パスには型が付かない
 
@@ -438,8 +470,8 @@ npx wcs-validate --strict index.html    # 型に無いパスは error に、偽�
 
 | 型 | 説明 |
 |---|---|
-| `defineState<T>(definition): T` | `ThisType<WcsThis<T>>` 付きアイデンティティ関数 |
-| `WcsThis<T>` | state メソッド/getter 内の `this` の型 |
-| `WcsStateApi` | Proxy API インターフェース（`$getAll`, `$postUpdate`, `$1`〜`$9` 等） |
+| `defineState<T, N, S>(definition): T` | `ThisType<WcsThis<T, N>>` 付きアイデンティティ関数。`N`（`$commandTokens` の名前）と `S`（`$on` のハンドラ用）は推論される — 型引数を渡すなら `<T>` だけ |
+| `WcsThis<T, N = string>` | state メソッド/getter 内の `this` の型 |
+| `WcsStateApi<N = string>` | Proxy API インターフェース（`$getAll`, `$postUpdate`, `$1`〜`$9`, `$command` 等） |
 | `WcsPaths<T>` | 型 `T` の全ドットパスの union |
 | `WcsPathValue<T, P>` | 型 `T` のパス `P` における値の型 |

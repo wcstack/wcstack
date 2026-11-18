@@ -12,6 +12,7 @@ import {
   collectJsDocTypedefs,
   findJsDocComments,
   flattenJsDocType,
+  isImportTypeName,
   parseJsDocType,
   readJsDocTagType,
   type JsDocType,
@@ -124,8 +125,11 @@ function declaredTypesOf(rawType: string, typedefs: JsDocTypedefs): string[] | n
   const out: string[] = [];
   for (const member of flattenJsDocType(parsed, typedefs)) {
     if (member.kind === 'unknown') return null;
+    // a type of another module (`import("./api.ts").Status`): not read here — not checked
+    if (member.kind === 'name' && isImportTypeName(member.name)) return null;
     if (member.kind === 'array') out.push('array');
     else if (member.kind === 'object') out.push('object');
+    else if (member.kind === 'literal') out.push(typeof member.value);
     else if (member.kind === 'name') out.push(normalizeType(member.name));
   }
   return out;

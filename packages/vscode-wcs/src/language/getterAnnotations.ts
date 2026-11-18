@@ -1,7 +1,7 @@
 /**
  * getterAnnotations.ts
  *
- * state の getter に仮想コードで戻り値の型注釈 `: any` を足す位置を求める。
+ * state の getter に、仮想コードで戻り値の型 `any` の JSDoc（`/** @returns {any} *\/`）を足す位置を求める。
  *
  * `defineState<T>(def: T & ThisType<_WcsThis<T>>)` は、T をオブジェクトリテラルから推論する。
  * 注釈の無い getter の型はその本体から推論され、本体が `this` を読むと推論が T に戻ってくる
@@ -13,24 +13,34 @@
  * 戻り値を注釈すると循環が切れ、本体は確定した `this` で検査される。getter の型は
  * どのみち `any` だったので、失うものは無い。注釈は `this` を読む getter にだけ付ける —
  * 読まない getter（`get now() { return Date.now(); }`）は今どおり推論された型を持つ。
+ * 仮想コードは JavaScript なので（4.26）、注釈は getter の前に置く JSDoc。作者が JSDoc で戻り値の型を
+ * 書いた getter（直前の JSDoc に `@returns` / `@return` / `@type`）には足さない — その注釈が循環を切る。
  *
  * 対象は state オブジェクト（`export default { … }` / `export default defineState({ … })`）の
  * 直下の getter だけ。パースできないコード（構文エラー、TypeScript の構文）では何も足さない。
  */
 
-import { parse, type AnyNode } from 'acorn';
+import { parse, type AnyNode, type Comment } from 'acorn';
 
-/** getter の `)` の直後に足す型注釈。 */
-export const GETTER_RETURN_ANNOTATION = ': any';
+/**
+ * getter の直前に足す、戻り値の型の JSDoc。先頭の改行が要る: TypeScript は前のトークン（`{` や `,`）と同じ行に
+ * 続くコメントをそのトークンの後ろのコメントと読み、次の宣言の JSDoc にしない（`{ a: 1, get b() {…} }` と 1 行に
+ * 書いた state で注釈が効かなくなる）。挿入した文字は HTML へ結ばないので、行が増えても位置はずれない。
+ */
+export const GETTER_RETURN_ANNOTATION = '\n/** @returns {any} */ ';
+
+/** 作者が書いた、戻り値の型を決める JSDoc のタグ。 */
+const RETURN_TYPE_TAG = /@(?:returns?|type)\b/;
 
 /**
  * `code` の中で `GETTER_RETURN_ANNOTATION` を挿入するオフセット（昇順）。
- * 各オフセットは `this` を読む getter の引数リストを閉じる `)` の直後。
+ * 各オフセットは `this` を読む getter の先頭（`get` の位置）。
  */
 export function getterAnnotationOffsets(code: string): number[] {
   let program: AnyNode;
+  const comments: Comment[] = [];
   try {
-    program = parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parse(code, { ecmaVersion: 'latest', sourceType: 'module', onComment: comments });
   } catch {
     return [];
   }
@@ -41,10 +51,23 @@ export function getterAnnotationOffsets(code: string): number[] {
     if (property.type !== 'Property' || property.kind !== 'get') continue;
     const fn = property.value;
     if (fn.type !== 'FunctionExpression' || !readsThis(fn.body)) continue;
-    const offset = closingParenEnd(code, fn.body.start);
-    if (offset !== null) offsets.push(offset);
+    if (hasReturnTypeDoc(code, comments, property.start)) continue;
+    offsets.push(property.start);
   }
   return offsets;
+}
+
+/** `start` の直前（空白だけを挟む）の JSDoc が戻り値の型を書いているか。 */
+function hasReturnTypeDoc(code: string, comments: readonly Comment[], start: number): boolean {
+  let at = start;
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const comment = comments[i];
+    if (comment.end > at) continue;
+    if (code.slice(comment.end, at).trim() !== '') return false;
+    if (comment.type === 'Block' && comment.value.startsWith('*') && RETURN_TYPE_TAG.test(comment.value)) return true;
+    at = comment.start;
+  }
+  return false;
 }
 
 /** `export default { … }` か `export default defineState({ … })` のオブジェクト。 */
@@ -87,11 +110,4 @@ function readsThis(node: AnyNode): boolean {
 
 function isNode(value: unknown): value is AnyNode {
   return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
-}
-
-/** 本体の `{` から空白を遡った位置が `)` なら、その直後のオフセット。コメントなどが挟まれば null。 */
-function closingParenEnd(code: string, bodyStart: number): number | null {
-  let i = bodyStart - 1;
-  while (i >= 0 && /\s/.test(code[i])) i--;
-  return code[i] === ')' ? i + 1 : null;
 }

@@ -75,6 +75,10 @@ export interface ManifestSetResult {
   readonly resolvedTags: ReadonlyMap<string, ManifestArtifact["source"]>;
   /** 衝突していない application state → stateSchema(D8)。HTML 検証へ渡す。 */
   readonly resolvedSchema: JsonSchemaNode | undefined;
+  /** The artifact `resolvedSchema` came from (its source), when there is one. */
+  readonly resolvedSchemaSource?: string;
+  /** That artifact's `stateSource` (relative to it), when it names one: the schema is scoped to that state's pages. */
+  readonly resolvedStateSource?: string;
   /** application artifact が 1 つでも含まれていたか(明示指定が発見結果を置き換える)。 */
   readonly hasApplicationArtifact: boolean;
 }
@@ -125,6 +129,8 @@ export function validateManifestSet(input: ManifestSetInput): ManifestSetResult 
     byArtifact: sortedByArtifact,
     resolvedTags,
     resolvedSchema: resolved.applicationSchema,
+    ...(resolved.applicationSchemaSource !== undefined ? { resolvedSchemaSource: resolved.applicationSchemaSource } : {}),
+    ...(resolved.applicationStateSource !== undefined ? { resolvedStateSource: resolved.applicationStateSource } : {}),
     hasApplicationArtifact: resolved.hasApplicationArtifact,
   };
 }

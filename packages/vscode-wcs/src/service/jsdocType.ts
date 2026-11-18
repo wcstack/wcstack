@@ -27,6 +27,8 @@
 
 export type JsDocType =
   | { readonly kind: 'name'; readonly name: string }
+  /** A literal type (`"approved"`, `3`, `true`): a string literal union is a finite set of values (wcs/filter-arg-enum). */
+  | { readonly kind: 'literal'; readonly value: string | number | boolean }
   /** `index`: 索引シグネチャの値の型（任意のキーを持つ — `Record<string, T>`）。無ければ undefined。 */
   | { readonly kind: 'object'; readonly fields: readonly JsDocField[]; readonly index?: JsDocType }
   | { readonly kind: 'array'; readonly element: JsDocType }
@@ -42,6 +44,19 @@ export interface JsDocField {
 export type JsDocTypedefs = ReadonlyMap<string, JsDocType>;
 
 const UNKNOWN: JsDocType = { kind: 'unknown' };
+
+/**
+ * The name a type of another module is read as: `import("./api.ts").Reservation` (the specifier as written, in double
+ * quotes). typeImports.ts resolves such names into the typedefs; one it cannot resolve is a type the lint cannot read.
+ */
+export function importTypeName(specifier: string, name: string): string {
+  return `import("${specifier}").${name}`;
+}
+
+/** Whether a name is one `importTypeName` made. */
+export function isImportTypeName(name: string): boolean {
+  return name.startsWith('import("');
+}
 const NULL_TYPE: JsDocType = { kind: 'name', name: 'null' };
 const ARRAY_GENERICS = new Set(['Array', 'ReadonlyArray']);
 /** 任意のキーのオブジェクトを作る総称（キーの型・値の型の 2 引数）: TypeScript の `Record`、Closure の `Object`。 */
@@ -58,7 +73,7 @@ const MAX_RESOLVE_DEPTH = 8;
 type Token =
   | { readonly t: 'name'; readonly v: string }
   | { readonly t: 'string'; readonly v: string }
-  | { readonly t: 'number' }
+  | { readonly t: 'number'; readonly v: number }
   | { readonly t: 'punct'; readonly v: string };
 
 function tokenize(text: string): Token[] | null {
@@ -78,7 +93,7 @@ function tokenize(text: string): Token[] | null {
       continue;
     }
     const num = /^-?\d+(?:\.\d+)?/.exec(text.slice(i));
-    if (num) { tokens.push({ t: 'number' }); i += num[0].length; continue; }
+    if (num) { tokens.push({ t: 'number', v: Number(num[0]) }); i += num[0].length; continue; }
     const name = /^[$A-Za-z_][$\w]*/.exec(text.slice(i));
     if (name) { tokens.push({ t: 'name', v: name[0] }); i += name[0].length; continue; }
     return null;
@@ -89,7 +104,7 @@ function tokenize(text: string): Token[] | null {
 /**
  * JSDoc の型表現（`@type {…}` の波括弧の中身）をパースする。読めなければ null。
  */
-export function parseJsDocType(text: string): JsDocType | null {
+export function parseJsDocType(text: string, options: { readonly typescript?: boolean } = {}): JsDocType | null {
   const tokens = tokenize(text);
   if (tokens === null || tokens.length === 0) return null;
   let pos = 0;
@@ -137,7 +152,7 @@ export function parseJsDocType(text: string): JsDocType | null {
   const parsePrimary = (): JsDocType | null => {
     const token = peek();
     if (token === undefined) return null;
-    if (token.t === 'string' || token.t === 'number') { pos++; return UNKNOWN; }
+    if (token.t === 'string' || token.t === 'number') { pos++; return { kind: 'literal', value: token.v }; }
     if (token.t === 'punct') {
       if (token.v === '{') return parseObject();
       if (token.v === '(') {
@@ -167,7 +182,22 @@ export function parseJsDocType(text: string): JsDocType | null {
     }
     // 名前（`a.B` の連結を含む）
     pos++;
+    if (token.v === 'true' || token.v === 'false') return { kind: 'literal', value: token.v === 'true' };
     let name = token.v;
+    // `import("./api.ts").Reservation`: a type of another module, named as one (importTypeName) — typeImports.ts reads it
+    if (name === 'import' && isPunct('(')) {
+      const spec = tokens[pos + 1];
+      if (spec?.t !== 'string' || tokens[pos + 2]?.t !== 'punct' || (tokens[pos + 2] as { v: string }).v !== ')') return null;
+      pos += 3;
+      const members: string[] = [];
+      while (isPunct('.') && tokens[pos + 1]?.t === 'name') {
+        members.push((tokens[pos + 1] as { v: string }).v);
+        pos += 2;
+      }
+      // (the module itself, `import("./x")` alone, is a namespace — no shape)
+      if (members.length === 0) return UNKNOWN;
+      name = importTypeName(spec.v, members.join('.'));
+    }
     while (isPunct('.') && tokens[pos + 1]?.t === 'name') {
       name += '.' + (tokens[pos + 1] as { v: string }).v;
       pos += 2;
@@ -239,6 +269,10 @@ export function parseJsDocType(text: string): JsDocType | null {
     const fields: JsDocField[] = [];
     let index: JsDocType | undefined;
     while (!isPunct('}')) {
+      // TypeScript's `readonly id: number` / `readonly [k: string]: T` (an interface's member): the modifier is dropped
+      const modified = tokens[pos + 1];
+      if (peek()?.t === 'name' && (peek() as { v: string }).v === 'readonly' && modified !== undefined
+        && (modified.t === 'name' || modified.t === 'string' || (modified.t === 'punct' && modified.v === '['))) pos++;
       const key = peek();
       if (key === undefined) return null;
       // 索引シグネチャ `[key: string]: T`（写像型 `[K in Keys]?: T` も）: 任意のキー — 下は開いている（`index`）
@@ -254,14 +288,47 @@ export function parseJsDocType(text: string): JsDocType | null {
         if (key.t !== 'name' && key.t !== 'string') return null;
         pos++;
         expect('?');
-        if (!expect(':')) return null;
-        const type = parseUnion();
-        if (type === null) return null;
-        fields.push({ name: key.v, type });
+        // a method signature of a TypeScript declaration (`toString(): string` in an interface) holds no data: skipped
+        // (in a JSDoc type it stays unreadable — the shape is not guessed)
+        if (options.typescript === true && (isPunct('(') || isPunct('<'))) {
+          if (!skipMember()) return null;
+        } else {
+          if (!expect(':')) return null;
+          const type = parseUnion();
+          if (type === null) return null;
+          fields.push({ name: key.v, type });
+        }
       }
-      if (!expect(',') && !expect(';')) break;
+      // members are separated by `,` / `;`, or by a line break only (an interface): a key may follow directly
+      if (!expect(',') && !expect(';') && !startsMember()) break;
     }
     return expect('}') ? { kind: 'object', fields, ...(index !== undefined ? { index } : {}) } : null;
+  };
+
+  /** Skips a member up to its separator (`,` / `;`) or the object's `}`, not consuming either. */
+  const skipMember = (): boolean => {
+    let depth = 0;
+    while (pos < tokens.length) {
+      const token = tokens[pos];
+      if (token.t === 'punct') {
+        if (depth === 0 && (token.v === ',' || token.v === ';' || token.v === '}')) return true;
+        if (token.v === '(' || token.v === '[' || token.v === '{' || token.v === '<') depth++;
+        else if (token.v === ')' || token.v === ']' || token.v === '}' || token.v === '>') depth--;
+      }
+      pos++;
+    }
+    return false;
+  };
+
+  /** Whether the next tokens start an object member (`key:`, `key?:`, `"key":`, `[k: string]:`, `readonly key`, `m(`). */
+  const startsMember = (): boolean => {
+    const token = peek();
+    const after = tokens[pos + 1];
+    if (token === undefined || after === undefined) return false;
+    if (token.t === 'punct') return token.v === '[';
+    if (token.t !== 'name' && token.t !== 'string') return false;
+    if (after.t === 'punct') return [':', '?', '(', '<'].includes(after.v);
+    return token.t === 'name' && token.v === 'readonly' && (after.t === 'name' || after.t === 'string');
   };
 
   /** 開き括弧（現在位置）から、対応する閉じ括弧の直後まで進む。 */
@@ -427,6 +494,7 @@ export function jsDocTypeHint(type: JsDocType, typedefs: JsDocTypedefs = new Map
   for (const member of flattenJsDocType(type, typedefs)) {
     if (member.kind === 'array') hints.add('array');
     else if (member.kind === 'object') hints.add('object');
+    else if (member.kind === 'literal') hints.add(typeof member.value);
     else if (member.kind === 'name') {
       const lower = member.name.toLowerCase();
       if (lower === 'string' || lower === 'number' || lower === 'boolean' || lower === 'object') hints.add(lower);
@@ -449,6 +517,20 @@ export interface JsDocShape {
    * 開いている。無ければ undefined。
    */
   readonly index?: JsDocType;
+}
+
+/**
+ * The values a type allows when they are finitely many: every member a literal (`"pending" | "approved"`, `1 | 2`,
+ * `true`) or `null` / `undefined` (both read as null). null when a member is anything else (`string`, an object).
+ */
+export function jsDocLiteralValues(type: JsDocType, typedefs: JsDocTypedefs): (string | number | boolean | null)[] | null {
+  const values: (string | number | boolean | null)[] = [];
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === 'literal') values.push(member.value);
+    else if (member.kind === 'name' && (member.name === 'null' || member.name === 'undefined')) values.push(null);
+    else return null;
+  }
+  return values.some((v) => v !== null) ? [...new Set(values)] : null;
 }
 
 export function jsDocShape(type: JsDocType, typedefs: JsDocTypedefs): JsDocShape {

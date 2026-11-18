@@ -14,10 +14,16 @@
  * declaration, a spread, a superclass from elsewhere, a script that does not parse — gives no contract, and the
  * element's bindings are not checked.
  *
+ * A module in TypeScript (`<script type="module" src="./main.ts">` and the `.ts` modules it imports) is read with
+ * its types erased (typeErasure.ts): `static wcBindable = { … } as const satisfies Decl` is the literal. Up to 4.25
+ * only `.js` / `.mjs` modules were read, and an element defined in a `.ts` one was never checked (the lending-desk
+ * seam app).
+ *
  * pure (DOM / vscode 非依存): files come through the `FileReader`.
  */
 
-import { parse, type AnyNode } from 'acorn';
+import type { AnyNode } from 'acorn';
+import { parseErasingTypes } from './typeErasure.js';
 import { extractAttribute } from '../language/htmlParse.js';
 import type { FileReader } from './statePathResolver.js';
 
@@ -77,7 +83,7 @@ function joinRelative(from: string, spec: string): string | null {
 function parseScript(source: string): AnyNode | null {
   for (const sourceType of ['module', 'script'] as const) {
     try {
-      return parse(source, { ecmaVersion: 'latest', sourceType, allowHashBang: true }) as AnyNode;
+      return parseErasingTypes(source, { ecmaVersion: 'latest', sourceType, allowHashBang: true });
     } catch {
       // (a classic script that is not a module, or one that does not parse)
     }
@@ -191,11 +197,18 @@ function readPageElementContracts(html: string, fileReader?: FileReader): Map<st
   }
   while (queue.length > 0 && fileReader !== undefined && read.size < MAX_FILES) {
     const { from, spec } = queue.shift()!;
-    const path = joinRelative(from, spec);
-    if (path === null || read.has(path) || !/\.m?js$/.test(path)) continue;
+    const joined = joinRelative(from, spec);
+    if (joined === null) continue;
+    // a module in TypeScript (`src="./main.ts"`, `import "./qty.ts"`) is read with its types erased (typeErasure.ts); an
+    // import of `./qty.js` reads `./qty.ts` when there is no `.js` (TypeScript's own convention), and one without an
+    // extension (a bundler's resolution) `./qty.ts`, then `./qty.js`
+    const paths = /\.m?[jt]s$/.test(joined)
+      ? [joined, ...(/\.m?js$/.test(joined) ? [joined.replace(/js$/, 'ts')] : [])]
+      : /\/[^/.]+$/.test(joined) ? [`${joined}.ts`, `${joined}.js`] : [];
+    const path = paths.find((p) => read.has(p) || fileReader(p) !== undefined);
+    if (path === undefined || read.has(path)) continue;
     read.add(path);
-    const text = fileReader(path);
-    const program = text === undefined ? null : parseScript(text);
+    const program = parseScript(fileReader(path) as string);
     if (program !== null) visit(program, path);
   }
 

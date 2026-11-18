@@ -20,12 +20,13 @@
  * expression, an arrow, a method, a getter or setter: they run when called, so a read there is current — except a
  * function called where it is written, `(() => …)()`) or of a class body. A read is a member of `localStorage` / `sessionStorage` (also through `window.` / `globalThis.` / `self.`) other
  * than `setItem` / `removeItem` / `clear`, and `document.cookie` (also `window.document.cookie`) other than as the
- * target of a plain `=`. A script acorn cannot parse (TypeScript) says nothing.
+ * target of a plain `=`. A script that does not parse says nothing (TypeScript is read with its types erased — typeErasure.ts).
  *
  * pure (acorn; no DOM / vscode).
  */
 
-import { parse, type AnyNode } from 'acorn';
+import type { AnyNode } from 'acorn';
+import { parseErasingTypes } from './typeErasure.js';
 import { parseLoadedScriptBlocks, parseWcsScriptBlocks, type WcsScriptBlock } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnosticCode, type WcsDiagnostic } from '../core/diagnostics.js';
@@ -65,7 +66,7 @@ export function findTopLevelReads(source: string): { start: number; end: number;
   if (!/localStorage|sessionStorage|cookie/.test(source)) return [];
   let program: AnyNode;
   try {
-    program = parse(source, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true }) as AnyNode;
+    program = parseErasingTypes(source, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true }) as AnyNode;
   } catch {
     return [];
   }

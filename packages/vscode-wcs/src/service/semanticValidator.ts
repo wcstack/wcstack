@@ -624,6 +624,8 @@ function validateGetterAmbientReads(script: string, scriptStart: number, locale?
  */
 export function onHandlerStateParam(script: string, handler: WatchHandlerSource): string | null {
   if (handler.kind === 'body') {
+    // (the parameter list as the analyzer read it: a TypeScript return type may stand before the body)
+    if (handler.params !== undefined) return /^\s*([A-Za-z_$][\w$]*)/.exec(handler.params)?.[1] ?? null;
     const head = script.slice(Math.max(0, handler.start - 400), handler.start);
     return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;
   }

@@ -155,13 +155,9 @@ function forEachStateMethod(
     if ((insideTemplate ??= createTemplateTester(html))(element.tagStart)) continue;
     for (const script of scripts) {
       for (const callable of analyzeCallableBodies(script)) {
-        if (callable.kind !== 'method' || (spelling !== null && !callable.body.includes(spelling))) continue;
-        // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
-        const head = script.slice(callable.end, callable.bodyStart - 1);
-        // (first `(` to the last `)`: a default parameter may call something — `id = crypto.randomUUID()`)
-        const params = /\(([\s\S]*)\)\s*$/.exec(head);
-        if (params === null) continue;
-        fn(volume === null ? callable.name : `${volume}.${callable.name}`, params[1], callable.body);
+        if (callable.kind !== 'method' || callable.params === undefined || (spelling !== null && !callable.body.includes(spelling))) continue;
+        // (the parameter list as the analyzer read it — a TypeScript return type may stand between it and the body)
+        fn(volume === null ? callable.name : `${volume}.${callable.name}`, callable.params, callable.body);
       }
     }
   }
@@ -753,12 +749,15 @@ export function validateBindings(
         // フィルタ間の入力型チェック
         if (parsed.path && statePaths.length > 0) {
           const pathTrimmed = parsed.path.trim();
-          if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
+          // a row's path (`.label` under `for: rows`) is typed as the row field it expands to (`rows.*.label`) — a
+          // literal row's, a JSDoc type's, a stateSchema's; up to 4.25 only a path written in full was typed
+          const typed = pathTrimmed.startsWith('.') ? expandRowPath(pathTrimmed, html, attr.valueStart, attrName) : pathTrimmed;
+          if (typed && !isLiteral(typed)) {
             // 型は候補で引く形から取る（数値の添字のパス `items.0.name` は `items.*.name` の型 — #355）
-            const chainDiags = validateFilterChainTypes(
-              candidateKeyOf(pathTrimmed, (c) => scopedPathSet.has(c)), parsed.filters, scopedPaths, bindingStart, msgs,
-            );
-            diagnostics.push(...chainDiags);
+            const key = candidateKeyOf(typed, (c) => scopedPathSet.has(c));
+            diagnostics.push(...validateFilterChainTypes(key, parsed.filters, scopedPaths, bindingStart, msgs));
+            // `status|eq('aproved')` where the value takes only `pending` / `approved` / `denied`
+            diagnostics.push(...validateFilterArgEnum(key, parsed.filters, scopedPaths, binding, bindingStart, msgs));
           }
         }
       }
@@ -1444,17 +1443,19 @@ function validateFilterChainTypes(
     const info = filterMap.get(filter.name);
     if (!info) break; // 不明なフィルタ → チェーン中断
 
-    // 入力型チェック
-    if (info.acceptTypes !== 'any') {
+    // 入力型チェック（日付のフィルタは Date だけを受ける — 型ヒントの語彙では object。null はそのまま通す）
+    const dateFilter = DATE_VALUE_FILTERS.has(filter.name);
+    const acceptTypes = dateFilter ? ['object'] : info.acceptTypes;
+    const currentTypes = dateFilter ? currentType.split('|').filter((t) => t !== 'null') : currentType.split('|');
+    if (acceptTypes !== 'any' && currentTypes.length > 0) {
       // union 型の場合、いずれかの部分型がマッチすれば OK
-      const currentTypes = currentType.split('|');
-      const hasMatch = currentTypes.some(t => (info.acceptTypes as string[]).includes(t));
+      const hasMatch = currentTypes.some(t => (acceptTypes as string[]).includes(t));
       if (!hasMatch) {
         diagnostics.push({
           code: WcsDiagnosticCode.FilterInputType,
           start: bindingStart + filter.offset,
           end: bindingStart + filter.offset + filter.name.length,
-          message: msgs.filterInputType(filter.name, (info.acceptTypes as string[]).join('|'), currentType),
+          message: msgs.filterInputType(filter.name, DATE_VALUE_FILTERS.has(filter.name) ? 'Date' : (acceptTypes as string[]).join('|'), currentType),
           severity: 'warning',
         });
       }
@@ -1467,6 +1468,66 @@ function validateFilterChainTypes(
   }
 
   return diagnostics;
+}
+
+/**
+ * The filters that take a `Date` only — the formats add-on throws for any other value but null / undefined, which pass
+ * through (state's src/filters/formats.ts `valueMustBeDate`; `__tests__/lendingDeskLint.test.ts` checks the list against
+ * it). The manifest's `acceptTypes` says `any` for them (its vocabulary has no Date): a value known to be a string, a
+ * number, a boolean or a list is the mistake (`.at|date` on an ISO string).
+ */
+export const DATE_VALUE_FILTERS: ReadonlySet<string> = new Set(['date', 'time', 'datetime', 'ymd', 'hms']);
+
+/** The comparison filters whose argument is compared with the value as a literal (state's src/filters/core.ts). */
+const COMPARISON_FILTERS: ReadonlySet<string> = new Set(['eq', 'ne']);
+
+/**
+ * `wcs/filter-arg-enum`: a comparison filter applied first to a path whose type allows finitely many values
+ * (`PathCandidate.literals` — a stateSchema `enum` / `const`, a JSDoc literal union), with a literal argument that is
+ * none of them: `status|eq('aproved')` is never true (`ne` always). The argument is compared as the runtime compares it
+ * (state's filters/core.ts `eq`): the text with its quotes taken off against a string value, as a number against a number,
+ * and `true` / `false` / `null` unquoted against a boolean or null. Did-you-mean among the string values.
+ */
+function validateFilterArgEnum(
+  path: string,
+  filters: readonly ParsedFilter[],
+  statePaths: readonly PathCandidate[],
+  binding: string,
+  bindingStart: number,
+  msgs: WcsMessageCatalog,
+): BindingDiagnostic[] {
+  const first = filters[0];
+  if (first === undefined || !COMPARISON_FILTERS.has(first.name) || first.args.length !== 1) return [];
+  const literals = statePaths.find((p) => p.path === path)?.literals;
+  if (literals === undefined || literals.length === 0) return [];
+  const arg = first.args[0].trim();
+  const quoted = /^(["'])([\s\S]*)\1$/.exec(arg);
+  const text = quoted !== null ? quoted[2] : arg;
+  const matches = literals.some((value) => (typeof value === 'string' && value === text)
+    || (typeof value === 'number' && text.trim() !== '' && Number(text) === value)
+    || (quoted === null && (value === null ? text === 'null' : typeof value === 'boolean' && String(value) === text)));
+  if (matches) return [];
+  const at = binding.indexOf(arg, first.argsOffset);
+  const start = bindingStart + (at >= 0 ? at : first.offset);
+  const members = literals.map((value) => (typeof value === 'string' ? `'${value}'` : String(value)));
+  const strings = literals.filter((value): value is string => typeof value === 'string');
+  return [{
+    code: WcsDiagnosticCode.FilterArgEnum,
+    start,
+    end: start + (at >= 0 ? arg.length : first.name.length),
+    message: msgs.filterArgEnum(first.name, arg, members, suggestion(text, strings, msgs)),
+    severity: 'warning',
+  }];
+}
+
+/**
+ * A row's path (`.label`, `.`) as the path it expands to under its `for:` list (`rows.*.label`, `rows.*`), or '' when
+ * there is no `for:` to expand it under (the runtime's expandShorthandPaths).
+ */
+function expandRowPath(path: string, html: string, offset: number, attrName: string): string {
+  const forPath = getRowShorthandForPath(html, offset, attrName);
+  if (!forPath || forPath.startsWith('.')) return '';
+  return path === '.' ? `${forPath}.*` : `${forPath}.*.${path.slice(1)}`;
 }
 
 /**

@@ -25,6 +25,15 @@ describe('stripWcsImport', () => {
     expect(result).not.toContain('import');
   });
 
+  it('入口のパス付きの bare 指定（define-state.md の書く @wcstack/state/define）も除去する', () => {
+    const code = `import { defineState } from '@wcstack/state/define';
+export default defineState({ count: 0 });`;
+    const result = stripWcsImport(code);
+    expect(result).not.toContain('import');
+    expect(result.length).toBe(code.length);
+    expect(stripWcsImport(`import { x } from '@wcstack/stateful';`)).toContain('@wcstack/stateful');
+  });
+
   it('関係ない import は残す', () => {
     const code = `import { foo } from './foo.js';\nexport default { count: 0 };`;
     const result = stripWcsImport(code);
@@ -72,7 +81,7 @@ export default defineState({
 </script></wcs-state>
 <wcs-state name="other"><script type="module">
 const initial = 1;
-export default { items: [] as string[], initial };
+export default { /** @type {string[]} */ items: [], initial };
 </script></wcs-state>`;
 
   it('プリアンブル 1 回・import は巻き上げ・各ブロックはスコープ内の const、export default は残らない', async () => {
@@ -89,7 +98,7 @@ export default { items: [] as string[], initial };
     expect(code).toContain('import { debounce } from "https://esm.run/lodash-es";');
     expect(code.indexOf('import { debounce }')).toBeLessThan(code.indexOf('const __wcs_state_0'));
     expect(code).toContain('const __wcs_state_0 = defineState({');
-    expect(code).toContain('const __wcs_state_1 = defineState({ items: [] as string[], initial })');
+    expect(code).toContain('const __wcs_state_1 = defineState({ /** @type {string[]} */ items: [], initial })');
     expect(code).toContain('void __wcs_state_0;');
     expect(code).toContain('void __wcs_state_1;');
 
@@ -103,7 +112,7 @@ export default { items: [] as string[], initial };
       }
       throw new Error(`no mapping for generated offset ${generated}`);
     };
-    for (const token of ['this.count++', 'items: [] as string[]', 'const initial = 1', 'from "https://esm.run/lodash-es"']) {
+    for (const token of ['this.count++', '/** @type {string[]} */ items: []', 'const initial = 1', 'from "https://esm.run/lodash-es"']) {
       const g = code.indexOf(token);
       expect(g, token).toBeGreaterThan(-1);
       expect(html.slice(back(g), back(g) + token.length)).toBe(token);
@@ -113,15 +122,18 @@ export default { items: [] as string[], initial };
     expect(code.slice(bodyStart).indexOf('import ')).toBe(-1);
   });
 
-  it('tsc モードの plugin は getServiceScript で合成スクリプトを返し、getExtraServiceScripts は空', async () => {
+  it('tsc モードの plugin は getServiceScript で合成スクリプトを JavaScript として返し、getExtraServiceScripts は空', async () => {
     const { createWcsLanguagePlugin, COMBINED_SCRIPT_ID } = await import('../src/language/plugin');
     const plugin = createWcsLanguagePlugin('wcs-state', { mode: 'tsc' });
     const snapshot = { getText: (s: number, e: number) => html.slice(s, e), getLength: () => html.length, getChangeRange: () => undefined };
     const root = plugin.createVirtualCode!('/proj/index.html', 'html', snapshot, {} as any)!;
     expect(root.embeddedCodes?.map((c) => c.id)).toEqual([COMBINED_SCRIPT_ID]);
     const service = plugin.typescript!.getServiceScript(root);
-    expect(service?.extension).toBe('.ts');
+    // インラインスクリプトはブラウザが JavaScript として実行する: 仮想コードも JavaScript（4.26。4.25 までは .ts / TS）
+    expect(service?.extension).toBe('.js');
+    expect(service?.scriptKind).toBe(1);   // ts.ScriptKind.JS
     expect(service?.code.id).toBe(COMBINED_SCRIPT_ID);
+    expect(service?.code.languageId).toBe('javascript');
     // 定義するだけで proxyCreateProgram が警告を出すので、tsc モードでは持たない
     expect(plugin.typescript!.getExtraServiceScripts).toBeUndefined();
     // <wcs-state> の無いページ: tsc モードは空のサービススクリプト（undefined だと HTML が
@@ -137,7 +149,11 @@ export default { items: [] as string[], initial };
     const ls = createWcsLanguagePlugin();
     const lsRoot = ls.createVirtualCode!('/proj/index.html', 'html', snapshot, {} as any)!;
     expect(ls.typescript!.getServiceScript(lsRoot)).toBeUndefined();
-    expect(ls.typescript!.getExtraServiceScripts!('/proj/index.html', lsRoot)).toHaveLength(2);
+    const extra = ls.typescript!.getExtraServiceScripts!('/proj/index.html', lsRoot);
+    expect(extra.map((x) => [x.fileName, x.extension, x.scriptKind, x.code.languageId])).toEqual([
+      ['/proj/index.html.__wcs-script-0.js', '.js', 1, 'javascript'],
+      ['/proj/index.html.__wcs-script-1.js', '.js', 1, 'javascript'],
+    ]);
   });
 });
 

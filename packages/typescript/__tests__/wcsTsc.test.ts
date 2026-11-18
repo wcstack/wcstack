@@ -9,6 +9,7 @@ import {
   findProjectConfig,
   auditConfig,
   includeCoversHtml,
+  roughInlineStateTest,
   writeDefaultsConfig,
   writeUrlImportsDeclaration,
   resolveFromProject,
@@ -21,12 +22,14 @@ import { makeTempDir } from "./helpers";
 const tmp = makeTempDir("wcs-tsc-");
 afterAll(() => tmp.cleanup());
 
-const BIN = resolve(__dirname, "..", "dist", "wcs-tsc.mjs");
+// WCS_TSC_BIN: a wcs-tsc built elsewhere (with its tsc-core.cjs beside it), to run these tests against the
+// source without rebuilding the committed dist
+const BIN = process.env.WCS_TSC_BIN ?? resolve(__dirname, "..", "dist", "wcs-tsc.mjs");
 
 const READY_CONFIG = JSON.stringify({
   compilerOptions: {
     target: "ESNext", module: "ESNext", moduleResolution: "bundler", lib: ["ESNext", "DOM"], types: [],
-    noEmit: true, allowJs: true, checkJs: true, noImplicitThis: true, skipLibCheck: true,
+    noEmit: true, skipLibCheck: true,
   },
   include: ["**/*.html"],
 });
@@ -45,7 +48,7 @@ const PAGE = `<!doctype html>
   </script>
 </wcs-state>
 <wcs-state mount="plain"><script type="module">
-export default { items: [] as string[], add() { this.items = [...this.items, 1]; } };
+export default { items: ["a"], add() { this.items = [...this.items, 1]; } };
 </script></wcs-state>
 </body></html>
 `;
@@ -78,32 +81,67 @@ describe("findProjectConfig / auditConfig / writeDefaultsConfig", () => {
     expect(findProjectConfig([], join(tmp.dir, "nowhere"))).toBeUndefined();
   });
 
-  it("不足の検出: include に html 無し / files のみ / noImplicitThis・allowJs・checkJs", () => {
+  it("不足の検出: include に html 無し / files のみ / target。noImplicitThis・allowJs・checkJs は要らない（4.26）", () => {
     const ready = tmp.write("audit/ready/tsconfig.json", READY_CONFIG);
     expect(auditConfig(ready, ts).missing).toEqual([]);
 
-    // strict は noImplicitThis を含む。target / lib 無し（ES5 既定）はプリアンブルの型が崩れるので不足
+    // target / lib 無し（ES5 既定）はプリアンブルの型が崩れるので不足
     const bare = tmp.write("audit/bare/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true }, include: ["src/**/*.ts"] }));
     expect(auditConfig(bare, ts).missing).toEqual([
       'include: "**/*.html"',
-      "compilerOptions.allowJs: true",
-      "compilerOptions.checkJs: true",
       'compilerOptions.target: "ES2015" or later (the this-typing preamble uses Map / Set / Promise)',
     ]);
     expect(auditConfig(bare, ts).needsTarget).toBe(true);
 
-    const filesOnly = tmp.write("audit/files/tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020", noImplicitThis: true, allowJs: true, checkJs: true }, files: ["a.ts"] }));
+    const filesOnly = tmp.write("audit/files/tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020" }, files: ["a.ts"] }));
     expect(auditConfig(filesOnly, ts).missing).toEqual(['include: "**/*.html" (a files-only config never sees HTML)']);
 
     // include 無し（既定 **/*）は html を拾うので include の不足にはしない。lib があれば target 無しでもよい
-    const defaults = tmp.write("audit/defaults/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, allowJs: true, checkJs: true, lib: ["ES2022", "DOM"] } }));
+    const defaults = tmp.write("audit/defaults/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, lib: ["ES2022", "DOM"] } }));
     expect(auditConfig(defaults, ts).missing).toEqual([]);
-    const noImplicitOff = tmp.write("audit/off/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noImplicitThis: false, allowJs: true, checkJs: true, target: "ESNext" } }));
-    expect(auditConfig(noImplicitOff, ts).missing).toEqual(["compilerOptions.noImplicitThis: true"]);
+    // 4.25 までは noImplicitThis / allowJs / checkJs も不足にした。インラインスクリプトは JavaScript として検査するので
+    // （this は noImplicitThis 無しで型が付き、検査はプラグインの // @ts-check が有効にする）要らない
+    const noImplicitOff = tmp.write("audit/off/tsconfig.json", JSON.stringify({ compilerOptions: { noImplicitThis: false, target: "ESNext" } }));
+    expect(auditConfig(noImplicitOff, ts).missing).toEqual([]);
 
     // ディレクトリだけの include（`src` は tsc にとって src/**/*）は html も拾う — 不足にしない
     const dirOnly = tmp.write("audit/dir/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, allowJs: true, checkJs: true, target: "ESNext" }, include: ["src"] }));
     expect(auditConfig(dirOnly, ts).missing).toEqual([]);
+  });
+
+  it("インラインの <wcs-state> のページが 1 つも program に無ければ、外にあるページを名指しする（lending-desk F-32）", () => {
+    const page = '<wcs-state><script type="module">export default { a: 1 };</script></wcs-state>';
+    // include: ["src"] は src/**/*.html を含むが、tsconfig の隣のページは含まない — パターンだけでは分からない
+    tmp.write("left/counter.html", page);
+    tmp.write("left/src/main.ts", "export {};\n");
+    tmp.write("left/external.html", '<wcs-state src="./state.js"></wcs-state>');   // インラインのスクリプトが無い
+    const left = tmp.write("left/tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022" }, include: ["src"] }));
+    const audit = auditConfig(left, ts);
+    expect(audit.missing).toEqual(['include: "**/*.html" (no page with an inline <wcs-state> is in the program: counter.html is not)']);
+    expect(audit.pagesInProgram).toBe(0);
+    expect(audit.leftOut.map((f) => f.slice(f.lastIndexOf("/") + 1))).toEqual(["counter.html"]);
+
+    // 4 つ以上は 3 つと残りの数。除外したページ（exclude）は数えない
+    for (const name of ["b", "c", "d", "e"]) tmp.write(`many/pages/${name}.html`, page);
+    tmp.write("many/vendor/v.html", page);
+    const many = tmp.write("many/tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022" }, include: ["src"], exclude: ["vendor"] }));
+    expect(auditConfig(many, ts).missing).toEqual(['include: "**/*.html" (no page with an inline <wcs-state> is in the program: pages/b.html, pages/c.html, pages/d.html and 1 more are not)']);
+
+    // 一部のページを検査し、ほかを外す（同梱の資料・fixture）設定は選んでそうしている — 報告しない
+    tmp.write("some/src/app.html", page);
+    tmp.write("some/reference/doc.html", page);
+    const some = tmp.write("some/tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022" }, include: ["src"] }));
+    expect(auditConfig(some, ts)).toMatchObject({ missing: [], pagesInProgram: 1 });
+
+    // ページの読み方は差し替えられる（main はプラグインの parser を渡す）
+    expect(auditConfig(left, ts, () => false).missing).toEqual([]);
+  });
+
+  it("roughInlineStateTest: <wcs-state> の中に <script> があるページ", () => {
+    expect(roughInlineStateTest('<wcs-state>\n  <script type="module">export default {};</script>\n</wcs-state>')).toBe(true);
+    expect(roughInlineStateTest('<WCS-STATE name="a"><script>x</script></WCS-STATE>')).toBe(true);
+    expect(roughInlineStateTest('<wcs-state src="./s.js"></wcs-state><script type="module">x</script>')).toBe(false);
+    expect(roughInlineStateTest('<p>no state</p>')).toBe(false);
   });
 
   it("includeCoversHtml: tsc の読み方で html に届く include を見分ける", () => {
@@ -115,7 +153,7 @@ describe("findProjectConfig / auditConfig / writeDefaultsConfig", () => {
     }
   });
 
-  it("--wcs-defaults の一時 config は元を extends し、include と 3 オプションを足す", () => {
+  it("--wcs-defaults の一時 config は元を extends し、include と（target も lib も無ければ）target を足す", () => {
     const base = tmp.write("defaults/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true }, include: ["src/**/*.ts"] }));
     const audit = auditConfig(base, ts);
     const temp = writeDefaultsConfig(base, audit);
@@ -123,13 +161,13 @@ describe("findProjectConfig / auditConfig / writeDefaultsConfig", () => {
     const written = JSON.parse(readFileSync(temp, "utf8"));
     expect(written).toEqual({
       extends: "./tsconfig.json",
-      compilerOptions: { allowJs: true, checkJs: true, noImplicitThis: true, target: "ESNext" },
+      compilerOptions: { target: "ESNext" },
       include: ["src/**/*.ts", "**/*.html"],
     });
     const noInclude = tmp.write("defaults2/tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020" }, files: ["a.ts"] }));
     const noIncludeWritten = JSON.parse(readFileSync(writeDefaultsConfig(noInclude, auditConfig(noInclude, ts)), "utf8"));
     expect(noIncludeWritten.include).toEqual(["**/*", "**/*.html"]);
-    expect(noIncludeWritten.compilerOptions.target).toBeUndefined();   // 明示の target は上書きしない
+    expect(noIncludeWritten.compilerOptions).toBeUndefined();   // 明示の target は上書きしない
   });
 
   it("URL import の ambient 宣言ファイル", () => {
@@ -222,11 +260,23 @@ describe("main — プロセス内（runTsc を差し替え）", () => {
       });
       expect(result.code).toBe(0);
       expect(result.stderr).toContain("temporary config");
+      expect(result.stderr).not.toContain("warning");
       expect(calls[0].rootNames).toEqual(["a.ts"]);
       const projectArg = process.argv[process.argv.indexOf("-p") + 1];
       expect(projectArg).toMatch(/\.wcs-tsc\.\d+\.tsconfig\.json$/);
       expect(existsSync(projectArg)).toBe(false);
       expect(readdirSync(bareDir)).toEqual(["tsconfig.json"]);
+    } finally {
+      process.argv = savedArgv;
+    }
+
+    // --wcs-defaults 無し: 不足は "warning:" 付きの 1 行（CI のログを error / warning で絞っても残る）。exit code は tsc のまま
+    try {
+      const result = run(["-p", "tsconfig.json"], bareDir, {
+        load: (p) => (p.endsWith("runTsc.js") ? { runTsc: fakeRunTsc } : realRequire(p)),
+      });
+      expect(result.code).toBe(0);
+      expect(result.stderr).toMatch(/^wcs-tsc: warning: .*tsconfig\.json is missing include: "\*\*\/\*\.html", compilerOptions\.target: .* — HTML may not be checked; pass --wcs-defaults or add them\n$/);
     } finally {
       process.argv = savedArgv;
     }
@@ -273,6 +323,39 @@ export default {
     expect(result.stdout.trim().split("\n")).toHaveLength(1);
   }, 60_000);
 
+  it("インラインスクリプトは JavaScript として検査する: JSDoc の型が効き、TypeScript の構文は TS8010 系（4.26）", () => {
+    const dir = join(tmp.dir, "js");
+    const strictConfig = JSON.parse(READY_CONFIG);
+    strictConfig.compilerOptions.strict = true;
+    strictConfig.include = ["**/*.html", "**/*.ts"];
+    tmp.write("js/tsconfig.json", JSON.stringify(strictConfig));
+    tmp.write("js/api.ts", "export interface Reservation { id: number; status: string }\n");
+    tmp.write("js/jsdoc.html", `<wcs-state><script type="module">
+/** @typedef {import("./api").Reservation} Reservation */
+/** @param {number} n */
+function twice(n) { return n * 2; }
+export default {
+  /** @type {Reservation[]} */
+  pickups: [],
+  total: 0,
+  get first() { return this.pickups[0]?.status ?? "none"; },
+  get doubled() { return twice(this.total); },
+};
+</script></wcs-state>`);
+    const clean = runBin(dir, ["-p", "tsconfig.json"]);
+    expect(clean.stdout + clean.stderr).toBe("");
+    expect(clean.status).toBe(0);
+
+    tmp.write("js/ts-syntax.html", `<wcs-state><script type="module">
+const typed: number = 1;
+export default { total: typed, set(v: string) { this.total = v.length; } };
+</script></wcs-state>`);
+    const syntax = runBin(dir, ["-p", "tsconfig.json"]);
+    expect(syntax.stdout).toMatch(/ts-syntax\.html\(2,14\): error TS8010: Type annotations can only be used in TypeScript files\./);
+    expect(syntax.stdout).toMatch(/ts-syntax\.html\(3,39\): error TS8010/);
+    expect(syntax.status).not.toBe(0);
+  }, 60_000);
+
   it("正しいページは exit 0", () => {
     const dir = join(tmp.dir, "clean");
     tmp.write("clean/tsconfig.json", READY_CONFIG);
@@ -289,6 +372,7 @@ export default { count: 0, inc() { this.count++; } };
     tmp.write("bare/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [], skipLibCheck: true }, include: ["src/**/*.ts"] }));
     tmp.write("bare/index.html", PAGE);
     const warned = runBin(dir, ["-p", "tsconfig.json"]);
+    expect(warned.stderr).toContain("wcs-tsc: warning:");
     expect(warned.stderr).toContain("is missing");
     expect(warned.stdout).not.toContain("TS2551");
 

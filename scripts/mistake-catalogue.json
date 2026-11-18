@@ -1861,6 +1861,24 @@
       "effect": { "en": "`reset` publishes the change to 0 through `wcs-timer:tick` (`{ count: 0, elapsed: 0 }`), so the handler runs at once: a 2.5-second wait ended the moment it started.", "ja": "`reset` は、0 への変化を `wcs-timer:tick`（`{ count: 0, elapsed: 0 }`）で発行するので、ハンドラーがその場で走る: 2.5 秒の待ちが、始めた瞬間に終わった。" },
       "disposition": "docs-only",
       "note": { "en": "Found by the stamp-rally seam app (docs/seam-apps.md). Test `event.detail.count > 0` in the handler. The README says so since 4.25.", "ja": "継ぎ目アプリ stamp-rally が見つけた（docs/seam-apps.ja.md）。 ハンドラーで `event.detail.count > 0` を確かめる。4.25 から README に書いてある。" }
+    },
+    {
+      "id": "filter-arg-enum",
+      "lint": [{ "code": "wcs/filter-arg-enum", "severity": "warning" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Compares a path whose type is a set of literals with a value outside it: `class.st-approved: .status|eq('aproved')` where `status` is `\"pending\" | \"approved\" | \"denied\"`.", "ja": "型がリテラルの集合のパスを、その外の値と比べる: `status` が `\"pending\" | \"approved\" | \"denied\"` のときの `class.st-approved: .status|eq('aproved')`。" },
+      "effect": { "en": "The comparison is never true: approved requests lost their green badge, and every check of the seam app and its 140 browser tests passed. Since 4.26 the lint reports the value, with the near one, where the type is a schema `enum` / `const` or a JSDoc literal union.", "ja": "比較は決して真にならない: 承認された申込は緑の印を失い、継ぎ目アプリのすべての検査と 140 のブラウザのテストが通った。4.26 から、型がスキーマの `enum` / `const` か JSDoc のリテラルの union なら、lint が近い値つきで報告する。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). The runtime does not know the type. `eq` / `ne` as the first filter on the path.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 実行時は型を知らない。パスの最初のフィルタが `eq` / `ne` のとき。" }
+    },
+    {
+      "id": "stale-state-schema",
+      "lint": [{ "code": "wcs/drift-state-key", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Renames a state key in a TypeScript state file and keeps the manifest whose `stateSchema` was generated from the old type (no `wcs-schema emit` after the change).", "ja": "TypeScript の state のファイルで state のキーを改名し、古い型から作った `stateSchema` の manifest をそのまま使う（変えた後に `wcs-schema emit` しない）。" },
+      "effect": { "en": "Where the script and the schema both know a path, the schema wins: the HTML is checked against the old names, and a rename that missed the HTML passed the lint (0 errors). A row binding to the renamed getter then shows nothing, with no word at run time. Since 4.26 the lint warns when the schema's top-level keys differ from the script's.", "ja": "スクリプトとスキーマの両方が知るパスでは、スキーマが勝つ: HTML は古い名前で検査され、HTML を直し忘れた改名が lint を通った（エラー 0）。改名した getter への行の束縛は、実行時に何も言わずに何も出さない。4.26 から、スキーマの最上位のキーがスクリプトと食い違えば lint が警告する。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Run `wcs-schema check` before the lint in CI.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 CI で lint の前に `wcs-schema check` を走らせる。" }
     }
   ],
   "uncounted": [

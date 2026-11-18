@@ -103,8 +103,9 @@ export default {
     expect(findTopLevelReads(source).map((r) => r.text)).toEqual(['localStorage.getItem']);
   });
 
-  it('パースできないスクリプト（TypeScript）・読みの無いスクリプトは黙る', () => {
-    expect(findTopLevelReads('const s: string = localStorage.getItem("a");')).toEqual([]);
+  it('パースできないスクリプト・読みの無いスクリプトは黙る（TypeScript は型を消して読む — 4.26、lending-desk）', () => {
+    expect(findTopLevelReads('const s: string = localStorage.getItem("a");')).toHaveLength(1);
+    expect(findTopLevelReads('const s = ;')).toEqual([]);
     expect(findTopLevelReads('export default function () { return true; }')).toEqual([]);
   });
 });

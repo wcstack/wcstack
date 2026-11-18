@@ -27,6 +27,8 @@ import { WcsDiagnostic, WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '.
 import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type PathCandidate, type WatchEntryInfo } from './stateAnalyzer.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
 import { toWildcardForm } from './indexPath.js';
+import { resolveIndexedSchemaPath } from './bindingValidator.js';
+import type { JsonSchemaNode } from '../core/sidecar/types.js';
 import {
   isUnresolvedPath, moduleLocationOf, opaquePathsOf, openOutputSlots, resolveStatePathIndex, scriptReadable, type FileReader, type StatePathIndex, type StatePathScopes,
 } from './statePathResolver.js';
@@ -45,6 +47,9 @@ const STATE_NAME_SEPARATOR = '@';
  * inserted into the page — belongs to the page's root (assignVolumes).
  *
  * @param fileReader - the reader for the volumes' `src=` (the one the binding checks use; without it, `src=` is not read)
+ * @param applicationSchema - the page's stateSchema: where it is declared it decides, as for the bindings — a key
+ *   it has (`typed` of a getter the script does not show, a path of a state the lint cannot read) is not missing,
+ *   and only a key it definitely lacks (`nonexistent`) is reported (still a warning)
  */
 export function validateWatchDeclarations(
   html: string,
@@ -52,6 +57,7 @@ export function validateWatchDeclarations(
   locale?: string,
   fileReader?: FileReader,
   bindAttribute?: string,
+  applicationSchema?: JsonSchemaNode,
 ): WcsDiagnostic[] {
   const msgs = getMessages(locale);
   const out: WcsDiagnostic[] = [];
@@ -114,7 +120,7 @@ export function validateWatchDeclarations(
       };
 
       for (const entry of entries) {
-        const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs);
+        const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs, applicationSchema);
         if (diagnostic === null) continue;
         out.push({
           code: diagnostic.code,
@@ -188,6 +194,7 @@ function validateEntry(
   paths: readonly PathCandidate[],
   scopes: StatePathScopes,
   msgs: WcsMessageCatalog,
+  schema?: JsonSchemaNode,
 ): EntryDiagnostic | null {
   const { key } = entry;
   const invalid = (message: string): EntryDiagnostic =>
@@ -223,7 +230,15 @@ function validateEntry(
   // 数値の添字のキー（`items.0.v`）は添字を `*` に読み替えた形でも照合する — 4.0 は添字のパスを行として読み、
   // その行の書き込みで発火する（#355。束縛の存在の照合と同じ — bindingValidator の pathExistsInCandidates）
   // Nothing is said about a key in a state the validator could not read (the root, or an unreadable volume's subtree)
-  if (!isUnresolvedPath(key, scopes) && !pathSet.has(key) && !pathSet.has(toWildcardForm(key)) && !matchesRecursion(collectRecursionSpecs(paths), key, p => pathSet.has(p))) {
+  // With a stateSchema the schema decides, as for a binding (a key it has is there, in a state the lint cannot read
+  // too); up to 4.25 the schema was not consulted, and a key only the schema showed was a false warning
+  const inCandidates = pathSet.has(key) || pathSet.has(toWildcardForm(key)) || matchesRecursion(collectRecursionSpecs(paths), key, p => pathSet.has(p));
+  const missing = inCandidates
+    ? false
+    : schema !== undefined
+    ? resolveIndexedSchemaPath(schema, key).kind === 'nonexistent'
+    : !isUnresolvedPath(key, scopes);
+  if (missing) {
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
       message: msgs.watchPathMissing(key),
