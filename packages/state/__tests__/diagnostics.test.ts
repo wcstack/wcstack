@@ -359,6 +359,61 @@ describe("購読者のいないコマンドの emit（wcs/command-token-unbound 
   });
 });
 
+describe("スクリプトの宣言していない $command.<name>（lending-desk — 名前の無い TypeError だった）", () => {
+  it("宣言していない名前を読むと、束縛と同じ #1302 を近い名前つきで投げる", async () => {
+    const { el } = await page(``, { $commandTokens: ["reloadReservations"] });
+    let caught: unknown;
+    el.createState("writable", (s: any) => {
+      try { s.$command.reloadReservation.emit(); } catch (e) { caught = e; }
+    });
+    expect(String((caught as Error).message)).toContain('"$command.reloadReservation" is not declared in $commandTokens.');
+    expect(String((caught as Error).message)).toContain('Did you mean "reloadReservations"?');
+  });
+
+  it("宣言した名前・in・Object.keys・Object.prototype の名前・then / toJSON は今までどおり", async () => {
+    const { el } = await page(``, { $commandTokens: ["a"] });
+    el.createState("writable", (s: any) => {
+      expect(typeof s.$command.a.emit).toBe("function");
+      expect("b" in s.$command).toBe(false);
+      expect(Object.keys(s.$command)).toEqual(["a"]);
+      expect(typeof s.$command.hasOwnProperty).toBe("function");
+      expect(s.$command.then).toBeUndefined();
+      expect(s.$command.toJSON).toBeUndefined();
+      expect(s.$command[Symbol.iterator]).toBeUndefined();
+      expect(s.$command).toBe(s.$command);
+    });
+  });
+
+  it("再セットで増えたトークンも読める（新しい名前空間にも同じ検査）", async () => {
+    const { el } = await page(``, { $commandTokens: ["a"] });
+    el.setInitialState({ $commandTokens: ["a", "b"] });
+    let caught: unknown;
+    el.createState("writable", (s: any) => {
+      expect(typeof s.$command.b.emit).toBe("function");
+      try { s.$command.c.emit(); } catch (e) { caught = e; }
+    });
+    expect(String((caught as Error).message)).toContain('"$command.c" is not declared in $commandTokens.');
+  });
+
+  it("束縛の $command.<未宣言> は今までどおり束縛のエラー（警告を重ねない）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root } = await page(`<button data-wcs="onclick: $command.nope">x</button>`, { $commandTokens: ["yes"] });
+      let thrown = "";
+      try { (root.querySelector("button") as HTMLButtonElement).click(); } catch (e) { thrown = String(e); }
+      await flush();
+      const said = (spy: MockInstance) => spy.mock.calls.map((c) => c.map(String).join(" ")).filter((t) => t.includes("$command.nope"));
+      // (the click's handler failure: thrown to the dispatcher or reported on the console, depending on the DOM)
+      expect([thrown, ...said(error)].join("\n")).toMatch(/"\$command\.nope" is not declared in \$commandTokens/);
+      expect(said(warn)).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+});
+
 describe("委譲されたハンドラの throw と event.currentTarget（wcs/delegated-current-target — 7GUIs の評価の Circle Drawer、著者の決定）", () => {
   const clickIn = async (root: ShadowRoot, selector: string) => {
     (root.querySelector(selector) as HTMLElement).click();

@@ -66,7 +66,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.SyncConnectNeedsOutput, ["label"], 'sync=connect requires observable property "label".'],
   [M.RenderChain, [], `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`],
   [M.InlineBlocked, [], 'The inline <script> of <wcs-state> was blocked by Content-Security-Policy. Inline state is evaluated through a blob: URL: give the page\'s nonce to the <script> that loads @wcstack/state, or allow blob: in script-src. Moving the state into an external file (src="./state.js") needs neither. See https://github.com/wcstack/wcstack/blob/main/docs/csp.md'],
-  [M.InlineFailed, ["Unexpected end of input"], "Failed to evaluate the inline <script> of <wcs-state>: Unexpected end of input. If this page sets a Content-Security-Policy, see https://github.com/wcstack/wcstack/blob/main/docs/csp.md"],
+  [M.InlineFailed, ["x is not defined"], "Failed to evaluate the inline <script> of <wcs-state>: x is not defined. If this page sets a Content-Security-Policy, see https://github.com/wcstack/wcstack/blob/main/docs/csp.md"],
   [M.OptionInvalid, ["bootstrapState", "enableMustache"], `bootstrapState: "enableMustache" is not one of its options, or not of the option's type. 4.0 moved it to the state's $behavior.`],
   [M.BehaviorChanged, [], "a re-set state may not change $behavior: create the element again."],
   [M.SecondRoot, [], 'a second <wcs-state> on the same root: there is one state tree per root — graft a subtree with <wcs-state mount="path"> (v1\'s name="…" is gone: read the mounted state by its path).'],
@@ -147,6 +147,17 @@ describe("番号付きのメッセージの文面（診断の後付け）", () =
     "Module name, '/js/make.js' does not resolve to a valid URL.",
   ])("#43 は解決できない import に CSP でなく blob: の基底を言う（%s）", (detail) => {
     expect(text(M.InlineFailed, [detail])).toBe(`Failed to evaluate the inline <script> of <wcs-state>: ${detail.replace(/\.$/, "")}. An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").`);
+  });
+
+  // 構文エラー（Chromium・WebKit・Firefox の文）は CSP でなく「JavaScript として読めない — TypeScript の構文」を言う（lending-desk）
+  it.each([
+    "Unexpected token ':'",
+    "Unexpected token ':'. Expected ';' after variable declaration.",
+    "unexpected token: ':'",
+    "missing ; before statement",
+    "Unexpected end of input",
+  ])("#43 は構文エラーに CSP でなく TypeScript の構文を言う（%s）", (detail) => {
+    expect(text(M.InlineFailed, [detail])).toBe(`Failed to evaluate the inline <script> of <wcs-state>: ${detail.replace(/\.$/, "")}. The script does not parse as JavaScript: the browser runs it as written, so TypeScript syntax (a type annotation "x: number", "import type", "as T", "x!") is a syntax error here. Write the types in JSDoc (/** @type {number} */), or put the state in a file a build compiles (src="./state.ts").`);
   });
 
   it("#122 は attr: にも名前空間に合った文面を持つ", () => {

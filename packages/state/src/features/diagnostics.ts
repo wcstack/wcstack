@@ -399,7 +399,38 @@ function setterDrained(): void {
  * and Cells). The engine's `commands` is watched from its first declaration on, so the tokens of a re-set
  * are wrapped too.
  */
+/**
+ * `this.$command.<name>` of a name `$commandTokens` does not declare: the core hands the script the plain namespace,
+ * so the read is `undefined` and the next `.emit()` a TypeError that names nothing (`Cannot read properties of
+ * undefined (reading 'emit')` — docs/seam-apps.md, lending-desk). The script's `$command` (the core reads `api` before
+ * its own `$command`) is the namespace behind a proxy that raises the binding's error, with the near name. A binding's
+ * `$command.<name>` still reads the namespace itself (`commandToken`). (`api` is written as a property: the build
+ * shortens it in the core and the add-on alike.)
+ */
+const scriptCommands = new WeakMap<object, object>();
+
+function strictCommands(engine: Engine): void {
+  const api = (engine as unknown as { api: Record<string, unknown> }).api;
+  if (Object.hasOwn(api, "$command")) return;
+  Object.defineProperty(api, "$command", {
+    get: () => {
+      const ns = engine.commands;
+      let p = scriptCommands.get(ns);
+      if (p === undefined) {
+        p = new Proxy(ns, {
+          get: (t, k) => typeof k !== "string" || k in t || k in Object.prototype || k === "then" || k === "toJSON"
+            ? Reflect.get(t, k)
+            : raise(M.CommandTokenUndeclared, [k], k, Object.keys(t)),
+        });
+        scriptCommands.set(ns, p);
+      }
+      return p;
+    },
+  });
+}
+
 function watchCommands(engine: Engine): void {
+  strictCommands(engine);
   if (Object.getOwnPropertyDescriptor(engine, "commands")?.set !== undefined) return;
   let ns = engine.commands;
   Object.defineProperty(engine, "commands", {
