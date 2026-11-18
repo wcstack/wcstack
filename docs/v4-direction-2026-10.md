@@ -76,7 +76,7 @@
 
 予備に 2 つ:
 
-- **TypeScript で書く作者** — 型付きの state、`wcs-schema`・`wcs-tsc`・VS Code の拡張を作者の帰還路にする（原則 7「道具を一通り通す」のまだ通っていない半分）。2 の代わりに作者を変えるときの候補。
+- **TypeScript で書く作者** — 2026-11-18 に lending-desk として走らせた（§5.21、4.26）。型付きの state、`wcs-schema`・`wcs-tsc`・VS Code の拡張を作者の帰還路にする（原則 7「道具を一通り通す」のまだ通っていない半分）。
 - **静的に書き出したサイト** — `@wcstack/server` でビルド時に描いて、サブパスの静的ホスティングへ置く。描いたのは先週、固定しない CDN は次の minor（スナップショットは major.minor で捨てられる）、404 のフォールバックのディープリンク。ssr-news と homeroom に近いので予備。
 
 - 変える軸は 1 本に 1 つ（§5.6 の 5）。2 本目で作者を変え、2 か予備の TypeScript の作者のどちらか一方にする。
@@ -364,6 +364,24 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
    - 比べた案: 実行時だけにして、lint と文書は次の minor。
 
 記録だけにしたもの: ページの可視性の要素（[long-lived-pages.ja.md](./long-lived-pages.ja.md) に書き方がある）、センサーの「動いている」の出力、ポリシーで禁じられたページでの `share()` のエラーの種類。
+
+### 5.21 lending-desk から決めたこと（2026-11-19、著者）
+
+3 巡目の予備の 1 本目、TypeScript で書く作者（[seam-apps.ja.md](./seam-apps.ja.md) の「lending-desk」）。9 つの問いを推奨の案に決めた。core の残りは 6 B なので、実行時の直しはどれも core の外に置く。
+
+1. **`wcs-tsc` と VS Code の拡張は、ページ内の `<wcs-state>` のスクリプトを JavaScript として検査する（4.26）。** 4.25 までは TypeScript として検査していたので、lint と文書が勧める JSDoc の型が読まれず、ブラウザでは構文エラーになる型の注釈（`const x: number`）が通った。前置きの型を JSDoc で書き直す。比べた案: TypeScript のまま、TypeScript だけの構文を別に検出する（JSDoc は読まれないまま）。
+2. **マニフェストのスキーマは、生成元のページにだけ当てる（4.26）。** `wcs-schema emit` が `stateSource`（マニフェストから見た state のファイル）を書き、lint はそのファイルを `<wcs-state src>` に持つページにだけ `stateSchema` を当てる。`.js` と `.ts` の同じパスは同じファイル。`stateSource` の無いマニフェストは今のまま。ページ内の state を持つ 2 枚目のページが、1 枚目のスキーマで検査されて誤報を出していた。比べた案: ページ内の state のページには当てない、だけ。
+3. **lint は古いスキーマを言う（4.26）。** state のスクリプトの最上位のキーと、当てたスキーマの最上位のキーが食い違えば警告する。スキーマはスクリプトより強いので、`.ts` だけで改名して HTML を直し忘れても、古いマニフェストのままでは lint が 0 件だった。skill の完了の関門に `wcs-schema check` を書く。比べた案: 文書だけ。
+4. **`url` を消すと、`<wcs-sse>` と `<wcs-ws>` は接続を閉じる（4.26、Upgrading に書く）。** 4.25 までは「消しても開いたまま、切るのは `close()`」と意図して決めていた。サインアウトで `url` の getter が `null` を返すページは、前の利用者の通知を受け取り続けた。比べた案: 今のまま。
+5. **`<wcs-sse>` はページを離れるときの接続を自分で扱う（4.26）。** Firefox は、接続を開いたまま離れると「接続が中断された」とコンソールに書く。避けられるのは `beforeunload` で閉じたときだけで、`pagehide` では遅い。ところが WebKit は、Navigation API の同じ文書の中の遷移ごとに `beforeunload` を出すので、文書が勧めていた `beforeunload` での `close()` は、ルーターの遷移でライブ更新を止めた。要素が `beforeunload` で閉じ、文書が残ればつなぎ直す。戻る・進むのキャッシュは `<wcs-ws>` と同じく `pagehide` / `pageshow` で扱う。文書の手順は消す。比べた案: 文書だけ（手順を消し、無害と書く）。
+6. **`<wcs-debounce>` / `<wcs-throttle>` の `value` の初期値を `null` にする（4.26、Upgrading に書く）。** 出力だけのメンバーは束縛のときに要素の値を state に書く。最初の値が `undefined` だったので、ページが書いた `null` が読み込みの直後に `undefined` に変わり、`$watch` が `undefined` で走った。44 のタグを調べ、当たったのはこの 2 つだけ。比べた案: 要素の `undefined` を state が種にしない（core のバイトが要る）。
+7. **表の中の `<template>` を、`@wcstack/server` と `@wcstack/testing` で直す（4.26）。** happy-dom は `<tbody>` の中の `<template>` を表の外へ出す。`renderToString` は `<table><tbody><template data-wcs="for: …">` のページで投げ、`mount()` も失敗していた。3 つのブラウザでは動く書き方。happy-dom にも報告する。比べた案: 既知の制限として文書に書く。
+8. **`@wcstack/typescript` に Vite のプラグインを足す（4.26）。** `<wcs-state src="./state.ts">` は Vite の開発サーバーでは動くが、`vite build` は state のファイルを出さず、本番で 404 になる。プラグインが state を独立した chunk として出し、`src` を書き換える。ページ内の `<wcs-state>` と `<wcs-guard-handler>` のスクリプトはページに残す。比べた案: 手順を文書に書くだけ。
+9. **型を 4 つ直す（4.26）。** `defineState` の `$on` のハンドラに型を付ける（state の引数は循環して書けなかった）。`$command` を `$commandTokens` の名前に絞る（`noUncheckedIndexedAccess` で毎回「undefined かもしれない」だった）。`@wcstack/testing` の `state<T>()`。自作要素の `static wcBindable` には `@wc-bindable/core` の `WcBindableDeclaration` を案内する。比べた案: 文書だけ。
+
+直し方が決まっているものも、この minor で入れる。lint: `.ts` の state の戻り値の型（getter とメソッドが見えなくなり、誤報が出て、本物の誤りの検査も外れていた）、`$watch` がスキーマを見る、読めない JSDoc の型と `cond ? x : []` は「わからない」、`.ts` で書いた自作要素、行とスキーマの型での `wcs/filter-input-type`、union の値と比べる綴り違い。実行時（diagnostics と I/O の要素）: 宣言していない `$command.x` に名前を付けて投げる、`<wcs-fetch>` の `fetch()` に数値の url、ページ内の state の構文エラーに TypeScript の構文を言う。`wcs-tsc` の設定の警告に「warning」の語。
+
+記録だけにしたもの: ルーターのガードを外部ファイルや TypeScript で書く形。
 
 ## 6. やらないこと
 

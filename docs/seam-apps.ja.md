@@ -794,3 +794,40 @@ spec（Chromium で 35 件、うち 9 件は Firefox でも）は、例のサー
 | 実行時の欠陥、誤った状態 | **`<wcs-fetch>` は、成功した要求をネットワークの失敗と報告した。** 応答を自動で読むとき（`response-type` が既定の `auto`）、`Content-Type` が JSON と言う応答は `response.json()` で読む。`204` には本文が無い: `json()` が投げ、要素は `errorInfo.code: "network"`・`status: 0`・`value: null` で終わる。アプリのサインアウト: サーバーは `204` を `Content-Type: application/json; charset=utf-8` で返す。Chromium と Firefox。黙っていた: 4.25 の `[wcs/io-error-unobserved]` が名指しした | 決定のために報告。パッケージは変えていない。ページはこの応答を文字列で読む（`response-type="text"`）: `status: 204`、エラーなし |
 | 実行時の警告、正しい | **`[wcs/io-error-unobserved]` が、ページの `<wcs-wakelock>` を名指しした。** headless の Chromium は、コンパスのページでも完歩証でも画面のロックを断る（`not-allowed`）が、ページは要素の失敗を何も束ねていなかった。作者のテストが確かめていたのはページの望み（`keepAwake`）で、ロックではなかった | ページは `errorInfo` を束ね、コンパスのページに「画面が自動で消えることがある」と出す |
 | 設計の問い | **「禁じられていて、しかも無い」を言う要素は無い。** [device-apis.ja.md](./device-apis.ja.md) の端末のチェック（「それは在るか」）は、`supported` より先に `unsupportedReason` を読む。Chromium は `magnetometer` のポリシーを知っているが、`Magnetometer` クラスはフラグの奥にある: それを禁じた枠では、`<wcs-permission>` が `policy-blocked` と言い、行は「このページでは使えません」と言って新しいタブを勧める — そのタブにもセンサーは無い。作者のページは「この端末では使えません」と言っていた | ページはこの行ではクラスを確かめ、作者の答えを保つ。記録 |
+
+### lending-desk（2026-11-18）
+
+[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §3.2 の 3 巡目の予備の 1 本目。変える継ぎ目は作者: TypeScript のチームで、型と wcstack の道具（`tsc`・`wcs-tsc`・`wcs-schema`・lint・`@wcstack/testing`）が間違いからの帰り道になる（原則 7「道具を一通り通す」の、どのアプリも通っていなかった半分）。
+- **筋書き。** みどり市 備品の貸出: 市の地区センターが町内の団体に備品を貸す。URL に残る検索と期間の空き数、月の空きカレンダー、チームが TypeScript の自作要素で書く数量の部品を使った申込かご（2 つのタブで共有、行ごとの `422`）、決定が SSE でライブに届く申込、職員のページ、TV に映す受付カウンターの画面 — state をページの中に書く 2 枚目のページ。`@wcstack/state` と `@wcstack/router`。
+  - チームは全部を `strict` の `.ts` で書き、API の型をサーバーとページで共有し、本番向けにビルドし（実行時に TypeScript は無い）、`npm run check` を 1 つ持つ: 型の検査、wcstack の道具、単体テスト、開発サーバーとビルドの両方へのブラウザのテスト。
+  - わざとする間違い 20 個。それぞれ、何が言ったか（型の検査・wcstack の道具・コンソール・何も言わない）を記録する。暮らしの出来事: サーバーの答えの形が変わる、仲間が state の型を変えて検査の一部だけ走らせる、まっさらな clone、ほかの時間帯と年末、2 つのタブ、受け付けられなくなったトークン、再起動。
+  - 作者は、claude.ai にサインインした入れ子の `claude -p`（これまでの回と同じモデルの系統）で、4.25.0 とその公開文書と skill に固定した — skill は #71 が縮めたばかりのもの（SKILL.md は 116 KB から 22 KB）。TypeScript は「wcstack の文書が別のことを言わないかぎり、`npm i -D typescript` が入れるもの」（npm の `latest` は 7 で、道具はそれを断る）。
+- **結果。** 68 分。`npm run check` は通る: `tsc`、`wcs-tsc`、`wcs-schema check`、`--strict` で 0 件の lint、単体テスト 44、ブラウザのテスト 140（開発サーバーを Chromium で、ビルドを Chromium・Firefox・WebKit で）。
+  - 引っかかり 34、コードの回避策 14、間違い 20 個はそれぞれの写しで。**3 個は、すべての検査と 140 のブラウザのテストを通った**: union と比べる綴り違い（`status|eq('aproved')`）、optional の親を通る束縛、`this.order.purpose` を読む getter。
+  - 作者は Vite のプラグインを自分で書いた。`.ts` の state を本番向けにビルドするものが無かったから。
+  - 縮めた skill は地図として働いた: 作者は関門、落とし穴の行、要る参照の節を見つけた。食い違いは最初の規則だけ — 頼まれないかぎりバンドラーを使わない — で、頼まれたときの手順が無かった。
+
+分類の前に、すべての主張を npm の 4.25.0 で、ブラウザが絡むものは Chromium・Firefox・WebKit で再現した。作者が書いている間に走らせた探針が、ビルドとページ内のスクリプトの問題を先に見つけた。主張のうち 1 つは再現しなかった。小さな引っかかり（単体テストで失敗した表）を辿ると、サーバーもそれを描けなかった。
+
+| 種類 | 見つけたこと | 結末 |
+|---|---|---|
+| lint の穴、誤報 | **TypeScript の戻り値の型が、メンバーを lint から隠した。** lint は `.ts` の state を読むが、`get total(): number {` と書いた getter や `save(): void {` と書いたメソッドは、lint にとって無かった: その束縛はどれも `wcs/binding-path-missing`（アプリで 143 件の警告）、導いたスキーマがあればエラー（スキーマにメソッドは無い）、`$watch: { count(cur: number): void {} }` はキー `cur` と読まれた。**しかもスクリプトの規則がそんな getter を飛ばした**: アプリの文字数は `this.order.purpose` を読んでいた（`: number` が無ければエラー `wcs/getter-untracked-read`、あれば何も無し）。`strict` が求める戻り値の型が、エラーを消した。作者は 39 のメソッドから `: void` を外した。`define-state.md` は getter に型を書けと言う | 直した（#714）: 戻り値の型と、その中の型引数・オブジェクト型を読む |
+| 道具の欠陥 | **`wcs-tsc` と VS Code の拡張は、ページ内の state を TypeScript として検査していた。** JSDoc の型は読まれず — `/** @type {Reservation[]} */ list: []` は `never[]` になり、その読みがどれもエラー — ブラウザが走らせられない TypeScript の構文は通った: `const n: number = 1` はきれいに通り、ページは読み込めなかった。lint・skill・`define-state.md` は、ページ内の state の型を JSDoc で書けと言う。作者は受付の画面を型の注釈なしで書き、形はリテラルの写しにした | 決めた: ページ内のスクリプトは JavaScript として検査する（#714） |
+| lint の欠陥、誤ったエラー | **1 つのマニフェストのスキーマが、その下のすべてのページに当たった。** ページ内に state を持つ受付の画面は、主のページのスキーマに対して `wcs/path-nonexistent` のエラーを 6 つ受けた。作者はマニフェストを発見の外へ移して手で渡した — すると `wcstack.manifest.json` しか見つけない拡張は、それを見失う | 決めた: `wcs-schema emit` が `stateSource` を書き、lint はそのファイルを `<wcs-state src>` に持つページにだけスキーマを当てる（#714） |
+| lint の穴 | **古いスキーマが勝った。** 3 つの名前を `.ts` だけで改名した: コミットしたマニフェストのままでは、スキーマの型がスクリプトより強いので lint は何も言わなかった。気づいたのは `wcs-schema check` だけで、skill の関門はそれを挙げていなかった | 決めた: state のキーとスキーマのキーが食い違えば警告（#714）。skill の関門で `wcs-schema check` を走らせる |
+| ビルドの穴 | **`vite build` は `<wcs-state src="./src/state.ts">` をそのまま残し、state のファイルを出さなかった**: 開発サーバーは動き、本番は 404。state の README は Vite のページに `src=` を勧めていた | 決めた: `@wcstack/typescript` に Vite のプラグイン（#714） |
+| 実行時の欠陥、誤った値 | **`<wcs-debounce>` が、ページの `null` を `undefined` で上書きした。** 出力だけのメンバーは束縛のときに要素から state へ種をまき、要素の `value` は `undefined` で始まっていた: 検索語の `$watch` がそれで走って投げた。44 のタグのうち、出力をそう始めるのは `<wcs-debounce>` と `<wcs-throttle>` だけ | 決めた: `value` は `null` で始まる（#711） |
+| 実行時の欠陥、文書 | **Firefox のコンソールの文への文書の対策が、WebKit でライブ更新を止めた。** Firefox は、`EventSource` を開いたままページを離れると、ストリームが中断されたと書く。文書は `beforeunload` で閉じよと言っていた。WebKit は、Navigation API が引き取る同じ文書の中の遷移ごと — `<wcs-link>`、ガードの転送、`navigateUrl` — に `beforeunload` を出すので、ストリームはサインインで閉じて戻らなかった。`pagehide` では Firefox に間に合わない | 決めた: `<wcs-sse>` が `beforeunload` で閉じ、文書が残ればつなぎ直す。手順は消した（#711） |
+| 実行時の沈黙 | **サインアウトしたタブが、前の利用者のストリームを持ち続けた。** ページの `url` の getter はサインアウトの後 `null` を返した。`url` を消しても `<wcs-sse>`（と `<wcs-ws>`）は README のとおりつながったままで、タブは団体の決定を受け取り続けた | 決めた: `url` を消すと接続を閉じる（#711） |
+| 実行時の欠陥 | **`@wcstack/server` は、行が `for:` の表を描けなかった。** happy-dom（最新の 21.0.4）は `<tbody>` の `<template>` を外へ出す。`renderToString` は `[wcs/wildcard-rank]` を投げ、`@wcstack/testing` の `mount()` は失敗した。3 つのブラウザでは動く書き方。単体テストで `<ul>` が要ったという作者のメモを辿って見つけた | 決めた: 2 つのパッケージで直し（#712）、happy-dom に報告する |
+| 型の穴 | **`$on` のハンドラの state に型が付けられなかった** — state から書くと循環する — **`$command` はどんな名前でもよく**（`noUncheckedIndexedAccess` では「undefined かもしれない」）、**`@wcstack/testing` の state は `any`**、`static wcBindable` の型を出す wcstack のパッケージは無い | 決めた: `$on` と `$command` に定義から型を付け、`state<T>()`（#714、#712）。文書は `@wc-bindable/core` の `WcBindableDeclaration` を案内する |
+| lint の穴 | **型が分かっているのに黙った**: スキーマの `enum` に対する `status|eq('aproved')`。`wcs/filter-input-type` は最上位のリテラルだけ — 行のフィールドもスキーマの型も見ない。`.ts` のモジュールの自作要素（lint は `.js` だけ辿った）。スキーマだけが知る getter への `$watch`。**そして何も分からないのに報告した**: JSDoc の `import("./api.ts").Item`、getter の `cond ? x : []` | 直した（#714） |
+| 実行時の沈黙 | `this.$command.<綴り違い>.emit()` は何も名指さない `TypeError` を投げた。`<wcs-fetch>` の `fetch(5)` は何もしなかった。TypeScript の構文を含むページ内の state は、Content-Security-Policy の問題として説明された | 直した（#713、#711）: 近い名前つきのトークンのエラー。警告。「TypeScript の構文はブラウザでは動かない」 |
+| 再現しなかった | 「HTML をプログラムから外しても `wcs-tsc` は警告しない」: 標準エラーに警告していた。作者の道具は「error」か「warning」を含む行だけを残し、監査の行にはどちらも無く、終了コードは 0 だった | 行に「warning」と書く（#714） |
+| 残した | ルートのガードは HTML の中の JavaScript: `src=` も TypeScript も無く、何も検査しない | 記録 |
+
+うまく行き、いま書いてあること: `defineState` のパスの型は、共有の型で改名したサーバーのフィールドを `Property 'items.*.deposit' does not exist … Did you mean 'items.*.depositYen'?` に変えた。`@wcstack/testing` は `.ts` の state を Node の型の除去でそのまま読んだ。`<wcs-storage>` は、ページのコード無しで 2 つのタブのかごを保った。新しい検索に追い越された遅い検索は着地しなかった。ストリームはサーバーの再起動の後に戻った。
+
+問いは 2026-11-19 に著者が推奨のとおり決めた（[v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.21）。止める目安には当たらない: TypeScript のチームが頼る道具が、誤って報告するか何も言わず、新しい種類の発見があった — ブラウザが走らせるのと違う言語として検査する道具、生成元より長生きするスキーマ、残る遷移で unload するブラウザ。
+
+私の落ち度: 作者に渡した文書から `packages/*/docs/` — `define-state.md` を含む — が漏れていた。次からは入れる。
