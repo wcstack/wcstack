@@ -2,6 +2,20 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.21.0 — 2026-11-19
+
+`@wcstack/state` 4.26.0 から作った（npm の `@wcstack/lint` 4.26.0・`@wcstack/typescript` 4.26.0 と同じ判定）。継ぎ目アプリ lending-desk（TypeScript のチームが書く備品の貸出 — strict・共有の型・本番のビルド）が見つけた道具の穴を直した。作者がわざとした 20 の間違いのうち 3 つは、どの検査も通っていた。
+
+- **ページ内の `<wcs-state>` のスクリプトを JavaScript として検査する。** 仮想コードは `.js`（`// @ts-check`）、前置きの型は JSDoc。JSDoc の型が効き（`/** @type {Item[]} */ items: []` が `never[]` にならない）、TypeScript の構文（`const n: number`・`as`・`!`・`import type`）はその場所でエラーになる — ブラウザでは構文エラーになる書き方。TypeScript として検査していた 2.20.0 までは、JSDoc を無視し、型の注釈を通していた。getter の戻り値の `any` は `/** @returns {any} */` の JSDoc で入れ、自分の JSDoc を持つ getter には入れない。`import { defineState } from "@wcstack/state/define"` を書いたページの TS2440 も直した。
+- `$on` のハンドラの引数に型が付き（`state`・`event`・添字、`this` はエラー）、`this.$command` は `$commandTokens` の名前に絞られる（`defineState` と同じ）。
+- **`.ts` の state の戻り値の型を読む。** `get total(): number {`・`save(): void {`・`$watch` の `count(cur: number): void {` が見えず、誤報の `wcs/binding-path-missing`（作者のアプリで 143 件）、スキーマがあれば `wcs/path-nonexistent` のエラー、引数の `cur` を `$watch` のキーと読んでいた。スクリプトの規則（`wcs/getter-untracked-read` など）もそうした getter を飛ばしていた。本体やモジュールの TypeScript は Node の型の除去（`module.stripTypeScriptTypes`、Node 22.13 以降）を通して読む。
+- `.ts` のモジュールで定義した自作要素を検査する（`wcs/tag-member-unknown`）。`.js` / `.mjs` しか辿っていなかった。
+- JSDoc の `import("./api.ts").Item` を辿る（ローカルの `interface` / `type` / `@typedef`）。読めない型と、`cond ? x : []` の getter の行は「存在しない」でなく「わからない」（`wcs/path-dynamic-unknown` の info 1 件）。
+- `$watch` はスキーマを見る。`wcs/filter-input-type` は行のフィールドとスキーマの型も見る（日付のフィルタは `Date` だけ）。
+- `wcs/filter-arg-enum`（新規、warning）: リテラルの集合の型（スキーマの `enum` / `const`、JSDoc の union）のパスを、その外の値と比べる（`status|eq('aproved')`）。
+- `wcs/drift-state-key`（新規、warning）: 当てたスキーマの最上位のキーが、state のスクリプトと食い違う — スキーマが古いか、別のページのもの。古いマニフェストのままでは、`.ts` だけの改名が lint を通っていた。
+- **`stateSource` のあるマニフェストは、ルートの `<wcs-state src>` がそのファイルのページにだけ当てる**（`.js` ≡ `.ts`、`.mjs` ≡ `.mts`）。ページ内に state を持つ 2 枚目のページが、1 枚目のスキーマで `wcs/path-nonexistent` のエラーを受けていた。
+
 ## 2.20.0 — 2026-11-17
 
 `@wcstack/state` 4.25.0 から作った（npm の `@wcstack/lint` 4.25.0・`@wcstack/typescript` 4.25.0 と同じ判定）。継ぎ目アプリ stamp-rally（画面とセンサーの API のスタンプラリー — 全画面・画面の向き・傾きとセンサー・共有・連絡先・資格情報・スリープの抑止）が見つけた lint の穴を直した。作者がわざとした 20 の間違いに、lint は 1 つも報告しなかった。著者が lint の検査にすると決めた 7 つ:
