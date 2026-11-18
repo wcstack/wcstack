@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { Window } from 'happy-dom';
 import { getSsrSnapshotBuilder, SSR_MODULE_RESOLVER_KEY, SSR_ORCHESTRATED_VALUE } from './protocol/ssrSnapshot';
+import { setInnerHTML } from './setInnerHTML';
 
 /**
  * globalThis を差し替える renderToString の並列実行を防止する Mutex。
@@ -316,6 +317,7 @@ async function settlePendingWork(root: ParentNode & Node, maxIterations = 10): P
  * ### バインディングと構造レンダリング
  * - `data-wcs` バインディングの適用（text, attribute, class, style, property）
  * - `<template data-wcs="for:">` / `if:` / `elseif:` / `else:` の構造レンダリング
+ *   （表の中の `<template>` — `<tbody>` の行の for: など — も。happy-dom が表の外へ追い出すのを setInnerHTML が置き直す）
  *
  * ```html
  * <ul>
@@ -439,8 +441,9 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
     );
 
     // HTML をパース
-    // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
-    document.body.innerHTML = html;
+    // connectedCallback が自動発火 → state ロード → $connectedCallback 実行。
+    // 表の中の <template> は happy-dom が表の外へ追い出すので、ブラウザと同じ所に置き直す（setInnerHTML.ts）
+    setInnerHTML(document.body, html);
 
     // connectedCallbackPromise / getBindingsReady プロトコルを自動検出して待つ
     // （安定化ループ + バインディング構築。取り逃すと構築の続きがグローバル復元後に

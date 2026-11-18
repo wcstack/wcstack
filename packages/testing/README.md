@@ -55,16 +55,32 @@ The returned `MountedApp`:
 |---|---|
 | `root` | `document` or the ShadowRoot — query it |
 | `container` | `document.body` or the shadow host |
-| `state()` | Accessor for the root `<wcs-state>` — v2 has one state tree per root, so there is nothing to name. Volumes (`mount=`) are part of that tree: read them by path prefix. (`mount()` mounts DOM; `mount=` mounts state.) Throws if absent |
+| `state()` | Accessor for the root `<wcs-state>` — v2 has one state tree per root, so there is nothing to name. Volumes (`mount=`) are part of that tree: read them by path prefix. (`mount()` mounts DOM; `mount=` mounts state.) Throws if absent. `state<typeof appState>()` types the state `read` / `write` hand over — see [Typing the state](#typing-the-state) |
 | `state().read(fn)` | Run `fn` against a readonly proxy and return its result |
 | `state().write(fn)` | Run `fn` (sync or async) against a writable proxy — exactly what a handler does. Follow with `await settle()` |
 | `state().element` | The element itself |
 | `unmount()` | Remove the mounted HTML |
 
-`mount()` also smooths two happy-dom edges so the page behaves as in a browser:
+`mount()` also smooths three happy-dom edges so the page behaves as in a browser:
 
 - it disables `URL.createObjectURL` once per process when a browser-style one is present — Node cannot import `blob:` URLs, and without this an inline `<script type="module">` state never finishes loading (the loader then takes its `data:` URL path, as SSR does);
-- it wraps happy-dom's `textContent` / `innerText` setters to stringify like the DOM spec — happy-dom turns a numeric `0` into an empty string (and `innerText` throws on numbers), so a `textContent: count` binding would blank out at zero only under happy-dom.
+- it wraps happy-dom's `textContent` / `innerText` setters to stringify like the DOM spec — happy-dom turns a numeric `0` into an empty string (and `innerText` throws on numbers), so a `textContent: count` binding would blank out at zero only under happy-dom;
+- since 4.26 (not released yet), it inserts the HTML with `@wcstack/server`'s `setInnerHTML`, which keeps a `<template>` written in a table where browsers keep it. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, so a page with `<tbody><template data-wcs="for: rows"><tr>…` (or a `for:` over the cells of a `<tr>`) failed to mount with `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` — up to 4.25, such a page could not be tested headlessly.
+
+#### Typing the state
+
+Since 4.26 (not released yet), `state<S>()` takes the type of the page's state definition. `read` and `write` then hand their callback the state typed like `this` in a `defineState()` definition — its keys, getters, methods, dot paths (`"items.*.price"`) and the `$` API — so a misspelt key or a wrong argument is a type error, and a method is called without a cast. `read`'s state is readonly, as its proxy is. Without the type parameter the state is `any`, as before.
+
+```ts
+import { mount, settle } from "@wcstack/testing";
+import type appState from "../public/state"; // export default defineState({ cartCount: 0, add(name: string) { … }, … })
+
+const app = await mount(html, { resolveModule });
+const state = app.state<typeof appState>();
+await state.write((s) => s.add("apple"));      // typed: s.add(1) is an error
+await settle();
+expect(state.read((s) => s.cartCount)).toBe(1);   // number; s.cartCont is an error
+```
 
 A `<wcs-state>` with nothing to load — no `state`, `src` or `json` attribute and no inline `<script type="module">` — waits for `setInitialState()`, which a test cannot call before `mount()` returns. Since 4.9, `mount()` rejects at once and says what to write instead (`json=`, an inline script, or `src` with `resolveModule`); it used to never resolve, and the test timed out without a word. Volumes (`mount=`) are checked too; `bind-component` elements and elements inside a `<template>` are not.
 
@@ -116,6 +132,8 @@ Two things happy-dom cannot reproduce; keep one browser e2e (Playwright) for the
 
 - `customElements.define` upgrades existing nodes by **replacing** them, so "a value reaches the same node after a late define" cannot be asserted headlessly.
 - Event timing differs from real browsers.
+
+A `<template>` in a table is handled since 4.26 (not released yet): `mount()` puts it where browsers do (above). HTML a test inserts with `innerHTML` itself is not — insert it with `setInnerHTML(element, html)` from `@wcstack/server`.
 
 ## Example
 

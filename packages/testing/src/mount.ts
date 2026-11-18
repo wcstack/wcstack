@@ -7,10 +7,15 @@
  * `renderToString` performs, so `<wcs-router>`'s first route, a `$connectedCallback`
  * that inserts more elements, and `<wcs-state>`'s binding construction are all
  * covered by the one call (docs/app-testing-and-typescript-impl-plan.md D11).
+ *
+ * The HTML goes in through `@wcstack/server`'s `setInnerHTML`, as in `renderToString`: happy-dom's
+ * parser moves a `<template>` written in a table (`<tbody><template data-wcs="for: rows"><tr>…`) out
+ * of it and leaves its rows behind, where browsers keep it; `setInnerHTML` puts it back.
  */
 
 import { pathToFileURL } from "node:url";
-import { waitForReady } from "@wcstack/server";
+import { setInnerHTML, waitForReady } from "@wcstack/server";
+import type { WcsThis } from "@wcstack/state/define";
 import { checkOptions, isFunction, isNumber, isString, type OptionSpec } from "./options.js";
 
 export type BootstrapFunction = () => void | Promise<void>;
@@ -47,13 +52,28 @@ export interface MountOptions {
   readonly resolveModule?: (url: URL) => string | URL | null | undefined;
 }
 
-export interface StateHandle {
+/**
+ * The state `write` hands to its callback: typed like `this` in a `defineState()` definition
+ * (`WcsThis<S>` — the definition's keys, its dot paths, the `$` API) when `state<S>()` names the
+ * definition's type; `any` when it does not.
+ */
+export type WritableStateOf<S> = 0 extends 1 & S ? any : WcsThis<S>;
+
+/** The state `read` hands to its callback: the same, readonly (the proxy refuses writes). */
+export type ReadonlyStateOf<S> = 0 extends 1 & S ? any : Readonly<WcsThis<S>>;
+
+/**
+ * The page's root state. `S` is the type of its definition — `typeof appState` for
+ * `const appState = defineState({ … })` — and types the state `read` / `write` hand to their callback,
+ * so a misspelt key is a type error; without it the state is `any`.
+ */
+export interface StateHandle<S = any> {
   /** The `<wcs-state>` element itself. */
   readonly element: HTMLElement;
   /** Read through a readonly proxy — the value `fn` returns is passed back. */
-  read<T>(fn: (state: any) => T): T;
+  read<T>(fn: (state: ReadonlyStateOf<S>) => T): T;
   /** Write through a writable proxy, exactly as a handler does. Follow with `await settle()`. */
-  write(fn: (state: any) => void | Promise<void>): Promise<void>;
+  write(fn: (state: WritableStateOf<S>) => void | Promise<void>): Promise<void>;
 }
 
 export interface MountedApp {
@@ -64,8 +84,9 @@ export interface MountedApp {
   /**
    * Accessor for the root `<wcs-state>` (v2: one state tree per root — volumes
    * (`mount=`) and `bind-component` elements are not it). Throws if absent.
+   * `state<typeof appState>()` types the state its `read` / `write` hand over (see `StateHandle`).
    */
-  state(): StateHandle;
+  state<S = any>(): StateHandle<S>;
   /** Remove the mounted HTML. */
   unmount(): void;
 }
@@ -186,7 +207,7 @@ function installModuleResolver(resolve: MountOptions["resolveModule"]): () => vo
  */
 function findWaitingState(html: string, stateTagName: string): Element | undefined {
   const probe = document.createElement("template");
-  probe.innerHTML = html;
+  setInnerHTML(probe, html);
   return [...probe.content.querySelectorAll(stateTagName)].find((el) =>
     !el.hasAttribute("bind-component") &&
     !el.hasAttribute("state") &&
@@ -245,12 +266,12 @@ export async function mount(html: string, options: MountOptions = {}): Promise<M
       const host = document.createElement("div");
       host.setAttribute("data-wcs-testing-host", "");
       const shadow = host.attachShadow({ mode: "open" });
-      shadow.innerHTML = html;
+      setInnerHTML(shadow, html);
       document.body.appendChild(host);
       root = shadow;
       container = host;
     } else {
-      document.body.innerHTML = html;
+      setInnerHTML(document.body, html);
       root = document;
       container = document.body;
     }
@@ -263,7 +284,7 @@ export async function mount(html: string, options: MountOptions = {}): Promise<M
   return {
     root,
     container,
-    state(...legacyArgs: never[]): StateHandle {
+    state<S = any>(...legacyArgs: never[]): StateHandle<S> {
       if (legacyArgs.length > 0) {
         throw new Error(
           `@wcstack/testing: state(name) was removed in v2 — there is one state tree per root. ` +

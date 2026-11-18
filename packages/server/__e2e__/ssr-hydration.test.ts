@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { renderToString } from '../src/render';
+import { setInnerHTML } from '../src/setInnerHTML';
 
 // クライアント側の bootstrapState は happy-dom 環境のグローバルで動作
 import { bootstrapState } from '@wcstack/state';
@@ -267,5 +268,34 @@ describe('SSR → ハイドレーション結合テスト', () => {
     });
     await new Promise(resolve => setTimeout(resolve, 200));
     expect(document.querySelector('span')!.textContent).toBe('hydrated!');
+  });
+
+  it('表の中の for / 入れ子の for: サーバーの行を <tbody> の中でそのまま引き取る → 行の追加', async () => {
+    // --- サーバー（happy-dom が表の前へ追い出す <tbody> の中の <template> — seam app lending-desk）---
+    const ssrHtml = await renderToString(`
+      <wcs-state enable-ssr json='{"rows":[{"name":"Alice","tags":["a"]},{"name":"Bob","tags":["b","c"]}]}'></wcs-state>
+      <table><tbody><template data-wcs="for: rows"><tr><td data-wcs="textContent: .name"></td><template data-wcs="for: .tags"><td class="tag" data-wcs="textContent: ."></td></template></tr></template></tbody></table>
+    `);
+
+    // --- クライアント（ブラウザと同じく、<wcs-ssr> の中の行のテンプレートを崩さずに読む）---
+    setInnerHTML(document.body, ssrHtml);
+    const serverRow = document.querySelector('tbody > tr')!;
+    const stateEl = document.querySelector('wcs-state') as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    let rows = document.querySelectorAll('tbody > tr');
+    expect(Array.from(rows, (tr) => tr.textContent)).toEqual(['Alicea', 'Bobbc']);
+    // 描き直さずに引き取った（行の要素はサーバーのもの）
+    expect(rows[0]).toBe(serverRow);
+
+    stateEl.createState('writable', (state: any) => {
+      state.rows = [...state.rows, { name: 'Carol', tags: ['d'] }];
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    rows = document.querySelectorAll('tbody > tr');
+    expect(Array.from(rows, (tr) => tr.textContent)).toEqual(['Alicea', 'Bobbc', 'Carold']);
+    expect(rows[0]).toBe(serverRow);
   });
 });
