@@ -66,7 +66,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/debounce","version":"4.25.0"};
+var pkg = {"name":"@wcstack/debounce","version":"4.26.0"};
 
 /**
  * Build the wc-bindable `properties` list for a debounce/throttle element, with
@@ -155,8 +155,12 @@ class DebounceCore extends EventTarget {
     _pendingKind = null;
     _pendingValue = undefined;
     _pendingArgs = undefined;
-    // Observable state (getter backing).
-    _value = undefined;
+    // Observable state (getter backing). `value` is `null` until the first settle ("nothing settled
+    // yet"), never `undefined`: an output-only binding seeds state from the element when it attaches,
+    // and `undefined` replaced the page's `null` there — a `$watch` then ran with `undefined`
+    // (docs/seam-apps.md, lending-desk). cancel() / flush() / dispose() keep the last settled value;
+    // only a settle changes it (a `source` of `undefined` settles as `undefined`: it carries what it is given).
+    _value = null;
     _lastArgs = [];
     _pending = false;
     // Generation guard (§3.4): bumped on dispose() so a timer that survives a

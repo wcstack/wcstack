@@ -65,11 +65,11 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 
 - ブラウザ風の `URL.createObjectURL` があればプロセスにつき 1 回それを無効化する — Node は `blob:` URL を import できず、これが無いとインライン `<script type="module">` の state が永久に読み込み中になる（ローダーは SSR と同じく `data:` URL 経路に倒れる）。
 - happy-dom の `textContent` / `innerText` setter を DOM 仕様どおりに文字列化するよう包む — happy-dom は数値 `0` を空文字にし（`innerText` は数値で throw する）、`textContent: count` のバインドが 0 で消えるのは happy-dom 下だけになるため。
-- 4.26（未リリース）から、HTML を `@wcstack/server` の `setInnerHTML` で挿入する。表の中に書いた `<template>` を、ブラウザと同じ所に置く。happy-dom のパーサは `<table>`・`<thead>`・`<tbody>`・`<tfoot>`・`<tr>`・`<colgroup>` の中の `<template>` を表の外へ追い出し、その行やセルを表の中に残すので、`<tbody><template data-wcs="for: rows"><tr>…` のページ（`<tr>` のセルの `for:` も）は `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` で mount できなかった — 4.25 までは、そうしたページをヘッドレスでテストできなかった。
+- 4.26 から、HTML を `@wcstack/server` の `setInnerHTML` で挿入する。表の中に書いた `<template>` を、ブラウザと同じ所に置く。happy-dom のパーサは `<table>`・`<thead>`・`<tbody>`・`<tfoot>`・`<tr>`・`<colgroup>` の中の `<template>` を表の外へ追い出し、その行やセルを表の中に残すので、`<tbody><template data-wcs="for: rows"><tr>…` のページ（`<tr>` のセルの `for:` も）は `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` で mount できなかった — 4.25 までは、そうしたページをヘッドレスでテストできなかった。
 
 #### 状態の型
 
-4.26（未リリース）から、`state<S>()` はページの状態の定義の型を受け取ります。すると `read` と `write` は、コールバックに `defineState()` の定義の中の `this` と同じ型の状態 — キー・getter・メソッド・ドットパス（`"items.*.price"`）・`$` の API — を渡すので、綴りを誤ったキーや違う型の引数は型の誤りになり、メソッドはキャスト無しで呼べます。`read` の状態は、そのプロキシと同じく readonly です。型引数が無ければ、これまでどおり `any` です。
+4.26 から、`state<S>()` はページの状態の定義の型を受け取ります。すると `read` と `write` は、コールバックに `defineState()` の定義の中の `this` と同じ型の状態 — キー・getter・メソッド・ドットパス（`"items.*.price"`）・`$` の API — を渡すので、綴りを誤ったキーや違う型の引数は型の誤りになり、メソッドはキャスト無しで呼べます。`read` の状態は、そのプロキシと同じく readonly です。型引数が無ければ、これまでどおり `any` です。
 
 ```ts
 import { mount, settle } from "@wcstack/testing";
@@ -133,7 +133,7 @@ happy-dom が再現できない 2 点。実ブラウザの e2e（Playwright）�
 - `customElements.define` は既存ノードを**差し替えて**アップグレードするので、「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できない。
 - イベントのタイミングが実ブラウザと違う。
 
-表の中の `<template>` は 4.26（未リリース）から扱えます: `mount()` がブラウザと同じ所に置きます（上記）。テストが自分で `innerHTML` で挿入する HTML は対象外です — `@wcstack/server` の `setInnerHTML(element, html)` で挿入してください。
+表の中の `<template>` は 4.26 から扱えます: `mount()` がブラウザと同じ所に置きます（上記）。テストが自分で `innerHTML` で挿入する HTML は対象外です — `@wcstack/server` の `setInnerHTML(element, html)` で挿入してください。
 
 ## 実例
 

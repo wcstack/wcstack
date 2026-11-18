@@ -146,7 +146,7 @@ static wcBindable = {
 |----------|-------------|
 | `installGlobals(window)` | happy-dom のグローバルを `globalThis` にインストール。復元関数を返す |
 | `waitForReady(root, { maxIterations? })` | `root`（`document` または `ShadowRoot`）配下で readiness プロトコルに従う全カスタム要素を待つ — `static hasConnectedCallbackPromise` を持つ要素の `connectedCallbackPromise`（待機中に増えた要素も再走査。`<wcs-router>` の初期ルートなど）、次に `static getBindingsReady(root)`（`<wcs-state>` のバインディング構築）。`renderToString` がシリアライズ前に行う待機そのもので、[`@wcstack/testing`](../testing/README.ja.md) の `mount()` が再利用する。バインディング初期化に失敗すると reject |
-| `setInnerHTML(target, html)` | 4.26（未リリース）から。`target.innerHTML = html`（要素・`ShadowRoot`・`<template>` の中身）と同じ。ただし表の中に書いた `<template>` はブラウザと同じ所に置く — happy-dom のパーサは表の外へ追い出す（[バインディングと構造レンダリング](#バインディングと構造レンダリング) を参照）。表の要素の無い HTML は、そのまま `innerHTML` に渡す。`renderToString` はこれでページをパースし、`@wcstack/testing` の `mount()` はこれでページを挿入する。テストが happy-dom の下で自分で挿入する HTML にも使う |
+| `setInnerHTML(target, html)` | 4.26 から。`target.innerHTML = html`（要素・`ShadowRoot`・`<template>` の中身）と同じ。ただし表の中に書いた `<template>` はブラウザと同じ所に置く — happy-dom のパーサは表の外へ追い出す（[バインディングと構造レンダリング](#バインディングと構造レンダリング) を参照）。表の要素の無い HTML は、そのまま `innerHTML` に渡す。`renderToString` はこれでページをパースし、`@wcstack/testing` の `mount()` はこれでページを挿入する。テストが happy-dom の下で自分で挿入する HTML にも使う |
 
 ### 定数
 
@@ -321,7 +321,7 @@ createServer(async (req, res) => {
 </template>
 ```
 
-- 4.26（未リリース）から、表の中のテンプレート: `<tbody>` / `<thead>` / `<tfoot>`（や `<table>`）の行の `for:`、`<tr>` のセルの `for:`、行の間の `if:`、その入れ子。happy-dom のパーサは `<table>`・`<thead>`・`<tbody>`・`<tfoot>`・`<tr>`・`<colgroup>` の中の `<template>` を表の外へ追い出し、その行やセルを表の中に残します（ブラウザはそこに置きます）。サーバーはページが動き出す前にそれを置き直す（`setInnerHTML`）ので、行は表の中に描かれ、クライアントはそのアンカーを表の中に見つけます。4.25 までは、そうしたページは描けませんでした: `renderToString` が `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` で投げました。
+- 4.26 から、表の中のテンプレート: `<tbody>` / `<thead>` / `<tfoot>`（や `<table>`）の行の `for:`、`<tr>` のセルの `for:`、行の間の `if:`、その入れ子。happy-dom のパーサは `<table>`・`<thead>`・`<tbody>`・`<tfoot>`・`<tr>`・`<colgroup>` の中の `<template>` を表の外へ追い出し、その行やセルを表の中に残します（ブラウザはそこに置きます）。サーバーはページが動き出す前にそれを置き直す（`setInnerHTML`）ので、行は表の中に描かれ、クライアントはそのアンカーを表の中に見つけます。4.25 までは、そうしたページは描けませんでした: `renderToString` が `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` で投げました。
 
 ```html
 <table>

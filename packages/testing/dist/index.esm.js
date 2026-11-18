@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'node:url';
-import { waitForReady, installGlobals } from '@wcstack/server';
+import { setInnerHTML, waitForReady, installGlobals } from '@wcstack/server';
 
 const isString = (value) => typeof value === "string";
 const isNumber = (value) => typeof value === "number";
@@ -37,6 +37,10 @@ function checkOptions(helper, options, spec, hint = "") {
  * `renderToString` performs, so `<wcs-router>`'s first route, a `$connectedCallback`
  * that inserts more elements, and `<wcs-state>`'s binding construction are all
  * covered by the one call (docs/app-testing-and-typescript-impl-plan.md D11).
+ *
+ * The HTML goes in through `@wcstack/server`'s `setInnerHTML`, as in `renderToString`: happy-dom's
+ * parser moves a `<template>` written in a table (`<tbody><template data-wcs="for: rows"><tr>…`) out
+ * of it and leaves its rows behind, where browsers keep it; `setInnerHTML` puts it back.
  */
 let inlineScriptLoaderPatched = false;
 /**
@@ -147,7 +151,7 @@ function installModuleResolver(resolve) {
  */
 function findWaitingState(html, stateTagName) {
     const probe = document.createElement("template");
-    probe.innerHTML = html;
+    setInnerHTML(probe, html);
     return [...probe.content.querySelectorAll(stateTagName)].find((el) => !el.hasAttribute("bind-component") &&
         !el.hasAttribute("state") &&
         !el.hasAttribute("src") &&
@@ -196,13 +200,13 @@ async function mount(html, options = {}) {
             const host = document.createElement("div");
             host.setAttribute("data-wcs-testing-host", "");
             const shadow = host.attachShadow({ mode: "open" });
-            shadow.innerHTML = html;
+            setInnerHTML(shadow, html);
             document.body.appendChild(host);
             root = shadow;
             container = host;
         }
         else {
-            document.body.innerHTML = html;
+            setInnerHTML(document.body, html);
             root = document;
             container = document.body;
         }

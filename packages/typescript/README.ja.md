@@ -40,15 +40,15 @@ export const defaults = () => /** @type {Inputs} */ (Object.fromEntries(
 | オプション | 説明 |
 |---|---|
 | `--mount=<path>` | この mount パスの部分木だけを出す — `<wcs-state mount="…">` のボリュームの型ファイルは、単一のツリーの部分木として merge される。ルートの state ファイルでは付けない |
-| `--out=<path>` | 出力先 manifest（作業ディレクトリ相対・既定 `wcstack.manifest.json`）。`--out=-` で stdout。4.26（未リリース）から、無いディレクトリは作る |
+| `--out=<path>` | 出力先 manifest（作業ディレクトリ相対・既定 `wcstack.manifest.json`）。`--out=-` で stdout。4.26 から、無いディレクトリは作る |
 | `--merge` | 既存 manifest の他の内容（`filters`・`listContexts`・他の部分木）を保持し、書くスロット — `stateSchema` 全体、または `--mount` の部分木 — だけ置き換える。そのスロットの手書き schema は合成されず置き換わる |
-| `--state-source=<path>` | 4.26（未リリース）から: ページのルートの `<wcs-state src>` が state ファイル自身でないとき — `src/state.ts` からコンパイルした `public/state.js` のようなビルドの出力 —、そのファイル。state ファイルの代わりに `stateSource` に書く（下）。`check` にも同じ指定を渡す。`--mount` とは併用できない |
+| `--state-source=<path>` | 4.26 から: ページのルートの `<wcs-state src>` が state ファイル自身でないとき — `src/state.ts` からコンパイルした `public/state.js` のようなビルドの出力 —、そのファイル。state ファイルの代わりに `stateSource` に書く（下）。`check` にも同じ指定を渡す。`--mount` とは併用できない |
 | `--tsconfig=<path>` | コンパイルに使う `tsconfig.json`（既定: state ファイルから上に辿って最も近いもの、無ければ組み込み既定） |
 | `--max-depth=<n>` | ここより深い入れ子は素の `{}` で打ち切る（既定 `5` = 検証器の探索予算と同じ） |
 
 exit code: `0` 書き出し済み · `2` usage エラー / 読めない / 構文エラー / 生成物が自己検査に落ちた。
 
-4.26（未リリース）から、ルートの emit（`--mount` なし）は schema の元のファイルも書きます: application 名前空間の `stateSource` に、manifest のディレクトリから見た state ファイルのパスを `/` 区切りで（`"src/state/app.ts"`。`--out=-` では作業ディレクトリから）。検証器は、ルートの `<wcs-state src>` がそのファイルであるページにだけ schema を当てます（同じパスの `.js` は同じファイルとみなす）。だから、`wcs-validate` と VS Code 拡張が見つけるプロジェクトのルートに置いた 1 つの `wcstack.manifest.json` で、ページが複数あるアプリが済みます: インラインの state や別の `src` を持つページは、この schema ではなく自分のスクリプトで検査されます。ページがビルドの出力を別のパスから読むとき（`tsc --outDir`）は、そのファイルを `--state-source` で渡してください。渡さないと schema はどのページにも当たりません。`--mount` の emit は `stateSource` をそのまま残します。`stateSource` の無い manifest（4.25 以前に書いたもの）は、今までどおり配下のすべてのページに当たります。`wcs-schema emit <state ファイル> --merge` で書き足せます。
+4.26 から、ルートの emit（`--mount` なし）は schema の元のファイルも書きます: application 名前空間の `stateSource` に、manifest のディレクトリから見た state ファイルのパスを `/` 区切りで（`"src/state/app.ts"`。`--out=-` では作業ディレクトリから）。検証器は、ルートの `<wcs-state src>` がそのファイルであるページにだけ schema を当てます（同じパスの `.js` は同じファイルとみなす）。だから、`wcs-validate` と VS Code 拡張が見つけるプロジェクトのルートに置いた 1 つの `wcstack.manifest.json` で、ページが複数あるアプリが済みます: インラインの state や別の `src` を持つページは、この schema ではなく自分のスクリプトで検査されます。ページがビルドの出力を別のパスから読むとき（`tsc --outDir`）は、そのファイルを `--state-source` で渡してください。渡さないと schema はどのページにも当たりません。`--mount` の emit は `stateSource` をそのまま残します。`stateSource` の無い manifest（4.25 以前に書いたもの）は、今までどおり配下のすべてのページに当たります。`wcs-schema emit <state ファイル> --merge` で書き足せます。
 
 ### `wcs-schema check <state.ts|state.js> [options]`
 
@@ -56,7 +56,7 @@ schema を再生成し、`--manifest=<path>`（既定 `wcstack.manifest.json`）
 
 exit code: `0` 最新 · `1` 乖離あり（変更は JSON pointer で列挙: `+` 型にだけある / `-` manifest にだけある / `~` 違う） · `2` usage エラー / manifest が無い / その state の `stateSchema` がまだ無い。
 
-4.26（未リリース）から、`check` は `stateSource` も state ファイル（または `--state-source`）と比べます: 別のファイルを指す manifest は乖離です（`~ stateSource`・exit `1`）。検証器はその schema を、このファイルのページではなく、そのファイルのページに当てるからです — state ファイルを動かしたか名前を変えて、作り直していない。`stateSource` の無い manifest は最新のままで、`check` は注記を添えます。
+4.26 から、`check` は `stateSource` も state ファイル（または `--state-source`）と比べます: 別のファイルを指す manifest は乖離です（`~ stateSource`・exit `1`）。検証器はその schema を、このファイルのページではなく、そのファイルのページに当てるからです — state ファイルを動かしたか名前を変えて、作り直していない。`stateSource` の無い manifest は最新のままで、`check` は注記を添えます。
 
 推奨する CI ゲート:
 
@@ -74,7 +74,7 @@ npx wcs-tsc --noEmit
 # index.html(9,14): error TS2551: Property 'coutn' does not exist on type '_WcsThis<…>'. Did you mean 'count'?
 ```
 
-スクリプトは、ブラウザが実行するとおり JavaScript として検査します（4.26（未リリース）から。4.25 までは TypeScript として読んでいました）: JSDoc の型が効き（`/** @type {Item[]} */ items: []`・`/** @param {number} n */`・`/** @typedef {import("./api").Item} Item */`）、TypeScript の構文 — 型注釈・`as`・`import type` — はその場所でエラーになります（`index.html(5,14): error TS8010: Type annotations can only be used in TypeScript files.`）。ブラウザでは `SyntaxError` になるからです。検査は `checkJs` の指定に関わらず有効です。`$on` のハンドラの引数には型が付き、`this.$command` は `$commandTokens` に絞られます — `defineState` と同じです（[define-state.ja.md](../state/docs/define-state.ja.md)）。
+スクリプトは、ブラウザが実行するとおり JavaScript として検査します（4.26 から。4.25 までは TypeScript として読んでいました）: JSDoc の型が効き（`/** @type {Item[]} */ items: []`・`/** @param {number} n */`・`/** @typedef {import("./api").Item} Item */`）、TypeScript の構文 — 型注釈・`as`・`import type` — はその場所でエラーになります（`index.html(5,14): error TS8010: Type annotations can only be used in TypeScript files.`）。ブラウザでは `SyntaxError` になるからです。検査は `checkJs` の指定に関わらず有効です。`$on` のハンドラの引数には型が付き、`this.$command` は `$commandTokens` に絞られます — `defineState` と同じです（[define-state.ja.md](../state/docs/define-state.ja.md)）。
 
 | オプション | 説明 |
 |---|---|
@@ -83,13 +83,13 @@ npx wcs-tsc --noEmit
 | `--wcs-defaults` | プロジェクトの tsconfig がページを外している、または ES2015 以降の `target` / `lib` が無ければ、元を extends して `include: "**/*.html"`（と `target`）を足した一時 config で実行する（無指定なら警告だけ） |
 | それ以外 | tsc にそのまま渡す（`-p`・`--noEmit` …） |
 
-tsconfig に要るのは、ページに届くことと ES2015 以降を target にすることだけです。4.26（未リリース）から、HTML のために `noImplicitThis`・`allowJs`・`checkJs` は要りません（JavaScript ではオブジェクトリテラルの `this` に `noImplicitThis` 無しで型が付き、検査はプラグインが有効にします）。監査もそれらを求めません。インラインの `<wcs-state>` を持つページが tsconfig のディレクトリの下にあり、そのどれも program に無いとき — `include: ["src"]` で、ページが tsconfig の隣にある — 警告はページを名指しします: `wcs-tsc: warning: …/tsconfig.json is missing include: "**/*.html" (no page with an inline <wcs-state> is in the program: counter.html is not) — HTML may not be checked; …`（`warning:` は 4.26（未リリース）から。CI のログを `error|warning` で絞っても残ります）。警告は exit code を変えません。CI では `--wcs-defaults` を付ければ、それでもページを検査します。完全な検査には `strict`（少なくとも `noImplicitAny`）を有効にしてください: 無いと JavaScript のオブジェクトリテラルは開いた型になり、配列の中のオブジェクトのプロパティの綴りの誤り（`this.items[0].nmae`）は報告されません — `this.coutn` は報告されます。
+tsconfig に要るのは、ページに届くことと ES2015 以降を target にすることだけです。4.26 から、HTML のために `noImplicitThis`・`allowJs`・`checkJs` は要りません（JavaScript ではオブジェクトリテラルの `this` に `noImplicitThis` 無しで型が付き、検査はプラグインが有効にします）。監査もそれらを求めません。インラインの `<wcs-state>` を持つページが tsconfig のディレクトリの下にあり、そのどれも program に無いとき — `include: ["src"]` で、ページが tsconfig の隣にある — 警告はページを名指しします: `wcs-tsc: warning: …/tsconfig.json is missing include: "**/*.html" (no page with an inline <wcs-state> is in the program: counter.html is not) — HTML may not be checked; …`（`warning:` は 4.26 から。CI のログを `error|warning` で絞っても残ります）。警告は exit code を変えません。CI では `--wcs-defaults` を付ければ、それでもページを検査します。完全な検査には `strict`（少なくとも `noImplicitAny`）を有効にしてください: 無いと JavaScript のオブジェクトリテラルは開いた型になり、配列の中のオブジェクトのプロパティの綴りの誤り（`this.items[0].nmae`）は報告されません — `this.coutn` は報告されます。
 
 exit code は tsc のもの（`0` クリーン・診断があれば非ゼロ）。`typescript` / `@volar/typescript` が解決できないときと不正なオプションは `2`。1 ページに複数の `<wcs-state>` があれば 1 本の仮想モジュールに合成（import は巻き上げ・各ブロックは自分のスコープ）し、インライン state の無いページは空のモジュールになります。仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当てます。
 
 ## Vite でビルドする
 
-4.26（未リリース）から、`@wcstack/typescript/vite` は wcstack のタグで書いたページのための Vite プラグインです:
+4.26 から、`@wcstack/typescript/vite` は wcstack のタグで書いたページのための Vite プラグインです:
 
 ```ts
 // vite.config.ts

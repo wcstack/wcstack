@@ -191,6 +191,11 @@ var WcsDiagnosticCode = {
   // --- sidecar vs live declaration drift ---
   DriftMissingMember: "wcs/drift-missing-member",
   DriftEventMismatch: "wcs/drift-event-mismatch",
+  // stateSchema と state のスクリプトのトップレベルのキーが食い違う（スクリプトにあって schema に無い・schema にあって
+  // スクリプトに無い）。schema はスクリプトから作る派生物なので古い: 名前を変えたキーの束縛の取り残しが通り、新しいキーは
+  // `wcs/path-nonexistent` になる（継ぎ目アプリ lending-desk — `wcs-schema check` だけが気付いた）。`<wcs-state>` の上で
+  // 1 回、キーを挙げて `wcs-schema emit` を案内する。warning（4.26）。
+  DriftStateKey: "wcs/drift-state-key",
   // --- path / type resolution against a stateSchema ---
   PathNonexistent: "wcs/path-nonexistent",
   PathTypeMismatch: "wcs/path-type-mismatch",
@@ -223,6 +228,10 @@ var WcsDiagnosticCode = {
   FilterArity: "wcs/filter-arity",
   FilterArgType: "wcs/filter-arg-type",
   FilterInputType: "wcs/filter-input-type",
+  // 比較のフィルタ（`eq` / `ne`）のリテラルの引数が、入力の値の取りうる有限の集合（stateSchema の `enum` / `const` /
+  // `anyOf` の const、JSDoc のリテラルの合併）に無い: `status|eq('aproved')` は決して真にならない（`ne` は常に真）。
+  // 綴りの近い値を挙げる。warning（4.26、継ぎ目アプリ lending-desk — バッジの色が黙って消えた）。
+  FilterArgEnum: "wcs/filter-arg-enum",
   BindingPathMissing: "wcs/binding-path-missing",
   BindingTypeExpectation: "wcs/binding-type-expectation",
   TokenUndeclared: "wcs/token-undeclared",
@@ -491,7 +500,7 @@ var WcsDiagnosticCode = {
   // 受ける要素のメソッドはイベントを第 1 引数として呼ばれる。データを取るコマンド（組み込みタグの、引数を宣言する
   // メソッド）ではそれが原因から遠い所で失敗する — `<wcs-screen-orientation>` の `lock(event)` と `<wcs-share>` の
   // `share(event)` はブラウザの TypeError が `error` に出るだけ、`<wcs-credential>` の `get(event)` は何も言わず null
-  // （stamp-rally）。`on*:` の束縛に出す。`<wcs-fetch>` の `fetch`（4.24 から url の位置の文字列でない値を無視する）と
+  // （stamp-rally）。`on*:` の束縛に出す。`<wcs-fetch>` の `fetch`（url の位置のイベントは無視する。4.26 から `URL` も受け、ほかの値は `[wcs/fetch-url-argument]`）と
   // ネイティブ要素のコマンド（native-commands の後付けは第 1 引数がイベントなら引数なしで呼ぶ）は対象外。warning。
   CommandEventArgument: "wcs/command-event-argument",
   // 既知のカスタム要素の出力だけのメンバー（`<wcs-fullscreen>` の `active: viewerFs`）に束ねたパスへ、スクリプトが
@@ -987,10 +996,13 @@ var SENTENCES = {
   // an import that does not resolve (Chromium "Failed to resolve module specifier", Firefox "… specifier …",
   // WebKit "does not resolve"): the blob: URL is the base — no CSP is involved (community-hall, D6). (A browser's
   // own sentence ends with a period of its own: one is enough)
+  // a script that does not parse (Chromium / WebKit "Unexpected token ':'", Firefox "unexpected token: ':'", "missing
+  // ; before statement", "expected expression"): the browser runs it as written, and TypeScript syntax is the usual
+  // cause — a CSP refusal says so in its own words (docs/seam-apps.md, lending-desk)
   [
     43
     /* InlineFailed */
-  ]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${String(detail).replace(/\.$/, "")}. ${/specifier|does not resolve/i.test(String(detail)) ? `An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").` : `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`}`,
+  ]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${String(detail).replace(/\.$/, "")}. ${/specifier|does not resolve/i.test(String(detail)) ? `An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").` : /expected|missing/i.test(String(detail)) ? `The script does not parse as JavaScript: the browser runs it as written, so TypeScript syntax (a type annotation "x: number", "import type", "as T", "x!") is a syntax error here. Write the types in JSDoc (/** @type {number} */), or put the state in a file a build compiles (src="./state.ts").` : `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`}`,
   [
     17
     /* TokenSubscriberThrew */
@@ -2634,7 +2646,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.25.0";
+var version = "4.26.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -8456,8 +8468,65 @@ function parse3(input, options) {
   return Parser.parse(input, options);
 }
 
+// src/service/typeErasure.ts
+function stripper() {
+  const proc = globalThis.process;
+  if (proc === void 0 || typeof proc.getBuiltinModule !== "function") return null;
+  const mod = proc.getBuiltinModule("node:module");
+  return typeof mod?.stripTypeScriptTypes === "function" ? mod.stripTypeScriptTypes : null;
+}
+function quietly(proc, fn) {
+  const emit2 = proc.emitWarning;
+  proc.emitWarning = (...args) => {
+    const [warning, type] = args;
+    const text3 = typeof warning === "string" ? warning : warning instanceof Error ? warning.message : "";
+    const kind = typeof type === "string" ? type : type?.type;
+    if ((kind === "ExperimentalWarning" || warning instanceof Error && warning.name === "ExperimentalWarning") && /strip|typescript/i.test(text3)) return;
+    emit2.apply(proc, args);
+  };
+  try {
+    return fn();
+  } finally {
+    proc.emitWarning = emit2;
+  }
+}
+var erased = /* @__PURE__ */ new Map();
+var MAX_ERASED = 64;
+function eraseTypeScript(code) {
+  const cached = erased.get(code);
+  if (cached !== void 0 || erased.has(code)) return cached ?? null;
+  const strip = stripper();
+  if (strip === null) return null;
+  const proc = globalThis.process;
+  let out;
+  try {
+    const result = quietly(proc, () => strip(code, { mode: "strip" }));
+    out = typeof result === "string" && result.length === code.length ? result : null;
+  } catch {
+    out = null;
+  }
+  if (erased.size >= MAX_ERASED) erased.delete(erased.keys().next().value);
+  erased.set(code, out);
+  return out;
+}
+function parseErasingTypes(source, options) {
+  try {
+    return parse3(source, options);
+  } catch (error) {
+    const js = eraseTypeScript(source);
+    if (js === null) throw error;
+    return parse3(js, options);
+  }
+}
+
 // src/service/jsdocType.ts
 var UNKNOWN = { kind: "unknown" };
+function importTypeName(specifier, name) {
+  return `import("${specifier}").${name}`;
+}
+function isImportTypeName(name) {
+  return name.startsWith('import("');
+}
 var NULL_TYPE = { kind: "name", name: "null" };
 var ARRAY_GENERICS = /* @__PURE__ */ new Set(["Array", "ReadonlyArray"]);
 var INDEX_GENERICS = /* @__PURE__ */ new Set(["Record", "Object"]);
@@ -8491,7 +8560,7 @@ function tokenize(text3) {
     }
     const num = /^-?\d+(?:\.\d+)?/.exec(text3.slice(i));
     if (num) {
-      tokens.push({ t: "number" });
+      tokens.push({ t: "number", v: Number(num[0]) });
       i += num[0].length;
       continue;
     }
@@ -8505,7 +8574,7 @@ function tokenize(text3) {
   }
   return tokens;
 }
-function parseJsDocType(text3) {
+function parseJsDocType(text3, options = {}) {
   const tokens = tokenize(text3);
   if (tokens === null || tokens.length === 0) return null;
   let pos = 0;
@@ -8550,7 +8619,7 @@ function parseJsDocType(text3) {
     if (token === void 0) return null;
     if (token.t === "string" || token.t === "number") {
       pos++;
-      return UNKNOWN;
+      return { kind: "literal", value: token.v };
     }
     if (token.t === "punct") {
       if (token.v === "{") return parseObject();
@@ -8583,7 +8652,20 @@ function parseJsDocType(text3) {
       return null;
     }
     pos++;
+    if (token.v === "true" || token.v === "false") return { kind: "literal", value: token.v === "true" };
     let name = token.v;
+    if (name === "import" && isPunct("(")) {
+      const spec = tokens[pos + 1];
+      if (spec?.t !== "string" || tokens[pos + 2]?.t !== "punct" || tokens[pos + 2].v !== ")") return null;
+      pos += 3;
+      const members = [];
+      while (isPunct(".") && tokens[pos + 1]?.t === "name") {
+        members.push(tokens[pos + 1].v);
+        pos += 2;
+      }
+      if (members.length === 0) return UNKNOWN;
+      name = importTypeName(spec.v, members.join("."));
+    }
     while (isPunct(".") && tokens[pos + 1]?.t === "name") {
       name += "." + tokens[pos + 1].v;
       pos += 2;
@@ -8646,6 +8728,8 @@ function parseJsDocType(text3) {
     const fields = [];
     let index;
     while (!isPunct("}")) {
+      const modified = tokens[pos + 1];
+      if (peek()?.t === "name" && peek().v === "readonly" && modified !== void 0 && (modified.t === "name" || modified.t === "string" || modified.t === "punct" && modified.v === "[")) pos++;
       const key = peek();
       if (key === void 0) return null;
       if (key.t === "punct" && key.v === "[") {
@@ -8660,14 +8744,40 @@ function parseJsDocType(text3) {
         if (key.t !== "name" && key.t !== "string") return null;
         pos++;
         expect("?");
-        if (!expect(":")) return null;
-        const type2 = parseUnion();
-        if (type2 === null) return null;
-        fields.push({ name: key.v, type: type2 });
+        if (options.typescript === true && (isPunct("(") || isPunct("<"))) {
+          if (!skipMember()) return null;
+        } else {
+          if (!expect(":")) return null;
+          const type2 = parseUnion();
+          if (type2 === null) return null;
+          fields.push({ name: key.v, type: type2 });
+        }
       }
-      if (!expect(",") && !expect(";")) break;
+      if (!expect(",") && !expect(";") && !startsMember()) break;
     }
     return expect("}") ? { kind: "object", fields, ...index !== void 0 ? { index } : {} } : null;
+  };
+  const skipMember = () => {
+    let depth = 0;
+    while (pos < tokens.length) {
+      const token = tokens[pos];
+      if (token.t === "punct") {
+        if (depth === 0 && (token.v === "," || token.v === ";" || token.v === "}")) return true;
+        if (token.v === "(" || token.v === "[" || token.v === "{" || token.v === "<") depth++;
+        else if (token.v === ")" || token.v === "]" || token.v === "}" || token.v === ">") depth--;
+      }
+      pos++;
+    }
+    return false;
+  };
+  const startsMember = () => {
+    const token = peek();
+    const after = tokens[pos + 1];
+    if (token === void 0 || after === void 0) return false;
+    if (token.t === "punct") return token.v === "[";
+    if (token.t !== "name" && token.t !== "string") return false;
+    if (after.t === "punct") return [":", "?", "(", "<"].includes(after.v);
+    return token.t === "name" && token.v === "readonly" && (after.t === "name" || after.t === "string");
   };
   const skipUntilClose = (open, close) => {
     let depth = 0;
@@ -8767,6 +8877,7 @@ function jsDocTypeHint(type, typedefs = /* @__PURE__ */ new Map()) {
   for (const member of flattenJsDocType(type, typedefs)) {
     if (member.kind === "array") hints.add("array");
     else if (member.kind === "object") hints.add("object");
+    else if (member.kind === "literal") hints.add(typeof member.value);
     else if (member.kind === "name") {
       const lower2 = member.name.toLowerCase();
       if (lower2 === "string" || lower2 === "number" || lower2 === "boolean" || lower2 === "object") hints.add(lower2);
@@ -8775,6 +8886,15 @@ function jsDocTypeHint(type, typedefs = /* @__PURE__ */ new Map()) {
     }
   }
   return hints.size === 0 ? void 0 : [...hints].sort().join("|");
+}
+function jsDocLiteralValues(type, typedefs) {
+  const values = [];
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === "literal") values.push(member.value);
+    else if (member.kind === "name" && (member.name === "null" || member.name === "undefined")) values.push(null);
+    else return null;
+  }
+  return values.some((v) => v !== null) ? [...new Set(values)] : null;
 }
 function jsDocShape(type, typedefs) {
   const elements = [];
@@ -8807,7 +8927,7 @@ function parseModule(text3) {
   if (programs.has(text3)) return programs.get(text3);
   let program;
   try {
-    program = parse3(text3, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true });
+    program = parseErasingTypes(text3, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true });
   } catch {
     program = null;
   }
@@ -9128,6 +9248,254 @@ function coversSuffix(spec, familySuffix, suffix) {
   return false;
 }
 
+// src/service/typeImports.ts
+var IMPORT_TYPE = /\bimport\s*\(\s*(["'])([^"'\n]+)\1\s*\)\s*\.\s*([$A-Za-z_][$\w]*(?:\s*\.\s*[$A-Za-z_][$\w]*)*)/g;
+var LEAF_NAMES = /* @__PURE__ */ new Set([
+  "string",
+  "number",
+  "boolean",
+  "null",
+  "undefined",
+  "bigint",
+  "symbol",
+  "void",
+  "never",
+  "String",
+  "Number",
+  "Boolean",
+  "Date",
+  "RegExp",
+  "Function",
+  "Array",
+  "ReadonlyArray"
+]);
+var OPEN = { kind: "object", fields: [], index: { kind: "unknown" } };
+var TS = { typescript: true };
+var MAX_DEPTH = 12;
+var modulesByReader = /* @__PURE__ */ new WeakMap();
+function resolveImportedTypes(script, location) {
+  const out = /* @__PURE__ */ new Map();
+  if (location === void 0 || !script.includes("import")) return out;
+  const scan = maskCommentsAndStrings(script);
+  for (const comment of findJsDocComments(script, scan)) {
+    for (const m of comment.text.matchAll(IMPORT_TYPE)) {
+      const specifier = m[2];
+      const name = m[3].replace(/\s+/g, "");
+      const key = importTypeName(specifier, name);
+      if (out.has(key)) continue;
+      const target = readTypeModule(location.fileReader, location.path, specifier);
+      const type = target === null ? null : resolveInModule(location.fileReader, target, name, 0, /* @__PURE__ */ new Set());
+      if (type !== null) out.set(key, type);
+    }
+  }
+  return out;
+}
+function readTypeModule(reader, from, specifier) {
+  const joined = joinModulePath(from, specifier);
+  if (joined === void 0) return null;
+  const candidates = /\.(?:d\.)?m?ts$/.test(joined) ? [joined] : /\.m?jsx?$/.test(joined) ? [joined.replace(/\.(m?)jsx?$/, ".$1ts"), joined.replace(/\.(m?)jsx?$/, ".d.$1ts"), joined] : [`${joined}.ts`, `${joined}.d.ts`, `${joined}.js`, `${joined}/index.ts`, `${joined}/index.d.ts`, `${joined}/index.js`];
+  let files = modulesByReader.get(reader);
+  if (files === void 0) modulesByReader.set(reader, files = /* @__PURE__ */ new Map());
+  for (const path of candidates) {
+    if (files.has(path)) {
+      const known = files.get(path);
+      if (known !== null) return known;
+      continue;
+    }
+    const text3 = reader(path);
+    const module2 = text3 === void 0 ? null : readDeclarations(path, text3);
+    files.set(path, module2);
+    if (module2 !== null) return module2;
+  }
+  return null;
+}
+function resolveInModule(reader, module2, name, depth, visiting) {
+  const key = `${module2.path}#${name}`;
+  if (visiting.has(key) || depth > MAX_DEPTH) return OPEN;
+  const inner = /* @__PURE__ */ new Set([...visiting, key]);
+  const declared = module2.declarations.get(name);
+  if (declared !== void 0) return substitute(reader, module2, declared, depth + 1, inner);
+  const head = name.split(".")[0];
+  const imported = module2.imports.get(head);
+  if (imported !== void 0) {
+    const target = readTypeModule(reader, module2.path, imported.specifier);
+    const rest = name.slice(head.length);
+    return target === null ? null : resolveInModule(reader, target, imported.name + rest, depth + 1, inner);
+  }
+  for (const specifier of module2.stars) {
+    const target = readTypeModule(reader, module2.path, specifier);
+    const found = target === null ? null : resolveInModule(reader, target, name, depth + 1, inner);
+    if (found !== null) return found;
+  }
+  return null;
+}
+function substitute(reader, module2, type, depth, visiting) {
+  switch (type.kind) {
+    case "name": {
+      if (LEAF_NAMES.has(type.name)) return type;
+      if (isImportTypeName(type.name)) {
+        const m = /^import\("([^"]*)"\)\.(.+)$/.exec(type.name);
+        const target = readTypeModule(reader, module2.path, m[1]);
+        return (target === null ? null : resolveInModule(reader, target, m[2], depth, visiting)) ?? type;
+      }
+      return resolveInModule(reader, module2, type.name, depth, visiting) ?? OPEN;
+    }
+    case "object":
+      return {
+        kind: "object",
+        fields: type.fields.map((f) => ({ name: f.name, type: substitute(reader, module2, f.type, depth, visiting) })),
+        ...type.index !== void 0 ? { index: substitute(reader, module2, type.index, depth, visiting) } : {}
+      };
+    case "array":
+      return { kind: "array", element: substitute(reader, module2, type.element, depth, visiting) };
+    case "union":
+      return { kind: "union", members: type.members.map((m) => substitute(reader, module2, m, depth, visiting)) };
+    case "unknown":
+      return OPEN;
+    default:
+      return type;
+  }
+}
+var DECLARATION_HEAD = /(?:^|[\n;{}])[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?(interface|type)[ \t]+([$A-Za-z_][$\w]*)/g;
+function readDeclarations(path, source) {
+  const scan = maskCommentsAndStrings(source);
+  const blanked = blankComments(source, scan);
+  const depthAt = braceDepths(scan);
+  const declarations = /* @__PURE__ */ new Map();
+  for (const [name, type] of source.includes("@typedef") ? collectJsDocTypedefs(source, scan) : /* @__PURE__ */ new Map()) {
+    declarations.set(name, type);
+  }
+  DECLARATION_HEAD.lastIndex = 0;
+  for (const m of scan.matchAll(DECLARATION_HEAD)) {
+    const at2 = m.index + m[0].length;
+    if (depthAt[at2] !== 0) continue;
+    const name = m[2];
+    let i = skipTypeParameters(scan, at2);
+    if (m[1] === "interface") {
+      const open = scan.indexOf("{", i);
+      if (open < 0) continue;
+      const bases = /^\s*extends\s+([\s\S]*)$/.exec(scan.slice(i, open))?.[1];
+      const body = parseJsDocType(`{${blanked.slice(open + 1, matchClose(scan, open))}}`, TS);
+      if (body === null) continue;
+      const parents = bases === void 0 ? [] : splitBases(bases).map((b) => parseJsDocType(b, TS) ?? OPEN);
+      declarations.set(name, parents.length === 0 ? body : { kind: "union", members: [...parents, body] });
+    } else {
+      const eq3 = /^\s*=/.exec(scan.slice(i));
+      if (eq3 === null) continue;
+      i += eq3[0].length;
+      const end = typeAliasEnd(scan, i);
+      const type = parseJsDocType(blanked.slice(i, end).trim(), TS);
+      if (type !== null) declarations.set(name, type);
+    }
+  }
+  const { imports, stars } = readTypeImports(source, scan, depthAt);
+  return { path, declarations, imports, stars };
+}
+function blankComments(source, scan) {
+  let out = "";
+  let from = 0;
+  for (const m of scan.matchAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g)) {
+    const at2 = m.index;
+    out += source.slice(from, at2) + m[0].replace(/[^\n]/g, " ");
+    from = at2 + m[0].length;
+  }
+  return out + source.slice(from);
+}
+function braceDepths(scan) {
+  const out = new Array(scan.length + 1);
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    out[i] = depth;
+    if (scan[i] === "{") depth++;
+    else if (scan[i] === "}") depth = Math.max(0, depth - 1);
+  }
+  out[scan.length] = depth;
+  return out;
+}
+function skipTypeParameters(scan, at2) {
+  let i = at2;
+  while (/\s/.test(scan[i] ?? "")) i++;
+  if (scan[i] !== "<") return at2;
+  let depth = 0;
+  for (; i < scan.length; i++) {
+    if (scan[i] === "<") depth++;
+    else if (scan[i] === ">" && scan[i - 1] !== "=" && --depth === 0) return i + 1;
+  }
+  return at2;
+}
+function matchClose(scan, open) {
+  let depth = 0;
+  for (let i = open; i < scan.length; i++) {
+    if (scan[i] === "{") depth++;
+    else if (scan[i] === "}" && --depth === 0) return i;
+  }
+  return scan.length;
+}
+function splitBases(text3) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text3.length; i++) {
+    if (text3[i] === "<" || text3[i] === "(" || text3[i] === "{" || text3[i] === "[") depth++;
+    else if (text3[i] === ">" && text3[i - 1] !== "=" || text3[i] === ")" || text3[i] === "}" || text3[i] === "]") depth--;
+    else if (text3[i] === "," && depth === 0) {
+      out.push(text3.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  out.push(text3.slice(start).trim());
+  return out.filter((b) => b !== "");
+}
+function typeAliasEnd(scan, start) {
+  let depth = 0;
+  for (let i = start; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "=" && scan[i + 1] === ">") {
+      i++;
+    } else if (ch === "(" || ch === "[" || ch === "{" || ch === "<") {
+      depth++;
+    } else if (ch === ")" || ch === "]" || ch === "}" || ch === ">") {
+      depth--;
+    } else if (depth === 0 && ch === ";") {
+      return i;
+    } else if (depth === 0 && ch === "\n") {
+      const before = scan.slice(start, i).trim();
+      const after = scan.slice(i + 1).trimStart();
+      if (before === "" || /[|&=,?:]$/.test(before) || /^[|&?:.]/.test(after)) continue;
+      return i;
+    }
+  }
+  return scan.length;
+}
+function readTypeImports(text3, scan, depthAt) {
+  const imports = /* @__PURE__ */ new Map();
+  const stars = [];
+  const re = /\b(import|export)\s+(?:type\s+)?(\{[^}]*\}|\*)\s*from\s*(["'])/g;
+  for (const m of scan.matchAll(re)) {
+    const at2 = m.index;
+    if (depthAt[at2] !== 0) continue;
+    const quoteAt = at2 + m[0].length - 1;
+    const close = scan.indexOf(m[3], quoteAt + 1);
+    if (close < 0) continue;
+    const specifier = text3.slice(quoteAt + 1, close);
+    if (m[2] === "*") {
+      if (m[1] === "export") stars.push(specifier);
+      continue;
+    }
+    for (const part of m[2].slice(1, -1).split(",")) {
+      const spec = /^\s*(?:type\s+)?([$A-Za-z_][$\w]*)(?:\s+as\s+([$A-Za-z_][$\w]*))?\s*$/.exec(part);
+      if (spec === null) continue;
+      imports.set(spec[2] ?? spec[1], { specifier, name: spec[1] });
+    }
+  }
+  return { imports, stars };
+}
+function withImportedTypes(typedefs, script, location) {
+  const imported = resolveImportedTypes(script, location);
+  if (imported.size === 0) return typedefs;
+  return new Map([...typedefs, ...imported]);
+}
+
 // src/service/stateAnalyzer.ts
 var RESERVED_STREAMS_KEYS = /* @__PURE__ */ new Set(["$stream", "$streams"]);
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
@@ -9146,7 +9514,8 @@ function analyzeStatePaths(scriptContent, location) {
   const pendingListKeys = [];
   const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
   const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
-  const typedefs = scriptContent.includes("@typedef") ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent)) : /* @__PURE__ */ new Map();
+  const localTypedefs = scriptContent.includes("@typedef") ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent)) : /* @__PURE__ */ new Map();
+  const typedefs = scriptContent.includes("import") ? withImportedTypes(localTypedefs, scriptContent, location) : localTypedefs;
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
       collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
@@ -9164,7 +9533,8 @@ function analyzeStatePaths(scriptContent, location) {
       if (!paths.some((p) => p.path === prop.name)) {
         const recursive = hasRecursionWildcard(prop.name);
         const settable = !recursive && effective !== "data" && effective.set;
-        paths.push({ path: prop.name, kind: recursive ? "recursive" : "computed", ...settable ? { settable } : {} });
+        const declared = prop.declaredType === void 0 ? {} : declaredTypeFacts(prop.declaredType, typedefs);
+        paths.push({ path: prop.name, kind: recursive ? "recursive" : "computed", ...settable ? { settable } : {}, ...declared });
       }
       if (prop.declaredType !== void 0) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
       continue;
@@ -9287,13 +9657,15 @@ function analyzeHandlerSources(scriptContent, key) {
   const leading = prop.value.length - prop.value.trimStart().length;
   const innerStart = root.start + prop.valueStart + leading + 1;
   const out = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+  const content = extractObjectContent(prop.value);
+  for (const entry of parseTopLevelProperties(content)) {
     if (entry.value === void 0 || entry.valueStart === void 0) continue;
     out.push({
       name: entry.name,
       kind: entry.kind === "data" ? "value" : "body",
       text: entry.value,
-      start: innerStart + entry.valueStart
+      start: innerStart + entry.valueStart,
+      ...entry.paramsStart !== void 0 && entry.paramsEnd !== void 0 ? { params: content.slice(entry.paramsStart, entry.paramsEnd) } : {}
     });
   }
   return out;
@@ -9319,6 +9691,39 @@ function analyzeDeclarationEntries(scriptContent, key) {
     end: entry.end,
     ...entry.kind === "data" && entry.value !== void 0 && entry.valueStart !== void 0 ? { value: entry.value.trim(), valueStart: entry.valueStart } : {}
   }));
+}
+function analyzeTopLevelStateKeys(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || hasTopLevelSpread(scriptContent)) return null;
+  const scan = maskCommentsAndStrings(root.content).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => " ".repeat(c.length));
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      if (depth === 0 && ch === "[" && /^\s*(?:(?:get|set|async|static)\s+)?\*?\s*$/.test(scan.slice(start, i))) return null;
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0 || i === scan.length) {
+      start = i + 1;
+    }
+  }
+  const keys = [];
+  const methods = [];
+  let materializes = false;
+  for (const prop of withShorthands(root.content, parseTopLevelProperties(root.content))) {
+    if (prop.name.startsWith("$")) {
+      if (RESERVED_STREAMS_KEYS.has(prop.name) || prop.name === RESERVED_SCAN_KEY) materializes = true;
+      continue;
+    }
+    if (prop.kind === "method") {
+      if (!methods.includes(prop.name)) methods.push(prop.name);
+    } else if (!prop.name.includes(".") && !keys.includes(prop.name)) {
+      keys.push(prop.name);
+    }
+  }
+  return { keys, methods, materializes };
 }
 function hasDefaultExportObject(scriptContent) {
   return locateDefaultExportObject(scriptContent) !== null;
@@ -9404,6 +9809,7 @@ function analyzeCallableBodies(scriptContent) {
       body: prop.value ?? "",
       bodyStart: root.start + (prop.valueStart ?? 0),
       accessor: prop.accessor,
+      ...prop.paramsStart !== void 0 && prop.paramsEnd !== void 0 ? { params: root.content.slice(prop.paramsStart, prop.paramsEnd) } : {},
       ...prop.listed !== void 0 ? { listed: { ...prop.listed, start: root.start + prop.listed.start, end: root.start + prop.listed.end } } : {}
     });
   }
@@ -9649,7 +10055,7 @@ function collectGetterResultShapes(script, rootStart, props, effective, paths) {
     const before = paths.length;
     for (const [name, prop] of getters) {
       const shape = getterResultShape(prop.value, paths);
-      if (shape !== null) applyResultShape(name, shape, paths);
+      if (shape !== null) applyResultShape(name, shape, paths, true);
     }
     const aliasesByBody = /* @__PURE__ */ new Map();
     for (const assignment of assignments) {
@@ -9667,12 +10073,25 @@ function collectGetterResultShapes(script, rootStart, props, effective, paths) {
 function getterResultShape(body, paths) {
   const scan = maskCommentsAndStrings(body);
   const aliases = collectAliases(body, paths);
+  const texts = [];
   const shapes = [];
   for (const start of ownReturnEnds(scan)) {
-    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
-    if (shape !== null) shapes.push(shape);
+    const text3 = readExpression(body, scan, start);
+    texts.push(text3);
+    shapes.push(expressionShape(text3, paths, aliases));
   }
-  return shapes.length === 0 ? null : mergeShapes(shapes);
+  return mergeAlternatives(texts, shapes);
+}
+function mergeAlternatives(texts, shapes) {
+  const read = shapes.filter((s) => s !== null);
+  if (read.length === 0) return null;
+  const merged = mergeShapes(read);
+  const open = read.find((s) => s.openRows !== void 0);
+  if (open !== void 0) return { ...merged, openRows: open.openRows };
+  if (!merged.isList) return merged;
+  const onlyEmpty = read.every((s) => !s.isList || s.mirrors.length === 0 && s.fields.length === 0 && s.opaque !== true);
+  const unknownAt = shapes.findIndex((s, i) => s === null && texts[i].trim() !== "" || s !== null && !s.isList && s.fields.length === 0);
+  return onlyEmpty && unknownAt >= 0 ? { ...merged, openRows: texts[unknownAt].trim() } : merged;
 }
 var BLOCK_HEADS = /* @__PURE__ */ new Set(["if", "for", "while", "switch", "catch", "with"]);
 function ownReturnEnds(scan) {
@@ -9778,13 +10197,13 @@ function expressionShape(text3, paths, aliases, keepOpaque = false) {
   const scan = maskCommentsAndStrings(expr);
   const ternary = splitTernary(scan);
   if (ternary !== null) {
-    const branches = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)].map((part) => expressionShape(part, paths, aliases)).filter((s) => s !== null);
-    return branches.length === 0 ? null : mergeShapes(branches);
+    const texts = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)];
+    return mergeAlternatives(texts, texts.map((part) => expressionShape(part, paths, aliases)));
   }
   const operands = splitTopLevel(scan, /\|\||\?\?/g);
   if (operands.length > 1) {
-    const sides = operands.map(([s, e]) => expressionShape(expr.slice(s, e), paths, aliases)).filter((s) => s !== null);
-    return sides.length === 0 ? null : mergeShapes(sides);
+    const texts = operands.map(([s, e]) => expr.slice(s, e));
+    return mergeAlternatives(texts, texts.map((part) => expressionShape(part, paths, aliases)));
   }
   if (scan.startsWith("{")) {
     if (extractDelimitedContent(expr, scan, 0, "{", "}").length !== expr.length - 2) return null;
@@ -9956,10 +10375,18 @@ function mapRows(args, shape, paths, outer) {
     ]
   };
 }
-function applyResultShape(getter, shape, paths) {
+function applyResultShape(getter, shape, paths, openRows = false) {
   if (shape.isList) {
     if (!hasPath(paths, `${getter}.*`)) paths.push({ path: `${getter}.*`, kind: "list" });
     if (!hasPath(paths, `${getter}.length`)) paths.push({ path: `${getter}.length`, kind: "data", typeHint: "number" });
+    if (openRows && shape.openRows !== void 0) {
+      const rows = paths.find((p) => p.path === `${getter}.*`);
+      const fields = paths.some((p) => p.path.startsWith(`${getter}.*.`) && (p.kind === "data" || p.kind === "list"));
+      if (rows.typed !== true && rows.opaque === void 0 && !fields) {
+        const flat = shape.openRows.replace(/\s+/g, " ");
+        rows.opaque = { name: flat.length <= MAX_UNREAD_TEXT ? flat : `${flat.slice(0, MAX_UNREAD_TEXT - 1)}\u2026` };
+      }
+    }
   }
   for (const { from, to } of shape.mirrors) {
     if (from === getter || from.startsWith(`${getter}.`)) continue;
@@ -10111,8 +10538,16 @@ function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs, scope) {
   }
   if (prop.declaredType !== void 0) {
     candidate.typed = true;
+    const facts = declaredTypeFacts(prop.declaredType, typedefs);
+    if (candidate.typeHint === void 0 && facts.typeHint !== void 0) candidate.typeHint = facts.typeHint;
+    if (facts.literals !== void 0) candidate.literals = facts.literals;
     pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
   }
+}
+function declaredTypeFacts(type, typedefs) {
+  const typeHint = jsDocTypeHint(type, typedefs);
+  const literals = jsDocLiteralValues(type, typedefs);
+  return { ...typeHint !== void 0 ? { typeHint } : {}, ...literals !== null ? { literals } : {} };
 }
 var MAX_SPREAD_HOPS = 8;
 function objectLiteralKeys(content, scope, shorthands, hops = 0) {
@@ -10325,6 +10760,12 @@ function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
     const candidate = paths.find((p) => p.path === path);
     if (candidate !== void 0) candidate.openKeys = true;
   }
+  const unread = unreadImportType(type, typedefs);
+  if (unread !== null) {
+    const candidate = paths.find((p) => p.path === path);
+    if (candidate !== void 0 && candidate.opaque === void 0) candidate.opaque = { type: unread };
+    return;
+  }
   if (shape.element !== null) {
     if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
     if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
@@ -10335,11 +10776,22 @@ function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
   for (const field of shape.fields) {
     const fieldPath = `${path}.${field.name}`;
     if (!hasPath(paths, fieldPath)) {
-      paths.push(withHint({ path: fieldPath, kind: "data" }, jsDocTypeHint(field.type, typedefs)));
+      const literals = jsDocLiteralValues(field.type, typedefs);
+      paths.push(withHint({ path: fieldPath, kind: "data", ...literals !== null ? { literals } : {} }, jsDocTypeHint(field.type, typedefs)));
     }
     markTyped(paths, fieldPath);
     pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
   }
+}
+function unreadImportType(type, typedefs) {
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === "name" && isImportTypeName(member.name)) return member.name;
+    if (member.kind === "array") {
+      const element2 = flattenJsDocType(member.element, typedefs).find((m) => m.kind === "name" && isImportTypeName(m.name));
+      if (element2 !== void 0) return `${element2.name}[]`;
+    }
+  }
+  return null;
 }
 function markTyped(paths, path) {
   const candidate = paths.find((p) => p.path === path);
@@ -10483,9 +10935,10 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
   const props = [];
   const scan = maskCommentsAndStrings(objectContent);
   const params = String.raw`\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\)`;
+  const typeParams = String.raw`(?:<(?:[^<>()]|<(?:[^<>()]|<[^<>()]*>)*>)*>\s*)?`;
   const dataKey = allowEmptyDataKeys ? String.raw`(?:"([^"]*)"|'([^']*)'|([$\w]+))` : String.raw`(?:"([^"]+)"|'([^']+)'|([$\w]+))`;
   const regex = new RegExp(
-    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:${dataKey}\s*:\s*)`,
+    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params})|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${typeParams}${params})|(?:${dataKey}\s*:\s*)`,
     "gd"
   );
   let match;
@@ -10498,11 +10951,21 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
       nameSpan = [span[0], span[1]];
       return objectContent.slice(span[0], span[1]);
     };
+    const headEnd = match.index + match[0].length;
+    const isCallable = indices[1] !== void 0 || indices[2] !== void 0 || indices[3] !== void 0 || indices[4] !== void 0 || indices[5] !== void 0 || indices[6] !== void 0;
+    const bodyBrace = isCallable ? bodyBraceAfter(scan, headEnd) : -1;
+    if (isCallable && bodyBrace < 0) {
+      regex.lastIndex = headEnd;
+      continue;
+    }
+    const paramsSpan = () => {
+      const open = scan.indexOf("(", nameSpan[1]);
+      return { paramsStart: open + 1, paramsEnd: headEnd - 1 };
+    };
     const skipBody = () => {
-      const braceStart = match.index + match[0].length - 1;
-      const body = extractBracedContent(objectContent, scan, braceStart);
-      regex.lastIndex = braceStart + body.length + 2;
-      return { body, bodyStart: braceStart + 1 };
+      const body = extractBracedContent(objectContent, scan, bodyBrace);
+      regex.lastIndex = bodyBrace + body.length + 2;
+      return { body, bodyStart: bodyBrace + 1 };
     };
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
@@ -10528,6 +10991,7 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
     }
     const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
+      const span = paramsSpan();
       const { body, bodyStart } = skipBody();
       props.push({
         name: methodName,
@@ -10535,7 +10999,8 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
         value: body,
         valueStart: bodyStart,
         nameStart: nameSpan[0],
-        nameEnd: nameSpan[1]
+        nameEnd: nameSpan[1],
+        ...span
       });
       continue;
     }
@@ -10562,6 +11027,75 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
     }
   }
   return props;
+}
+var TYPE_OPERATOR_WORDS = /* @__PURE__ */ new Set([
+  "keyof",
+  "typeof",
+  "readonly",
+  "unique",
+  "infer",
+  "extends",
+  "is",
+  "asserts",
+  "new",
+  "abstract"
+]);
+function bodyBraceAfter(scan, from) {
+  let i = from;
+  while (i < scan.length && /\s/.test(scan[i])) i++;
+  if (scan[i] === "{") return i;
+  if (scan[i] !== ":") return -1;
+  let expect = true;
+  let depth = 0;
+  for (i++; i < scan.length; i++) {
+    const ch = scan[i];
+    if (/\s/.test(ch)) continue;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const close = scan.indexOf(ch, i + 1);
+      if (close < 0) return -1;
+      i = close;
+      expect = false;
+    } else if (ch === "=" && scan[i + 1] === ">") {
+      i++;
+      expect = true;
+    } else if (ch === "{") {
+      if (depth === 0 && !expect) return i;
+      const close = matchingBrace(scan, i);
+      if (close < 0) return -1;
+      i = close;
+      expect = false;
+    } else if (ch === "(" || ch === "[" || ch === "<") {
+      depth++;
+      expect = true;
+    } else if (ch === ")" || ch === "]" || ch === ">") {
+      if (depth === 0) return -1;
+      depth--;
+      expect = false;
+    } else if (ch === "}" || ch === ";") {
+      return -1;
+    } else if (ch === ",") {
+      if (depth === 0) return -1;
+      expect = true;
+    } else if (ch === "|" || ch === "&" || ch === "?" || ch === ":" || ch === ".") {
+      expect = true;
+    } else if (/[$\w]/.test(ch)) {
+      let j = i;
+      while (j < scan.length && /[$\w]/.test(scan[j])) j++;
+      expect = TYPE_OPERATOR_WORDS.has(scan.slice(i, j));
+      i = j - 1;
+    } else {
+      expect = false;
+    }
+  }
+  return -1;
+}
+function matchingBrace(scan, open) {
+  let depth = 0;
+  for (let i = open; i < scan.length; i++) {
+    if (scan[i] === "{") depth++;
+    else if (scan[i] === "}" && --depth === 0) return i;
+  }
+  return -1;
 }
 function maskCommentsAndStrings(source) {
   const out = source.split("");
@@ -10780,6 +11314,25 @@ function schemaTypeHint(nodes2) {
   }
   return hints.size === 0 ? void 0 : [...hints].join("|");
 }
+function schemaLiteralValues(nodes2) {
+  if (nodes2.length === 0) return null;
+  const values = [];
+  const scalar = (v) => v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+  for (const n of nodes2) {
+    if (Array.isArray(n.enum)) {
+      if (!n.enum.every(scalar)) return null;
+      values.push(...n.enum);
+    } else if (n.const !== void 0) {
+      if (!scalar(n.const)) return null;
+      values.push(n.const);
+    } else if (n.type === "null") {
+      values.push(null);
+    } else {
+      return null;
+    }
+  }
+  return values.some((v) => v !== null) ? [...new Set(values)] : null;
+}
 function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
   if (depth >= MAX_OBJECT_NEST_DEPTH) return;
   const seen2 = /* @__PURE__ */ new Set();
@@ -10796,7 +11349,8 @@ function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
 function pushSchemaValuePaths(path, node, paths, defs, depth) {
   const nodes2 = derefSchemaNodes(node, defs);
   const typeHint = schemaTypeHint(nodes2);
-  paths.push(withHint({ path, kind: "data", fromSchema: true }, typeHint));
+  const literals = schemaLiteralValues(nodes2);
+  paths.push(withHint({ path, kind: "data", fromSchema: true, ...literals !== null ? { literals } : {} }, typeHint));
   const items = nodes2.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
   const isArray2 = items !== void 0 || (typeHint?.split("|").includes("array") ?? false);
   if (isArray2) {
@@ -12779,7 +13333,7 @@ function joinRelative(from, spec) {
 function parseScript(source) {
   for (const sourceType of ["module", "script"]) {
     try {
-      return parse3(source, { ecmaVersion: "latest", sourceType, allowHashBang: true });
+      return parseErasingTypes(source, { ecmaVersion: "latest", sourceType, allowHashBang: true });
     } catch {
     }
   }
@@ -12867,11 +13421,13 @@ function readPageElementContracts(html, fileReader) {
   }
   while (queue.length > 0 && fileReader !== void 0 && read.size < MAX_FILES) {
     const { from, spec } = queue.shift();
-    const path = joinRelative(from, spec);
-    if (path === null || read.has(path) || !/\.m?js$/.test(path)) continue;
+    const joined = joinRelative(from, spec);
+    if (joined === null) continue;
+    const paths = /\.m?[jt]s$/.test(joined) ? [joined, .../\.m?js$/.test(joined) ? [joined.replace(/js$/, "ts")] : []] : /\/[^/.]+$/.test(joined) ? [`${joined}.ts`, `${joined}.js`] : [];
+    const path = paths.find((p) => read.has(p) || fileReader(p) !== void 0);
+    if (path === void 0 || read.has(path)) continue;
     read.add(path);
-    const text3 = fileReader(path);
-    const program = text3 === void 0 ? null : parseScript(text3);
+    const program = parseScript(fileReader(path));
     if (program !== null) visit2(program, path);
   }
   const classes = /* @__PURE__ */ new Map();
@@ -13185,7 +13741,7 @@ var collecting = {};
 function collectGetterReads(body, options = {}) {
   let program;
   try {
-    program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return null;
   }
@@ -13575,7 +14131,7 @@ function visitDestructure(pattern, prefix, scope, out) {
 function collectThisMemberRefs(body, names2) {
   let program;
   try {
-    program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return null;
   }
@@ -13588,7 +14144,7 @@ var VALUE_SUFFIX = ")\n})";
 function collectThisMemberRefsInValue(value, names2) {
   let program;
   try {
-    program = parse3(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return null;
   }
@@ -13633,7 +14189,7 @@ function thisMemberName(node) {
 function readsEventCurrentTarget(params, body) {
   let program;
   try {
-    program = parse3(`(async function* (${params}) {
+    program = parseErasingTypes(`(async function* (${params}) {
 ${body}
 })`, { ecmaVersion: "latest", sourceType: "module" });
   } catch {
@@ -13731,7 +14287,7 @@ function findOwnThis(text3, kind) {
   let program;
   const prefix = kind === "body" ? PREFIX : VALUE_PREFIX;
   try {
-    program = parse3(prefix + text3 + (kind === "body" ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(prefix + text3 + (kind === "body" ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return null;
   }
@@ -13781,7 +14337,7 @@ function findInPlaceChanges(text3, kind, root) {
   const prefix = kind === "body" ? PREFIX : VALUE_PREFIX;
   let program;
   try {
-    program = parse3(prefix + text3 + (kind === "body" ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(prefix + text3 + (kind === "body" ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return [];
   }
@@ -13894,7 +14450,7 @@ var LOCATION_VARYING = /* @__PURE__ */ new Set(["pathname", "search", "hash", "h
 function findLocationRead(body) {
   let program;
   try {
-    program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return null;
   }
@@ -13974,7 +14530,7 @@ function ambientKindOf(names2) {
 function findAmbientRead(body, outer = /* @__PURE__ */ new Set()) {
   let program;
   try {
-    program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
   } catch {
     return null;
   }
@@ -14067,7 +14623,7 @@ function moduleBindingNames(script) {
   const names2 = /* @__PURE__ */ new Set();
   let program;
   try {
-    program = parse3(script, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true });
+    program = parseErasingTypes(script, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true });
   } catch {
     return names2;
   }
@@ -14112,6 +14668,10 @@ function isUnitlessZero(token) {
 function shortSeed(raw) {
   const flat = raw.replace(/\s+/g, " ");
   return flat.length <= 32 ? flat : `${flat.slice(0, 29)}\u2026`;
+}
+var MAX_LISTED_KEYS = 10;
+function listKeys(keys) {
+  return keys.length <= MAX_LISTED_KEYS ? keys.join(", ") : `${keys.slice(0, MAX_LISTED_KEYS).join(", ")} \u2026 (+${keys.length - MAX_LISTED_KEYS})`;
 }
 var JA_EXPECTED_LABEL = {
   array: "\u914D\u5217\u578B\u306E\u30D1\u30B9",
@@ -14183,6 +14743,8 @@ var ja = {
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
   stateAbsent: (tag) => `\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306B\u306F\u675F\u7E1B\u304C\u3042\u308A\u307E\u3059\u304C <${tag}> \u304C\u7121\u3044\u306E\u3067\u3001\u675F\u7E1B\u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u30DA\u30FC\u30B8\u304C\u53D6\u308A\u8FBC\u3080\u65AD\u7247\u3084\u3001state \u3092\u30B9\u30AF\u30EA\u30D7\u30C8\u3067\u4F5C\u308B\u30DA\u30FC\u30B8\uFF09\u3002state \u306E\u3042\u308B\u30DA\u30FC\u30B8\u3092\u691C\u67FB\u3059\u308B\u304B\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u96A3\uFF08\u304B\u4E0A\uFF09\u306E wcstack.manifest.json \u306E stateSchema \u306B\u30D1\u30B9\u3092\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  pathDynamicUnknownType: (path, n, type) => `"${path}" \u306E JSDoc \u306E\u578B ${type} \u306F\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u8AAD\u3080\u306E\u306F\u3001\u8AAD\u3081\u308B\u30D5\u30A1\u30A4\u30EB\u306E export interface / export type\u3001.js \u306E @typedef\uFF09\u3002\u5F62\u3092\u305D\u306E\u5834\u3067\u66F8\u304F\u304B\u3001\u540C\u3058\u30B9\u30AF\u30EA\u30D7\u30C8\u306E @typedef \u306B\u3059\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  stateSchemaDrift: (inScript, inSchema) => `\u3053\u306E\u30DA\u30FC\u30B8\u306B\u5F53\u3066\u305F stateSchema \u304C state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3068\u98DF\u3044\u9055\u3063\u3066\u3044\u307E\u3059${inScript.length > 0 ? `\uFF08\u30B9\u30AF\u30EA\u30D7\u30C8\u306B\u3042\u3063\u3066 schema \u306B\u7121\u3044\u30AD\u30FC: ${listKeys(inScript)}\uFF09` : ""}${inSchema.length > 0 ? `\uFF08schema \u306B\u3042\u3063\u3066\u30B9\u30AF\u30EA\u30D7\u30C8\u306B\u7121\u3044\u30AD\u30FC: ${listKeys(inSchema)}\uFF09` : ""}\u3002schema \u306F\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089\u4F5C\u308B\u6D3E\u751F\u7269\u306A\u306E\u3067\u3001\u53E4\u3044\u304B\u3001\u5225\u306E state\uFF08\u5225\u306E\u30DA\u30FC\u30B8\uFF09\u306E\u3082\u306E\u3067\u3059 \u2014 \u305D\u306E\u307E\u307E\u691C\u67FB\u3059\u308B\u3068\u3001\u540D\u524D\u3092\u5909\u3048\u305F\u30AD\u30FC\u3078\u306E\u675F\u7E1B\u304C\u901A\u308A\u3001\u3042\u308B\u30AD\u30FC\u304C\u5B58\u5728\u3057\u306A\u3044\u3068\u8A00\u308F\u308C\u307E\u3059\u3002wcs-schema emit \u3067\u4F5C\u308A\u76F4\u3057\uFF08\u4F5C\u3063\u305F manifest \u306F\u5143\u306E state \u306E\u30D5\u30A1\u30A4\u30EB\u3092 stateSource \u306B\u8A18\u3057\u3001lint \u306F\u305D\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u3080\u30DA\u30FC\u30B8\u306B\u3060\u3051\u5F53\u3066\u307E\u3059\uFF09\u3001CI \u3067\u306F wcs-schema check \u3067\u98DF\u3044\u9055\u3044\u3092\u6B62\u3081\u3066\u304F\u3060\u3055\u3044`,
   pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u304C\u66F8\u304F\u306E\u3067\u3001\u4E2D\u8EAB\u306F\u8981\u7D20\u304C\u6E21\u3059\u3082\u306E\u3067\u3059\u3002\u305D\u306E\u5F62\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
@@ -14220,6 +14782,7 @@ var ja = {
   filterMaxArgs: (n, max, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u5F15\u6570\u306F\u6700\u5927 ${max} \u500B\u3067\u3059\uFF08${c} \u500B\u6307\u5B9A\uFF09`,
   filterArgType: (n, i, exp, arg, act) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u7B2C${i}\u5F15\u6570\u306F ${exp} \u578B\u304C\u5FC5\u8981\u3067\u3059\uFF08"${arg}" \u306F ${act} \u578B\uFF09`,
   filterInputType: (n, accepts, cur) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F ${accepts} \u578B\u306E\u5165\u529B\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${cur}\uFF09`,
+  filterArgEnum: (n, arg, members, suggestion2) => `"${n}(${arg})" \u306E ${arg} \u306F\u3001\u6BD4\u3079\u308B\u5024\u304C\u53D6\u308A\u3046\u308B\u5024\uFF08${members.join(" | ")}\uFF09\u306B\u3042\u308A\u307E\u305B\u3093 \u2014 ${n === "ne" ? "\u3044\u3064\u3082\u771F" : "\u6C7A\u3057\u3066\u771F\u306B\u306A\u308A\u307E\u305B\u3093"}${suggestion2}`,
   moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   moustacheFoucTextParent: (e, tag) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<${tag}> \u306E\u4E2D\u306E\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306F\u675F\u7E1B\u306B\u306A\u308A\u307E\u305B\u3093 \u2014 \u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">\uFF09\u3002`,
   textBindingInHead: (w) => `${w} \u306F\u6587\u66F8\u306E <head> \u306E\u4E2D\u306B\u3042\u308A\u307E\u3059\u304C\u3001<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u3068\u30B7\u30E3\u30C9\u30A6\u30EB\u30FC\u30C8\u3060\u3051\u306A\u306E\u3067\u3001\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059\u3002\u30BF\u30A4\u30C8\u30EB\u306F state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089 document.title \u306B\u66F8\u304F\uFF08$connectedCallback \u3068 $watch \u306E\u30CF\u30F3\u30C9\u30E9\uFF09\u304B\u3001\u30EB\u30FC\u30C8\u306E <wcs-head> \u306E <title> \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
@@ -14458,6 +15021,8 @@ var en = {
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
   stateAbsent: (tag) => `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
   pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathDynamicUnknownType: (path, n, type) => `The JSDoc type ${type} of "${path}" cannot be read, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked (read are an export interface / export type of a file it can read, and a @typedef in a .js). Write the shape in place, make it a @typedef in the same script, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  stateSchemaDrift: (inScript, inSchema) => `The stateSchema applied to this page disagrees with its state's script${inScript.length > 0 ? ` (in the script, not in the schema: ${listKeys(inScript)})` : ""}${inSchema.length > 0 ? ` (in the schema, not in the script: ${listKeys(inSchema)})` : ""}. The schema is derived from a script: it is stale, or another state's (another page's). Checked against it, a binding to a renamed key passes and a key is said not to exist. Regenerate it with wcs-schema emit (the manifest it writes names its state file in stateSource, and the lint applies it only to the pages that load that file), and run wcs-schema check in CI to stop the drift`,
   pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" is written by "${member}" of <${tag}>, an output, so it holds whatever the element gives: its shape cannot be read statically, and the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
@@ -14495,6 +15060,7 @@ var en = {
   filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
   filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
   filterInputType: (n, accepts, cur) => `Filter "${n}" requires input of type ${accepts} (current type: ${cur})`,
+  filterArgEnum: (n, arg, members, suggestion2) => `${arg} in "${n}(${arg})" is not a value the compared value takes (${members.join(" | ")}): it is ${n === "ne" ? "always true" : "never true"}${suggestion2}`,
   moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   moustacheFoucTextParent: (e, tag) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). A comment binding is not bound inside <${tag}>: bind the element instead (<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">).`,
   textBindingInHead: (w) => `${w} is in the document's <head>, and a <wcs-state> binds only the <body> and shadow roots, so it stays as written. Write document.title from the state's script ($connectedCallback and a $watch handler), or put the <title> in a route's <wcs-head>`,
@@ -15084,7 +15650,7 @@ function literalArrayLength(arg) {
   if (parts === null) return null;
   return parts.args.filter((part) => part.trim().length > 0).length;
 }
-function blankComments(source) {
+function blankComments2(source) {
   const out = source.split("");
   let i = 0;
   while (i < source.length) {
@@ -15192,7 +15758,7 @@ function validateBehavior(block, msgs, out) {
     if (entry.value === void 0 || entry.valueStart === void 0) continue;
     const valueKind = literalKind(entry.value);
     if (valueKind !== type && valueKind !== "unknown") {
-      const blanked = blankComments(entry.value);
+      const blanked = blankComments2(entry.value);
       const lead = blanked.length - blanked.trimStart().length;
       const start = base + entry.valueStart + lead;
       push(out, WcsDiagnosticCode.BehaviorInvalid, start, start + blanked.trim().length, msgs.behaviorValueType(entry.name, type));
@@ -15220,7 +15786,7 @@ function validateFeatures(block, msgs, out) {
     }
     return;
   }
-  for (const element2 of arrayElements(blankComments(decl.value))) {
+  for (const element2 of arrayElements(blankComments2(decl.value))) {
     const elementKind = literalKind(element2.text);
     const start = base + decl.valueStart + element2.start;
     if (elementKind === "string") {
@@ -15281,7 +15847,7 @@ function validateFeaturesAttributes(html, stateTagName, msgs, out) {
   }
 }
 function literalKind(value) {
-  const text3 = blankComments(value).trim();
+  const text3 = blankComments2(value).trim();
   const scan = maskCommentsAndStrings(text3).trim();
   if (/^(["'])[^"']*\1$/.test(scan)) return "string";
   if (/^`[^`]*`$/.test(scan)) return text3.includes("${") ? "unknown" : "string";
@@ -15339,7 +15905,7 @@ function scriptTokenNames(script, key) {
   if (declaration === null) return maskCommentsAndStrings(script).includes(key) ? null : [];
   if (declaration.kind !== "data" || declaration.value === void 0 || literalKind(declaration.value) !== "array") return null;
   const names2 = [];
-  for (const element2 of arrayElements(blankComments(declaration.value))) {
+  for (const element2 of arrayElements(blankComments2(declaration.value))) {
     if (literalKind(element2.text) !== "string") return null;
     names2.push(element2.text.slice(1, -1));
   }
@@ -15445,11 +16011,8 @@ function forEachStateMethod(elements, html, fileReader, spelling, fn) {
     if ((insideTemplate ??= createTemplateTester(html))(element2.tagStart)) continue;
     for (const script of scripts) {
       for (const callable of analyzeCallableBodies(script)) {
-        if (callable.kind !== "method" || spelling !== null && !callable.body.includes(spelling)) continue;
-        const head = script.slice(callable.end, callable.bodyStart - 1);
-        const params = /\(([\s\S]*)\)\s*$/.exec(head);
-        if (params === null) continue;
-        fn(volume === null ? callable.name : `${volume}.${callable.name}`, params[1], callable.body);
+        if (callable.kind !== "method" || callable.params === void 0 || spelling !== null && !callable.body.includes(spelling)) continue;
+        fn(volume === null ? callable.name : `${volume}.${callable.name}`, callable.params, callable.body);
       }
     }
   }
@@ -15863,15 +16426,11 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
         }
         if (parsed.path && statePaths.length > 0) {
           const pathTrimmed = parsed.path.trim();
-          if (pathTrimmed && !pathTrimmed.startsWith(".") && !isLiteral(pathTrimmed)) {
-            const chainDiags = validateFilterChainTypes(
-              candidateKeyOf(pathTrimmed, (c) => scopedPathSet.has(c)),
-              parsed.filters,
-              scopedPaths,
-              bindingStart,
-              msgs
-            );
-            diagnostics.push(...chainDiags);
+          const typed = pathTrimmed.startsWith(".") ? expandRowPath(pathTrimmed, html, attr.valueStart, attrName) : pathTrimmed;
+          if (typed && !isLiteral(typed)) {
+            const key = candidateKeyOf(typed, (c) => scopedPathSet.has(c));
+            diagnostics.push(...validateFilterChainTypes(key, parsed.filters, scopedPaths, bindingStart, msgs));
+            diagnostics.push(...validateFilterArgEnum(key, parsed.filters, scopedPaths, binding, bindingStart, msgs));
           }
         }
       }
@@ -16210,15 +16769,17 @@ function validateFilterChainTypes(path, filters, statePaths, bindingStart, msgs)
   for (const filter of filters) {
     const info = filterMap.get(filter.name);
     if (!info) break;
-    if (info.acceptTypes !== "any") {
-      const currentTypes = currentType.split("|");
-      const hasMatch = currentTypes.some((t) => info.acceptTypes.includes(t));
+    const dateFilter = DATE_VALUE_FILTERS.has(filter.name);
+    const acceptTypes = dateFilter ? ["object"] : info.acceptTypes;
+    const currentTypes = dateFilter ? currentType.split("|").filter((t) => t !== "null") : currentType.split("|");
+    if (acceptTypes !== "any" && currentTypes.length > 0) {
+      const hasMatch = currentTypes.some((t) => acceptTypes.includes(t));
       if (!hasMatch) {
         diagnostics.push({
           code: WcsDiagnosticCode.FilterInputType,
           start: bindingStart + filter.offset,
           end: bindingStart + filter.offset + filter.name.length,
-          message: msgs.filterInputType(filter.name, info.acceptTypes.join("|"), currentType),
+          message: msgs.filterInputType(filter.name, DATE_VALUE_FILTERS.has(filter.name) ? "Date" : acceptTypes.join("|"), currentType),
           severity: "warning"
         });
       }
@@ -16228,6 +16789,35 @@ function validateFilterChainTypes(path, filters, statePaths, bindingStart, msgs)
     }
   }
   return diagnostics;
+}
+var DATE_VALUE_FILTERS = /* @__PURE__ */ new Set(["date", "time", "datetime", "ymd", "hms"]);
+var COMPARISON_FILTERS = /* @__PURE__ */ new Set(["eq", "ne"]);
+function validateFilterArgEnum(path, filters, statePaths, binding, bindingStart, msgs) {
+  const first = filters[0];
+  if (first === void 0 || !COMPARISON_FILTERS.has(first.name) || first.args.length !== 1) return [];
+  const literals = statePaths.find((p) => p.path === path)?.literals;
+  if (literals === void 0 || literals.length === 0) return [];
+  const arg = first.args[0].trim();
+  const quoted = /^(["'])([\s\S]*)\1$/.exec(arg);
+  const text3 = quoted !== null ? quoted[2] : arg;
+  const matches = literals.some((value) => typeof value === "string" && value === text3 || typeof value === "number" && text3.trim() !== "" && Number(text3) === value || quoted === null && (value === null ? text3 === "null" : typeof value === "boolean" && String(value) === text3));
+  if (matches) return [];
+  const at2 = binding.indexOf(arg, first.argsOffset);
+  const start = bindingStart + (at2 >= 0 ? at2 : first.offset);
+  const members = literals.map((value) => typeof value === "string" ? `'${value}'` : String(value));
+  const strings = literals.filter((value) => typeof value === "string");
+  return [{
+    code: WcsDiagnosticCode.FilterArgEnum,
+    start,
+    end: start + (at2 >= 0 ? arg.length : first.name.length),
+    message: msgs.filterArgEnum(first.name, arg, members, suggestion(text3, strings, msgs)),
+    severity: "warning"
+  }];
+}
+function expandRowPath(path, html, offset2, attrName) {
+  const forPath = getRowShorthandForPath(html, offset2, attrName);
+  if (!forPath || forPath.startsWith(".")) return "";
+  return path === "." ? `${forPath}.*` : `${forPath}.*.${path.slice(1)}`;
 }
 function resolveResultType(path, filters, statePaths) {
   const pathInfo = statePaths.find((p) => p.path === path);
@@ -16314,8 +16904,10 @@ function declaredTypesOf(rawType, typedefs) {
   const out = [];
   for (const member of flattenJsDocType(parsed, typedefs)) {
     if (member.kind === "unknown") return null;
+    if (member.kind === "name" && isImportTypeName(member.name)) return null;
     if (member.kind === "array") out.push("array");
     else if (member.kind === "object") out.push("object");
+    else if (member.kind === "literal") out.push(typeof member.value);
     else if (member.kind === "name") out.push(normalizeType(member.name));
   }
   return out;
@@ -17495,7 +18087,7 @@ function validateFormInputs(html, bindAttribute = "data-wcs", stateTagName = "wc
         continue;
       }
       if (name !== "value" || inputGivesNumber(p) !== false) continue;
-      const statePath = expandRowPath(path, html, attr.valueStart, bindAttribute);
+      const statePath = expandRowPath2(path, html, attr.valueStart, bindAttribute);
       if (statePath === null) continue;
       const t = getTypes();
       const key = candidateKeyOf(statePath, t.has);
@@ -17554,7 +18146,7 @@ function givesBackWhatWasWritten(filter, p) {
       return false;
   }
 }
-function expandRowPath(path, html, offset2, bindAttribute) {
+function expandRowPath2(path, html, offset2, bindAttribute) {
   if (!path.startsWith(".")) return path;
   if (getRowShorthandForPath(html, offset2, bindAttribute) === null) return null;
   const list = getResolvedForListPath(html, offset2, bindAttribute);
@@ -18265,6 +18857,7 @@ function validateGetterAmbientReads(script, scriptStart, locale2) {
 }
 function onHandlerStateParam(script, handler) {
   if (handler.kind === "body") {
+    if (handler.params !== void 0) return /^\s*([A-Za-z_$][\w$]*)/.exec(handler.params)?.[1] ?? null;
     const head = script.slice(Math.max(0, handler.start - 400), handler.start);
     return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;
   }
@@ -18481,13 +19074,13 @@ function findPathTests(body, param) {
     for (const m of body.matchAll(new RegExp(String.raw`(?<![\w$.])(?:${el})\s*(?:\?\.|\.)\s*startsWith\s*\(\s*${STRING}`, "g"))) push3(m, true);
     for (const m of body.matchAll(new RegExp(String.raw`\bswitch\s*\(\s*(?:${el})\s*\)\s*\{`, "g"))) {
       const open = m.index + m[0].length - 1;
-      const block = body.slice(open, matchingBrace(body, open));
+      const block = body.slice(open, matchingBrace2(body, open));
       for (const c of block.matchAll(new RegExp(String.raw`\bcase\s+${STRING}\s*:`, "g"))) push3(c, false, open);
     }
   }
   return out.sort((a, b) => a.at - b.at);
 }
-function matchingBrace(text3, open) {
+function matchingBrace2(text3, open) {
   let depth = 0;
   for (let i = open; i < text3.length; i++) {
     const ch = text3[i];
@@ -18517,7 +19110,7 @@ function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2
     if (param === void 0) continue;
     const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
     const bound = boundPaths;
-    const body = blankComments(callback.body);
+    const body = blankComments2(callback.body);
     const reported = /* @__PURE__ */ new Set();
     for (const test of findPathTests(body, param)) {
       const path = test.path;
@@ -18737,8 +19330,8 @@ function stateBodies(script, root) {
   }
   return out;
 }
-var FUNCTION_HEAD = /^\s*(?:async\s+)?function\b[^(]*\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*\{/;
-var ARROW_HEAD = /^\s*(?:async\s+)?(?:\(\s*([A-Za-z_$][\w$]*)?[^()]*\)|([A-Za-z_$][\w$]*))\s*=>\s*\{/;
+var FUNCTION_HEAD = /^\s*(?:async\s+)?function\b[^(]*\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*(?::[^{}=;]*)?\{/;
+var ARROW_HEAD = /^\s*(?:async\s+)?(?:\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*(?::[^{}=;]*)?|([A-Za-z_$][\w$]*)\s*)=>\s*\{/;
 function functionBody(handler, arrows) {
   const scan = maskCommentsAndStrings(handler.text);
   const head = FUNCTION_HEAD.exec(scan) ?? (arrows ? ARROW_HEAD.exec(scan) : null);
@@ -19141,7 +19734,7 @@ function namedPackages(text3) {
   return out.flatMap((p) => p === "wcstack" ? [...BUNDLE_PACKAGES] : [p]);
 }
 var MAX_FILES2 = 32;
-var MAX_DEPTH = 4;
+var MAX_DEPTH2 = 4;
 function validatePackageLoads(html, locale2, fileReader) {
   const msgs = getMessages(locale2);
   const scan = blankHtmlComments(html);
@@ -19389,7 +19982,7 @@ function readLocalModules(entries, fileReader, loads) {
     const { spec, from, depth } = queue.shift();
     const path = joinModulePath(from, spec);
     if (seen2.has(path)) continue;
-    if (seen2.size >= MAX_FILES2 || depth > MAX_DEPTH) {
+    if (seen2.size >= MAX_FILES2 || depth > MAX_DEPTH2) {
       loads.unclear = true;
       return;
     }
@@ -19412,7 +20005,7 @@ function readLocalModules(entries, fileReader, loads) {
 
 // src/service/watchDeclarationValidator.ts
 var STATE_NAME_SEPARATOR = "@";
-function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fileReader, bindAttribute) {
+function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fileReader, bindAttribute, applicationSchema) {
   const msgs = getMessages(locale2);
   const out = [];
   const elements = parseWcsStateElements(html, stateTagName);
@@ -19457,7 +20050,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fi
         opaquePaths: bindAttribute === void 0 ? opaque2 : [...opaque2, ...openOutputSlots(html, bindAttribute, fileReader, paths, opaque2).map((slot) => slot.path)]
       };
       for (const entry of entries) {
-        const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs);
+        const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs, applicationSchema);
         if (diagnostic === null) continue;
         out.push({
           code: diagnostic.code,
@@ -19497,7 +20090,7 @@ function assignVolumes(elements, html) {
   }
   return { treeOf, volumes };
 }
-function validateEntry(entry, pathSet, paths, scopes, msgs) {
+function validateEntry(entry, pathSet, paths, scopes, msgs, schema) {
   const { key } = entry;
   const invalid = (message) => ({ code: WcsDiagnosticCode.WatchDeclarationInvalid, message, severity: "error" });
   if (key.includes(STATE_NAME_SEPARATOR)) {
@@ -19519,7 +20112,9 @@ function validateEntry(entry, pathSet, paths, scopes, msgs) {
   if (entry.definitelyNotFunction) {
     return invalid(msgs.watchHandlerNotFunction(key));
   }
-  if (!isUnresolvedPath(key, scopes) && !pathSet.has(key) && !pathSet.has(toWildcardForm(key)) && !matchesRecursion(collectRecursionSpecs(paths), key, (p) => pathSet.has(p))) {
+  const inCandidates = pathSet.has(key) || pathSet.has(toWildcardForm(key)) || matchesRecursion(collectRecursionSpecs(paths), key, (p) => pathSet.has(p));
+  const missing = inCandidates ? false : schema !== void 0 ? resolveIndexedSchemaPath(schema, key).kind === "nonexistent" : !isUnresolvedPath(key, scopes);
+  if (missing) {
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
       message: msgs.watchPathMissing(key),
@@ -19542,7 +20137,7 @@ function validateScanDeclarations(html, stateTagName = "wcs-state", locale2) {
     const spans = analyzeDeclarationSpans(block.content);
     if (spans.length > 0) {
       const declaration = findTopLevelDeclaration(block.content, SCAN_KEY);
-      if (declaration?.kind === "data" && declaration.value !== void 0 && blankComments(declaration.value).trim() === "undefined") continue;
+      if (declaration?.kind === "data" && declaration.value !== void 0 && blankComments2(declaration.value).trim() === "undefined") continue;
       for (const span of spans) {
         if (span.name !== SCAN_KEY) continue;
         out.push({
@@ -20150,7 +20745,7 @@ function validateVolumeBlock2(block, mountPath, msgs, out) {
       if (severity === void 0) continue;
       if (span.kind === "data") {
         const declaration = findTopLevelDeclaration(block.content, span.name);
-        if (declaration?.value !== void 0 && blankComments(declaration.value).trim() === "undefined") continue;
+        if (declaration?.value !== void 0 && blankComments2(declaration.value).trim() === "undefined") continue;
       }
       push3(span.name, span.start, severity);
     }
@@ -20307,7 +20902,7 @@ function declaredNames(script, names2) {
   const decl = findTopLevelDeclaration(script, "$eventTokens");
   if (decl === null || decl.value === void 0 || decl.valueStart === void 0 || literalKind(decl.value) !== "array") return [];
   const out = [];
-  for (const element2 of arrayElements(blankComments(decl.value))) {
+  for (const element2 of arrayElements(blankComments2(decl.value))) {
     if (literalKind(element2.text) !== "string") continue;
     const name = element2.text.slice(1, -1);
     if (!names2.includes(name) || out.some((o) => o.name === name)) continue;
@@ -20385,7 +20980,7 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
           code: WcsDiagnosticCode.PathDynamicUnknown,
           start: block.contentStart + span.start,
           end: block.contentStart + span.end,
-          message: candidate.opaque?.spread !== void 0 ? msgs.pathDynamicUnknownObjectSpread(path, count, candidate.opaque.spread, candidate.opaque.from) : msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
+          message: candidate.opaque?.spread !== void 0 ? msgs.pathDynamicUnknownObjectSpread(path, count, candidate.opaque.spread, candidate.opaque.from) : candidate.opaque?.type !== void 0 ? msgs.pathDynamicUnknownType(path, count, candidate.opaque.type) : msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
           severity: "info"
         });
       }
@@ -20760,7 +21355,7 @@ function findTopLevelReads(source) {
   if (!/localStorage|sessionStorage|cookie/.test(source)) return [];
   let program;
   try {
-    program = parse3(source, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true });
+    program = parseErasingTypes(source, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true });
   } catch {
     return [];
   }
@@ -20856,6 +21451,58 @@ function validateStateSources(html, stateTagName = "wcs-state", locale2, fileRea
     });
   }
   return out;
+}
+function validateStateSchemaDrift(html, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
+  if (applicationSchema === void 0) return [];
+  const schemaKeys = schemaTopLevelKeys(applicationSchema);
+  if (schemaKeys === null) return [];
+  const elements = parseWcsStateElements(html, stateTagName);
+  const insideTemplate = createTemplateTester(html);
+  const roots = elements.filter((e) => e.mountPath === null && !e.bindComponent && !insideTemplate(e.tagStart));
+  if (roots.length !== 1) return [];
+  const root = roots[0];
+  let script;
+  if (root.stateAttr !== void 0) return [];
+  if (root.srcAttr !== void 0) {
+    if (root.srcAttr.endsWith(".json") || fileReader === void 0) return [];
+    script = readStateScriptFile(root.srcAttr, fileReader)?.text;
+  } else if (root.jsonAttr === void 0 && root.scriptBlocks.length === 1) {
+    script = root.scriptBlocks[0].content;
+  }
+  if (script === void 0) return [];
+  const declared = analyzeTopLevelStateKeys(script);
+  if (declared === null || declared.materializes) return [];
+  const mountRoots = new Set(elements.flatMap((e) => e.mountPath === null || e.mountPath === "" ? [] : [e.mountPath.split(".")[0]]));
+  const inScriptOnly = declared.keys.filter((key) => !schemaKeys.has(key));
+  const inSchemaOnly = [...schemaKeys].filter((key) => !declared.keys.includes(key) && !mountRoots.has(key));
+  if (inScriptOnly.length === 0 && inSchemaOnly.length === 0) return [];
+  return [{
+    code: WcsDiagnosticCode.DriftStateKey,
+    start: root.tagStart,
+    end: root.tagStart + 1 + stateTagName.length,
+    message: getMessages(locale2).stateSchemaDrift(inScriptOnly, inSchemaOnly),
+    severity: "warning"
+  }];
+}
+function schemaTopLevelKeys(schema) {
+  const defs = schema.$defs ?? {};
+  const keys = /* @__PURE__ */ new Set();
+  let found = false;
+  const visit2 = (node, depth) => {
+    if (node === void 0 || node === null || typeof node !== "object" || depth > 8) return;
+    if (typeof node.$ref === "string") {
+      const m = /^#\/\$defs\/(.+)$/.exec(node.$ref);
+      if (m !== null) visit2(defs[m[1].replace(/~1/g, "/").replace(/~0/g, "~")], depth + 1);
+      return;
+    }
+    if (Array.isArray(node.anyOf)) for (const branch of node.anyOf) visit2(branch, depth + 1);
+    if (node.properties !== void 0 && typeof node.properties === "object") {
+      found = true;
+      for (const key of Object.keys(node.properties)) if (!key.startsWith("$")) keys.add(key);
+    }
+  };
+  visit2(schema, 0);
+  return found ? keys : null;
 }
 function validateStateAbsent(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, applicationSchema) {
   if (applicationSchema !== void 0) return [];
@@ -21143,6 +21790,7 @@ function resolvePackageContracts(loaded) {
   const filterOwner = /* @__PURE__ */ new Map();
   let schemaOwner;
   let schemaWinner;
+  let schemaStateSource;
   let hasApplicationArtifact = false;
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
@@ -21204,6 +21852,7 @@ function resolvePackageContracts(loaded) {
         if (schemaOwner === void 0) {
           schemaOwner = lm.artifact.source;
           schemaWinner = schema;
+          schemaStateSource = application.stateSource;
         } else {
           schemaWinner = void 0;
           ctxFor(lm).add(
@@ -21223,7 +21872,15 @@ function resolvePackageContracts(loaded) {
     const kept = diags.filter((d) => !(d.code === WcsDiagnosticCode.ManifestOverride && d.tag !== void 0 && collided.has(d.tag)));
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
-  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
+  const stateSource = schemaWinner !== void 0 && typeof schemaStateSource === "string" && schemaStateSource.trim() !== "" ? schemaStateSource.trim() : void 0;
+  return {
+    tags: winners,
+    applicationSchema: schemaWinner,
+    ...schemaWinner !== void 0 ? { applicationSchemaSource: schemaOwner } : {},
+    ...stateSource !== void 0 ? { applicationStateSource: stateSource } : {},
+    hasApplicationArtifact,
+    diagnosticsBySource
+  };
 }
 
 // src/core/sidecar/discover.ts
@@ -21235,7 +21892,14 @@ function discoverApplicationManifest(fileReader) {
     const text3 = fileReader(relativePath);
     if (text3 === void 0) continue;
     const loaded = loadManifest({ text: text3, source: relativePath });
-    return { relativePath, text: text3, loaded, schema: applicationSchemaOf(loaded) };
+    const stateSource = applicationStateSourceOf(loaded);
+    return {
+      relativePath,
+      text: text3,
+      loaded,
+      schema: applicationSchemaOf(loaded),
+      stateSource: stateSource === void 0 ? void 0 : stateSourceFromPage("_", relativePath, stateSource)
+    };
   }
   return void 0;
 }
@@ -21248,6 +21912,56 @@ function applicationSchemaOf(loaded) {
     return schema;
   }
   return void 0;
+}
+function applicationStateSourceOf(loaded) {
+  const manifest2 = loaded.manifest;
+  if (manifest2 === null || manifest2.kind !== "application") return void 0;
+  const stateSource = manifest2.manifestExtensions?.["wcstack.application"]?.stateSource;
+  return typeof stateSource === "string" && stateSource.trim() !== "" ? stateSource.trim() : void 0;
+}
+function segmentsOf(path) {
+  const norm = path.replace(/\\/g, "/");
+  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
+  const segments = [];
+  for (const segment of norm.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
+    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
+  }
+  return { absolute, segments };
+}
+function stateSourceFromPage(pageSource, manifestSource, stateSource) {
+  const page = segmentsOf(pageSource);
+  const manifest2 = segmentsOf(manifestSource);
+  if (page.absolute !== manifest2.absolute) return void 0;
+  const target = segmentsOf([...manifest2.segments.slice(0, -1), stateSource].join("/")).segments;
+  const dir = page.segments.slice(0, -1);
+  let common = 0;
+  while (common < dir.length && common < target.length && dir[common] === target[common] && dir[common] !== "..") common++;
+  return [...dir.slice(common).map(() => ".."), ...target.slice(common)].join("/");
+}
+function sameStateFile(a, b) {
+  const canonical = (p) => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
+  return canonical(a) === canonical(b);
+}
+function schemaAppliesToPage(html, stateTagName, stateSource, fileReader) {
+  const roots = parseWcsStateElements(html, stateTagName).filter((e) => e.mountPath === null && !e.bindComponent && e.srcAttr !== void 0);
+  if (roots.length === 0) return false;
+  const insideTemplate = createTemplateTester(html);
+  const target = segmentsOf(stateSource).segments.join("/");
+  for (const root of roots) {
+    if (insideTemplate(root.tagStart)) continue;
+    const src = root.srcAttr.trim().replace(/[?#].*$/, "");
+    if (src === "" || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//")) continue;
+    if (sameStateFile(segmentsOf(src).segments.join("/"), target)) return true;
+    if (fileReader !== void 0 && sameContent(src, stateSource, fileReader)) return true;
+  }
+  return false;
+}
+function sameContent(a, b, fileReader) {
+  const twins = (p) => [p, p.replace(/\.(m?)js$/, ".$1ts"), p.replace(/\.(m?)ts$/, ".$1js")];
+  const texts = new Set(twins(a).map((p) => fileReader(p)).filter((t) => t !== void 0 && t !== ""));
+  return texts.size > 0 && twins(b).some((p) => texts.has(fileReader(p) ?? "\0"));
 }
 function joinRelativeSource(htmlSource, relativePath) {
   const sepIndex = Math.max(htmlSource.lastIndexOf("/"), htmlSource.lastIndexOf("\\"));
@@ -21325,11 +22039,13 @@ function locateInlined(page, offset2) {
 function validateDocument(text3, options = {}) {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const fileReader = options.fileReader;
-  const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
+  const applicationSchema = applicationSchemaFor(text3, stateTagName, options);
   const found = [
     ...validateText(text3, options, applicationSchema),
     ...validateStateSources(text3, stateTagName, options.locale, fileReader),
-    ...validateStateAbsent(text3, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema)
+    ...validateStateAbsent(text3, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema),
+    // a stateSchema whose top-level keys are not the root state script's: stale (once, on the page's `<wcs-state>`)
+    ...validateStateSchemaDrift(text3, stateTagName, options.locale, fileReader, applicationSchema)
   ];
   const page = fileReader === void 0 ? null : inlineExternalStates(text3, stateTagName, fileReader);
   if (page === null) return sortDiagnostics(found);
@@ -21365,6 +22081,17 @@ function validateDocument(text3, options = {}) {
   }
   return sortDiagnostics(out);
 }
+function applicationSchemaFor(text3, stateTagName, options) {
+  let schema = options.applicationSchema;
+  let stateSource = options.applicationStateSource;
+  if (schema === void 0 && options.fileReader !== void 0) {
+    const discovered = discoverApplicationManifest(options.fileReader);
+    schema = discovered?.schema;
+    stateSource = discovered?.stateSource;
+  }
+  if (schema === void 0 || stateSource === void 0) return schema;
+  return schemaAppliesToPage(text3, stateTagName, stateSource, options.fileReader) ? schema : void 0;
+}
 function validateText(text3, options, applicationSchema) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
@@ -21391,7 +22118,7 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateAccessorLists(text3, stateTagName, locale2));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
   out.push(...validateModuleTopReads(text3, stateTagName, locale2));
-  out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader, bindAttribute));
+  out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader, bindAttribute, applicationSchema));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));
   out.push(...validateRecursion(text3, stateTagName, locale2));
   out.push(...validateConfigDeclarations(text3, stateTagName, locale2));
@@ -21536,6 +22263,8 @@ function validateManifestSet(input) {
     byArtifact: sortedByArtifact,
     resolvedTags,
     resolvedSchema: resolved.applicationSchema,
+    ...resolved.applicationSchemaSource !== void 0 ? { resolvedSchemaSource: resolved.applicationSchemaSource } : {},
+    ...resolved.applicationStateSource !== void 0 ? { resolvedStateSource: resolved.applicationStateSource } : {},
     hasApplicationArtifact: resolved.hasApplicationArtifact
   };
 }
@@ -21557,6 +22286,7 @@ function runValidation(inputs, options = {}) {
   const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
   let explicitSchema;
+  let explicitStateSource;
   let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
@@ -21569,6 +22299,9 @@ function runValidation(inputs, options = {}) {
     if (result.hasApplicationArtifact) {
       haveExplicitApplication = true;
       explicitSchema = result.resolvedSchema;
+      if (result.resolvedSchemaSource !== void 0 && result.resolvedStateSource !== void 0) {
+        explicitStateSource = { manifest: result.resolvedSchemaSource, stateSource: result.resolvedStateSource };
+      }
     }
   }
   const inFiles = /* @__PURE__ */ new Map();
@@ -21579,9 +22312,11 @@ function runValidation(inputs, options = {}) {
       nothingToCheck.push(input.source);
     }
     let applicationSchema = explicitSchema;
+    let applicationStateSource = explicitStateSource === void 0 ? void 0 : stateSourceFromPage(input.source, explicitStateSource.manifest, explicitStateSource.stateSource);
     if (!haveExplicitApplication && input.fileReader !== void 0) {
       const discovered = discoverApplicationManifest(input.fileReader);
       applicationSchema = discovered?.schema;
+      applicationStateSource = discovered?.stateSource;
       if (discovered !== void 0) {
         const source = joinRelativeSource(input.source, discovered.relativePath);
         if (!diagnosticsBySource.has(source)) {
@@ -21593,7 +22328,8 @@ function runValidation(inputs, options = {}) {
     const docOptions = {
       ...options,
       ...input.fileReader !== void 0 ? { fileReader: input.fileReader } : {},
-      ...applicationSchema !== void 0 ? { applicationSchema } : {}
+      ...applicationSchema !== void 0 ? { applicationSchema } : {},
+      ...applicationSchema !== void 0 && applicationStateSource !== void 0 ? { applicationStateSource } : {}
     };
     const own3 = [];
     for (const d of validateDocument(input.text, docOptions)) {

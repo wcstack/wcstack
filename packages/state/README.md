@@ -314,7 +314,7 @@ the inline `<script type="module">` out of `<wcs-state>` — and out of the rout
 even inside a `<template>` — into its bundle, without a warning: the state then waits for
 `setInitialState()` and nothing binds. And a `<wcs-state src>` file is loaded at run time, so `vite build`
 does not see it: it keeps the attribute, emits no file, and production 404s the state (the dev server serves
-it, so only the build fails). Since 4.26 (not released yet), add `wcstack()` from `@wcstack/typescript/vite`
+it, so only the build fails). Since 4.26, add `wcstack()` from `@wcstack/typescript/vite`
 to the Vite config: it keeps those scripts in the page and emits every `<wcs-state src>` file with the build
 ([Building with Vite](../typescript/README.md#building-with-vite)). Up to 4.25, mark the scripts
 `vite-ignore` and emit the `src=` file yourself.
@@ -3636,7 +3636,7 @@ To drive the page the way a user does, keep the state inline (methods included) 
 - Updates settle on the microtask queue; a single `setTimeout(0)` after a write is enough.
 - `state.items = [...state.items, "cherry"]` is the reactive form — `state.items.push()` is not observed (same rule as in handlers).
 - Under happy-dom, `customElements.define` upgrades existing nodes by **replacing** them; "a value reaches the same node after a late define" cannot be asserted headlessly. Event timing differences between happy-dom and real browsers are the other blind spot — keep one browser e2e (Playwright) for those.
-- happy-dom's parser moves a `<template>` out of a `<table>` / `<tbody>` / `<tr>` (a `for:` over rows or cells): `innerHTML = …` with such markup gives `[wcs/wildcard-rank]`. Since 4.26 (not released yet), insert it with `@wcstack/server`'s `setInnerHTML(target, html)` — or use `@wcstack/testing`'s `mount()`, which does.
+- happy-dom's parser moves a `<template>` out of a `<table>` / `<tbody>` / `<tr>` (a `for:` over rows or cells): `innerHTML = …` with such markup gives `[wcs/wildcard-rank]`. Since 4.26, insert it with `@wcstack/server`'s `setInnerHTML(target, html)` — or use `@wcstack/testing`'s `mount()`, which does.
 
 ### 2. Bare Node (no vitest)
 

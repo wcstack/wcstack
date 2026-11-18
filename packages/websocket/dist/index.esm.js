@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/websocket","version":"4.25.0"};
+var pkg = {"name":"@wcstack/websocket","version":"4.26.0"};
 
 /**
  * websocketCapabilities.ts
@@ -131,7 +131,7 @@ function deriveWebSocketErrorInfo(error, code) {
 // definition time; tests inject a mock). Mirrors SseCore's SSE_CLOSED.
 const WS_CONNECTING = 0;
 const WS_OPEN = 1;
-const WS_CLOSED = 3;
+const WS_CLOSED$1 = 3;
 class WebSocketCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -162,7 +162,7 @@ class WebSocketCore extends EventTarget {
     _loading = false;
     _error = null;
     _errorInfo = null;
-    _readyState = WS_CLOSED;
+    _readyState = WS_CLOSED$1;
     // 自動再接続
     _autoReconnect = false;
     _reconnectInterval = 3000;
@@ -241,7 +241,7 @@ class WebSocketCore extends EventTarget {
     _publishClosed() {
         this._setConnected(false);
         this._setLoading(false);
-        this._setReadyState(WS_CLOSED);
+        this._setReadyState(WS_CLOSED$1);
     }
     get message() {
         return this._message;
@@ -495,7 +495,7 @@ class WebSocketCore extends EventTarget {
             return;
         this._setConnected(false);
         this._setLoading(false);
-        this._setReadyState(WS_CLOSED);
+        this._setReadyState(WS_CLOSED$1);
         // 異常クローズ時の自動再接続（正常終了 1000 は除外）
         if (!this._intentionalClose && this._autoReconnect && event.code !== 1000 && this._reconnectCount < this._maxReconnects) {
             this._scheduleReconnect();
@@ -545,7 +545,7 @@ class WebSocketCore extends EventTarget {
         }
         this._setConnected(false);
         this._setLoading(false);
-        this._setReadyState(WS_CLOSED);
+        this._setReadyState(WS_CLOSED$1);
         this._setError({ message: `No message for ${this._staleAfter} ms: the connection is treated as lost.` }, WCS_WEBSOCKET_ERROR_CODE.ConnectionError);
         if (!this._intentionalClose && this._autoReconnect && this._reconnectCount < this._maxReconnects) {
             this._scheduleReconnect();
@@ -592,8 +592,8 @@ class WebSocketCore extends EventTarget {
         if (this._connected) {
             this._setConnected(false);
         }
-        if (this._readyState !== WS_CLOSED) {
-            this._setReadyState(WS_CLOSED);
+        if (this._readyState !== WS_CLOSED$1) {
+            this._setReadyState(WS_CLOSED$1);
         }
     }
 }
@@ -746,6 +746,8 @@ function reflectBooleanAttribute(el, name, value) {
     writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
 }
 
+// WebSocket.CLOSED（Core と同じく、モジュールの読み込み時に WebSocket を要らない）
+const WS_CLOSED = 3;
 class WcsWebSocket extends HTMLElement {
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
@@ -785,6 +787,9 @@ class WcsWebSocket extends HTMLElement {
     _attached = false;
     // _scheduleConnect のマイクロタスクが待っている間 true
     _connectPending = false;
+    // 最後に connect() した url（close() と切断で空に戻す）。空にして同じタスクで書き戻した url を、
+    // 開いている（開こうとしている）接続のまま残すのに使う
+    _connectedUrl = "";
     constructor() {
         super();
         this._core = new WebSocketCore(this);
@@ -969,6 +974,7 @@ class WcsWebSocket extends HTMLElement {
         const protocols = this.protocols
             ? this.protocols.split(",").map(p => p.trim()).filter(Boolean)
             : undefined;
+        this._connectedUrl = this.url;
         this._core.connect(this.url, {
             protocols: protocols && protocols.length === 1 ? protocols[0] : protocols,
             autoReconnect: this.autoReconnect,
@@ -986,24 +992,29 @@ class WcsWebSocket extends HTMLElement {
     // connection. WebSocket.close(event) throws InvalidAccessError, and the socket stayed open.
     close(code, reason) {
         this._connectPending = false;
+        this._connectedUrl = "";
         const given = typeof code === "number";
         this._core.close(given ? code : undefined, given && typeof reason === "string" ? reason : undefined);
     }
     // --- Lifecycle ---
     attributeChangedCallback(name, oldValue, newValue) {
-        // 再接続するのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
+        // 判断し直すのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
         // setAttribute の後に、属性も書く binder — @wcstack/state 3.x の inputs[].attribute ミラー —
         // が同じ値を書く、など）
         // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
-        // connectedCallback がそのときの url で 1 回だけ接続する。
-        if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
+        // connectedCallback がそのときの url で 1 回だけ接続する。空になる url（null・""・属性の除去）も
+        // 変化: 接続を閉じる — 4.25 までは何もせず、サインアウトしたタブが前の利用者のメッセージを受け続けた
+        // （docs/seam-apps.md、lending-desk）。manual でも閉じる: 閉じることは接続ではない。
+        if (name === "url" && oldValue !== newValue && this._attached) {
             this._scheduleConnect();
         }
     }
     // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
     // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
     // params から state が url を書くのはマイクロタスク — その場で接続すると、前の url へ
-    // つないでから閉じていた（docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+    // つないでから閉じていた（docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる:
+    // 空の url は閉じ、開いている（開こうとしている）接続と同じ url は何もしない — 空にして同じタスクで
+    // 書き戻した url は、閉じも開き直しもしない。
     _scheduleConnect() {
         if (this._connectPending)
             return;
@@ -1012,9 +1023,13 @@ class WcsWebSocket extends HTMLElement {
             if (!this._connectPending)
                 return; // an explicit command took the decision meanwhile
             this._connectPending = false;
-            if (this._attached && !this.manual && this.url) {
+            if (!this._attached)
+                return;
+            const url = this.url;
+            if (!url)
+                this.close();
+            else if (!this.manual && (url !== this._connectedUrl || this._core.readyState === WS_CLOSED))
                 this.connect();
-            }
         });
     }
     connectedCallback() {
@@ -1061,6 +1076,7 @@ class WcsWebSocket extends HTMLElement {
     disconnectedCallback() {
         this._attached = false;
         this._reopenOnShow = false;
+        this._connectedUrl = "";
         window.removeEventListener("pagehide", this._onPageHide);
         window.removeEventListener("pageshow", this._onPageShow);
         // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。

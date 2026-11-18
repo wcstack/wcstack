@@ -310,7 +310,7 @@ state ごとにアドオンを読み込むのは分割版の auto エントリ�
 インラインの `<script type="module">` も — router の `<wcs-guard-handler>` の中のもの、`<template>` の中のものも —
 警告なしにバンドルへ取り込みます: state は `setInitialState()` を待ったままになり、何も束ねられません。
 また `<wcs-state src>` のファイルは実行時に読むので、`vite build` からは見えません: 属性をそのまま残してファイルを
-出さず、本番では state が 404 になります（開発サーバーは出すので、落ちるのはビルドだけです）。4.26（未リリース）から、
+出さず、本番では state が 404 になります（開発サーバーは出すので、落ちるのはビルドだけです）。4.26 から、
 Vite の設定に `@wcstack/typescript/vite` の `wcstack()` を足してください: それらのスクリプトをページに残し、
 `<wcs-state src>` のファイルをビルドと一緒に出します（[Vite でビルドする](../typescript/README.ja.md#vite-でビルドする)）。
 4.25 までは、スクリプトに `vite-ignore` を付け、`src=` のファイルは自分で出してください。
@@ -3619,7 +3619,7 @@ it("描画・再描画・ハンドラ実行", async () => {
 - 更新はマイクロタスク境界で収束します。書き込み後の `setTimeout(0)` 1 回で十分です。
 - `state.items = [...state.items, "cherry"]` がリアクティブな書き方です — `state.items.push()` は観測されません（ハンドラ内と同じ規則）。
 - happy-dom は `customElements.define` 時に既存ノードを**差し替えて**アップグレードします。「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できません。happy-dom と実ブラウザのイベントタイミング差ももう 1 つの死角なので、そこは実ブラウザ e2e（Playwright）を 1 本残してください。
-- happy-dom のパーサは、`<table>` / `<tbody>` / `<tr>` の中の `<template>`（行やセルの `for:`）を表の外へ出します。そうしたマークアップを `innerHTML = …` で入れると `[wcs/wildcard-rank]` になります。4.26（未リリース）から、`@wcstack/server` の `setInnerHTML(target, html)` で入れてください — `@wcstack/testing` の `mount()` はそうしています。
+- happy-dom のパーサは、`<table>` / `<tbody>` / `<tr>` の中の `<template>`（行やセルの `for:`）を表の外へ出します。そうしたマークアップを `innerHTML = …` で入れると `[wcs/wildcard-rank]` になります。4.26 から、`@wcstack/server` の `setInnerHTML(target, html)` で入れてください — `@wcstack/testing` の `mount()` はそうしています。
 
 ### 2. 素の Node（vitest なし）
 

@@ -438,6 +438,12 @@ function generateStateSchema(file, options = {}) {
  * an existing manifest (filters, listContexts); a hand-written schema for the
  * same slot does not survive, by design: there is no implicit merge in the
  * sidecar spec (§5).
+ *
+ * `stateSource` (4.26) names the file the root schema was generated from, relative
+ * to the manifest's directory with forward slashes: the validator applies the
+ * schema only to a page whose root `<wcs-state src>` is that file (`.js` / `.ts`
+ * of the same path count as the same), so one manifest at the root serves an app
+ * whose other pages have states of their own.
  */
 const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
 const SCHEMA_VERSION = 2;
@@ -450,8 +456,13 @@ const APPLICATION_NAMESPACE = "wcstack.application";
  *
  * `mountPath === null` replaces the whole `stateSchema`; a mount path merges
  * the schema as a subtree at that path (intermediate object nodes are created).
+ *
+ * `stateSource` is recorded with the root schema: given, it replaces the one in
+ * `existing`; omitted, the root schema's source is unknown and an old
+ * `stateSource` is dropped (it named the file of the schema being replaced).
+ * A volume's schema (`mountPath` set) leaves `stateSource` as it is.
  */
-function buildManifest(mountPath, schema, existing) {
+function buildManifest(mountPath, schema, existing, stateSource) {
     const base = existing !== null && typeof existing === "object" && !Array.isArray(existing)
         ? { ...existing }
         : {};
@@ -467,6 +478,10 @@ function buildManifest(mountPath, schema, existing) {
     delete ns.states;
     if (mountPath === null) {
         ns.stateSchema = schema;
+        if (stateSource === undefined)
+            delete ns.stateSource;
+        else
+            ns.stateSource = stateSource;
     }
     else {
         const rootRaw = ns.stateSchema;
@@ -497,8 +512,7 @@ function buildManifest(mountPath, schema, existing) {
     base.manifestExtensions = extensions;
     return base;
 }
-/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
-function readStateSchema(manifest) {
+function applicationNamespace(manifest) {
     if (manifest === null || typeof manifest !== "object")
         return undefined;
     const extensions = manifest.manifestExtensions;
@@ -507,7 +521,25 @@ function readStateSchema(manifest) {
     const ns = extensions[APPLICATION_NAMESPACE];
     if (ns === null || typeof ns !== "object")
         return undefined;
-    return ns.stateSchema;
+    return ns;
+}
+/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
+function readStateSchema(manifest) {
+    return applicationNamespace(manifest)?.stateSchema;
+}
+/** Read the `stateSource` (a string) from a parsed manifest object, or undefined. */
+function readStateSource(manifest) {
+    const source = applicationNamespace(manifest)?.stateSource;
+    return typeof source === "string" ? source : undefined;
+}
+/**
+ * True when two `stateSource` paths name the same state file: separators and a
+ * leading `./` aside, `.js` and `.ts` (and `.mjs` and `.mts`) of one path are the
+ * same file — a page loads the built `.js` of the `.ts` the schema came from.
+ */
+function sameStateSource(a, b) {
+    const key = (path) => path.replace(/\\/g, "/").replace(/^(\.\/)+/, "").replace(/\.(m?)ts$/, ".$1js");
+    return key(a) === key(b);
 }
 /**
  * True for a v1-shaped manifest (`schemaVersion: 1` or a `states` map in the
@@ -561,8 +593,13 @@ function sortKeys(value) {
  * (the whole tree, or the subtree at `mountPath`).
  * `changes` lists JSON pointers: `+ ptr` (only in generated), `- ptr` (only in
  * manifest), `~ ptr` (both, different value).
+ *
+ * `stateSource` (the root state file, relative to the manifest's directory) is
+ * compared too, for the root tree: a manifest that names another file is drift —
+ * the validator would apply the schema to the pages of that file, not of this one.
+ * A manifest without `stateSource` (written before 4.26) is not.
  */
-function compareStateSchema(manifestText, mountPath, generated) {
+function compareStateSchema(manifestText, mountPath, generated, stateSource) {
     let parsed;
     try {
         parsed = JSON.parse(manifestText);
@@ -578,8 +615,14 @@ function compareStateSchema(manifestText, mountPath, generated) {
     }
     if (stored === undefined)
         return { kind: "missing-state" };
-    if (stableStringify(stored) === stableStringify(generated))
-        return { kind: "same" };
+    const storedSource = mountPath === null && stateSource !== undefined ? readStateSource(parsed) : undefined;
+    const sourceDiff = storedSource !== undefined && !sameStateSource(storedSource, stateSource)
+        ? { stored: storedSource, expected: stateSource }
+        : undefined;
+    const source = sourceDiff === undefined ? {} : { stateSource: sourceDiff };
+    if (stableStringify(stored) === stableStringify(generated)) {
+        return sourceDiff === undefined ? { kind: "same" } : { kind: "differs", changes: [], stateSource: sourceDiff };
+    }
     const a = flatten(generated);
     const b = flatten(stored);
     const changes = [];
@@ -593,7 +636,7 @@ function compareStateSchema(manifestText, mountPath, generated) {
         else if (a.get(key) !== b.get(key))
             changes.push(`~ ${key}`);
     }
-    return { kind: "differs", changes };
+    return { kind: "differs", changes, ...source };
 }
 /** Leaf pointer → canonical JSON. Objects with children are not listed themselves; empty objects/arrays are leaves. */
 function flatten(value, pointer = "", out = new Map()) {
@@ -641,11 +684,11 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.25.0";
+var version = "4.26.0";
 var pkg = {
 	version: version};
 
 const VERSION = pkg.version;
 
-export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, isV1Manifest, loadSchemaCore, loadStateFile, readStateSchema, resolveCompilerOptions, schemaCoreCandidates, stableStringify, stateTypeToSchema };
+export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, isV1Manifest, loadSchemaCore, loadStateFile, readStateSchema, readStateSource, resolveCompilerOptions, sameStateSource, schemaCoreCandidates, stableStringify, stateTypeToSchema };
 //# sourceMappingURL=index.esm.js.map

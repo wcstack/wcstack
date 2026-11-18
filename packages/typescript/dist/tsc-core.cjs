@@ -23,6 +23,7 @@ __export(tscCore_exports, {
   WCS_PREAMBLE: () => WCS_PREAMBLE,
   WCS_PREAMBLE_LENGTH: () => WCS_PREAMBLE_LENGTH,
   createWcsLanguagePlugin: () => createWcsLanguagePlugin,
+  parseWcsScriptBlocks: () => parseWcsScriptBlocks,
   stripWcsImport: () => stripWcsImport
 });
 module.exports = __toCommonJS(tscCore_exports);
@@ -5725,11 +5726,13 @@ function parse3(input, options) {
 }
 
 // src/language/getterAnnotations.ts
-var GETTER_RETURN_ANNOTATION = ": any";
+var GETTER_RETURN_ANNOTATION = "\n/** @returns {any} */ ";
+var RETURN_TYPE_TAG = /@(?:returns?|type)\b/;
 function getterAnnotationOffsets(code) {
   let program;
+  const comments = [];
   try {
-    program = parse3(code, { ecmaVersion: "latest", sourceType: "module" });
+    program = parse3(code, { ecmaVersion: "latest", sourceType: "module", onComment: comments });
   } catch {
     return [];
   }
@@ -5740,10 +5743,21 @@ function getterAnnotationOffsets(code) {
     if (property.type !== "Property" || property.kind !== "get") continue;
     const fn = property.value;
     if (fn.type !== "FunctionExpression" || !readsThis(fn.body)) continue;
-    const offset2 = closingParenEnd(code, fn.body.start);
-    if (offset2 !== null) offsets.push(offset2);
+    if (hasReturnTypeDoc(code, comments, property.start)) continue;
+    offsets.push(property.start);
   }
   return offsets;
+}
+function hasReturnTypeDoc(code, comments, start) {
+  let at2 = start;
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const comment = comments[i];
+    if (comment.end > at2) continue;
+    if (code.slice(comment.end, at2).trim() !== "") return false;
+    if (comment.type === "Block" && comment.value.startsWith("*") && RETURN_TYPE_TAG.test(comment.value)) return true;
+    at2 = comment.start;
+  }
+  return false;
 }
 function stateObject(program) {
   if (program.type !== "Program") return null;
@@ -5775,11 +5789,6 @@ function readsThis(node) {
 }
 function isNode(value) {
   return typeof value === "object" && value !== null && typeof value.type === "string";
-}
-function closingParenEnd(code, bodyStart) {
-  let i = bodyStart - 1;
-  while (i >= 0 && /\s/.test(code[i])) i--;
-  return code[i] === ")" ? i + 1 : null;
 }
 
 // src/language/htmlParse.ts
@@ -6592,25 +6601,32 @@ var NATIVE_COMMANDS2 = getWcsManifest().nativeCommands ?? null;
 var manifest = getWcsManifest();
 var BEHAVIOR_TYPE = `{ ${Object.entries(manifest.behaviorOptions).map(([key, option]) => `${key}?: ${option.type}`).join("; ")} }`;
 var FEATURE_NAME_TYPE = manifest.features.map((name) => JSON.stringify(name)).join(" | ");
-var WCS_PREAMBLE = `
+var WCS_PREAMBLE = `// @ts-check
 // --- @wcstack/state type preamble (auto-injected by vscode-wcs) ---
-type _IsAny<T> = 0 extends (1 & T) ? true : false;
-type _IsPlainObject<T> =
-  _IsAny<T> extends true ? false :
+/** @template T @typedef {0 extends (1 & T) ? true : false} _IsAny */
+/**
+@template T
+@typedef {_IsAny<T> extends true ? false :
   T extends
     | string | number | boolean | null | undefined | symbol | bigint
     | Function | Date | RegExp | Error
     | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
     | Promise<any> | readonly any[]
     ? false
-    : T extends Record<string, any> ? true : false;
-type _DataKeys<T> = {
+    : T extends Record<string, any> ? true : false} _IsPlainObject
+*/
+/**
+@template T
+@typedef {{
   [K in keyof T & string]:
     K extends \`$\${string}\` ? never :
     _IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
-}[keyof T & string];
-type _WcsPaths<T, D extends readonly any[] = []> =
-  D["length"] extends 4 ? never :
+}[keyof T & string]} _DataKeys
+*/
+/**
+@template T
+@template {readonly any[]} D
+@typedef {D["length"] extends 4 ? never :
   { [K in _DataKeys<T>]:
     | K
     | (T[K] extends readonly (infer E)[]
@@ -6620,11 +6636,18 @@ type _WcsPaths<T, D extends readonly any[] = []> =
         : _IsPlainObject<T[K]> extends true
           ? _WcsSubPaths<T[K], \`\${K}.\`, [...D, 0]>
           : never)
-  }[_DataKeys<T>];
-type _WcsSubPaths<T, P extends string, D extends readonly any[]> =
-  _WcsPaths<T, D> extends infer R extends string ? \`\${P}\${R}\` : never;
-type _WcsPathValue<T, P extends string> =
-  P extends keyof T ? T[P]
+  }[_DataKeys<T>]} _WcsPaths
+*/
+/**
+@template T
+@template {string} P
+@template {readonly any[]} D
+@typedef {_WcsPaths<T, D> extends infer R extends string ? \`\${P}\${R}\` : never} _WcsSubPaths
+*/
+/**
+@template T
+@template {string} P
+@typedef {P extends keyof T ? T[P]
   : P extends \`\${infer K}.*\`
     ? K extends keyof T ? T[K] extends readonly (infer E)[] ? E : never : never
   : P extends \`\${infer K}.\${infer R}\`
@@ -6633,10 +6656,19 @@ type _WcsPathValue<T, P extends string> =
         ? R extends \`*.\${infer S}\` ? _WcsPathValue<E, S> : R extends "*" ? E : never
         : T[K] extends Record<string, any> ? _WcsPathValue<T[K], R> : never
       : never
-    : never;
-type _WcsPathAccessor<T> = { [P in _WcsPaths<T>]: _WcsPathValue<T, P> };
-type _WcsStreamStatus = "idle" | "active" | "done" | "error";
-interface WcsStateApi {
+    : never} _WcsPathValue
+*/
+/** @template T @typedef {{ [P in _WcsPaths<T, []>]: _WcsPathValue<T, P> }} _WcsPathAccessor */
+/** @typedef {"idle" | "active" | "done" | "error"} _WcsStreamStatus */
+// WcsStateApi \u306E\u7D22\u5F15\uFF08@wcstack/state \u306E defineState \u3068\u5BFE\uFF09:
+// - $command: $commandTokens \u306B\u66F8\u3044\u305F\u540D\u524D\uFF08N\uFF09\u306E token\u3002\u540D\u524D\u3092\u63A8\u8AD6\u3067\u304D\u306A\u3051\u308C\u3070 Record<string, \u2026>\u3002
+// - \`\${string}.**.\${string}\` / \`\${string}.**\`: $recursion \u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30D1\u30B9\uFF08\`nodes.**.total\`\u30FB\u7D20\u306E \`nodes.**\`\uFF09\u3002
+//   \u6DF1\u3055\u306E\u65CF\u306A\u306E\u3067 _WcsPaths \u306E\u6709\u9650\u5C55\u958B\u306B\u306F\u73FE\u308C\u306A\u3044\u3002\`**\` \u3092\u542B\u3080\u30AD\u30FC\u306F\u8AAD\u3081\u308B\uFF08\u578B\u306F any\uFF09\u3068\u3060\u3051\u8A00\u3046\u3002
+// - \`.\${string}\`: \u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\uFF08\`this[".name"]\`\u30FB\`this["."]\`\u30014.22\uFF09\u3002\u57FA\u6E96\u306F\u8A55\u4FA1\u3057\u3066\u3044\u308B\u884C\u306E\u30EA\u30B9\u30C8\u3067\u3001
+//   \u578B\u3067\u306F\u8868\u305B\u306A\u3044\uFF08\u578B\u306F any\u3002\u30D1\u30B9\u304C\u5728\u308B\u304B\u306F lint \u304C\u691C\u67FB\u3059\u308B\uFF09\u3002setter \u306F\u66F8\u304F\u306E\u3067 readonly \u3067\u306F\u306A\u3044\u3002
+/**
+@template {string} N
+@typedef {{
   $getAll<V = any>(path: string, indexes?: number[]): V[];
   $setAll<V = any>(path: string, indexes: number[], value: V | ((current: V, ...indexes: number[]) => V | undefined)): number;
   $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: { spread: true }): number;
@@ -6649,7 +6681,7 @@ interface WcsStateApi {
   $eqPath(path: string, keyPath: string): boolean;
   $eqIndex(path: string, level?: number): boolean;
   readonly $stateElement: HTMLElement;
-  readonly $command: Record<string, { emit(...args: any[]): any }>;
+  readonly $command: Record<N, { emit(...args: any[]): any }>;
   readonly $streamStatus: Record<string, _WcsStreamStatus>;
   readonly $streamError: Record<string, unknown>;
   readonly [key: \`$streamStatus.\${string}\`]: _WcsStreamStatus;
@@ -6657,53 +6689,56 @@ interface WcsStateApi {
   readonly $1: number; readonly $2: number; readonly $3: number;
   readonly $4: number; readonly $5: number; readonly $6: number;
   readonly $7: number; readonly $8: number; readonly $9: number;
-  // $recursion \u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30D1\u30B9\uFF08\`nodes.**.total\`\uFF09\u3002\u6DF1\u3055\u306E\u65CF\u306A\u306E\u3067 \`_WcsPaths\` \u306E
-  // \u6709\u9650\u5C55\u958B\u306B\u306F\u73FE\u308C\u305A\u3001getter \u306E\u30AD\u30FC\u306B\u66F8\u3044\u305F 1 \u672C\u3057\u304B T \u306B\u73FE\u308C\u306A\u3044\u3002\u30D1\u30BF\u30FC\u30F3\u7D22\u5F15\u3067
-  // \u300C\`**\` \u3092\u542B\u3080\u30AD\u30FC\u306F\u8AAD\u3081\u308B\u300D\u3068\u3060\u3051\u8A00\u3046\uFF08\u578B\u306F any \u2014 \u6DF1\u3055\u3092\u578B\u3067\u8868\u305B\u306A\u3044\u4EE5\u4E0A\u3001\u5024\u306E\u578B\u3082
-  // \u8FBF\u308C\u306A\u3044\uFF09\u3002\u30D1\u30BF\u30FC\u30F3\u306F \`**\` \u3092\u5FC5\u305A\u542B\u3080\u306E\u3067\u3001\u901A\u5E38\u306E\u30C9\u30C3\u30C8\u30D1\u30B9\u306E\u578B\u4ED8\u3051\u306F\u640D\u306A\u308F\u306A\u3044\u3002
   readonly [key: \`\${string}.**.\${string}\`]: any;
-  // \u7D20\u306E \`nodes.**\`\uFF08\u518D\u5E30 getter \u306E\u4E2D\u3067\u30CE\u30FC\u30C9\u81EA\u8EAB\u306B\u675F\u7E1B\u3055\u308C\u308B\u8AAD\u307F\uFF09\u306F \`.**.\` \u3092\u542B\u307E\u306A\u3044\u306E\u3067
-  // \u672B\u5C3E\u304C \`.**\` \u306E\u30AD\u30FC\u306B\u3082\u540C\u3058\u7D22\u5F15\u3092\u7F6E\u304F\uFF08@wcstack/state \u306E defineState \u3068\u5BFE\uFF09\u3002
   readonly [key: \`\${string}.**\`]: any;
-  // \u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\uFF08\`this[".name"]\`\u30FB\`this["."]\`\u30014.22\uFF09\u3002\u57FA\u6E96\u306F\u8A55\u4FA1\u3057\u3066\u3044\u308B\u884C\u306E\u30EA\u30B9\u30C8 \u2014 \u30A2\u30AF\u30BB\u30B5\u306E\u30AD\u30FC
-  // \uFF08\`get "users.*.fullname"()\`\uFF09\u304B\u3001\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3093\u3060\u884C\u3067\u6C7A\u307E\u308B\u3002this \u306E\u578B\u306F\u72B6\u614B\u5168\u4F53\u3067 1 \u3064\u306A\u306E\u3067\u3001\u3069\u306E\u884C\u304B\u306F
-  // \u578B\u3067\u306F\u8868\u305B\u306A\u3044\uFF08\u578B\u306F any\u3002\u30D1\u30B9\u304C\u5728\u308B\u304B\u306F lint \u304C\u3001\u30A2\u30AF\u30BB\u30B5\u306E\u30AD\u30FC\u304B\u3089\u5C55\u958B\u3057\u3066\u691C\u67FB\u3059\u308B\uFF09\u3002setter \u306F\u66F8\u304F\u306E\u3067
-  // readonly \u3067\u306F\u306A\u3044\uFF08@wcstack/state \u306E defineState \u3068\u5BFE\uFF09\u3002
   [key: \`.\${string}\`]: any;
-}
+}} WcsStateApi
+*/
 // 1 \u3064\u306E\u30A2\u30AF\u30BB\u30B5\u3092\u8907\u6570\u306E\u30D1\u30B9\u306B\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\uFF08\`get "users.*.fullname,employees.*.fullname"()\`\u30014.22\uFF09\u306E\u5404\u30D1\u30B9\u3002
 // T \u306B\u306F\u30AD\u30FC\u306E\u6587\u5B57\u5217\u305D\u306E\u3082\u306E\u3057\u304B\u73FE\u308C\u306A\u3044\u306E\u3067\u3001\u30AB\u30F3\u30DE\u3067\u5206\u3051\u305F\u5404\u30D1\u30B9\u306B\u305D\u306E\u30A2\u30AF\u30BB\u30B5\u306E\u578B\u3092\u5199\u3059\u3002
-type _WcsListedPaths<K extends string> = K extends \`\${infer Head},\${infer Rest}\` ? Head | _WcsListedPaths<Rest> : K;
-type _WcsListedAccessors<T> = { [K in keyof T & \`\${string},\${string}\` as _WcsListedPaths<K>]: T[K] };
+/** @template {string} K @typedef {K extends \`\${infer Head},\${infer Rest}\` ? Head | _WcsListedPaths<Rest> : K} _WcsListedPaths */
+/** @template T @typedef {{ [K in keyof T & \`\${string},\${string}\` as _WcsListedPaths<K>]: T[K] }} _WcsListedAccessors */
 // $stream \u306E\u5024\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u5BA3\u8A00\u30AD\u30FC\u306E\u540D\u524D\u3067\u5B9F\u4F53\u5316\u3059\u308B\u30D7\u30ED\u30D1\u30C6\u30A3\u3002T \u306B\u306F\u5BA3\u8A00\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306E\u4E2D\u306B\u3057\u304B
 // \u73FE\u308C\u306A\u3044\u306E\u3067\u3001getter \u3084\u30E1\u30BD\u30C3\u30C9\u306E this \u304B\u3089\u8AAD\u3081\u308B\u3088\u3046 any \u3067\u5199\u3059\u3002initial \u306E\u578B\u306F\u4F7F\u308F\u306A\u3044 \u2014 \u7A7A\u914D\u5217\u306E
 // initial \u304C never[] \u306B\u306A\u308A\u3001\u6B63\u3057\u3044\u8AAD\u307F\uFF08\u8981\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF09\u307E\u3067\u578B\u30A8\u30E9\u30FC\u306B\u306A\u308B\u305F\u3081\u3002
 // T \u306B\u540C\u540D\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u660E\u793A\u7684\u306B\u4E8B\u524D\u5BA3\u8A00\u3057\u3066\u3044\u308C\u3070\u5199\u3055\u306A\u3044\uFF08\u4EA4\u5DEE\u3067\u305D\u306E\u578B\u307E\u3067 any \u306B\u6F70\u3055\u306A\u3044\u305F\u3081\uFF09\u3002
-type _WcsDeclaredValues<T> =
-  (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
-type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>;
+/** @template T @typedef {(T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {})} _WcsDeclaredValues */
+/** @template T @template {string} N @typedef {T & WcsStateApi<N> & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>} _WcsThis */
 // $listKeys: { "<listPath>": "<field>" | (row) => key }\uFF08list/listKeys.ts\uFF09\u3002
 // \u30AD\u30FC\u6307\u5B9A\u306E\u95A2\u6570\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\uFF08noImplicitAny \u4E0B\u306E\u507D\u30A8\u30E9\u30FC\u56DE\u907F\uFF09\u3002
-type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
+/** @typedef {Record<string, string | ((row: any) => unknown)>} _WcsListKeys */
 // $watch: { "<path>": (cur, prev, ...indexes) => void }\uFF08watch/processWatchDeclaration.ts\uFF09\u3002
-// \u30CF\u30F3\u30C9\u30E9\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\uFF08$listKeys \u3068\u540C\u3058\u7406\u7531\uFF09\u3002
-// this \u306F ThisType<_WcsThis<T>> \u306B\u3088\u308A state \u578B\u306B\u306A\u308B\u3002
-type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
-// $recursion: { "<anchor>": "<repeat>" }\uFF08recursion/declaration.ts\uFF09\u3002\u521D\u7248\u306F\u5358\u4E00\u306E\u81EA\u5DF1\u518D\u5E30
-// \u306E\u307F\u3067\u3001\u30A2\u30F3\u30AB\u30FC\u3082\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u3082\u300C\u56FA\u5B9A\u30D7\u30ED\u30D1\u30C6\u30A3\u5217 + \u672B\u5C3E\u306E .*\u300D\u306B\u9650\u308B\u3002\u5F62\u306E\u691C\u8A3C\u306F
+// \u30CF\u30F3\u30C9\u30E9\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\uFF08$listKeys \u3068\u540C\u3058\u7406\u7531\uFF09\u3002this \u306F ThisType<_WcsThis<T, N>> \u306B\u3088\u308A state \u578B\u306B\u306A\u308B\u3002
+/** @typedef {Record<string, (cur: any, prev: any, ...indexes: number[]) => void>} _WcsWatch */
+// $recursion: { "<anchor>": "<repeat>" }\uFF08recursion/declaration.ts\uFF09\u3002\u5F62\u306E\u691C\u8A3C\u306F
 // service/recursionValidator.ts\uFF08wcs/recursion-declaration-invalid\uFF09\u304C\u62C5\u3046\u3002
-type _WcsRecursion = Record<string, string>;
+/** @typedef {Record<string, string>} _WcsRecursion */
+// $on: { "<event token>": (state, event, ...indexes) => \u2026 }\uFF08token.ts \u2014 handler(state, event, ...listIndexes) \u3068\u547C\u3070\u308C\u3001
+// this \u306F undefined\uFF09\u3002state \u306E\u578B\u306F T \u3067\u306F\u306A\u304F S\uFF08\u5F15\u6570\u304B\u3089\u63A8\u8AD6\u3057\u305F T \u306E\u5199\u3057\uFF09\u304B\u3089\u4F5C\u308B: \u30CF\u30F3\u30C9\u30E9\u306E\u5F15\u6570\u306E\u578B\u304C T \u3092
+// \u53C2\u7167\u3059\u308B\u3068\u3001TypeScript \u306F T \u3092\u63A8\u8AD6\u3057\u7D42\u3048\u308B\u524D\u306B\uFF08\u5F15\u6570\u306E\u7121\u3044\u5236\u7D04 Record<string, any> \u3067\uFF09\u78BA\u5B9A\u3055\u305B\u3001
+// state \u5168\u4F53\u306E\u578B\u4ED8\u3051\u304C\u6D88\u3048\u308B\u3002S \u306E\u63A8\u8AD6\u306F\u95A2\u6570\u3092 unknown \u306B\u3057\u305F\u90E8\u5206\u7684\u306A\u3082\u306E\u3067\u3001state \u3067\u306F\u305D\u308C\u3092 any \u306B\u8AAD\u3080
+// \uFF08\u30E1\u30BD\u30C3\u30C9\u306F\u547C\u3079\u308B\u304C\u691C\u67FB\u3055\u308C\u306A\u3044\uFF09\u3002null / undefined \u3067\u521D\u671F\u5316\u3057\u305F\u5024\u306F strictNullChecks \u304C\u7121\u3051\u308C\u3070 any\uFF08T \u3068\u540C\u3058\u5E83\u3052\u65B9\u3002
+// \`null extends string\` \u306F strictNullChecks \u304C\u7121\u3044\u3068\u304D\u3060\u3051\u771F\uFF09\u3002event \u306F CustomEvent \u2014 wc-bindable \u306E\u65E2\u5B9A\u306E getter \u304C
+// detail \u3092\u8AAD\u3080\u3068\u304A\u308A\uFF08detail \u306F any\uFF09\u3002CustomEvent<\u2026> \u3084 Event \u3078\u306E\u6CE8\u91C8\u3082\u901A\u3059\uFF08\u53CC\u5909\uFF09\u3002
+/** @template V @typedef {unknown extends V ? any : [V] extends [null | undefined] ? (null extends string ? any : V) : V} _WcsOnValue */
+/** @template S @template {string} N @typedef {_WcsThis<{ [K in keyof S]: _WcsOnValue<S[K]> }, N>} _WcsOnState */
+/** @template S @typedef {{ bivarianceHack(this: void, state: S, event: CustomEvent, ...indexes: number[]): unknown }["bivarianceHack"]} _WcsOnHandler */
 // $behavior: \u305D\u306E\u6728\u306E\u632F\u308B\u821E\u3044\uFF084.0 \u3067 bootstrapState \u304B\u3089\u79FB\u3063\u305F 3 \u30AD\u30FC\u3002\u65E2\u5B9A\u306F\u3069\u308C\u3082 true\uFF09\u3002
 // \u5024\u304C boolean \u3067\u306A\u3044\u5F62\u306F\u578B\u30A8\u30E9\u30FC\u306B\u306A\u308B\u3002\u77E5\u3089\u306A\u3044\u30AD\u30FC\u306F lint\uFF08wcs/behavior-invalid\uFF09\u304C\u5831\u544A\u3059\u308B\u3002
-type _WcsBehavior = ${BEHAVIOR_TYPE};
+/** @typedef {${BEHAVIOR_TYPE}} _WcsBehavior */
 // $features: \u305D\u306E state \u304C\u8981\u308B\u5F8C\u4ED8\u3051\uFF084.0\u3002\u5206\u5272 auto \u306F\u8AAD\u307F\u8FBC\u307F\u3001\u5168\u90E8\u5165\u308A\u30FB\u30D0\u30F3\u30C9\u30E9\u306F\u5165\u3063\u3066\u3044\u308B\u304B\u3092\u691C\u67FB\u3059\u308B\uFF09\u3002
-type _WcsFeatureName = ${FEATURE_NAME_TYPE};
-function defineState<T extends Record<string, any>>(
-  def: T & {
-    $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion;
-    $behavior?: _WcsBehavior; $features?: readonly _WcsFeatureName[];
-  } & ThisType<_WcsThis<T>>
-): T { return def; }
+/** @typedef {${FEATURE_NAME_TYPE}} _WcsFeatureName */
+// defineState \u306F\u95A2\u6570\u306E\u578B\u3092 @type \u3067\u4E0E\u3048\u308B\uFF08@template / @param \u3067\u66F8\u3044\u305F\u95A2\u6570\u5BA3\u8A00\u3067\u306F\u3001$on \u306E state \u3092\u63A8\u8AD6\u3059\u308B\u3068\u304D\u306B
+// T \u307E\u3067\u78BA\u5B9A\u3057\u3066\u3057\u307E\u3046 \u2014 JavaScript \u306E\u95A2\u6570\u5BA3\u8A00\u306E\u6271\u3044\u306E\u9055\u3044\uFF09\u3002N \u306F $commandTokens \u304B\u3089\u63A8\u8AD6\u3059\u308B token \u306E\u540D\u524D\u3002
+/**
+@type {<T extends Record<string, any>, N extends string = string, S = T>(def: T & { [K in keyof S]: S[K] } & {
+  $commandTokens?: readonly N[]; $on?: Record<string, _WcsOnHandler<_WcsOnState<S, N>>>;
+  $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion;
+  $behavior?: _WcsBehavior; $features?: readonly _WcsFeatureName[];
+} & ThisType<_WcsThis<T, N>>) => T}
+*/
+const defineState = (def) => def;
+export {};
 // --- end preamble ---
 `;
 var WCS_PREAMBLE_LENGTH = WCS_PREAMBLE.length;
@@ -6757,12 +6792,7 @@ function createWcsLanguagePlugin(stateTagName = "wcs-state", options = {}) {
       getServiceScript(root) {
         const combined = root.embeddedCodes?.find((code) => code.id === COMBINED_SCRIPT_ID);
         if (combined === void 0) return void 0;
-        return {
-          code: combined,
-          extension: ".ts",
-          scriptKind: 3
-          /* ts.ScriptKind.TS */
-        };
+        return { code: combined, extension: ".js", scriptKind: JS_SCRIPT_KIND };
       }
     } : {
       extraFileExtensions: [
@@ -6781,11 +6811,10 @@ function createWcsLanguagePlugin(stateTagName = "wcs-state", options = {}) {
         for (const embedded of root.embeddedCodes ?? []) {
           if (embedded.id.startsWith("wcs-script-")) {
             scripts.push({
-              fileName: fileName + ".__" + embedded.id + ".ts",
+              fileName: fileName + ".__" + embedded.id + ".js",
               code: embedded,
-              extension: ".ts",
-              scriptKind: 3
-              // ts.ScriptKind.TS
+              extension: ".js",
+              scriptKind: JS_SCRIPT_KIND
             });
           }
         }
@@ -6794,12 +6823,13 @@ function createWcsLanguagePlugin(stateTagName = "wcs-state", options = {}) {
     }
   };
 }
+var JS_SCRIPT_KIND = 1;
 var COMBINED_SCRIPT_ID = "wcs-combined";
 function createWcsHtmlVirtualCodeForTsc(blocks, html) {
   const { code, mappings } = blocks.length === 0 ? { code: "", mappings: [] } : buildCombinedScript(blocks);
   const combined = {
     id: COMBINED_SCRIPT_ID,
-    languageId: "typescript",
+    languageId: "javascript",
     snapshot: {
       getText(start, end) {
         return code.slice(start, end);
@@ -6949,7 +6979,7 @@ function createScriptVirtualCode(block, index) {
   const { code: wrappedCode, mappings } = wrapWithDefineState(userCode, block);
   return {
     id: `wcs-script-${index}`,
-    languageId: "typescript",
+    languageId: "javascript",
     snapshot: {
       getText(start, end) {
         return wrappedCode.slice(start, end);
@@ -6984,7 +7014,7 @@ function wrapWithDefineState(userCode, block) {
 }
 function stripWcsImport(code) {
   return code.replace(
-    /import\s*\{[^}]*\}\s*from\s*['"](?:@wcstack\/state|https?:\/\/[^'"]*\/@wcstack\/state(?:@[^'"/]*)?(?:\/[^'"]*)?)['"];?[ \t]*/g,
+    /import\s*\{[^}]*\}\s*from\s*['"](?:@wcstack\/state(?:\/[^'"]*)?|https?:\/\/[^'"]*\/@wcstack\/state(?:@[^'"/]*)?(?:\/[^'"]*)?)['"];?[ \t]*/g,
     (match) => match.replace(/[^\n]/g, " ")
   );
 }
@@ -6993,6 +7023,7 @@ function stripWcsImport(code) {
   WCS_PREAMBLE,
   WCS_PREAMBLE_LENGTH,
   createWcsLanguagePlugin,
+  parseWcsScriptBlocks,
   stripWcsImport
 });
 //# sourceMappingURL=tsc-core.cjs.map

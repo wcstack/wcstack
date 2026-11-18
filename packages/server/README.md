@@ -146,7 +146,7 @@ static wcBindable = {
 |----------|-------------|
 | `installGlobals(window)` | Installs happy-dom globals on `globalThis`. Returns a restore function. |
 | `waitForReady(root, { maxIterations? })` | Awaits every custom element under `root` (a `document` or a `ShadowRoot`) that follows the readiness protocols — `static hasConnectedCallbackPromise` elements' `connectedCallbackPromise` (re-scanning while new elements appear, e.g. `<wcs-router>`'s initial route), then `static getBindingsReady(root)` (`<wcs-state>`'s binding construction). This is the wait `renderToString` performs before serializing; [`@wcstack/testing`](../testing/README.md)'s `mount()` reuses it. Rejects if binding initialization fails. |
-| `setInnerHTML(target, html)` | Since 4.26 (not released yet). `target.innerHTML = html` (on an element, a `ShadowRoot`, or a `<template>`'s content), except that a `<template>` written in a table stays where browsers put it — happy-dom's parser moves it out of the table (see [Bindings & Structural Rendering](#bindings--structural-rendering)). HTML with no table markup is handed to `innerHTML` unchanged. `renderToString` parses the page with it, and `@wcstack/testing`'s `mount()` inserts the page with it; use it for HTML a test inserts under happy-dom itself. |
+| `setInnerHTML(target, html)` | Since 4.26. `target.innerHTML = html` (on an element, a `ShadowRoot`, or a `<template>`'s content), except that a `<template>` written in a table stays where browsers put it — happy-dom's parser moves it out of the table (see [Bindings & Structural Rendering](#bindings--structural-rendering)). HTML with no table markup is handed to `innerHTML` unchanged. `renderToString` parses the page with it, and `@wcstack/testing`'s `mount()` inserts the page with it; use it for HTML a test inserts under happy-dom itself. |
 
 ### Constants
 
@@ -321,7 +321,7 @@ createServer(async (req, res) => {
 </template>
 ```
 
-- Templates in a table, since 4.26 (not released yet): a `for:` over the rows of a `<tbody>` / `<thead>` / `<tfoot>` (or a `<table>`), a `for:` over the cells of a `<tr>`, an `if:` among the rows, nested ones included. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, where browsers keep it; the server now puts it back before the page starts (`setInnerHTML`), so the rows render in the table and the client finds their anchor there. Up to 4.25 such a page failed to render: `renderToString` threw `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template`.
+- Templates in a table, since 4.26: a `for:` over the rows of a `<tbody>` / `<thead>` / `<tfoot>` (or a `<table>`), a `for:` over the cells of a `<tr>`, an `if:` among the rows, nested ones included. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, where browsers keep it; the server now puts it back before the page starts (`setInnerHTML`), so the rows render in the table and the client finds their anchor there. Up to 4.25 such a page failed to render: `renderToString` threw `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template`.
 
 ```html
 <table>

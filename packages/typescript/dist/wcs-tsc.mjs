@@ -2,7 +2,7 @@
 import { existsSync, mkdtempSync, writeFileSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, isAbsolute, resolve, basename } from 'node:path';
+import { dirname, join, isAbsolute, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -25,7 +25,7 @@ function unsupportedTypeScriptMessage(version) {
     return `@wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript ${version}, which has no JavaScript compiler API: npm i -D typescript@6`;
 }
 
-var version = "4.25.0";
+var version = "4.26.0";
 var pkg = {
 	version: version};
 
@@ -39,7 +39,9 @@ const VERSION = pkg.version;
  * Every `<wcs-state>` inline `<script type="module">` is mapped through the same
  * Volar language plugin the VS Code extension uses (dist/tsc-core.cjs, built from
  * vscode-wcs), so `this.coutn++` fails CI with a `file.html(line,col): error TS2339`
- * exactly where the editor underlines it. The mechanism is vue-tsc's:
+ * exactly where the editor underlines it. The script is checked as JavaScript — what
+ * the browser runs (4.26): JSDoc types count, TypeScript syntax is an error (TS8010…),
+ * and the plugin's `// @ts-check` turns the check on whatever `checkJs` says. The mechanism is vue-tsc's:
  * `@volar/typescript`'s `runTsc` patches the `typescript/lib/tsc.js` the project
  * already has to accept `.html` and to build the program through the plugin.
  *
@@ -50,9 +52,12 @@ const VERSION = pkg.version;
  *                        imports are stripped by the plugin and typed by its preamble.
  *   --url-imports=error  leave URL imports alone (TS2307 for each).
  *   --wcs-defaults       when the project tsconfig lacks what the check needs
- *                        (`include` covering `**\/*.html`, `noImplicitThis`, `allowJs`,
- *                        `checkJs`), run with a temporary config that extends it and
- *                        adds them, instead of only warning.
+ *                        (`include` covering `**\/*.html`, a `target` / `lib` of ES2015 or
+ *                        later), run with a temporary config that extends it and adds
+ *                        them, instead of only warning. (`noImplicitThis`, `allowJs` and
+ *                        `checkJs` are not needed since 4.26: the script is JavaScript,
+ *                        whose `this` is typed without `noImplicitThis`, and the plugin
+ *                        turns the check on itself.)
  *
  * Peers: `typescript` (required, 5 or 6 — TypeScript 7 has no lib/tsc.js, see
  * typescriptSupport.ts), `@volar/typescript` + `@volar/language-core` (optional —
@@ -125,11 +130,8 @@ function findProjectConfig(tscArgs, cwd) {
     const fallback = join(cwd, "tsconfig.json");
     return existsSync(fallback) ? { path: fallback, index: -1 } : undefined;
 }
-/**
- * Check the project tsconfig for what the HTML check needs. `include` is only
- * checked when present (tsc's default `**\/*` already picks `.html` up once the
- * extension is registered); a `files`-only config never sees HTML.
- */
+/** Without the plugin's parser: a `<wcs-state>` start tag followed by a `<script` before its end tag. */
+const roughInlineStateTest = (html) => /<wcs-state\b[^>]*>(?:(?!<\/wcs-state\s*>)[\s\S])*?<script\b/i.test(html);
 /**
  * Whether an `include` pattern reaches `.html`, read as tsc reads it: a last segment with
  * neither an extension nor a wildcard names a directory (`src` is `src/**\/*`), a trailing
@@ -144,32 +146,63 @@ function includeCoversHtml(pattern) {
         return last.endsWith("*");
     return last === "." || last === ".." || !last.includes(".");
 }
-function auditConfig(configPath, ts) {
+/**
+ * Check the project tsconfig for what the HTML check needs:
+ * - when there are pages with an inline `<wcs-state>` script under the config's directory (and not
+ *   excluded), at least one of them is in the program — `include: ["src"]` covers `src/**\/*.html` but not
+ *   a page beside the tsconfig, so the patterns alone cannot tell; the left-out pages are named. A config
+ *   that checks some pages and leaves others out (vendored docs, fixtures) chose to: it is not reported;
+ * - failing that, `include` reaches `.html` at all (a page may live outside the config's directory), and a
+ *   `files`-only config never sees HTML;
+ * - a `target` / `lib` of ES2015 or later.
+ */
+function auditConfig(configPath, ts, hasInlineState = roughInlineStateTest) {
     const read = ts.readConfigFile(configPath, ts.sys.readFile);
-    const raw = (read.config ?? {});
-    const parsed = ts.parseJsonConfigFileContent(read.config ?? {}, ts.sys, toPosix(dirname(configPath)), undefined, toPosix(configPath));
+    const config = (read.config ?? {});
+    const basePath = toPosix(dirname(configPath));
+    const extensions = htmlExtensions(ts);
+    const parsed = ts.parseJsonConfigFileContent(config, ts.sys, basePath, undefined, toPosix(configPath), undefined, extensions);
     const options = parsed.options;
     const missing = [];
-    const include = Array.isArray(raw.include) ? raw.include : undefined;
-    if (include !== undefined && !include.some(includeCoversHtml))
+    const include = Array.isArray(config.include) ? config.include : undefined;
+    // every file the config would see with `include: ["**/*"]` (its `exclude` kept), minus what it does see
+    const { files: _files, include: _include, ...rest } = config;
+    const everything = ts.parseJsonConfigFileContent({ ...rest, include: ["**/*"] }, ts.sys, basePath, undefined, toPosix(configPath), undefined, extensions);
+    const isPage = (file) => /\.html?$/i.test(file) && hasInlineState(ts.sys.readFile(file) ?? "");
+    const inProgram = new Set(parsed.fileNames);
+    const pagesInProgram = parsed.fileNames.filter(isPage).length;
+    const leftOut = everything.fileNames.filter((file) => !inProgram.has(file) && isPage(file));
+    if (pagesInProgram === 0 && leftOut.length > 0) {
+        missing.push(`include: "**/*.html" (no page with an inline <wcs-state> is in the program: ${describePages(leftOut, basePath)} ${leftOut.length === 1 ? "is" : "are"} not)`);
+    }
+    else if (include !== undefined && !include.some(includeCoversHtml))
         missing.push('include: "**/*.html"');
-    else if (include === undefined && Array.isArray(raw.files))
+    else if (include === undefined && Array.isArray(config.files))
         missing.push('include: "**/*.html" (a files-only config never sees HTML)');
-    // `strict: true` implies noImplicitThis unless it is explicitly turned off.
-    const noImplicitThis = options.noImplicitThis ?? options.strict === true;
-    if (noImplicitThis !== true)
-        missing.push("compilerOptions.noImplicitThis: true");
-    if (options.allowJs !== true)
-        missing.push("compilerOptions.allowJs: true");
-    if (options.checkJs !== true)
-        missing.push("compilerOptions.checkJs: true");
+    // noImplicitThis / allowJs / checkJs are not needed (4.26): the inline script is checked as
+    // JavaScript, where TypeScript types an object literal's `this` from ThisType<> without
+    // noImplicitThis, the `.html` file is in the program through the plugin's extension (not allowJs),
+    // and the plugin's `// @ts-check` turns the check on.
     // With neither target nor lib, tsc's ES5 default lib has no Map / Set / Promise:
     // the preamble's `_WcsThis<T>` degrades silently and `this.typo` stops being an error.
     const target = options.target;
     const needsTarget = options.lib === undefined && (target === undefined || target < ts.ScriptTarget.ES2015);
     if (needsTarget)
         missing.push('compilerOptions.target: "ES2015" or later (the this-typing preamble uses Map / Set / Promise)');
-    return { missing, include, compilerOptions: raw.compilerOptions ?? {}, needsTarget };
+    return { missing, include, compilerOptions: config.compilerOptions ?? {}, needsTarget, pagesInProgram, leftOut };
+}
+/** `.html` / `.htm` as the plugin registers them, so tsc's file matching takes them (as wcs-tsc's runTsc does). */
+function htmlExtensions(ts) {
+    return ["html", "htm"].map((extension) => ({ extension, isMixedContent: true, scriptKind: ts.ScriptKind.Deferred }));
+}
+/** `counter.html, admin/a.html, … and 3 more` (relative to the config's directory). */
+function describePages(files, basePath) {
+    const names = files.map((file) => posixRelative(basePath, file));
+    const shown = names.slice(0, 3).join(", ");
+    return names.length > 3 ? `${shown} and ${names.length - 3} more` : shown;
+}
+function posixRelative(from, to) {
+    return toPosix(relative(from, to));
 }
 /** Write a temporary config next to the project one that extends it with the missing pieces. */
 function writeDefaultsConfig(configPath, audit) {
@@ -178,13 +211,8 @@ function writeDefaultsConfig(configPath, audit) {
     const include = audit.include !== undefined ? [...audit.include, "**/*.html"] : ["**/*", "**/*.html"];
     const config = {
         extends: `./${basename(configPath)}`,
-        compilerOptions: {
-            allowJs: true,
-            checkJs: true,
-            noImplicitThis: true,
-            // only when the project set neither target nor lib — never override an explicit choice
-            ...(audit.needsTarget ? { target: "ESNext" } : {}),
-        },
+        // only when the project set neither target nor lib — never override an explicit choice
+        ...(audit.needsTarget ? { compilerOptions: { target: "ESNext" } } : {}),
         include,
     };
     writeFileSync(tempPath, JSON.stringify(config, null, 2), "utf8");
@@ -256,11 +284,16 @@ function main(argv, io = defaultIo(), deps = defaultDeps) {
         return 2;
     }
     const ts = deps.load(tsApiPath);
+    const core = deps.load(corePath);
+    const { createWcsLanguagePlugin, parseWcsScriptBlocks } = core;
     const tscArgs = [...args.tscArgs];
     const temporaries = [];
     const project = findProjectConfig(tscArgs, cwd);
     if (project !== undefined && existsSync(project.path)) {
-        const audit = auditConfig(project.path, ts);
+        // the plugin's own reading of a page (a tsc-core.cjs older than 4.26 has no parser to hand out)
+        /* v8 ignore next */
+        const hasInlineState = parseWcsScriptBlocks !== undefined ? (html) => parseWcsScriptBlocks(html, "wcs-state").length > 0 : roughInlineStateTest;
+        const audit = auditConfig(project.path, ts, hasInlineState);
         if (audit.missing.length > 0) {
             if (args.wcsDefaults) {
                 const tempConfig = writeDefaultsConfig(project.path, audit);
@@ -272,14 +305,14 @@ function main(argv, io = defaultIo(), deps = defaultDeps) {
                 io.stderr(`wcs-tsc: running with a temporary config that adds ${audit.missing.join(", ")} (--wcs-defaults)\n`);
             }
             else {
-                io.stderr(`wcs-tsc: ${project.path} is missing ${audit.missing.join(", ")} — HTML may not be checked; pass --wcs-defaults or add them\n`);
+                // "warning:" — a CI log filter that keeps error / warning lines keeps this one (the exit code stays tsc's)
+                io.stderr(`wcs-tsc: warning: ${project.path} is missing ${audit.missing.join(", ")} — HTML may not be checked; pass --wcs-defaults or add them\n`);
             }
         }
     }
     const declaration = args.urlImports === "any" ? writeUrlImportsDeclaration() : undefined;
     if (declaration !== undefined)
         temporaries.push(declaration);
-    const { createWcsLanguagePlugin } = deps.load(corePath);
     const { runTsc } = deps.load(runTscPath);
     const cleanup = () => {
         for (const file of temporaries.splice(0)) {
@@ -297,7 +330,7 @@ function main(argv, io = defaultIo(), deps = defaultDeps) {
         if (declaration !== undefined)
             options.rootNames.push(declaration);
         // tsc mode: proxyCreateProgram supports one service script per file, so every
-        // <wcs-state> block of a page is combined into one virtual TS module.
+        // <wcs-state> block of a page is combined into one virtual JavaScript module.
         return [createWcsLanguagePlugin("wcs-state", { mode: "tsc" })];
     });
     // Reached only when runTsc returns (tsc normally exits the process itself).
@@ -322,5 +355,5 @@ if (invokedAsBin) {
 }
 /* v8 ignore stop */
 
-export { auditConfig, findProjectConfig, includeCoversHtml, main, parseTscArgs, resolveFromProject, writeDefaultsConfig, writeUrlImportsDeclaration };
+export { auditConfig, findProjectConfig, includeCoversHtml, main, parseTscArgs, resolveFromProject, roughInlineStateTest, writeDefaultsConfig, writeUrlImportsDeclaration };
 //# sourceMappingURL=wcs-tsc.mjs.map

@@ -129,7 +129,7 @@ npm install @wcstack/debounce
 
 `<wcs-throttle>` publishes the same shape under the `wcs-throttle:*` namespace.
 
-**`value` starts as `null`** (since 4.26 (not released yet); up to 4.25 it was `undefined`). `value` is an output-only member, so an `@wcstack/state` binding (`value: debouncedQuery`) reads it from the element when it attaches: the starting value the state declared is replaced by `null` until the first settle. Declare it `null` (`debouncedQuery: null`) and treat `null` as "nothing settled yet": a state that declares `""` sees it become `null` on load, and a `$watch` on it runs with that `null`. Up to 4.25 the seed was `undefined`, so a `$watch` ran with `undefined` even when the state declared `null`. `cancel`, `flush` and a disconnect leave the last settled value as it is. A `source` of `undefined` settles as `undefined`: `source` carries what it is given.
+**`value` starts as `null`** (since 4.26; up to 4.25 it was `undefined`). `value` is an output-only member, so an `@wcstack/state` binding (`value: debouncedQuery`) reads it from the element when it attaches: the starting value the state declared is replaced by `null` until the first settle. Declare it `null` (`debouncedQuery: null`) and treat `null` as "nothing settled yet": a state that declares `""` sees it become `null` on load, and a `$watch` on it runs with that `null`. Up to 4.25 the seed was `undefined`, so a `$watch` ran with `undefined` even when the state declared `null`. `cancel`, `flush` and a disconnect leave the last settled value as it is. A `source` of `undefined` settles as `undefined`: `source` carries what it is given.
 
 ## Commands
 

@@ -65,11 +65,11 @@ The returned `MountedApp`:
 
 - it disables `URL.createObjectURL` once per process when a browser-style one is present — Node cannot import `blob:` URLs, and without this an inline `<script type="module">` state never finishes loading (the loader then takes its `data:` URL path, as SSR does);
 - it wraps happy-dom's `textContent` / `innerText` setters to stringify like the DOM spec — happy-dom turns a numeric `0` into an empty string (and `innerText` throws on numbers), so a `textContent: count` binding would blank out at zero only under happy-dom;
-- since 4.26 (not released yet), it inserts the HTML with `@wcstack/server`'s `setInnerHTML`, which keeps a `<template>` written in a table where browsers keep it. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, so a page with `<tbody><template data-wcs="for: rows"><tr>…` (or a `for:` over the cells of a `<tr>`) failed to mount with `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` — up to 4.25, such a page could not be tested headlessly.
+- since 4.26, it inserts the HTML with `@wcstack/server`'s `setInnerHTML`, which keeps a `<template>` written in a table where browsers keep it. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, so a page with `<tbody><template data-wcs="for: rows"><tr>…` (or a `for:` over the cells of a `<tr>`) failed to mount with `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` — up to 4.25, such a page could not be tested headlessly.
 
 #### Typing the state
 
-Since 4.26 (not released yet), `state<S>()` takes the type of the page's state definition. `read` and `write` then hand their callback the state typed like `this` in a `defineState()` definition — its keys, getters, methods, dot paths (`"items.*.price"`) and the `$` API — so a misspelt key or a wrong argument is a type error, and a method is called without a cast. `read`'s state is readonly, as its proxy is. Without the type parameter the state is `any`, as before.
+Since 4.26, `state<S>()` takes the type of the page's state definition. `read` and `write` then hand their callback the state typed like `this` in a `defineState()` definition — its keys, getters, methods, dot paths (`"items.*.price"`) and the `$` API — so a misspelt key or a wrong argument is a type error, and a method is called without a cast. `read`'s state is readonly, as its proxy is. Without the type parameter the state is `any`, as before.
 
 ```ts
 import { mount, settle } from "@wcstack/testing";
@@ -133,7 +133,7 @@ Two things happy-dom cannot reproduce; keep one browser e2e (Playwright) for the
 - `customElements.define` upgrades existing nodes by **replacing** them, so "a value reaches the same node after a late define" cannot be asserted headlessly.
 - Event timing differs from real browsers.
 
-A `<template>` in a table is handled since 4.26 (not released yet): `mount()` puts it where browsers do (above). HTML a test inserts with `innerHTML` itself is not — insert it with `setInnerHTML(element, html)` from `@wcstack/server`.
+A `<template>` in a table is handled since 4.26: `mount()` puts it where browsers do (above). HTML a test inserts with `innerHTML` itself is not — insert it with `setInnerHTML(element, html)` from `@wcstack/server`.
 
 ## Example
 

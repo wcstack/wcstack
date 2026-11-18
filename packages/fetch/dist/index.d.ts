@@ -288,6 +288,7 @@ declare class Fetch extends HTMLElement {
     private _lastFetchedUrl;
     private _toldTriggerWithoutUrl;
     private _toldUndefinedHelper;
+    private _toldUrlArgument;
     private _sentBody;
     private _toldBodyGone;
     private _auto;
@@ -383,6 +384,14 @@ declare class Fetch extends HTMLElement {
      */
     private _warnBodyGone;
     /**
+     * A value in `fetch()`'s `url` place that is neither a url nor one of the values it ignores on purpose (none, an
+     * empty string, the event an `on…: $command.x` binding emits first): a number, a plain object. The element fetched
+     * its own url instead — with no url, nothing — and said nothing: a page emitted the id of the row to cancel
+     * (`this.$command.cancelReq.emit(id)`) where the command takes a url (docs/seam-apps.md, lending-desk). Said once
+     * per element for each kind of value.
+     */
+    private _warnUrlArgument;
+    /**
      * Runs a request. With no argument it is the element's: its `url`, `method`, headers and `body`.
      *
      * `url` and `init` are for this request only — the element's attributes do not change. They are what a command
@@ -390,8 +399,9 @@ declare class Fetch extends HTMLElement {
      * a command runs before the bindings of its update, so a `url` written in the same handler has not reached the
      * element yet, and the request went to the one before (docs/seam-apps.md, town-archive). `init` takes `method`,
      * `headers` (added to the `<wcs-fetch-header>` ones, replacing a same name) and `body` (in place of the
-     * element's, which is then kept for the next request). Anything that is not a string in `url`'s place — the
-     * event an `on…: $command.x` binding emits first — is ignored, and `init` with it.
+     * element's, which is then kept for the next request). `url` is a non-empty string or a `URL`. Anything else in
+     * its place is not this request's url, and `init` is ignored with it: the event an `on…: $command.x` binding
+     * emits first (and none, an empty string) silently, any other value with `[wcs/fetch-url-argument]`.
      */
     fetch(url?: unknown, init?: unknown): Promise<any>;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;

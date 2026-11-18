@@ -219,7 +219,7 @@ type WcsPathAccessor<T> = {
  * `<wcs-state>` の Proxy 経由で提供されるAPIメソッド。
  * state定義オブジェクト内のメソッド・getter で `this.` 経由で利用可能。
  */
-interface WcsStateApi {
+interface WcsStateApi<N extends string = string> {
     /**
      * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
      *
@@ -336,8 +336,10 @@ interface WcsStateApi {
      * `$commandTokens` で宣言した command token の名前空間。
      * `this.$command.<name>` で token を解決できる（バインディングでは
      * `onclick: $command.<name>` / `command.<method>: $command.<name>`）。
+     * `N` は `defineState` が `$commandTokens` から推論した名前（4.26）: 宣言していない名前は型エラーになり、
+     * `noUncheckedIndexedAccess` でも `undefined` を含まない。推論できなければ `string`。
      */
-    readonly $command: Record<string, {
+    readonly $command: Record<N, {
         emit(...args: any[]): any;
     }>;
     /** `$stream` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間 */
@@ -390,7 +392,41 @@ type WcsListedPaths<K extends string> = K extends `${infer Head},${infer Rest}` 
 type WcsListedAccessors<T> = {
     [K in keyof T & `${string},${string}` as WcsListedPaths<K>]: T[K];
 };
-type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & WcsListedAccessors<T>;
+type WcsThis<T, N extends string = string> = T & WcsStateApi<N> & WcsPathAccessor<T> & WcsListedAccessors<T>;
+/**
+ * @internal `$on` のハンドラが受け取る state。ランタイムは `handler(state, event, ...listIndexes)` と呼ぶ
+ * （src/token.ts・engine.ts の deliverFn。`this` は undefined）。
+ *
+ * 型は `T` ではなく `S`（引数から推論した `T` の写し）から作る: ハンドラの引数の型が `T` を参照すると、
+ * TypeScript は注釈の無いハンドラの引数に型を与える時点で `T` を確定させ — まだ推論の候補が無いので
+ * 制約の `Record<string, any>` に — state 全体の型付け（メソッドの `this` も）が消える。`S` はマップ型
+ * `{ [K in keyof S]: S[K] }` から推論されるので、関数を含む引数からも部分的に推論できる（データの型は
+ * そのまま、関数は `unknown`）。ここではその `unknown` を `any` に読む — メソッドは呼べるが引数は検査されない。
+ * `T` はハンドラと関わらずに推論されるので、`this` と戻り値の型は損なわない。
+ */
+type WcsOnState<S, N extends string> = WcsThis<{
+    [K in keyof S]: WcsOnValue<S[K]>;
+}, N>;
+/**
+ * @internal `S` の 1 つの値の型。関数（部分的な推論で `unknown`）は `any`。`null` / `undefined` で初期化した値は、
+ * strictNullChecks が無ければ `any`（`T` がそう広げるのと同じ。部分的な推論は広げないので、広げないと
+ * `state.x = "…"` だけが偽のエラーになる）。`null extends string` は strictNullChecks が無いときだけ真。
+ */
+type WcsOnValue<V> = unknown extends V ? any : [V] extends [null | undefined] ? (null extends string ? any : V) : V;
+/**
+ * @internal `$on` の 1 エントリ。`this: void`（ランタイムの `this` は undefined。`this` を使うハンドラは
+ * 型エラーになる — diagnostics の `[wcs/on-handler-this]` と同じ場所）。`event` は要素が発火したイベント:
+ * wc-bindable の既定の getter が `detail` を読むとおり `CustomEvent`（`detail` は any）。メソッドの形（双変）
+ * なので、`(state, e: CustomEvent<Detail>) => …` や `(state, e: Event) => …` のような注釈も通る。
+ */
+type WcsOnHandler<S> = {
+    bivarianceHack(this: void, state: S, event: CustomEvent, ...indexes: number[]): unknown;
+}["bivarianceHack"];
+/** @internal 宣言のキーのうち、`defineState` が型を与えるもの。 */
+type WcsDeclarations<N extends string, S> = {
+    $commandTokens?: readonly N[];
+    $on?: Record<string, WcsOnHandler<WcsOnState<S, N>>>;
+};
 /**
  * `<wcs-state>` 用の型付き状態オブジェクトを定義する。
  *
@@ -457,8 +493,25 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & WcsListedAccessors<T>;
  *   }
  * });
  * ```
+ *
+ * ### `$commandTokens` と `$on`（4.26）
+ * `N` は `$commandTokens` の名前から推論する（`this.$command.<name>` を宣言した名前に絞る）。`$on` の
+ * ハンドラは `(state, event, ...indexes)` に型が付く — `state` は state、`event` は `CustomEvent`、`this` は void。
+ * 型引数を `<T>` だけ渡すと `N` は `string`（`$command` は今までどおり `Record<string, …>`）、`S` は `T`。
+ * ```ts
+ * export default defineState({
+ *   count: 0,
+ *   $commandTokens: ["reload"],
+ *   $eventTokens: ["picked"],
+ *   $on: {
+ *     picked(state, event) { state.count++; state.$command.reload.emit(); },
+ *   },
+ * });
+ * ```
  */
-declare function defineState<T extends Record<string, any>>(definition: T & ThisType<WcsThis<T>>): T;
+declare function defineState<T extends Record<string, any>, N extends string = string, S = T>(definition: T & {
+    [K in keyof S]: S[K];
+} & WcsDeclarations<N, S> & ThisType<WcsThis<T, N>>): T;
 
 /** The package version: stamped into `<wcs-ssr>`, compared on hydration (major.minor), shown by DevTools. */
 declare const VERSION: string;

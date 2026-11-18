@@ -1,3 +1,5 @@
+import { WcsThis } from '@wcstack/state/define';
+
 /**
  * mount() — the README recipe ("Testing Your Page", @wcstack/state) as one call:
  * register the elements, insert the HTML, wait for every element and binding
@@ -7,7 +9,12 @@
  * `renderToString` performs, so `<wcs-router>`'s first route, a `$connectedCallback`
  * that inserts more elements, and `<wcs-state>`'s binding construction are all
  * covered by the one call (docs/app-testing-and-typescript-impl-plan.md D11).
+ *
+ * The HTML goes in through `@wcstack/server`'s `setInnerHTML`, as in `renderToString`: happy-dom's
+ * parser moves a `<template>` written in a table (`<tbody><template data-wcs="for: rows"><tr>…`) out
+ * of it and leaves its rows behind, where browsers keep it; `setInnerHTML` puts it back.
  */
+
 type BootstrapFunction = () => void | Promise<void>;
 interface MountOptions {
     /**
@@ -40,13 +47,26 @@ interface MountOptions {
      */
     readonly resolveModule?: (url: URL) => string | URL | null | undefined;
 }
-interface StateHandle {
+/**
+ * The state `write` hands to its callback: typed like `this` in a `defineState()` definition
+ * (`WcsThis<S>` — the definition's keys, its dot paths, the `$` API) when `state<S>()` names the
+ * definition's type; `any` when it does not.
+ */
+type WritableStateOf<S> = 0 extends 1 & S ? any : WcsThis<S>;
+/** The state `read` hands to its callback: the same, readonly (the proxy refuses writes). */
+type ReadonlyStateOf<S> = 0 extends 1 & S ? any : Readonly<WcsThis<S>>;
+/**
+ * The page's root state. `S` is the type of its definition — `typeof appState` for
+ * `const appState = defineState({ … })` — and types the state `read` / `write` hand to their callback,
+ * so a misspelt key is a type error; without it the state is `any`.
+ */
+interface StateHandle<S = any> {
     /** The `<wcs-state>` element itself. */
     readonly element: HTMLElement;
     /** Read through a readonly proxy — the value `fn` returns is passed back. */
-    read<T>(fn: (state: any) => T): T;
+    read<T>(fn: (state: ReadonlyStateOf<S>) => T): T;
     /** Write through a writable proxy, exactly as a handler does. Follow with `await settle()`. */
-    write(fn: (state: any) => void | Promise<void>): Promise<void>;
+    write(fn: (state: WritableStateOf<S>) => void | Promise<void>): Promise<void>;
 }
 interface MountedApp {
     /** The root the HTML lives under: `document` or the ShadowRoot. Query it. */
@@ -56,8 +76,9 @@ interface MountedApp {
     /**
      * Accessor for the root `<wcs-state>` (v2: one state tree per root — volumes
      * (`mount=`) and `bind-component` elements are not it). Throws if absent.
+     * `state<typeof appState>()` types the state its `read` / `write` hand over (see `StateHandle`).
      */
-    state(): StateHandle;
+    state<S = any>(): StateHandle<S>;
     /** Remove the mounted HTML. */
     unmount(): void;
 }

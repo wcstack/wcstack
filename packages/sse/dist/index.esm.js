@@ -61,7 +61,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/sse","version":"4.25.0"};
+var pkg = {"name":"@wcstack/sse","version":"4.26.0"};
 
 /**
  * sseCapabilities.ts
@@ -128,7 +128,7 @@ function deriveSseErrorInfo(kind, message) {
 // EventSource so the Core does not require EventSource to exist at module load
 // (happy-dom omits it; tests inject a mock).
 const SSE_OPEN = 1;
-const SSE_CLOSED = 2;
+const SSE_CLOSED$1 = 2;
 class SseCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -158,7 +158,7 @@ class SseCore extends EventTarget {
     _loading = false;
     _error = null;
     _errorInfo = null;
-    _readyState = SSE_CLOSED;
+    _readyState = SSE_CLOSED$1;
     _url = "";
     _withCredentials = false;
     _events = [];
@@ -345,7 +345,7 @@ class SseCore extends EventTarget {
         // する。CLOSED（恒久エラー後）は guard を外れて再接続できる。
         // ※ events/raw/withCredentials は observedAttributes 外で宣言的には変更できないため
         //   url 一致のみで判定する（broadcast の open() が name 一致で冪等化するのと同型）。
-        if (this._es && this._url === url && this._readyState !== SSE_CLOSED) {
+        if (this._es && this._url === url && this._readyState !== SSE_CLOSED$1) {
             return;
         }
         // 既存の接続をクローズ
@@ -364,6 +364,17 @@ class SseCore extends EventTarget {
     }
     close() {
         this._closeInternal();
+    }
+    /**
+     * Closes like close() — `connected` / `loading` / `readyState` are published at once — and says
+     * whether a stream was open, opening or about to reopen (auto-reconnect). The Shell uses it when
+     * the page unloads or may enter the back/forward cache, and opens the stream again when the
+     * document stays or comes back (<wcs-ws>'s core has the same method).
+     */
+    suspend() {
+        const live = this._es !== null || this._reconnectTimer !== null;
+        this._closeInternal();
+        return live;
     }
     // --- Internal ---
     _doConnect() {
@@ -479,7 +490,7 @@ class SseCore extends EventTarget {
         // 自動再接続中(connection-transient / recoverable=true)。this._setReadyState
         // より前に確定させるのは、_setError が同期 dispatch する error-info-changed が
         // 正しい recoverable を載せて流れるようにするため。
-        this._setError(event, state === SSE_CLOSED ? "connection-fatal" : "connection-transient");
+        this._setError(event, state === SSE_CLOSED$1 ? "connection-fatal" : "connection-transient");
         // 再入した close()/connect() で自分が無効化されたら、以降の状態更新は放棄する
         // （再入側が確定させた状態が正。broadcast の _onMessage が dispatch 後に
         // ライフサイクル参照を deref しないのと同等の堅牢性に揃える）。
@@ -499,13 +510,13 @@ class SseCore extends EventTarget {
             return;
         // CLOSED ＝ ネイティブ再接続は行われない（恒久エラー）。
         // それ以外（CONNECTING）＝ ブラウザが自動再接続中なので loading を維持。
-        this._setLoading(state !== SSE_CLOSED);
+        this._setLoading(state !== SSE_CLOSED$1);
         if (this._es !== es)
             return;
         // 恒久エラー時は死んだ EventSource をリスナごと即時破棄する。次の connect()/close()
         // まで放置すると死んだインスタンスとリスナを保持し続けるため。状態は上で CLOSED に
         // 揃え済みなので _closeInternal は使わず（再 dispatch 不要）、参照だけ解放する。
-        if (state === SSE_CLOSED) {
+        if (state === SSE_CLOSED$1) {
             // ここでは所有権ガードを通過済みのため this._es === es。
             this._removeListeners(es, this._events);
             this._es = null;
@@ -601,7 +612,7 @@ class SseCore extends EventTarget {
         // 各 setter が same-value ガードを持つので、冗長な dispatch は起きない。
         this._setConnected(false);
         this._setLoading(false);
-        this._setReadyState(SSE_CLOSED);
+        this._setReadyState(SSE_CLOSED$1);
     }
 }
 
@@ -722,6 +733,11 @@ function reflectBooleanAttribute(el, name, value) {
     writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
 }
 
+// beforeunload で閉じた後、pagehide が来ないままこれだけ経ったら、文書は残ったとみなして開き直す
+// （離脱の確認で「留まる」、ダウンロードだったリンク、mailto: のリンク）。
+const UNLOAD_REOPEN_DELAY = 1000;
+// EventSource.CLOSED（Core と同じく、モジュールの読み込み時に EventSource を要らない）
+const SSE_CLOSED = 2;
 class WcsSse extends HTMLElement {
     // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
     // 待ってからスナップショットを取る。SSE には同期接続しか無いが、骨格を全 IO ノードで
@@ -760,6 +776,13 @@ class WcsSse extends HTMLElement {
     // _scheduleConnect のマイクロタスクが待っている間 true
     _connectPending = false;
     _internals = null;
+    // ページが離れるとき（_onBeforeUnload ほか）: beforeunload で閉じたストリームを、文書が残れば開き直す
+    // 間 true。その期限のタイマー。pagehide で閉じ、persisted の pageshow で開き直す間 true
+    _closedForUnload = false;
+    _reopenTimer = null;
+    _reopenOnShow = false;
+    // beforeunload を聞いている間 true（_syncUnloadListener）
+    _unloadListening = false;
     constructor() {
         super();
         this._core = new SseCore(this);
@@ -769,6 +792,8 @@ class WcsSse extends HTMLElement {
             "wcs-sse:loading-changed": (d) => ({ loading: d === true }),
             "wcs-sse:error": (d) => ({ error: d != null }),
         });
+        // ストリームが開く・閉じるたびに、beforeunload を聞くかどうかを合わせる
+        this.addEventListener("wcs-sse:readystate-changed", this._syncUnloadListener);
     }
     // CSS state reflection (:state()) — debug-only snapshot getter. NOT part of
     // wc-bindable (not a bind target); see README "CSS styling with :state()".
@@ -938,6 +963,8 @@ class WcsSse extends HTMLElement {
     connect() {
         // 明示の connect（trigger も）と close は、待っている接続時の判断を引き取る
         this._connectPending = false;
+        // ページが離れるときに閉じた後の開き直しも引き取る
+        this._cancelReopen();
         // Shell は宣言的サーフェス：url 未設定での connect()/trigger は静かに no-op する
         // （SseCore.connect("") は programmatic 誤用向けに throw するが、state 配線で trigger
         // が url より先に立っただけで例外が更新サイクルを壊すのは避ける。broadcast の
@@ -964,22 +991,25 @@ class WcsSse extends HTMLElement {
     _currentUrl = () => this.url;
     close() {
         this._connectPending = false;
+        // ページが閉じたものは、ページが開くまで閉じたまま（離れるときの開き直しも、bfcache からの復元でも開かない）
+        this._cancelReopen();
+        this._reopenOnShow = false;
         this._core.close();
     }
     // --- Lifecycle ---
-    attributeChangedCallback(name, _oldValue, newValue) {
-        // newValue が falsy（url を空文字に変更／属性除去）の場合は何もしない＝既存接続を
-        // そのまま生かす。これは意図的で broadcast の name 変更と同型：宣言的サーフェスは
-        // 「意味のある新 url」に対してのみ張り替え、falsy への変化を切断トリガーとはしない
-        // （切断は close() か DOM からの除去で明示的に行う）。
-        if (name === "url" && this.isConnected && !this.manual && newValue) {
+    attributeChangedCallback(name, _oldValue, _newValue) {
+        // url の変化は、空になる（null・""・属性の除去）のも含めてマイクロタスクで判断する。空の url は
+        // ストリームを閉じる — 4.25 までは何もせず、サインアウトしたタブが前の利用者のイベントを受け続けた
+        // （docs/seam-apps.md、lending-desk）。manual でも閉じる: 閉じることは接続ではない。
+        if (name === "url" && this.isConnected) {
             this._scheduleConnect();
         }
     }
     // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
     // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
     // params から state が url を書くのはマイクロタスク — その場で接続すると前の url を使う
-    // （docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+    // （docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる: 空にして同じタスクで
+    // 書き戻した url は、閉じも開き直しもしない（同じ url の開いているストリームへの connect() は何もしない）。
     _scheduleConnect() {
         if (this._connectPending)
             return;
@@ -988,10 +1018,88 @@ class WcsSse extends HTMLElement {
             if (!this._connectPending)
                 return; // an explicit command took the decision meanwhile
             this._connectPending = false;
-            if (this.isConnected && !this.manual && this.url) {
+            if (!this.isConnected)
+                return;
+            if (!this.url)
+                this.close();
+            else if (!this.manual)
                 this.connect();
-            }
         });
+    }
+    // --- The page leaving (timing-and-firing-contract §30) ---
+    //
+    // Firefox は、全体の遷移が始まるときに開いている EventSource ごとに「<url> への接続は、ページの読み込み中に
+    // 中断されました。」をコンソールに出す。pagehide では遅く、beforeunload で閉じれば出ない。けれども WebKit は
+    // Navigation API で横取りされた同じ文書の中の遷移（@wcstack/router の <wcs-link>、ガードのリダイレクト、
+    // navigateUrl）でも beforeunload を出し、そこで閉じたストリームは閉じたままになった — ライブの更新が止まる
+    // （docs/seam-apps.md、lending-desk）。だから要素が自分で: beforeunload で閉じ（connected は false になる）、
+    // 文書が残れば開き直す — 同じ文書の遷移が確定した（navigation の currententrychange）か、pagehide が来ないまま
+    // UNLOAD_REOPEN_DELAY ms 経った（「留まる」と答えた確認、ダウンロードだったリンク）。pagehide では閉じたまま、
+    // persisted の pageshow（bfcache からの復元）で、閉じる前に開いていたなら開き直す（<wcs-ws> と同じ）。
+    // 開き直すのは、要素がこうして自分で閉じたものだけ。そのときの url で（空なら開かない）。ページの close()、
+    // connect() / trigger、url の変化がこの開き直しを引き取る。リスナは接続している間だけ、beforeunload は
+    // さらに閉じるもの（開いている・開こうとしているストリーム）か開き直すものがある間だけ — リスナがあるだけで
+    // ページを back/forward cache から外すブラウザがある（router の leaveConfirm と同じ）。auto-reconnect を待つ
+    // 間は閉じるものが無い: 待っている開き直しはそのまま（同じ文書の遷移で WebKit が出しても、それで足りる）。
+    _onBeforeUnload = () => {
+        // (it listens only while there is a stream to close or one it closed: a second beforeunload while it is
+        // closed — a guard's redirect in WebKit — keeps it closed and waits again)
+        this._closedForUnload = true;
+        this._core.suspend();
+        this._clearReopenTimer();
+        this._reopenTimer = setTimeout(this._reopenAfterUnload, UNLOAD_REOPEN_DELAY);
+    };
+    _syncUnloadListener = () => {
+        const want = this.isConnected && (this._core.readyState !== SSE_CLOSED || this._closedForUnload);
+        if (want === this._unloadListening)
+            return;
+        this._unloadListening = want;
+        if (want)
+            window.addEventListener("beforeunload", this._onBeforeUnload);
+        else
+            window.removeEventListener("beforeunload", this._onBeforeUnload);
+    };
+    // A same-document navigation committed: the document stays. Opened in a microtask, so a url the
+    // navigation makes the page write (a route's params) is the one opened.
+    _onSameDocumentNavigation = () => {
+        if (this._closedForUnload)
+            queueMicrotask(this._reopenAfterUnload);
+    };
+    _reopenAfterUnload = () => {
+        // (connect() clears the flag and the timer; nothing to do when something took the reopen meanwhile)
+        if (this._closedForUnload)
+            this.connect();
+    };
+    _onPageHide = (event) => {
+        const live = this._core.suspend() || this._closedForUnload;
+        this._cancelReopen();
+        // the document goes away (or into the back/forward cache): it stays closed until it comes back
+        this._reopenOnShow = live && event.persisted;
+    };
+    _onPageShow = (event) => {
+        if (!event.persisted || !this._reopenOnShow)
+            return;
+        this._reopenOnShow = false;
+        // (with no url now, connect() does nothing)
+        this.connect();
+    };
+    _cancelReopen() {
+        this._closedForUnload = false;
+        this._clearReopenTimer();
+        this._syncUnloadListener();
+    }
+    _clearReopenTimer() {
+        if (this._reopenTimer !== null) {
+            clearTimeout(this._reopenTimer);
+            this._reopenTimer = null;
+        }
+    }
+    _listenToPage(on) {
+        const method = on ? "addEventListener" : "removeEventListener";
+        window[method]("pagehide", this._onPageHide);
+        window[method]("pageshow", this._onPageShow);
+        // the Navigation API, where the browser has it
+        globalThis.navigation?.[method]("currententrychange", this._onSameDocumentNavigation);
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
@@ -1001,6 +1109,7 @@ class WcsSse extends HTMLElement {
         // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は
         // _scheduleConnect が行う（観測 surface の確立だけを SSR 契約として公開する）。
         this._connectedCallbackPromise = this._core.observe();
+        this._listenToPage(true);
         this._scheduleConnect();
     }
     // moveBefore() で動かされたとき（並べ替えで動くリストの行）: この要素のすることは置かれた場所に
@@ -1008,6 +1117,10 @@ class WcsSse extends HTMLElement {
     // disconnectedCallback と connectedCallback を呼ぶ（docs/timing-and-firing-contract.md §25）
     connectedMoveCallback() { }
     disconnectedCallback() {
+        this._listenToPage(false);
+        // (isConnected is false now: this stops listening to beforeunload too)
+        this._cancelReopen();
+        this._reopenOnShow = false;
         // §3.5/§4.4: dispose() は _gen を進めて進行中リスナを無効化しつつ接続を閉じる
         // （待っている auto-reconnect のタイマーも外す）。
         this._core.dispose();

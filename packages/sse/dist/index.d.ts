@@ -225,6 +225,13 @@ declare class SseCore extends EventTarget {
      */
     connect(url: string, options?: SseConnectOptions): void;
     close(): void;
+    /**
+     * Closes like close() — `connected` / `loading` / `readyState` are published at once — and says
+     * whether a stream was open, opening or about to reopen (auto-reconnect). The Shell uses it when
+     * the page unloads or may enter the back/forward cache, and opens the stream again when the
+     * document stays or comes back (<wcs-ws>'s core has the same method).
+     */
+    suspend(): boolean;
     private _doConnect;
     private _onOpen;
     private _onMessage;
@@ -247,6 +254,10 @@ declare class WcsSse extends HTMLElement {
     private _connectedCallbackPromise;
     private _connectPending;
     private _internals;
+    private _closedForUnload;
+    private _reopenTimer;
+    private _reopenOnShow;
+    private _unloadListening;
     constructor();
     get debugStates(): string[];
     private _initInternals;
@@ -281,8 +292,17 @@ declare class WcsSse extends HTMLElement {
     connect(): void;
     private _currentUrl;
     close(): void;
-    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     private _scheduleConnect;
+    private _onBeforeUnload;
+    private _syncUnloadListener;
+    private _onSameDocumentNavigation;
+    private _reopenAfterUnload;
+    private _onPageHide;
+    private _onPageShow;
+    private _cancelReopen;
+    private _clearReopenTimer;
+    private _listenToPage;
     connectedCallback(): void;
     connectedMoveCallback(): void;
     disconnectedCallback(): void;

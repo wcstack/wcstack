@@ -104,6 +104,12 @@ declare function generateStateSchema(file: string, options?: GenerateOptions): G
  * an existing manifest (filters, listContexts); a hand-written schema for the
  * same slot does not survive, by design: there is no implicit merge in the
  * sidecar spec (§5).
+ *
+ * `stateSource` (4.26) names the file the root schema was generated from, relative
+ * to the manifest's directory with forward slashes: the validator applies the
+ * schema only to a page whose root `<wcs-state src>` is that file (`.js` / `.ts`
+ * of the same path count as the same), so one manifest at the root serves an app
+ * whose other pages have states of their own.
  */
 
 declare const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
@@ -116,6 +122,8 @@ interface ApplicationManifest {
         [APPLICATION_NAMESPACE]: {
             version: number;
             stateSchema?: JsonSchemaNode;
+            /** The root state file the schema comes from, relative to the manifest's directory. */
+            stateSource?: string;
             [key: string]: unknown;
         };
         [namespace: string]: unknown;
@@ -130,10 +138,23 @@ interface ApplicationManifest {
  *
  * `mountPath === null` replaces the whole `stateSchema`; a mount path merges
  * the schema as a subtree at that path (intermediate object nodes are created).
+ *
+ * `stateSource` is recorded with the root schema: given, it replaces the one in
+ * `existing`; omitted, the root schema's source is unknown and an old
+ * `stateSource` is dropped (it named the file of the schema being replaced).
+ * A volume's schema (`mountPath` set) leaves `stateSource` as it is.
  */
-declare function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown): ApplicationManifest;
+declare function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown, stateSource?: string): ApplicationManifest;
 /** Read the single `stateSchema` from a parsed manifest object, or undefined. */
 declare function readStateSchema(manifest: unknown): unknown;
+/** Read the `stateSource` (a string) from a parsed manifest object, or undefined. */
+declare function readStateSource(manifest: unknown): string | undefined;
+/**
+ * True when two `stateSource` paths name the same state file: separators and a
+ * leading `./` aside, `.js` and `.ts` (and `.mjs` and `.mts`) of one path are the
+ * same file — a page loads the built `.js` of the `.ts` the schema came from.
+ */
+declare function sameStateSource(a: string, b: string): boolean;
 /**
  * True for a v1-shaped manifest (`schemaVersion: 1` or a `states` map in the
  * application namespace). `check` uses it to point at the regeneration path
@@ -146,7 +167,13 @@ type SchemaComparison = {
     readonly kind: "same";
 } | {
     readonly kind: "differs";
+    /** Schema changes; empty when only `stateSource` differs. */
     readonly changes: readonly string[];
+    /** The manifest names another root state file than the one the schema was generated from. */
+    readonly stateSource?: {
+        readonly stored: string;
+        readonly expected: string;
+    };
 } | {
     readonly kind: "missing-state";
 } | {
@@ -160,8 +187,13 @@ type SchemaComparison = {
  * (the whole tree, or the subtree at `mountPath`).
  * `changes` lists JSON pointers: `+ ptr` (only in generated), `- ptr` (only in
  * manifest), `~ ptr` (both, different value).
+ *
+ * `stateSource` (the root state file, relative to the manifest's directory) is
+ * compared too, for the root tree: a manifest that names another file is drift —
+ * the validator would apply the schema to the pages of that file, not of this one.
+ * A manifest without `stateSource` (written before 4.26) is not.
  */
-declare function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode): SchemaComparison;
+declare function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode, stateSource?: string): SchemaComparison;
 
 /**
  * schemaCore.ts — the validator core bundle (`dist/schema-core.cjs`, built from
@@ -200,5 +232,5 @@ declare function loadSchemaCore(): SchemaCore;
 
 declare const VERSION: string;
 
-export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, isV1Manifest, loadSchemaCore, loadStateFile, readStateSchema, resolveCompilerOptions, schemaCoreCandidates, stableStringify, stateTypeToSchema };
+export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, isV1Manifest, loadSchemaCore, loadStateFile, readStateSchema, readStateSource, resolveCompilerOptions, sameStateSource, schemaCoreCandidates, stableStringify, stateTypeToSchema };
 export type { ApplicationManifest, GenerateOptions, GeneratedSchema, JsonSchemaNode, LoadStateOptions, LoadedState, SchemaComparison, SchemaCore, SchemaOptions, WcsDiagnostic };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve, dirname, join } from 'node:path';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isMainThread, Worker, parentPort } from 'node:worker_threads';
 import ts from 'typescript';
@@ -440,6 +440,12 @@ function generateStateSchema(file, options = {}) {
  * an existing manifest (filters, listContexts); a hand-written schema for the
  * same slot does not survive, by design: there is no implicit merge in the
  * sidecar spec (§5).
+ *
+ * `stateSource` (4.26) names the file the root schema was generated from, relative
+ * to the manifest's directory with forward slashes: the validator applies the
+ * schema only to a page whose root `<wcs-state src>` is that file (`.js` / `.ts`
+ * of the same path count as the same), so one manifest at the root serves an app
+ * whose other pages have states of their own.
  */
 const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
 const SCHEMA_VERSION = 2;
@@ -452,8 +458,13 @@ const APPLICATION_NAMESPACE = "wcstack.application";
  *
  * `mountPath === null` replaces the whole `stateSchema`; a mount path merges
  * the schema as a subtree at that path (intermediate object nodes are created).
+ *
+ * `stateSource` is recorded with the root schema: given, it replaces the one in
+ * `existing`; omitted, the root schema's source is unknown and an old
+ * `stateSource` is dropped (it named the file of the schema being replaced).
+ * A volume's schema (`mountPath` set) leaves `stateSource` as it is.
  */
-function buildManifest(mountPath, schema, existing) {
+function buildManifest(mountPath, schema, existing, stateSource) {
     const base = existing !== null && typeof existing === "object" && !Array.isArray(existing)
         ? { ...existing }
         : {};
@@ -469,6 +480,10 @@ function buildManifest(mountPath, schema, existing) {
     delete ns.states;
     if (mountPath === null) {
         ns.stateSchema = schema;
+        if (stateSource === undefined)
+            delete ns.stateSource;
+        else
+            ns.stateSource = stateSource;
     }
     else {
         const rootRaw = ns.stateSchema;
@@ -499,8 +514,7 @@ function buildManifest(mountPath, schema, existing) {
     base.manifestExtensions = extensions;
     return base;
 }
-/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
-function readStateSchema(manifest) {
+function applicationNamespace(manifest) {
     if (manifest === null || typeof manifest !== "object")
         return undefined;
     const extensions = manifest.manifestExtensions;
@@ -509,7 +523,25 @@ function readStateSchema(manifest) {
     const ns = extensions[APPLICATION_NAMESPACE];
     if (ns === null || typeof ns !== "object")
         return undefined;
-    return ns.stateSchema;
+    return ns;
+}
+/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
+function readStateSchema(manifest) {
+    return applicationNamespace(manifest)?.stateSchema;
+}
+/** Read the `stateSource` (a string) from a parsed manifest object, or undefined. */
+function readStateSource(manifest) {
+    const source = applicationNamespace(manifest)?.stateSource;
+    return typeof source === "string" ? source : undefined;
+}
+/**
+ * True when two `stateSource` paths name the same state file: separators and a
+ * leading `./` aside, `.js` and `.ts` (and `.mjs` and `.mts`) of one path are the
+ * same file — a page loads the built `.js` of the `.ts` the schema came from.
+ */
+function sameStateSource(a, b) {
+    const key = (path) => path.replace(/\\/g, "/").replace(/^(\.\/)+/, "").replace(/\.(m?)ts$/, ".$1js");
+    return key(a) === key(b);
 }
 /**
  * True for a v1-shaped manifest (`schemaVersion: 1` or a `states` map in the
@@ -563,8 +595,13 @@ function sortKeys(value) {
  * (the whole tree, or the subtree at `mountPath`).
  * `changes` lists JSON pointers: `+ ptr` (only in generated), `- ptr` (only in
  * manifest), `~ ptr` (both, different value).
+ *
+ * `stateSource` (the root state file, relative to the manifest's directory) is
+ * compared too, for the root tree: a manifest that names another file is drift —
+ * the validator would apply the schema to the pages of that file, not of this one.
+ * A manifest without `stateSource` (written before 4.26) is not.
  */
-function compareStateSchema(manifestText, mountPath, generated) {
+function compareStateSchema(manifestText, mountPath, generated, stateSource) {
     let parsed;
     try {
         parsed = JSON.parse(manifestText);
@@ -580,8 +617,14 @@ function compareStateSchema(manifestText, mountPath, generated) {
     }
     if (stored === undefined)
         return { kind: "missing-state" };
-    if (stableStringify(stored) === stableStringify(generated))
-        return { kind: "same" };
+    const storedSource = mountPath === null && stateSource !== undefined ? readStateSource(parsed) : undefined;
+    const sourceDiff = storedSource !== undefined && !sameStateSource(storedSource, stateSource)
+        ? { stored: storedSource, expected: stateSource }
+        : undefined;
+    const source = sourceDiff === undefined ? {} : { stateSource: sourceDiff };
+    if (stableStringify(stored) === stableStringify(generated)) {
+        return sourceDiff === undefined ? { kind: "same" } : { kind: "differs", changes: [], stateSource: sourceDiff };
+    }
     const a = flatten(generated);
     const b = flatten(stored);
     const changes = [];
@@ -595,7 +638,7 @@ function compareStateSchema(manifestText, mountPath, generated) {
         else if (a.get(key) !== b.get(key))
             changes.push(`~ ${key}`);
     }
-    return { kind: "differs", changes };
+    return { kind: "differs", changes, ...source };
 }
 /** Leaf pointer → canonical JSON. Objects with children are not listed themselves; empty objects/arrays are leaves. */
 function flatten(value, pointer = "", out = new Map()) {
@@ -643,7 +686,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.25.0";
+var version = "4.26.0";
 var pkg = {
 	version: version};
 
@@ -652,8 +695,8 @@ const VERSION = pkg.version;
 /**
  * wcsSchema.ts — the `wcs-schema` command.
  *
- *   wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]
- *   wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]
  *
  * exit codes
  *   emit : 0 written / 2 usage, unreadable file, syntax error, or the generated manifest failed its self-check
@@ -664,12 +707,18 @@ const VERSION = pkg.version;
  * the whole `stateSchema`, or the subtree at `--mount=<path>` (a volume's type
  * merges as a subtree of the single tree, docs/state-mount-design.md D15).
  *
+ * A root emit records the state file as `stateSource`, relative to the manifest's
+ * directory (the working directory for `--out=-`) — or `--state-source=<path>`, the
+ * file the page's `<wcs-state src>` names when that is not the state file itself (a
+ * build's output); `check` reports a manifest that names another file as drift, and
+ * one that names none as up to date.
+ *
  * The generated artifact is always run through the validator core's
  * `validateManifestArtifact` (dist/schema-core.cjs, built from vscode-wcs) so a
  * generator bug can never write a manifest the validator would reject.
  */
-const USAGE = "usage: wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]\n" +
-    "       wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]\n";
+const USAGE = "usage: wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]\n" +
+    "       wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]\n";
 function parseArgs(argv) {
     let command;
     let file;
@@ -677,6 +726,7 @@ function parseArgs(argv) {
     let out = APPLICATION_MANIFEST_FILENAME;
     let manifest = APPLICATION_MANIFEST_FILENAME;
     let merge = false;
+    let stateSource;
     let tsconfig;
     let maxDepth;
     const unknown = [];
@@ -693,6 +743,8 @@ function parseArgs(argv) {
             out = arg.slice("--out=".length);
         else if (arg.startsWith("--manifest="))
             manifest = arg.slice("--manifest=".length);
+        else if (arg.startsWith("--state-source="))
+            stateSource = arg.slice("--state-source=".length);
         else if (arg.startsWith("--tsconfig="))
             tsconfig = arg.slice("--tsconfig=".length);
         else if (arg.startsWith("--max-depth="))
@@ -708,7 +760,7 @@ function parseArgs(argv) {
         else
             unknown.push(arg);
     }
-    return { command, file, mount, out, manifest, merge, tsconfig, maxDepth, unknown };
+    return { command, file, mount, out, manifest, merge, stateSource, tsconfig, maxDepth, unknown };
 }
 function main(argv, io = defaultIo()) {
     const args = parseArgs(argv);
@@ -734,6 +786,12 @@ function main(argv, io = defaultIo()) {
         io.stderr("--max-depth must be a positive integer\n");
         return 2;
     }
+    if (args.stateSource !== undefined && (args.mount !== null || args.stateSource === "")) {
+        io.stderr(args.mount !== null
+            ? "--state-source names the root state's file; a --mount volume has none\n"
+            : "--state-source requires a path\n");
+        return 2;
+    }
     if (args.mount !== null) {
         // runtime（state の validateVolumeMountPath）と同条件: 空セグメント・ワイルドカードと
         // 予約文字（$ # @ — 位置を問わず）を拒否し、数字先頭などはランタイム同様に受理する。
@@ -755,6 +813,10 @@ function main(argv, io = defaultIo()) {
     for (const warning of generated.warnings)
         io.stderr(`warning: ${warning}\n`);
     return args.command === "emit" ? emit(args, generated.schema, io) : check(args, generated.schema, io);
+}
+/** `stateSource`: the page's state file (`--state-source`, else the state file) relative to the manifest's directory, with forward slashes. */
+function stateSourceOf(io, args, manifestDir) {
+    return relative(manifestDir, resolve(io.cwd(), args.stateSource ?? args.file)).replace(/\\/g, "/");
 }
 /** runtime（validateVolumeMountPath）が raise する形なら理由を返す（妥当なら null）。 */
 function findMountPathProblem(mountPath) {
@@ -783,7 +845,9 @@ function emit(args, schema, io) {
             return 2;
         }
     }
-    const manifest = buildManifest(args.mount, schema, existing);
+    // the root state's file, for the validator to apply the schema to its pages only (a volume's emit keeps it)
+    const stateSource = args.mount === null ? stateSourceOf(io, args, outPath === undefined ? io.cwd() : dirname(outPath)) : undefined;
+    const manifest = buildManifest(args.mount, schema, existing, stateSource);
     const text = `${JSON.stringify(manifest, null, 2)}\n`;
     // Self-check: the validator must accept what the generator wrote.
     const core = loadSchemaCore();
@@ -802,8 +866,9 @@ function emit(args, schema, io) {
         io.stdout(text);
         return 0;
     }
+    mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(outPath, text, "utf8");
-    io.stderr(`wrote ${args.out} (${args.mount === null ? "state tree" : `mount "${args.mount}"`})\n`);
+    io.stderr(`wrote ${args.out} (${args.mount === null ? `state tree of ${stateSource}` : `mount "${args.mount}"`})\n`);
     return 0;
 }
 function check(args, schema, io) {
@@ -815,10 +880,16 @@ function check(args, schema, io) {
     const slot = args.mount === null ? "state tree" : `mount "${args.mount}"`;
     // 誘導コマンドは check と同じスロットを指すこと（--mount 抜きだとルートを差し替えてしまう）
     const mountFlag = args.mount === null ? "" : ` --mount=${args.mount}`;
-    const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.mount, schema);
+    const text = readFileSync(manifestPath, "utf8");
+    const stateSource = args.mount === null ? stateSourceOf(io, args, dirname(manifestPath)) : undefined;
+    const comparison = compareStateSchema(text, args.mount, schema, stateSource);
     switch (comparison.kind) {
         case "same":
             io.stderr(`${args.manifest}: ${slot} is up to date\n`);
+            // written before 4.26: not drift, but the validator applies the schema to every page under the manifest
+            if (stateSource !== undefined && readStateSource(JSON.parse(text)) === undefined) {
+                io.stderr(`note: ${args.manifest} names no stateSource, so the validator applies its schema to every page under it; \`wcs-schema emit ${args.file}${args.stateSource === undefined ? "" : ` --state-source=${args.stateSource}`} --merge --out=${args.manifest}\` records "${stateSource}"\n`);
+            }
             return 0;
         case "missing-state":
             io.stderr(`${args.manifest}: ${slot} has no stateSchema (run \`wcs-schema emit --merge${mountFlag}\`)\n`);
@@ -829,12 +900,17 @@ function check(args, schema, io) {
         case "broken":
             io.stderr(`${args.manifest}: broken JSON: ${comparison.message}\n`);
             return 2;
-        case "differs":
-            io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length} change(s)):\n`);
+        case "differs": {
+            const source = comparison.stateSource;
+            io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length + (source === undefined ? 0 : 1)} change(s)):\n`);
             for (const change of comparison.changes)
                 io.stderr(`  ${change}\n`);
+            if (source !== undefined) {
+                io.stderr(`  ~ stateSource: the manifest names "${source.stored}", not "${source.expected}"\n`);
+            }
             io.stderr(`run \`wcs-schema emit --merge${mountFlag} --out=${args.manifest}\` to update it\n`);
             return 1;
+        }
     }
 }
 /* v8 ignore start -- process plumbing; exercised by running the built bin, not by unit tests */

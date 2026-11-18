@@ -139,6 +139,7 @@ declare function waitForReady(root: ParentNode & Node, options?: WaitForReadyOpt
  * ### バインディングと構造レンダリング
  * - `data-wcs` バインディングの適用（text, attribute, class, style, property）
  * - `<template data-wcs="for:">` / `if:` / `elseif:` / `else:` の構造レンダリング
+ *   （表の中の `<template>` — `<tbody>` の行の for: など — も。happy-dom が表の外へ追い出すのを setInnerHTML が置き直す）
  *
  * ```html
  * <ul>
@@ -191,6 +192,35 @@ declare function waitForReady(root: ParentNode & Node, options?: WaitForReadyOpt
  * `<head>` や `<script>` タグは外側のテンプレートで囲む。
  */
 declare function renderToString(html: string, options?: RenderOptions): Promise<string>;
+
+/**
+ * 表の中の `<template>` を、ブラウザと同じ所に置く innerHTML。
+ *
+ * happy-dom（21.0.4 で確認）のパーサは、`<table>` / `<thead>` / `<tbody>` / `<tfoot>` / `<tr>` /
+ * `<colgroup>` の直下の `<template>` を「表に置けない要素」として表の前へ追い出し、空のまま残す。その中身
+ * （`<tr>` / `<td>` / `<col>`）は表の中に残る。ブラウザは HTML の仕様どおり、そこに `<template>` を置き、
+ * 中身をその content に入れる — `<tbody>` の中の `<template data-wcs="for: rows">` は表の行の一覧の典型の
+ * 形なのに、happy-dom の上では行の束縛（`.name`）が囲む for を失い、`renderToString` は投げ、
+ * `@wcstack/testing` の `mount()` は `[wcs/wildcard-rank]` で失敗していた（seam app lending-desk）。
+ * 表の外でも、通常のパースでは `<template>` の中の `<tr>` / `<td>` が落ちる（template.innerHTML なら残る）。
+ *
+ * 回避: 危ない `<template>` — 表の要素の中にあるもの、または中身に表の要素を持つもの — を、パーサに
+ * 渡す前に文字列から抜き、表の中でも動かされないコメントを代わりに置く。パースの後、そのコメントを
+ * 本物の `<template>` に置き換える。開始タグは happy-dom 自身に読ませ（属性の読みが変わらない）、中身は
+ * `template.innerHTML`（template の中身として読む。`<tr>` / `<td>` / `<col>` を最上位に置ける）で、
+ * 入れ子の `<template>` にも同じことをする。置き換えはパースと同じ同期の区間で終わる（要素の
+ * connectedCallback の続き — マイクロタスク — より前）。
+ *
+ * 表の要素を 1 つも含まない HTML と、危ない `<template>` の無い HTML は、そのまま innerHTML に渡す —
+ * 結果はこれまでと 1 バイトも変わらない。
+ */
+/**
+ * `target.innerHTML = html` と同じ（`target` の子を `html` をパースしたものに置き換える）。ただし、表の
+ * 中の `<template>` は happy-dom が動かさずに、ブラウザと同じ所に置く（このファイルの冒頭を参照）。
+ * `target` が `<template>` なら、その中身を置き換える。`renderToString` が body に、`@wcstack/testing` の
+ * `mount()` がページに使う。
+ */
+declare function setInnerHTML(target: Element | ShadowRoot, html: string): void;
 
 declare const VERSION: string;
 
@@ -263,5 +293,5 @@ declare class RenderCore extends EventTarget {
     render(html: string): Promise<string | null>;
 }
 
-export { GLOBALS_KEYS, RenderCore, VERSION, installBaseUrl, installGlobals, renderToString, waitForReady };
+export { GLOBALS_KEYS, RenderCore, VERSION, installBaseUrl, installGlobals, renderToString, setInnerHTML, waitForReady };
 export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WaitForReadyOptions, WcsRenderValues };
