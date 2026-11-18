@@ -334,6 +334,47 @@ describe("SseCore", () => {
     });
   });
 
+  describe("suspend（ページが離れるときに Shell が使う）", () => {
+    it("開いている・開こうとしているストリームを close() と同じに閉じ、true を返す", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      expect(core.suspend()).toBe(true);
+      expect(MockEventSource.last.close).toHaveBeenCalled();
+      core.connect("/feed");
+      MockEventSource.last.simulateOpen();
+      const changes: string[] = [];
+      core.addEventListener("wcs-sse:connected-changed", (e) => changes.push(String((e as CustomEvent).detail)));
+      expect(core.suspend()).toBe(true);
+      expect(changes).toEqual(["false"]);
+      expect(core.readyState).toBe(MockEventSource.CLOSED);
+    });
+
+    it("auto-reconnect の開き直しを待つストリームも閉じ（タイマーを外す）、true を返す", () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const core = new SseCore();
+        core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+        MockEventSource.last.simulateError(MockEventSource.CLOSED);
+        expect(vi.getTimerCount()).toBe(1);
+        expect(core.suspend()).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("何も開いていなければ false（接続前・close() の後・開き直しの無い恒久エラーの後）", () => {
+      const core = new SseCore();
+      expect(core.suspend()).toBe(false);
+      core.connect("/feed");
+      core.close();
+      expect(core.suspend()).toBe(false);
+      core.connect("/feed");
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(core.suspend()).toBe(false);
+    });
+  });
+
   describe("target 指定", () => {
     it("指定した target にイベントを dispatch する", () => {
       const target = new EventTarget();

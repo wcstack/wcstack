@@ -54,7 +54,7 @@ npm install @wcstack/debounce
 
 <wcs-state>
   <script type="module">
-    export default { query: "", debouncedQuery: "" };
+    export default { query: "", debouncedQuery: null }; // 最初に確定するまで、要素は null を書く
   </script>
 </wcs-state>
 
@@ -118,11 +118,13 @@ npm install @wcstack/debounce
 
 | プロパティ | イベント                       | 説明                                       |
 | ---------- | ------------------------------ | ------------------------------------------ |
-| `value`    | `wcs-debounce:settled`         | 最後の `source` 書き込みのデバウンス済み値。 |
+| `value`    | `wcs-debounce:settled`         | 最後の `source` 書き込みのデバウンス済み値。最初に確定するまでは `null`。 |
 | `fired`    | `wcs-debounce:fired`           | 最後の `trigger()` パルスの集約 args。       |
 | `pending`  | `wcs-debounce:pending-changed` | デバウンス進行中は `true`。                  |
 
 `<wcs-throttle>` は同じ形を `wcs-throttle:*` 名前空間で公開します。
+
+**`value` の初期値は `null`**（4.26（未リリース）から。4.25 までは `undefined`）。`value` は出力だけのメンバーなので、`@wcstack/state` のバインディング（`value: debouncedQuery`）は付いたときに要素から値を読みます。state に宣言した初期値は、最初に確定するまでのあいだ `null` に置き換わります。`null` で宣言し（`debouncedQuery: null`）、`null` を「まだ何も確定していない」として扱ってください: `""` と宣言した state は読み込み時に `null` になり、その `$watch` は `null` で動きます。4.25 までは `undefined` を書いたので、`null` と宣言しても `$watch` が `undefined` で動きました。`cancel`・`flush`・切断は、最後に確定した値を変えません。`source` に `undefined` を書いた場合は、その `undefined` が確定します（`source` は与えられた値をそのまま運びます）。
 
 ## コマンド
 

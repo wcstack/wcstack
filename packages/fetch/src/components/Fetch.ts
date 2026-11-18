@@ -46,6 +46,8 @@ export class Fetch extends HTMLElement {
   private _lastFetchedUrl: string | null = null;
   private _toldTriggerWithoutUrl = false;
   private _toldUndefinedHelper = false;
+  // fetch() の url の位置に来た値のうち、言った種類（"number"・"object" など。要素ごと・種類ごとに 1 回）
+  private _toldUrlArgument: Set<string> | null = null;
   // 本文を運んだ要求を出したことがある（body の入力か <wcs-fetch-body> から）
   private _sentBody = false;
   private _toldBodyGone = false;
@@ -438,6 +440,35 @@ export class Fetch extends HTMLElement {
   }
 
   /**
+   * A value in `fetch()`'s `url` place that is neither a url nor one of the values it ignores on purpose (none, an
+   * empty string, the event an `on…: $command.x` binding emits first): a number, a plain object. The element fetched
+   * its own url instead — with no url, nothing — and said nothing: a page emitted the id of the row to cancel
+   * (`this.$command.cancelReq.emit(id)`) where the command takes a url (docs/seam-apps.md, lending-desk). Said once
+   * per element for each kind of value.
+   */
+  private _warnUrlArgument(url: unknown): void {
+    if (url === undefined || url === null || url === "" || url instanceof Event) return;
+    const kind = Array.isArray(url) ? "array" : typeof url;
+    const told = (this._toldUrlArgument ??= new Set());
+    if (told.has(kind)) return;
+    told.add(kind);
+    let given: string;
+    if (kind === "object") {
+      const tag = Object.prototype.toString.call(url).slice(8, -1);
+      given = tag === "Object" ? "an object" : `a ${tag} object`;
+    } else if (kind === "array") given = "an array";
+    else if (kind === "symbol" || kind === "function") given = `a ${kind}`;
+    else given = `${String(url)} (a ${kind})`;
+    console.warn(
+      `[@wcstack/fetch] [wcs/fetch-url-argument] fetch() was given ${given} in the url's place, which takes a url ` +
+        `(a string or a URL), so this <${config.tagNames.fetch}> fetched its own url instead${this.url ? "" : " — it has none, so nothing"}. ` +
+        "A command token passes what emit() was given: emit the url (this.$command.load.emit(\"/api/items/\" + id)), " +
+        "or nothing for the element's own request. (Said once per element for each kind of value.)",
+      this,
+    );
+  }
+
+  /**
    * Runs a request. With no argument it is the element's: its `url`, `method`, headers and `body`.
    *
    * `url` and `init` are for this request only — the element's attributes do not change. They are what a command
@@ -445,12 +476,14 @@ export class Fetch extends HTMLElement {
    * a command runs before the bindings of its update, so a `url` written in the same handler has not reached the
    * element yet, and the request went to the one before (docs/seam-apps.md, town-archive). `init` takes `method`,
    * `headers` (added to the `<wcs-fetch-header>` ones, replacing a same name) and `body` (in place of the
-   * element's, which is then kept for the next request). Anything that is not a string in `url`'s place — the
-   * event an `on…: $command.x` binding emits first — is ignored, and `init` with it.
+   * element's, which is then kept for the next request). `url` is a non-empty string or a `URL`. Anything else in
+   * its place is not this request's url, and `init` is ignored with it: the event an `on…: $command.x` binding
+   * emits first (and none, an empty string) silently, any other value with `[wcs/fetch-url-argument]`.
    */
   async fetch(url?: unknown, init?: unknown): Promise<any> {
-    const given = typeof url === "string" && url !== "";
-    const requestUrl = given ? url as string : this.url;
+    const given = typeof url === "string" ? url !== "" : url instanceof URL;
+    if (!given) this._warnUrlArgument(url);
+    const requestUrl = given ? String(url) : this.url;
     const options = (given && init !== null && typeof init === "object" ? init : {}) as WcsFetchCommandInit;
     // Record the url for the auto-fetch same-value guard. Every fetch (explicit
     // included) updates it so a later auto-write of the same url is treated as a

@@ -429,7 +429,8 @@ describe("Fetch: fetch(url, init) — コマンドトークンが運ぶ url（to
     expect(String(fetchSpy.mock.calls.at(-1)![0])).toBe("/api/c");
   });
 
-  it("文字列でない第 1 引数（on…: $command.x が先頭に渡すイベント）と空文字は無視し、init も無視する", async () => {
+  it("文字列でない第 1 引数（on…: $command.x が先頭に渡すイベント）と空文字は無視し、init も無視する（警告しない）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const el = mount(`<wcs-fetch manual url="/api/own"></wcs-fetch>`);
     await el.fetch(new Event("click"), { method: "POST" });
     expect(String(fetchSpy.mock.calls.at(-1)![0])).toBe("/api/own");
@@ -437,6 +438,21 @@ describe("Fetch: fetch(url, init) — コマンドトークンが運ぶ url（to
     await el.fetch("", { method: "POST" });
     expect(String(fetchSpy.mock.calls.at(-1)![0])).toBe("/api/own");
     expect(lastInit().method).toBe("GET");
+    await el.fetch(null, { method: "POST" });
+    await el.fetch(undefined, { method: "POST" });
+    expect(lastInit().method).toBe("GET");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("URL オブジェクトは url として受け取る（String(url)）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const el = mount(`<wcs-fetch manual url="/api/own"></wcs-fetch>`);
+    await el.fetch(new URL("http://localhost/api/from-url?page=2"), { method: "post" });
+    expect(String(fetchSpy.mock.calls.at(-1)![0])).toBe("http://localhost/api/from-url?page=2");
+    expect(lastInit().method).toBe("POST");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("渡した url は自動 fetch の同値ガードに記録される: 同じ更新で後から同じ url が属性に届いても取り直さない", async () => {
@@ -452,5 +468,82 @@ describe("Fetch: fetch(url, init) — コマンドトークンが運ぶ url（to
     await flush();
     await flush();
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Fetch: url の位置に url でない値（wcs/fetch-url-argument、lending-desk）", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(response({ ok: true })));
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    fetchSpy.mockRestore();
+    warn.mockRestore();
+  });
+
+  function mount(html: string): Fetch {
+    document.body.innerHTML = html;
+    return document.querySelector("wcs-fetch") as Fetch;
+  }
+  const messages = () => warn.mock.calls.map((c: unknown[]) => String(c[0])).filter((m: string) => m.includes("[wcs/fetch-url-argument]"));
+
+  it("数（行の id）を渡すと、何を渡したかと fetch() が受け取るものを警告し、要素の url を取りに行く（init も無視）", async () => {
+    const el = mount(`<wcs-fetch manual url="/api/own"></wcs-fetch>`);
+    await el.fetch(5, { method: "DELETE" });
+    expect(String(fetchSpy.mock.calls.at(-1)![0])).toBe("/api/own");
+    expect((fetchSpy.mock.calls.at(-1)![1] as RequestInit).method).toBe("GET");
+    expect(messages()).toHaveLength(1);
+    expect(messages()[0]).toContain("[@wcstack/fetch] [wcs/fetch-url-argument] fetch() was given 5 (a number) in the url's place");
+    expect(messages()[0]).toContain("which takes a url (a string or a URL)");
+    expect(messages()[0]).toContain("fetched its own url instead.");
+    expect(warn.mock.calls[0][1]).toBe(el);
+  });
+
+  it("要素に url が無ければ、何も取りに行かなかったことも言う", async () => {
+    const el = mount(`<wcs-fetch manual></wcs-fetch>`);
+    await el.fetch(5);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(messages()[0]).toContain("fetched its own url instead — it has none, so nothing.");
+  });
+
+  it("要素ごと・種類ごとに 1 回: 同じ種類はもう言わず、別の種類は言う。別の要素は自分の 1 回を持つ", async () => {
+    const el = mount(`<wcs-fetch manual url="/api/own"></wcs-fetch><wcs-fetch manual url="/api/other"></wcs-fetch>`);
+    const other = document.querySelectorAll("wcs-fetch")[1] as Fetch;
+    await el.fetch(1);
+    await el.fetch(2);
+    expect(messages()).toHaveLength(1);
+    await el.fetch({ id: 1 });
+    await el.fetch({ id: 2 });
+    expect(messages()).toHaveLength(2);
+    await other.fetch(3);
+    expect(messages()).toHaveLength(3);
+  });
+
+  it("値の種類ごとの言い方: 真偽値・bigint・オブジェクト・Map・配列・関数・シンボル", async () => {
+    const el = mount(`<wcs-fetch manual url="/api/own"></wcs-fetch>`);
+    await el.fetch(true);
+    await el.fetch(10n);
+    await el.fetch({ id: 1 });
+    expect(messages()).toHaveLength(3);
+    const el2 = mount(`<wcs-fetch manual url="/api/own"></wcs-fetch>`);
+    await el2.fetch(new Map());
+    await el2.fetch([1, 2]);
+    await el2.fetch(() => "/api/x");
+    await el2.fetch(Symbol("x"));
+    const all = messages();
+    expect(all[0]).toContain("fetch() was given true (a boolean)");
+    expect(all[1]).toContain("fetch() was given 10 (a bigint)");
+    expect(all[2]).toContain("fetch() was given an object");
+    expect(all[3]).toContain("fetch() was given a Map object");
+    expect(all[4]).toContain("fetch() was given an array");
+    expect(all[5]).toContain("fetch() was given a function");
+    expect(all[6]).toContain("fetch() was given a symbol");
+    expect(fetchSpy).toHaveBeenCalledTimes(7);
+    for (const call of fetchSpy.mock.calls) expect(String(call[0])).toBe("/api/own");
   });
 });

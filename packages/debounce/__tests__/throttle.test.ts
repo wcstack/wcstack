@@ -23,6 +23,14 @@ describe("<wcs-throttle>", () => {
     vi.useRealTimers();
   });
 
+  it("value は何も確定していない間 null（undefined ではない）", () => {
+    const el = create({ wait: "100" });
+    expect(el.value).toBeNull();
+    document.body.appendChild(el);
+    expect(el.value).toBeNull();
+    el.remove();
+  });
+
   it("wcs-throttle:* の名前空間で dispatch する", () => {
     const el = create({ wait: "100" });
     document.body.appendChild(el);
