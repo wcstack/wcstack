@@ -73,9 +73,14 @@ export const SENTENCES: Record<M, Sentence> = {
   // an import that does not resolve (Chromium "Failed to resolve module specifier", Firefox "… specifier …",
   // WebKit "does not resolve"): the blob: URL is the base — no CSP is involved (community-hall, D6). (A browser's
   // own sentence ends with a period of its own: one is enough)
+  // a script that does not parse (Chromium / WebKit "Unexpected token ':'", Firefox "unexpected token: ':'", "missing
+  // ; before statement", "expected expression"): the browser runs it as written, and TypeScript syntax is the usual
+  // cause — a CSP refusal says so in its own words (docs/seam-apps.md, lending-desk)
   [M.InlineFailed]: (detail) => `Failed to evaluate the inline <script> of <wcs-state>: ${String(detail).replace(/\.$/, "")}. ${/specifier|does not resolve/i.test(String(detail))
     ? `An inline state is evaluated from a blob: URL, against which a relative or root-relative import ("./x.js", "/js/x.js") does not resolve: import a full URL, or a name the page's import map gives ({ "imports": { "@app/": "/js/" } }), or move the state into a file (src="./state.js").`
-    : `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`}`,
+    : /expected|missing/i.test(String(detail))
+      ? `The script does not parse as JavaScript: the browser runs it as written, so TypeScript syntax (a type annotation "x: number", "import type", "as T", "x!") is a syntax error here. Write the types in JSDoc (/** @type {number} */), or put the state in a file a build compiles (src="./state.ts").`
+      : `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`}`,
   [M.TokenSubscriberThrew]: (name) => `a subscriber of token "${name}" threw.`,
   [M.TokenListNotArray]: (key) => `${key} must be an array of strings.`,
   [M.TokenEntryEmpty]: (key) => `${key} entries must be non-empty strings.`,
