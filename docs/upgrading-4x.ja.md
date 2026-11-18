@@ -468,7 +468,23 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: ページ自身の `devicemotion` のリスナーと、`DeviceMotionEvent.requestPermission()` の呼び出し。北を出すための `deviceorientationabsolute` / `webkitCompassHeading` のリスナー。`error` が `null` でない `"denied"` を「まだ問うていない」と読むこと。ボタンを出すかを決める手書きの機能検出（`supported`）。ページ自身による `document.permissionsPolicy` の読み取り（`unsupportedReason`）。手で呼ぶ `navigator.credentials.preventSilentAccess()` と、ページが作る `new PasswordCredential(…)`。`<wcs-contacts>` の空の配列を「閉じた」と扱うこと。`<wcs-permission name="ambient-light-sensor">` を囲む `if:`。失敗したセンサーを始め直すために `start` の前に出す `stop`。storage の README の「任意のタイミングで保存する」の例は書き直した: 4.24 まで載せていた形（getter に束ねた `trigger:` と `manual`）は、変更のたびに `[wcs/path-readonly]` を記録し、保存したものを戻さなかった。
 
-## 4.25.0 でもまだ要るもの
+### 4.26.0
+
+2026-11-19 — [CHANGELOG](../CHANGELOG.md#4260--2026-11-19)
+
+- `@wcstack/debounce`: `<wcs-debounce>` / `<wcs-throttle>` の `value` は `null` で始まる（`undefined` だった。読み込みの直後に、束ねたスロットへ `undefined` を書いていた）。
+- `@wcstack/sse`・`@wcstack/websocket`: `url` を消す（`null`・`""`・属性を外す）と接続を閉じる。`manual` の要素も。それまでは開いたままだった。`url` を消すのと並べて呼んでいた `close()` は要らない。
+- `@wcstack/sse`: `<wcs-sse>` は `beforeunload` でストリームを閉じ、文書が残れば開き直す。`pagehide` / `pageshow` は `<wcs-ws>` と同じ。ページ自身の、ストリームを閉じる `beforeunload` のリスナーは外す: WebKit のルーターの下では、最初の遷移でストリームを閉じたままにした。WebKit では、ルーターの遷移ごとに `connected` が `false` → `true` と動く。
+- `@wcstack/fetch`: `fetch(url, init)` は `URL` を受け取る。文字列・イベント・`null`・`undefined` のどれでもない値は警告する（`[wcs/fetch-url-argument]`）。成功した `204` / `205` は `HEAD` と同じに読む: 本文なし、`value` は `null`、エラーなし —— JSON と名乗る `204` はネットワークの失敗になっていた。
+- `@wcstack/state`（diagnostics）: `this.$command.<宣言に無い名前>` は、束縛と同じエラーを近い名前つきで投げる（それまでは `undefined` で、`.emit()` が名指さない `TypeError` を投げた。`?.emit()` は何もしなかったが、今は投げる）。読めないページ内の state は、Content-Security-Policy の問題でなく TypeScript の構文として説明する。
+- `wcs-tsc` と VS Code の拡張は、ページ内の `<wcs-state>` のスクリプトを JavaScript として検査する: JSDoc の型が効き、TypeScript の構文はその場所でエラーになる。`allowJs`・`checkJs`・`noImplicitThis` は要らない。
+- `@wcstack/state/define`: `$on` のハンドラの引数に型が付く（ハンドラの中の `this` はエラー）。`this.$command` は `$commandTokens` の名前を持つ。
+- `@wcstack/lint`: 戻り値の型を書いた `.ts` の state の getter とメソッドを読み、スクリプトの規則がそれを検査する —— そこに新しいエラーが出うる。誤報は消える。`.ts` のモジュールの要素を検査する（`wcs/tag-member-unknown`、error）。新しい警告 `wcs/filter-arg-enum` と `wcs/drift-state-key`。`wcs/filter-input-type` は行とスキーマの型も見る。`wcs-schema emit` が書いた（`stateSource` のある）manifest は、ルートの `<wcs-state src>` がそのファイルであるページにだけ当たる。4.25 の manifest は作り直すと絞られる。
+- `@wcstack/server`: 表の中の `<template>` を描ける（`[wcs/wildcard-rank]` を投げていた）。新しい `setInnerHTML`。`@wcstack/testing`: 同じ表を mount できる。`app.state<S>()` に型が付く。`@wcstack/typescript/vite`: `wcstack()` が `<wcs-state src="./state.ts">` を Vite でビルドする。
+
+要らなくなった回避策: ページ自身の Vite のプラグインと、ページ内の state とガードのスクリプトの `vite-ignore`。lint のために `: void` を書かないメソッド。JSDoc を書かず、形をリテラルで写したページ内の state。manifest の発見の外に置いて手で渡すスキーマ。手書きのインターフェースを通して転送する `$on` のハンドラと、`this.$command.x!`。`<wcs-sse>` を囲むページ自身の unload のリスナーと、サインアウトでの `close()`。`<wcs-debounce>` のスロットの `$watch` での `undefined` への `typeof` の防御。ページに表があるときの、単体テストの `<ul>`。`204` のための `response-type="text"`。
+
+## 4.26.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
@@ -481,5 +497,6 @@ README の例が 2 つ誤っていました: notification と speech の README 
 - 絞り込みを変える一覧は、取りに行っているページを中断する（`command.abort:`）: `manual` の `<wcs-fetch>` は `url` が変わっても中断せず、前の絞り込みの行が新しい一覧に入る（[long-lists.ja.md](./long-lists.ja.md)）。
 - ページ自身のスクリプトが `for:` の行に差し込んだノードは、その後ろの要素の委譲ハンドラをずらす: それらは `on*#direct:` で束ねる（state の README、「委譲されるイベント」）。
 - 一覧の行へ戻るページ自身のリンクは、行のフラグメントへ行く（`navigateUrl = "/#photo-" + id`）: `$watch` からの `scrollIntoView()` は、push のナビゲーションが終わるときに打ち消される（router の README）。
+- ルートのガードはページの中の JavaScript: `src=` の形が無いので TypeScript で書けず、型の検査も通らない。小さく保つ（セッションを読み、パスか `true` を返す）。
 - ページの可視性を報告する要素は無い: 隠れたタブでセンサーを止めるページは、自分で `visibilitychange` を聞く（[long-lived-pages.ja.md](./long-lived-pages.ja.md)）。センサーの要素は、端末にそのセンサーがあるかを言わない: `start` の少し後に値が来なければ、無いと扱う。
 - iPhone の Safari は、動きと向きの答えを、問われたときだけページに教え、タップからしか問わない: 再読み込みの後 `permissionState` はまた `"unknown"` になり、覚えておきたいページは自分でメモを持つ。向きの固定が効くかは、全画面で試すまで分からない。Safari には `lock()` が無い（[device-apis.ja.md](./device-apis.ja.md)）。
