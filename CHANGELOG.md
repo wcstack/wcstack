@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.26.0] — 2026-11-19
 
 A minor from the `lending-desk` seam app, the first of the third round's spares in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: an equipment-lending app for a city's community centres, written by a TypeScript team for whom the types and wcstack's tools — `tsc`, `wcs-tsc`, `wcs-schema`, the lint, `@wcstack/testing` — are the way back from a mistake ([docs/seam-apps.md](./docs/seam-apps.md)). Its `npm run check` passed, and three of its twenty mistakes passed every check and 140 browser tests. The tools were the finding: a TypeScript return type hid a member from the lint, `wcs-tsc` checked an inline script as TypeScript, one schema was applied to every page, a stale schema won, and nothing built a `.ts` state for production. Decided by the author as recommended (§5.21). No core bytes.
 

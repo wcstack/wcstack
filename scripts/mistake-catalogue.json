@@ -456,7 +456,7 @@
       "lint": [{ "code": "wcs/token-undeclared", "severity": "varies" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Uses a command or event token the state does not declare.", "ja": "state が宣言しないコマンドかイベントのトークンを使う。" },
-      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` logs `#1301` and `onclick: $command.x` logs `#1302` each time the event fires (the lint: warning). In a script, `this.$command.x` of an undeclared name is `undefined`: `.emit()` throws a TypeError that names nothing (the lint: error). A `$on` entry that is not in `$eventTokens` fails the state when it loads (the lint: error, since 4.25). Since 4.25 the lint reports all of these also when the state has no `$commandTokens` / `$eventTokens` key at all; before, it said nothing there.", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。イベントのたびに、`eventToken.` は `#1301` を、`onclick: $command.x` は `#1302` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。`$eventTokens` に無い `$on` の項目は、state の読み込みを失敗させる（lint は error、4.25 から）。4.25 から、lint は、state に `$commandTokens` / `$eventTokens` のキーがそもそも無いときにも、これらをすべて報告する。以前は、そこでは何も言わなかった。" },
+      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` logs `#1301` and `onclick: $command.x` logs `#1302` each time the event fires (the lint: warning). In a script, `this.$command.x` of an undeclared name throws `#1302` at the read, with the near name, since 4.26 (it was `undefined`, and `.emit()` threw a TypeError that named nothing; the lint: error). A `$on` entry that is not in `$eventTokens` fails the state when it loads (the lint: error, since 4.25). Since 4.25 the lint reports all of these also when the state has no `$commandTokens` / `$eventTokens` key at all; before, it said nothing there.", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。イベントのたびに、`eventToken.` は `#1301` を、`onclick: $command.x` は `#1302` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は、4.26 から読んだ所で近い名前つきの `#1302` を投げる（以前は `undefined` で、`.emit()` が何も名指さない TypeError を投げた。lint は error）。`$eventTokens` に無い `$on` の項目は、state の読み込みを失敗させる（lint は error、4.25 から）。4.25 から、lint は、state に `$commandTokens` / `$eventTokens` のキーがそもそも無いときにも、これらをすべて報告する。以前は、そこでは何も言わなかった。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-undeclared\"" }]
     },
     {
@@ -668,7 +668,7 @@
       "mistake": { "en": "Builds the page with a bundler that processes the HTML (Vite), with the state in `<wcs-state>`'s inline `<script type=\"module\">`.", "ja": "HTML を処理するバンドラ（Vite）でページを作り、state を `<wcs-state>` のインラインの `<script type=\"module\">` に書く。" },
       "effect": { "en": "The bundler takes the script into its bundle without a warning: the `<wcs-state>` waits for `setInitialState()` for ever and nothing binds. (The same for a `<wcs-guard-handler>`'s script: since 4.7 the route is closed and the router says so.)", "ja": "バンドラは警告なしにスクリプトをバンドルへ取り込む: `<wcs-state>` は `setInitialState()` を待ち続け、何も束ねられない（`<wcs-guard-handler>` のスクリプトも同じ: 4.7 からはルートを閉じ、router が知らせる）。" },
       "disposition": "runtime-report",
-      "note": { "en": "The state README: `vite-ignore`, or `src=`. The diagnostics add-on could warn when a `<wcs-state>` with no source is still waiting after the page loaded.", "ja": "state の README: `vite-ignore` か `src=`。ページの読み込み後も源の無い `<wcs-state>` が待っていれば、診断の後付けが警告できる。" }
+      "note": { "en": "Since 4.26, `wcstack()` from `@wcstack/typescript/vite` keeps those scripts in the page. Without it, `vite-ignore`. The diagnostics add-on could warn when a `<wcs-state>` with no source is still waiting after the page loaded.", "ja": "4.26 から、`@wcstack/typescript/vite` の `wcstack()` がそれらのスクリプトをページに残す。使わないなら `vite-ignore`。ページの読み込み後も源の無い `<wcs-state>` が待っていれば、診断の後付けが警告できる。" }
     },
     {
       "id": "route-bare-mustache",
@@ -1879,6 +1879,58 @@
       "effect": { "en": "Where the script and the schema both know a path, the schema wins: the HTML is checked against the old names, and a rename that missed the HTML passed the lint (0 errors). A row binding to the renamed getter then shows nothing, with no word at run time. Since 4.26 the lint warns when the schema's top-level keys differ from the script's.", "ja": "スクリプトとスキーマの両方が知るパスでは、スキーマが勝つ: HTML は古い名前で検査され、HTML を直し忘れた改名が lint を通った（エラー 0）。改名した getter への行の束縛は、実行時に何も言わずに何も出さない。4.26 から、スキーマの最上位のキーがスクリプトと食い違えば lint が警告する。" },
       "disposition": "static-only",
       "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Run `wcs-schema check` before the lint in CI.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 CI で lint の前に `wcs-schema check` を走らせる。" }
+    },
+    {
+      "id": "inline-state-typescript-syntax",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Writes TypeScript syntax in an inline `<wcs-state>` script — a type annotation (`const n: number`), `import type`, `as`, `!`.", "ja": "ページ内の `<wcs-state>` のスクリプトに TypeScript の構文を書く — 型の注釈（`const n: number`）、`import type`、`as`、`!`。" },
+      "effect": { "en": "The browser runs the script as written: a `SyntaxError`, and the state never loads. Up to 4.25 `wcs-tsc` and the VS Code extension checked the script as TypeScript and let a type annotation pass, and the runtime explained the failure as a Content-Security-Policy problem. Since 4.26 both checkers report it where it stands, and the runtime says TypeScript syntax does not run in the browser.", "ja": "ブラウザはスクリプトを書いたとおりに走らせる: `SyntaxError` になり、state は読み込まれない。4.25 までは `wcs-tsc` と VS Code の拡張がスクリプトを TypeScript として検査して型の注釈を通し、実行時はその失敗を Content-Security-Policy の問題として説明した。4.26 から、どちらの検査もその場所で報告し、実行時は TypeScript の構文はブラウザでは動かないと言う。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "is a syntax error here" }],
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Type an inline state with JSDoc, or move it into a file a build compiles.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 ページ内の state の型は JSDoc で書くか、ビルドがコンパイルするファイルへ移す。" }
+    },
+    {
+      "id": "fetch-url-not-a-url",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Emits a command wired to `<wcs-fetch>`'s `fetch` with something other than a url first: `this.$command.cancel.emit(id, { method: \"DELETE\" })` with a number.", "ja": "`<wcs-fetch>` の `fetch` に結んだコマンドを、url 以外のものを先にして出す: 数を渡す `this.$command.cancel.emit(id, { method: \"DELETE\" })`。" },
+      "effect": { "en": "`fetch()` takes a url (a string, and since 4.26 a `URL`) in that place and ignores anything else, with `init`: the element fetched its own url — none here — and the cancel button did nothing. Since 4.26 it warns once per element and kind (`[wcs/fetch-url-argument]`); an `Event` (an `on…: $command.x` binding) stays ignored.", "ja": "`fetch()` はその位置に url（文字列。4.26 からは `URL` も）を取り、ほかのものは `init` ごと無視する: 要素は自分の url — ここでは無い — を読み、取り消しのボタンは何もしなかった。4.26 から、要素と種類ごとに 1 回警告する（`[wcs/fetch-url-argument]`）。`Event`（`on…: $command.x` の束縛）は無視のまま。" },
+      "evidence": [{ "file": "packages/fetch/src/components/Fetch.ts", "text": "wcs/fetch-url-argument" }],
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Build the url in the state: `emit(\"/api/requests/\" + id, { method: \"DELETE\" })`.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 url は state で作る: `emit(\"/api/requests/\" + id, { method: \"DELETE\" })`。" }
+    },
+    {
+      "id": "stream-url-cleared",
+      "lint": [],
+      "runtime": "designed-out", "harm": "security",
+      "mistake": { "en": "Clears `<wcs-sse>`'s (or `<wcs-ws>`'s) `url` on sign-out — a getter that returns `null` when no one is signed in — and expects the connection to end.", "ja": "サインアウトで `<wcs-sse>`（や `<wcs-ws>`）の `url` を消し — 誰もサインインしていなければ `null` を返す getter — 接続が終わると思う。" },
+      "effect": { "en": "Up to 4.25 a cleared `url` left the stream open, as the README said: the signed-out tab went on receiving the previous user's events. Since 4.26 clearing `url` closes the connection, `manual` elements included.", "ja": "4.25 までは、README のとおり、消した `url` はストリームを開いたままにした: サインアウトしたタブは、前の利用者のイベントを受け取り続けた。4.26 から、`url` を消すと接続を閉じる。`manual` の要素も。" },
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). A page pinned to 4.25 or earlier calls `close()` as well.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 4.25 以前に固定したページは `close()` も呼ぶ。" }
+    },
+    {
+      "id": "stream-closed-in-beforeunload",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Closes `<wcs-sse>` in a `beforeunload` listener of the page's own, to keep Firefox's \"The connection … was interrupted\" out of the console.", "ja": "Firefox の「The connection … was interrupted」をコンソールから消すために、ページ自身の `beforeunload` のリスナで `<wcs-sse>` を閉じる。" },
+      "effect": { "en": "WebKit fires `beforeunload` on every same-document navigation the Navigation API intercepts — a `<wcs-link>`, a guard's redirect, a `navigateUrl` — so under `@wcstack/router` the stream closed at the first navigation and live updates stopped for good. Up to 4.25 the sse README recommended the listener.", "ja": "WebKit は、Navigation API が引き取る同じ文書の中の遷移 — `<wcs-link>`、ガードの転送、`navigateUrl` — ごとに `beforeunload` を出すので、`@wcstack/router` の下ではストリームが最初の遷移で閉じ、ライブ更新は止まったままになった。4.25 までは sse の README がそのリスナを勧めていた。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Since 4.26 `<wcs-sse>` closes in `beforeunload` itself and opens again when the document stays: remove the page's own listener.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 4.26 から、`<wcs-sse>` が自分で `beforeunload` で閉じ、文書が残れば開き直す: ページ自身のリスナは外す。" }
+    },
+    {
+      "id": "vite-build-state-src",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Builds with Vite a page whose `<wcs-state src>` names a local file — `src=\"./src/state.ts\"` — with no plugin for it.", "ja": "`<wcs-state src>` がローカルのファイル — `src=\"./src/state.ts\"` — を名指すページを、そのためのプラグイン無しに Vite でビルドする。" },
+      "effect": { "en": "The engine imports the file at run time, so `vite build` does not see it: it keeps the attribute and emits no file. The dev server serves the `.ts`, so only production fails — the state 404s and `<wcs-state src=\"…\"> failed to initialize.`", "ja": "エンジンはそのファイルを実行時に import するので、`vite build` からは見えない: 属性を残し、ファイルを出さない。開発サーバーは `.ts` を配るので、落ちるのは本番だけ — state は 404 になり `<wcs-state src=\"…\"> failed to initialize.`" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "failed to initialize." }],
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Since 4.26, `wcstack()` from `@wcstack/typescript/vite` emits every local `<wcs-state src>` file with the build.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 4.26 から、`@wcstack/typescript/vite` の `wcstack()` が、ローカルの `<wcs-state src>` のファイルをすべてビルドと一緒に出す。" }
+    },
+    {
+      "id": "debounce-value-seeded-undefined",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Declares the slot bound to `<wcs-debounce>`'s `value` as `null` and handles it as `string | null` (`settledQ: null` with `cur.trim()` in its `$watch`).", "ja": "`<wcs-debounce>` の `value` に束ねるスロットを `null` と宣言し、`string | null` として扱う（`settledQ: null` と、その `$watch` の `cur.trim()`）。" },
+      "effect": { "en": "An output-only member seeds its slot from the element when it is bound, and up to 4.25 `value` started `undefined`: the slot became `undefined` at load and the `$watch` threw. Since 4.26 `<wcs-debounce>` / `<wcs-throttle>` `value` starts `null`.", "ja": "出力だけのメンバーは束ねるときに要素からスロットへ種をまき、4.25 までは `value` が `undefined` で始まっていた: スロットは読み込みの直後に `undefined` になり、`$watch` が投げた。4.26 から、`<wcs-debounce>` / `<wcs-throttle>` の `value` は `null` で始まる。" },
+      "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Of 44 tags, only these two started an output as `undefined`.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 44 のタグのうち、出力を `undefined` で始めていたのはこの 2 つだけ。" }
     }
   ],
   "uncounted": [

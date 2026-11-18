@@ -468,7 +468,23 @@ Workarounds became unnecessary: a route path written percent-encoded, or kept to
 
 Workarounds became unnecessary: a `devicemotion` listener of the page's own and its call of `DeviceMotionEvent.requestPermission()`; a `deviceorientationabsolute` / `webkitCompassHeading` listener to find north; `"denied"` with a non-null `error` read as "not asked yet"; feature detection by hand to decide whether to offer a button (`supported`); the page's own reading of `document.permissionsPolicy` (`unsupportedReason`); `navigator.credentials.preventSilentAccess()` called by hand and `new PasswordCredential(…)` built by the page; an empty array from `<wcs-contacts>` treated as "closed"; an `if:` around `<wcs-permission name="ambient-light-sensor">`; `stop` emitted before `start` to restart a sensor that failed. The storage README's "Saving on demand" example is rewritten: the form it showed up to 4.24 (`manual` with `trigger:` on a getter) logged `[wcs/path-readonly]` on every change and never restored what it saved.
 
-## Still needed on 4.25.0
+### 4.26.0
+
+2026-11-19 — [CHANGELOG](../CHANGELOG.md#4260--2026-11-19)
+
+- `@wcstack/debounce`: `<wcs-debounce>` / `<wcs-throttle>` `value` starts `null` (it was `undefined`, and seeded the slot bound to it with `undefined` at load).
+- `@wcstack/sse`, `@wcstack/websocket`: clearing `url` (`null`, `""`, the attribute removed) closes the connection, `manual` elements too; it left it open. A `close()` called next to clearing `url` is no longer needed.
+- `@wcstack/sse`: `<wcs-sse>` closes its stream in `beforeunload` and opens it again when the document stays; `pagehide` / `pageshow` as `<wcs-ws>`. Remove a page's own `beforeunload` listener that closes the stream: under the router in WebKit it closed the stream at the first navigation for good. In WebKit `connected` goes `false` → `true` on each router navigation.
+- `@wcstack/fetch`: `fetch(url, init)` takes a `URL`; any other value that is not a string, an event, `null` or `undefined` warns (`[wcs/fetch-url-argument]`). A successful `204` / `205` is read like a `HEAD`: no body, `value` `null`, no error — a `204` labelled JSON was a network failure.
+- `@wcstack/state` (diagnostics): `this.$command.<an undeclared name>` throws the binding's error with the near name (it was `undefined`, and `.emit()` threw a nameless `TypeError`; `?.emit()` on it did nothing and now throws). An inline state that does not parse is explained as TypeScript syntax, not as a Content-Security-Policy problem.
+- `wcs-tsc` and the VS Code extension check an inline `<wcs-state>` script as JavaScript: JSDoc types count, and TypeScript syntax is an error where it stands. `allowJs`, `checkJs` and `noImplicitThis` are no longer required.
+- `@wcstack/state/define`: a `$on` handler's parameters are typed (`this` in a handler is an error), and `this.$command` has the names in `$commandTokens`.
+- `@wcstack/lint`: a `.ts` state's getters and methods with a return type are read, and the script rules check them — new errors can appear there, and the false reports go. An element in a `.ts` module is checked (`wcs/tag-member-unknown`, error). New warnings `wcs/filter-arg-enum` and `wcs/drift-state-key`; `wcs/filter-input-type` covers rows and schema types. A manifest `wcs-schema emit` wrote (with `stateSource`) applies only to the pages whose root `<wcs-state src>` is that file; regenerate a 4.25 manifest to scope it.
+- `@wcstack/server`: a `<template>` inside a table renders (it threw `[wcs/wildcard-rank]`); new `setInnerHTML`. `@wcstack/testing`: the same tables mount; `app.state<S>()` is typed. `@wcstack/typescript/vite`: `wcstack()` builds `<wcs-state src="./state.ts">` with Vite.
+
+Workarounds became unnecessary: a Vite plugin of the page's own and `vite-ignore` on inline state and guard scripts; methods written without `: void` for the lint; an inline state with no JSDoc, its shapes copied as literals; a schema kept out of manifest discovery and passed by hand; `$on` handlers forwarding through a hand-written interface, and `this.$command.x!`; a page's own unload listeners around `<wcs-sse>` and a `close()` on sign-out; a `typeof` guard against `undefined` in a `<wcs-debounce>` slot's `$watch`; a `<ul>` in a unit test where the page has a table; `response-type="text"` for a `204`.
+
+## Still needed on 4.26.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
@@ -481,5 +497,6 @@ Workarounds became unnecessary: a `devicemotion` listener of the page's own and 
 - A list that changes its filter aborts the page on its way (`command.abort:`): a `manual` `<wcs-fetch>` does not abort on a new `url`, and the old filter's rows land in the new list ([long-lists.md](./long-lists.md)).
 - A node the page's own script inserts into a `for:` row moves the delegated handlers of the elements after it: bind those `on*#direct:` (state README, "Delegated events").
 - A link of the page's own back to a row of a list goes to the row's fragment (`navigateUrl = "/#photo-" + id`): a `scrollIntoView()` from a `$watch` is undone when the push navigation finishes (router README, "Where route content lives").
+- A route guard is JavaScript in the page: it has no `src=` form, so it cannot be written in TypeScript, and nothing type-checks it. Keep it small (read the session, return a path or `true`).
 - No element reports page visibility: a page that stops its sensors on a hidden tab listens to `visibilitychange` itself ([long-lived-pages.md](./long-lived-pages.md)). A sensor element does not say whether the device has the sensor: treat no reading a moment after `start` as none.
 - On an iPhone, Safari tells a page the motion and orientation answer only when asked, and asks only from a tap: after a reload `permissionState` is `"unknown"` again, and a page that wants to remember keeps its own note. Whether an orientation lock holds is known only by trying it in fullscreen; Safari has no `lock()` ([device-apis.md](./device-apis.md)).
