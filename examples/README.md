@@ -14,9 +14,10 @@ single-package demos live in that package's own `examples/` directory instead:
 Every demo is buildless and loads packages straight from the CDN
 (`https://esm.run/@wcstack/<pkg>/auto` one-liners; signals demos import the
 single `@wcstack/signals/dom` entry) — except the React/Vue variants of
-`websocket-chat` and the `fw-inventory` seam app, which use Vite, and the
-`prod-booking` seam app, which pins jsDelivr's files with `integrity` (and
-self-hosts the ones it installs from npm) on purpose.
+`websocket-chat` and the `fw-inventory` and `lending-desk` seam apps, which use
+Vite (`lending-desk` is TypeScript, and bundles the packages it installs from
+npm), and the `prod-booking` seam app, which pins jsDelivr's files with
+`integrity` (and self-hosts the ones it installs from npm) on purpose.
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
@@ -97,6 +98,7 @@ Larger apps written to find defects rather than to show a feature: a first-time 
 | [`ekiden-entry/`](ekiden-entry/) | a page that is mostly a form: the IME × two-way bindings (a name and its reading, Enter while composing), fields that take shape as they are typed × the caret, autofill of three kinds × state, rows of inputs × a reorder × the focus and an open `<details>`, an upload × rows that move, a `422` × a field of another step, the router's guards × the draft, form-associated custom elements × wc-bindable (a city's relay race team entry in Japanese: five steps with a URL each, seven runners, a draft in two tabs, two shared controls that also work with no wcstack) | `node examples/ekiden-entry/server.js` | :3000 |
 | [`town-archive/`](town-archive/) | a long list × scrolling: pages loaded as the user scrolls × a filter that changes while a page is on its way, a card that is a link × a ★ beside it, a window of rows × the scroll position, Back and the page's own link back × the card the user left, an element's first value × `$watch`, `<wcs-storage>` × two tabs; and the same 12,000 records as a table in `@wcstack/signals` — `For` with a key, `selector()`, `delegateEvents()`, changes over SSE (a city's archive of 12,000 photographs in Japanese: the public site with state and the router, the cataloguers' table with signals) | `node examples/town-archive/server.js` | :3000 |
 | [`stamp-rally/`](stamp-rally/) | the screen and sensor APIs: a tap × command tokens (what is emitted in it, and after it), the thirteen screen and sensor elements × a feature that is missing, refused or forbidden (`supported`, `<wcs-permission>`'s `unsupportedReason`), the iPhone's two questions × one tap, `devicemotion` and north × the two phone platforms, `<wcs-fullscreen>` × the orientation lock, `<wcs-pip>` and the viewer × the router, saved passwords × a route guard, the share sheet and the pickers × closing without choosing, an `<iframe>` and `Permissions-Policy` × every element, a failure × a page that binds no `error` (a city's town-walk stamp rally in Japanese, on the walker's phone and a PC: a device check with five answers, a compass, steps and a shake to stamp, a picture to look around in, a guide video across pages, the city's portal) | `node examples/stamp-rally/server.js` | :3000 |
+| [`lending-desk/`](lending-desk/) | a TypeScript team × wcstack's tools: `tsc` × `defineState`'s paths, `$on` handlers and `$command` names, `wcs-tsc` × a state written in the page (JavaScript with JSDoc types from the shared API), `wcs-schema` × the lint × two pages under one manifest (`stateSource`), a `.ts` state × a Vite build (`@wcstack/typescript/vite`), `@wcstack/testing` × a typed state and a table, `<wcs-sse>` × the router × WebKit's `beforeunload` and a sign-out, `<wcs-debounce>` × a `null` slot (an equipment-lending desk for a city's community centres in Japanese: a search in the URL with free counts, a month calendar, a cart with a TypeScript stepper in two tabs, requests decided live, a staff page, a counter screen; a TypeScript server that shares its API types with the pages; a Vite app) | `cd examples/lending-desk && npm install && npm start` | :3000 |
 
 ## Shared server core
 

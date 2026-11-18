@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>受付カウンター｜みどり市 備品の貸出</title>
+  <script type="module" src="/src/counter-main.ts"></script>
+</head>
+<body>
+<wcs-state>
+  <!-- The state is written in the page (small, one screen). It is JavaScript, as the browser runs it, and
+       `wcs-tsc` checks it as JavaScript: the shapes come from shared/api.ts through JSDoc. -->
+  <script type="module">
+    /**
+     * @typedef {import("./shared/api.ts").CounterResponse} CounterResponse
+     * @typedef {import("./shared/api.ts").CounterEntry} CounterEntry
+     * @typedef {import("./shared/api.ts").CounterEvent} CounterEvent
+     */
+
+    /**
+     * What the server sent has the shape (it is unchecked JSON).
+     * @param {unknown} v
+     * @returns {v is CounterResponse}
+     */
+    function isCounter(v) {
+      return typeof v === "object" && v !== null && "centerName" in v && typeof v.centerName === "string"
+        && "pickups" in v && Array.isArray(v.pickups) && "returns" in v && Array.isArray(v.returns);
+    }
+
+    /**
+     * @param {unknown} v
+     * @returns {v is CounterEvent}
+     */
+    function isCounterEvent(v) {
+      return typeof v === "object" && v !== null && "centerId" in v && typeof v.centerId === "number";
+    }
+
+    export default {
+      center: "",
+      /** @type {unknown} */
+      counterResult: null,
+      /** @type {Error | null} */
+      counterError: null,
+      sseConnected: false,
+      nowMs: Date.now(),
+      clockTick: 0,
+      lastUpdate: "",
+
+      get counterUrl() {
+        return /^\d+$/.test(this.center) ? `/api/counter?center=${this.center}` : null;
+      },
+      /** @returns {CounterResponse | null} */
+      get counter() {
+        const v = this.counterResult;
+        return isCounter(v) ? v : null;
+      },
+      /** @returns {CounterEntry[]} */
+      get pickups() {
+        return this.counter ? this.counter.pickups : [];
+      },
+      /** @returns {CounterEntry[]} */
+      get returns() {
+        return this.counter ? this.counter.returns : [];
+      },
+      get title() {
+        return this.counter ? `${this.counter.centerName}　受付` : "受付カウンター";
+      },
+      get clock() {
+        const d = new Date(this.nowMs + 9 * 3600000);
+        return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日　${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+      },
+      get problem() {
+        if (!this.counterUrl) return "URL に ?center=番号 を付けてください（例: /counter.html?center=2）";
+        if (this.counterError) return "読み込めませんでした。自動で再接続します。";
+        if (this.counterResult !== null && !this.counter) return "サーバーから想定外の応答がありました";
+        return "";
+      },
+      get noPickups() {
+        return this.counter !== null && this.pickups.length === 0;
+      },
+      get noReturns() {
+        return this.counter !== null && this.returns.length === 0;
+      },
+      get "pickups.*.time"() {
+        return this[".at"] || "—";
+      },
+
+      // a command, not `trigger`: two counter events close together must both reload — a second
+      // `trigger: true` while the first request runs is dropped; `fetch()` aborts it and starts again
+      $commandTokens: ["reload"],
+      reload() {
+        this.$command.reload.emit();
+      },
+
+      $connectedCallback() {
+        this.center = new URLSearchParams(location.search).get("center") ?? "";
+      },
+      $eventTokens: ["sseMessage"],
+      $on: {
+        // every SSE message lands here (an occurrence: the same payload twice fires twice)
+        /** @param {CustomEvent<{ event: string, data: unknown }>} ev */
+        sseMessage(state, ev) {
+          const { event, data } = ev.detail;
+          if (event === "counter" && isCounterEvent(data) && String(data.centerId) === state.center) state.reload();
+        },
+      },
+      $watch: {
+        clockTick() {
+          this.nowMs = Date.now();
+        },
+        sseConnected() {
+          // the stream came back after the server restarted: reload what may have changed meanwhile
+          if (this.sseConnected && this.counter) this.reload();
+        },
+        counterResult() {
+          this.lastUpdate = new Date().toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo" });
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-timer interval="10000" data-wcs="tick: clockTick"></wcs-timer>
+<wcs-fetch data-wcs="url: counterUrl; value: counterResult; error: counterError; command.fetch: $command.reload"></wcs-fetch>
+<wcs-sse url="/api/events" events="counter" auto-reconnect data-wcs="connected: sseConnected; eventToken.message: sseMessage"></wcs-sse>
+
+<header>
+  <h1 data-testid="counter-title" data-wcs="textContent: title"></h1>
+  <p class="clock" data-wcs="textContent: clock"></p>
+</header>
+<p class="problem" role="alert" data-wcs="textContent: problem"></p>
+<main>
+  <section>
+    <h2>本日の受け取り</h2>
+    <ul class="list" data-testid="pickups">
+      <template data-wcs="for: pickups">
+        <li><span class="t" data-wcs="textContent: .time"></span><span class="g" data-wcs="textContent: .groupName"></span><span class="i"><span data-wcs="textContent: .itemName"></span> × <span data-wcs="textContent: .quantity"></span></span></li>
+      </template>
+    </ul>
+    <p class="none" data-wcs="hidden: noPickups|not">本日の受け取りはありません</p>
+  </section>
+  <section>
+    <h2>本日の返却</h2>
+    <ul class="list" data-testid="returns">
+      <template data-wcs="for: returns">
+        <li><span class="g" data-wcs="textContent: .groupName"></span><span class="i"><span data-wcs="textContent: .itemName"></span> × <span data-wcs="textContent: .quantity"></span></span></li>
+      </template>
+    </ul>
+    <p class="none" data-wcs="hidden: noReturns|not">本日の返却はありません</p>
+  </section>
+</main>
+<footer><span data-wcs="hidden: sseConnected">● 再接続中…</span><span data-wcs="hidden: sseConnected|not">● ライブ</span>　最終更新 <span data-wcs="textContent: lastUpdate"></span></footer>
+</body>
+</html>

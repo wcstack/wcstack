@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>みどり市 備品の貸出</title>
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+<wcs-state src="src/state/app.ts"></wcs-state>
+
+<!-- ===== I/O nodes (headless) ===== -->
+<wcs-timer interval="30000" data-wcs="tick: clockTick"></wcs-timer>
+<wcs-storage key="midori.session" data-wcs="value#init=element: session"></wcs-storage>
+<wcs-storage key="midori.cart" data-wcs="value#init=element: savedCart"></wcs-storage>
+<template data-wcs="if: isGroup">
+  <!-- decisions already seen, per association (only an association has a key) -->
+  <wcs-storage data-wcs="key: seenKey; value#init=element: seenIds"></wcs-storage>
+</template>
+<wcs-debounce wait="350" data-wcs="source: form.q; value: settledQ"></wcs-debounce>
+
+<wcs-fetch url="/api/centers" data-wcs="value: centersResult; error: centersError"></wcs-fetch>
+<wcs-fetch data-wcs="url: searchUrl; value: searchResult; loading: searchLoading; error: searchError; eventToken.value: apiResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="url: itemUrl; value: itemResult; loading: itemLoading; error: itemError; eventToken.value: apiResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="url: resUrl; loading: resLoading; error: resError; eventToken.value: resResponded; command.fetch: $command.reloadReservations">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch url="/api/login" method="POST" manual data-wcs="body: loginBody; trigger: loginSending; loading: loginLoading; error: loginError; eventToken.value: loginResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch url="/api/reservations" method="POST" manual data-wcs="body: submitBody; trigger: submitSending; loading: submitLoading; error: submitError; eventToken.value: submitResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.cancelReq; eventToken.value: cancelResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.decideReq; eventToken.value: decideResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.logoutReq"></wcs-fetch>
+<wcs-sse events="reservation,counter" auto-reconnect data-wcs="url: sseUrl; connected: sseConnected; eventToken.message: sseMessage"></wcs-sse>
+
+<!-- ===== header ===== -->
+<header class="app-header">
+  <span class="brand">みどり市 備品の貸出</span>
+  <template data-wcs="if: signedIn">
+    <nav class="app-nav" aria-label="メニュー">
+      <wcs-link to="/">備品をさがす</wcs-link>
+      <span class="nav-item">
+        <wcs-link to="/reservations" match="prefix">申込</wcs-link>
+        <span class="badge" data-testid="unseen" data-wcs="hidden: hasUnseen|not; textContent: unseenCount; attr.title: unseenCount|unit('件の決定が未確認')"></span>
+      </span>
+      <template data-wcs="if: isStaff">
+        <wcs-link to="/admin">管理</wcs-link>
+      </template>
+      <span class="nav-item">
+        <wcs-link to="/cart">申込かご</wcs-link>
+        <span class="count" data-testid="cart-count" data-wcs="textContent: cartCount"></span>
+      </span>
+    </nav>
+    <span class="who" data-testid="who" data-wcs="textContent: headerName"></span>
+    <button type="button" class="logout" data-wcs="onclick: logout">ログアウト</button>
+  </template>
+</header>
+
+<!-- ===== pages ===== -->
+<main>
+<wcs-router focus="heading" data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+  <template>
+    <wcs-route path="/login" name="login">
+      <wcs-head><title>サインイン｜みどり市 備品の貸出</title></wcs-head>
+      <section class="login card">
+        <h1>サインイン</h1>
+        <form data-wcs="onsubmit#prevent: login">
+          <label>団体番号 <input name="id" autocomplete="username" required placeholder="G01" data-wcs="value: loginForm.id"></label>
+          <label>あいことば <input name="phrase" type="password" autocomplete="current-password" required data-wcs="value: loginForm.phrase"></label>
+          <button type="submit" data-wcs="disabled: loginLoading">サインイン</button>
+        </form>
+        <p class="error" role="alert" data-wcs="textContent: loginMessage"></p>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/" guard="/login">
+      <wcs-guard-handler>
+        <!-- A guard is JavaScript inside the HTML: there is no src= form, so it is not TypeScript and nothing type-checks it. -->
+        <script type="module">
+          export default function (toPath, _fromPath, ctx) {
+            let s = null;
+            try { s = JSON.parse(localStorage.getItem("midori.session") ?? "null"); } catch { s = null; }
+            if (s && typeof s.token === "string") return true;
+            const q = new URLSearchParams(ctx.searchParams).toString();
+            return "/login?next=" + encodeURIComponent(toPath + (q ? "?" + q : ""));
+          }
+        </script>
+      </wcs-guard-handler>
+      <div class="page">
+        <wcs-route index name="search">
+          <wcs-head><title>備品をさがす｜みどり市 備品の貸出</title></wcs-head>
+          <section class="search">
+            <h1>備品をさがす</h1>
+            <div class="filters" role="search">
+              <label>キーワード <input type="search" name="q" data-testid="q" data-wcs="value: form.q"></label>
+              <label>分類
+                <select name="category" data-testid="category" data-wcs="value: form.category">
+                  <option value="">すべて</option>
+                  <option value="テント・タープ">テント・タープ</option>
+                  <option value="机・椅子">机・椅子</option>
+                  <option value="映像・音響">映像・音響</option>
+                  <option value="調理・イベント">調理・イベント</option>
+                  <option value="スポーツ・レク">スポーツ・レク</option>
+                  <option value="防災・安全">防災・安全</option>
+                </select>
+              </label>
+              <label>センター
+                <select name="center" data-testid="center" data-wcs="value: form.center">
+                  <option value="">すべて</option>
+                  <template data-wcs="for: centers">
+                    <option data-wcs="value: .value; textContent: .name; selected: .selected"></option>
+                  </template>
+                </select>
+              </label>
+              <fieldset class="period">
+                <legend>期間</legend>
+                <input type="date" name="from" aria-label="期間の始まり" data-testid="from" data-wcs="value: form.from; attr.min: today; attr.max: lastDay">
+                〜
+                <input type="date" name="to" aria-label="期間の終わり" data-testid="to" data-wcs="value: form.to; attr.min: today; attr.max: lastDay">
+              </fieldset>
+              <label>並び順
+                <select name="sort" data-testid="sort" data-wcs="value: form.sort">
+                  <option value="name">名前</option>
+                  <option value="deposit">保証金</option>
+                </select>
+              </label>
+            </div>
+            <p class="error" data-wcs="hidden: periodWrong|not">期間の終わりが始まりより前です</p>
+            <p class="summary" data-testid="summary"><span data-wcs="textContent: searchSummary"></span><span class="loading" data-wcs="hidden: searchLoading|not">　読み込み中…</span></p>
+            <p class="error" role="alert" data-wcs="textContent: searchProblem"></p>
+            <ul class="items" data-testid="items">
+              <template data-wcs="for: items">
+                <li class="item" data-wcs="class.none: .none">
+                  <div class="item-name"><wcs-link data-wcs="to: .href">{{ .name }}</wcs-link></div>
+                  <div class="item-meta">
+                    <span data-wcs="textContent: .category"></span>
+                    <span data-wcs="textContent: .centerName"></span>
+                    <span>保証金 <span data-wcs="textContent: .depositLabel"></span></span>
+                    <span>在庫 <span data-wcs="textContent: .stock"></span></span>
+                  </div>
+                  <div class="item-free" data-testid="free" data-wcs="textContent: .freeLabel"></div>
+                  <div class="item-none" data-wcs="hidden: .none|not">空きなし</div>
+                </li>
+              </template>
+            </ul>
+            <template data-wcs="if: showPager">
+              <nav class="pager" aria-label="ページ" data-testid="pager">
+                <template data-wcs="for: pageLinks">
+                  <wcs-link data-wcs="to: .href">{{ .label }}</wcs-link>
+                </template>
+              </nav>
+            </template>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="items/:id(int)" name="item">
+          <wcs-head><title>備品の詳細｜みどり市 備品の貸出</title></wcs-head>
+          <section class="item-detail">
+            <template data-wcs="if: item">
+              <h1 data-testid="item-name" data-wcs="textContent: item.name"></h1>
+              <dl class="facts">
+                <dt>センター</dt><dd data-wcs="textContent: itemCenterName"></dd>
+                <dt>分類</dt><dd data-wcs="textContent: item.category"></dd>
+                <dt>在庫</dt><dd data-wcs="textContent: item.stock"></dd>
+                <dt>保証金</dt><dd data-wcs="textContent: itemDepositLabel"></dd>
+                <dt>備考</dt><dd data-wcs="textContent: itemNote"></dd>
+              </dl>
+              <div class="calendar" data-testid="calendar">
+                <div class="cal-head">
+                  <button type="button" data-testid="prev-month" data-wcs="onclick: prevMonth; disabled: canPrevMonth|not">‹ 前の月</button>
+                  <h2 data-testid="cal-title" data-wcs="textContent: calTitle"></h2>
+                  <button type="button" data-testid="next-month" data-wcs="onclick: nextMonth; disabled: canNextMonth|not">次の月 ›</button>
+                </div>
+                <table class="cal">
+                  <thead><tr><th>日</th><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th>土</th></tr></thead>
+                  <tbody>
+                    <template data-wcs="for: calendarWeeks">
+                      <tr>
+                        <template data-wcs="for: .days">
+                          <td>
+                            <button type="button" class="day" data-wcs="onclick: pickDay; disabled: .disabled; hidden: .pad; class.today: .isToday; class.none: .none; class.edge: .edge; class.in-range: .inRange; attr.data-date: .date; attr.aria-pressed: .edge|string">
+                              <span class="d" data-wcs="textContent: .day"></span>
+                              <span class="f" data-wcs="textContent: .label"></span>
+                            </button>
+                          </td>
+                        </template>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+                <p class="legend"><span class="sw today"></span>今日　<span class="sw edge"></span>選んだ期間　<span class="sw none"></span>空きなし</p>
+              </div>
+              <div class="pick">
+                <label>期間 <input type="date" data-testid="pick-from" aria-label="開始日" data-wcs="value: pick.from; attr.min: today; attr.max: lastDay"></label>
+                〜
+                <input type="date" data-testid="pick-to" aria-label="終了日" data-wcs="value: pick.to; attr.min: today; attr.max: lastDay">
+                <p class="pick-summary" data-testid="pick-summary" data-wcs="textContent: pickSummary"></p>
+                <p class="hint" data-testid="pick-problem" data-wcs="textContent: pickProblem"></p>
+                <label class="qty">数量 <midori-qty min="1" label="数量" data-testid="pick-qty" data-wcs="value: pick.quantity; max: pickMax"></midori-qty></label>
+                <button type="button" class="primary" data-testid="add-to-cart" data-wcs="onclick: addToCart; disabled: cannotAdd">かごに入れる</button>
+                <p class="ok" role="status" data-testid="added" data-wcs="textContent: addedMessage"></p>
+              </div>
+            </template>
+            <template data-wcs="elseif: itemNotFound">
+              <h1>見つかりません</h1>
+              <p>この備品はありません。<wcs-link to="/">備品をさがす</wcs-link></p>
+            </template>
+            <template data-wcs="else:">
+              <h1>備品の詳細</h1>
+              <p data-wcs="textContent: itemProblem|defaults('読み込み中…')"></p>
+            </template>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="cart" name="cart">
+          <wcs-head><title>申込かご｜みどり市 備品の貸出</title></wcs-head>
+          <section class="cart">
+            <h1>申込かご</h1>
+            <template data-wcs="if: cartEmpty">
+              <p>かごは空です。<wcs-link to="/">備品をさがす</wcs-link></p>
+            </template>
+            <template data-wcs="else:">
+              <table class="cart-lines" data-testid="cart-lines">
+                <thead><tr><th>備品</th><th>期間</th><th>数量</th><th>保証金</th><th></th></tr></thead>
+                <tbody>
+                  <template data-wcs="for: cart">
+                    <tr class="line" data-wcs="class.has-error: .hasError">
+                      <td>
+                        <wcs-link data-wcs="to: .href">{{ .name }}</wcs-link>
+                        <div class="sub" data-wcs="textContent: .centerName"></div>
+                        <p class="error line-error" data-testid="line-error" data-wcs="textContent: .error"></p>
+                      </td>
+                      <td class="period" data-wcs="textContent: .period"></td>
+                      <td><midori-qty min="1" label="数量" data-wcs="value: .quantity; max: .max"></midori-qty></td>
+                      <td class="num" data-wcs="textContent: .depositLabel"></td>
+                      <td><button type="button" class="remove" data-wcs="onclick: removeLine">削除</button></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <p class="totals" data-testid="totals">
+                <span><span data-wcs="textContent: totals.lines"></span>行</span>
+                <span><span data-wcs="textContent: totals.items"></span>点</span>
+                <span>保証金 合計 <strong data-wcs="textContent: totalDepositLabel"></strong></span>
+              </p>
+              <form class="order" data-wcs="onsubmit#prevent: submit">
+                <label>利用目的（必須・200文字まで）
+                  <textarea name="purpose" rows="3" required data-testid="purpose" data-wcs="value: order.purpose"></textarea>
+                </label>
+                <p class="hint"><span data-wcs="textContent: purposeCount"></span> / 200<span class="error" data-wcs="hidden: purposeTooLong|not">　200文字を超えています</span></p>
+                <p class="error" data-testid="purpose-error" data-wcs="textContent: submitProblems.purpose"></p>
+                <label>受け取り日時（日本時間）
+                  <input type="datetime-local" name="pickupAt" required data-testid="pickup" data-wcs="value: order.pickupAt">
+                </label>
+                <p class="error" data-testid="pickup-error" data-wcs="textContent: submitProblems.pickupAt"></p>
+                <p class="error" data-testid="form-error" data-wcs="textContent: submitProblems.form"></p>
+                <button type="submit" class="primary" data-testid="submit" data-wcs="disabled: cannotSubmit">申し込む</button>
+                <span class="loading" data-wcs="hidden: submitLoading|not">送信中…</span>
+                <p class="error" role="alert" data-testid="submit-message" data-wcs="textContent: submitMessage"></p>
+              </form>
+            </template>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="reservations" name="reservations">
+          <wcs-head><title>申込｜みどり市 備品の貸出</title></wcs-head>
+          <section class="reservations">
+            <h1>申込</h1>
+            <nav class="tabs" aria-label="状態で絞り込む">
+              <template data-wcs="for: statusTabs">
+                <wcs-link query-keys="status" data-wcs="to: .href">{{ .label }}</wcs-link>
+              </template>
+            </nav>
+            <p class="ok" role="status" data-testid="cancel-message" data-wcs="textContent: cancelMessage"></p>
+            <p class="error" data-wcs="textContent: resProblem"></p>
+            <template data-wcs="if: noReservations"><p>申込はありません。</p></template>
+            <ul class="res-list" data-testid="res-list">
+              <template data-wcs="for: shownReservations">
+                <li class="res" data-wcs="attr.data-id: .id">
+                  <div class="res-head">
+                    <wcs-link data-wcs="to: .href">申込 #{{ .id }}</wcs-link>
+                    <span class="status" data-testid="status" data-wcs="textContent: .statusLabel; class.st-pending: .status|eq('pending'); class.st-approved: .status|eq('approved'); class.st-denied: .status|eq('denied'); class.st-cancelled: .status|eq('cancelled')"></span>
+                    <span class="new" data-wcs="hidden: .unseen|not">新着</span>
+                    <span class="sub" data-wcs="textContent: .createdLabel"></span>
+                  </div>
+                  <div class="res-body" data-wcs="textContent: .summary"></div>
+                  <div class="res-actions">
+                    <button type="button" data-testid="cancel" data-wcs="onclick: cancel; hidden: .canCancel|not">取り消す</button>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="reservations/:id(int)" name="reservation">
+          <wcs-head><title>申込の詳細｜みどり市 備品の貸出</title></wcs-head>
+          <section class="reservation">
+            <template data-wcs="if: reservation">
+              <h1>申込 #<span data-wcs="textContent: reservation.id"></span></h1>
+              <p>状態: <strong class="status" data-testid="detail-status" data-wcs="textContent: detailStatusLabel"></strong></p>
+              <p class="ok" role="status" data-wcs="textContent: cancelMessage"></p>
+              <table class="cart-lines">
+                <thead><tr><th>備品</th><th>期間</th><th>数量</th><th>保証金</th></tr></thead>
+                <tbody>
+                  <template data-wcs="for: detailLines">
+                    <tr><td data-wcs="textContent: .name"></td><td data-wcs="textContent: .period"></td><td class="num" data-wcs="textContent: .quantity"></td><td class="num" data-wcs="textContent: .deposit"></td></tr>
+                  </template>
+                </tbody>
+              </table>
+              <dl class="facts">
+                <dt>利用目的</dt><dd data-wcs="textContent: reservation.purpose"></dd>
+                <dt>受け取り</dt><dd data-wcs="textContent: detailPickup"></dd>
+              </dl>
+              <h2>経過</h2>
+              <ol class="steps" data-testid="steps">
+                <template data-wcs="for: detailSteps"><li><span data-wcs="textContent: .label"></span>　<span data-wcs="textContent: .at"></span></li></template>
+              </ol>
+              <template data-wcs="if: detailReason">
+                <p class="reason" data-testid="reason">却下の理由: <span data-wcs="textContent: detailReason"></span></p>
+              </template>
+              <button type="button" data-testid="cancel-detail" data-wcs="onclick: cancelDetail; hidden: detailCanCancel|not">取り消す</button>
+              <p><wcs-link to="/reservations">申込の一覧へ</wcs-link></p>
+            </template>
+            <template data-wcs="elseif: reservationNotFound">
+              <h1>見つかりません</h1>
+              <p><wcs-link to="/reservations">申込の一覧へ</wcs-link></p>
+            </template>
+            <template data-wcs="else:">
+              <h1>申込の詳細</h1><p>読み込み中…</p>
+            </template>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="admin" name="admin">
+          <wcs-guard-handler>
+            <!-- JavaScript, like the guard above -->
+            <script type="module">
+              export default function () {
+                let s = null;
+                try { s = JSON.parse(localStorage.getItem("midori.session") ?? "null"); } catch { s = null; }
+                return s && s.user && s.user.role === "staff" ? true : "/";
+              }
+            </script>
+          </wcs-guard-handler>
+          <wcs-head><title>管理｜みどり市 備品の貸出</title></wcs-head>
+          <section class="admin">
+            <h1>管理 — 申請中の申込</h1>
+            <p class="ok" role="status" data-testid="admin-message" data-wcs="textContent: adminMessage"></p>
+            <template data-wcs="if: noPending"><p>申請中の申込はありません。</p></template>
+            <ol class="pending" data-testid="pending">
+              <template data-wcs="for: pendingList">
+                <li class="res" data-wcs="class.conflict: .hasConflict; attr.data-id: .id">
+                  <div class="res-head">
+                    <strong>申込 #{{ .id }}</strong>
+                    <span data-wcs="textContent: .groupName"></span>
+                    <span class="sub">申請 <span data-wcs="textContent: .createdLabel"></span>・受け取り <span data-wcs="textContent: .pickupLabel"></span></span>
+                  </div>
+                  <div class="res-body" data-wcs="textContent: .summary"></div>
+                  <div class="sub">利用目的: <span data-wcs="textContent: .purpose"></span></div>
+                  <p class="warn" data-testid="conflict" data-wcs="textContent: .conflict"></p>
+                  <div class="res-actions">
+                    <button type="button" class="primary" data-testid="approve" data-wcs="onclick: approve">承認</button>
+                    <input type="text" placeholder="却下の理由" aria-label="却下の理由" data-testid="reason" data-wcs="value#ro: .reasonDraft; oninput: setReason">
+                    <button type="button" data-testid="deny" data-wcs="onclick: deny">却下</button>
+                  </div>
+                </li>
+              </template>
+            </ol>
+          </section>
+        </wcs-route>
+      </div>
+    </wcs-route>
+
+    <wcs-route fallback name="notfound">
+      <wcs-head><title>見つかりません｜みどり市 備品の貸出</title></wcs-head>
+      <section class="notfound">
+        <h1>見つかりません</h1>
+        <p>このページはありません。<wcs-link to="/">備品をさがす</wcs-link></p>
+      </section>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+</main>
+</body>
+</html>

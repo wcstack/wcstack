@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>midori-qty — 単体の確認ページ（wcstack なし）</title>
+  <script type="module" src="/src/qty-test.ts"></script>
+  <style>body { font-family: sans-serif; padding: 2rem; } output { font-weight: bold; }</style>
+</head>
+<body>
+  <h1>&lt;midori-qty&gt; 単体</h1>
+  <p>wcstack を読み込まないページ。値の変化は <code>midori-qty:change</code> で受け取ります。</p>
+  <label>数量 <midori-qty id="qty" min="1" max="5" step="1" value="2" label="テスト数量"></midori-qty></label>
+  <p>値: <output id="out">2</output>　変化の回数: <output id="count">0</output></p>
+  <p><button type="button" id="set">プログラムから 4 にする</button> <button type="button" id="range">max を 3 にする</button></p>
+</body>
+</html>

@@ -1,0 +1,17 @@
+:root { font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif; background: #10261a; color: #f4f8f4; }
+body { margin: 0; padding: 2vw 3vw; font-size: 2.2vw; }
+[hidden] { display: none !important; }
+header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid #3c8f5c; }
+h1 { font-size: 3.6vw; margin: .3em 0; }
+.clock { font-size: 3vw; font-variant-numeric: tabular-nums; }
+main { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; }
+h2 { font-size: 2.6vw; color: #9fe0b5; }
+.list { list-style: none; padding: 0; margin: 0; display: grid; gap: .6vw; }
+.list li { display: grid; grid-template-columns: 6vw 1fr; gap: 0 1.5vw; background: #1b3a29; border-radius: .6vw; padding: .8vw 1.2vw; }
+.list .t { font-size: 2.6vw; font-weight: 700; grid-row: span 2; font-variant-numeric: tabular-nums; }
+.list .g { font-weight: 700; }
+.list .i { color: #d5e8da; }
+.none { color: #9fb8a6; }
+.problem { color: #ffb4ab; font-size: 2.4vw; }
+.problem:empty { display: none; }
+footer { position: fixed; bottom: 1vw; right: 3vw; font-size: 1.4vw; color: #9fb8a6; }

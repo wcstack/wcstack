@@ -111,6 +111,13 @@ jobs:
       - name: Build the fw-inventory seam app over the packages' dists
         working-directory: examples/fw-inventory
         run: npm ci && WCS_LOCAL=1 npm run build
+      # examples/lending-desk is a TypeScript app built with Vite (wcstack() from @wcstack/typescript/vite) and served from
+      # its dist/ by its own TypeScript server, which Node runs as it is (22.18 or later). WCS_LOCAL=1 points its @wcstack/*
+      # imports and the Vite plugin at packages/*/dist, which the first step rebuilt from src, so
+      # e2e/tests/lending-desk.spec.ts runs this tree's bundles.
+      - name: Build the lending-desk seam app over the packages' dists
+        working-directory: examples/lending-desk
+        run: npm ci && WCS_LOCAL=1 npm run build
       # examples/prod-booking deploys v2 over v1 while a tab is open. v1 is the published @wcstack/* 4.6.2, served
       # from the example's own node_modules; v2 is packages/*/dist (WCS_LOCAL=1), so its spec needs no CDN.
       - name: Install the prod-booking seam app's published packages (its v1)
