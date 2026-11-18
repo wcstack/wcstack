@@ -226,11 +226,27 @@ describe("WcsSse", () => {
       el.url = undefined;
       await flush();
       expect(MockEventSource.last.url).toBe("/feed");
-      // null は属性を外すだけ（url の除去は既存接続を切らない）
+      // null は属性を外す: url が無くなったので閉じる（4.26 から）
       el.url = null;
       await flush();
       expect(MockEventSource.instances.map(es => es.url)).toEqual(["/feed", "/other", "/feed"]);
-      expect(MockEventSource.last.close).not.toHaveBeenCalled();
+      expect(MockEventSource.last.close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+    });
+
+    it("マークアップに url の無い要素へ undefined を書くと、属性が無くなって閉じる", async () => {
+      const el = createEl();
+      document.body.appendChild(el);
+      el.url = "/feed";
+      await flush();
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      el.url = undefined;
+      await flush();
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(es.close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+      expect(MockEventSource.instances).toHaveLength(1);
     });
   });
 
@@ -338,22 +354,131 @@ describe("WcsSse", () => {
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("url を空文字/除去に変更しても既存接続は生き残る（意図的：broadcast の name と同型）", async () => {
+    it("url を空文字にすると閉じる: connected・loading・readyState が閉じた値になり、その変化を知らせる（lending-desk）", async () => {
+      const el = createEl({ url: "/feed?user=a" });
+      document.body.appendChild(el);
+      await flush();
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      const changes: Array<[string, unknown]> = [];
+      for (const type of ["wcs-sse:connected-changed", "wcs-sse:loading-changed", "wcs-sse:readystate-changed"]) {
+        el.addEventListener(type, (e) => changes.push([type, (e as CustomEvent).detail]));
+      }
+      el.setAttribute("url", "");
+      // 判断はマイクロタスク
+      expect(es.close).not.toHaveBeenCalled();
+      await flush();
+      expect(es.close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+      expect(el.loading).toBe(false);
+      expect(el.readyState).toBe(MockEventSource.CLOSED);
+      expect(changes).toEqual([
+        ["wcs-sse:connected-changed", false],
+        ["wcs-sse:readystate-changed", MockEventSource.CLOSED],
+      ]);
+      // 閉じたストリームのイベントはもう届かない
+      const messages: unknown[] = [];
+      el.addEventListener("wcs-sse:message", (e) => messages.push(e));
+      es.simulateMessage("{\"for\":\"a\"}");
+      expect(messages).toEqual([]);
+    });
+
+    it("url 属性を外しても閉じる。接続中（CONNECTING）のストリームも", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
       await flush();
       const es = MockEventSource.last;
-      expect(es.close).not.toHaveBeenCalled();
-
-      el.setAttribute("url", "");
-      await flush();
-      expect(es.close).not.toHaveBeenCalled();
-      expect(MockEventSource.instances).toHaveLength(1);
-
+      expect(el.loading).toBe(true);
       el.removeAttribute("url");
       await flush();
+      expect(es.close).toHaveBeenCalled();
+      expect(el.loading).toBe(false);
+      expect(el.readyState).toBe(MockEventSource.CLOSED);
+    });
+
+    it("url に null を書いても閉じる。次に url を書けばつなぎ直す", async () => {
+      const el = createEl({ url: "/feed?user=a" });
+      document.body.appendChild(el);
+      await flush();
+      el.url = null;
+      await flush();
+      expect(MockEventSource.last.close).toHaveBeenCalled();
+      el.url = "/feed?user=b";
+      await flush();
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed?user=a", "/feed?user=b"]);
+    });
+
+    it("同じタスクで空にして書き戻した url は、閉じも開き直しもしない", async () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      await flush();
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      el.url = null;
+      el.url = "/feed";
+      await flush();
       expect(es.close).not.toHaveBeenCalled();
       expect(MockEventSource.instances).toHaveLength(1);
+      expect(el.connected).toBe(true);
+    });
+
+    it("同じタスクで空にして別の url を書くと、その url へつなぎ直す（閉じたままにしない）", async () => {
+      const el = createEl({ url: "/feed?user=a" });
+      document.body.appendChild(el);
+      await flush();
+      el.url = "";
+      el.url = "/feed?user=b";
+      await flush();
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed?user=a", "/feed?user=b"]);
+      expect(el.loading).toBe(true);
+    });
+
+    it("url を空にすると待っている auto-reconnect も止まる（タイマーが残らない）", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const el = createEl({ url: "/feed", "auto-reconnect": "", "reconnect-interval": "1000" });
+        document.body.appendChild(el);
+        await flush();
+        MockEventSource.last.simulateError(MockEventSource.CLOSED);
+        expect(vi.getTimerCount()).toBe(1);
+        el.url = null;
+        await flush();
+        expect(vi.getTimerCount()).toBe(0);
+        el.url = "/feed?again";
+        await flush();
+        expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed", "/feed?again"]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("manual の要素でも、url を空にすると開いているストリームを閉じる（閉じることは接続ではない）", async () => {
+      const el = createEl({ url: "/feed?user=a", manual: "" });
+      document.body.appendChild(el);
+      await flush();
+      el.connect();
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      el.url = null;
+      await flush();
+      expect(es.close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+      // manual は url を書いてもつながない（いままでどおり）
+      el.url = "/feed?user=b";
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("url の無い要素を付けても何も起きない（閉じるものが無い）", async () => {
+      const el = createEl();
+      const changes: string[] = [];
+      for (const type of ["wcs-sse:connected-changed", "wcs-sse:loading-changed", "wcs-sse:readystate-changed"]) {
+        el.addEventListener(type, () => changes.push(type));
+      }
+      document.body.appendChild(el);
+      await flush();
+      expect(changes).toEqual([]);
+      expect(MockEventSource.instances).toHaveLength(0);
     });
   });
 
@@ -581,6 +706,298 @@ describe("WcsSse", () => {
       expect(MockEventSource.instances).toHaveLength(1);
       document.body.appendChild(el);
       await flush();
+      expect(MockEventSource.instances).toHaveLength(2);
+      el.remove();
+    });
+  });
+
+  // Firefox は全体の遷移で開いているストリームについてコンソールに書く（beforeunload で閉じれば出ない）。
+  // WebKit は router の同じ文書の遷移でも beforeunload を出す — 閉じたら、文書が残るなら開き直す（lending-desk）
+  describe("ページが離れるとき（beforeunload / pagehide / pageshow、timing-and-firing-contract §30）", () => {
+    const pageEvent = (type: string, persisted: boolean): Event => Object.assign(new Event(type), { persisted });
+    const beforeUnload = (): boolean => window.dispatchEvent(new Event("beforeunload"));
+    let navigation: EventTarget;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      navigation = new EventTarget();
+      (globalThis as any).navigation = navigation;
+    });
+    afterEach(() => {
+      document.body.innerHTML = "";
+      delete (globalThis as any).navigation;
+      vi.useRealTimers();
+    });
+
+    async function live(attrs: Record<string, string> = { url: "/feed" }): Promise<{ el: WcsSse; es: MockEventSource }> {
+      const el = createEl(attrs);
+      document.body.appendChild(el);
+      await flush();
+      if (attrs.manual !== undefined) el.connect();
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      return { el, es };
+    }
+
+    it("beforeunload で閉じ（connected は false）、pagehide が来なければ 1 秒後に開き直す", async () => {
+      const { el, es } = await live();
+      beforeUnload();
+      expect(es.close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+      expect(el.readyState).toBe(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(999);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/feed", "/feed"]);
+      MockEventSource.last.simulateOpen();
+      expect(el.connected).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("beforeunload の後に pagehide が来れば閉じたまま（開き直しのタイマーも外す）", async () => {
+      await live();
+      beforeUnload();
+      window.dispatchEvent(pageEvent("pagehide", false));
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      // persisted でない pagehide の後の pageshow（来ないはずだが）も開かない
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("同じ文書の遷移（navigation の currententrychange）が確定したら、待たずにマイクロタスクで開き直す", async () => {
+      const { el } = await live();
+      beforeUnload();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      expect(MockEventSource.instances).toHaveLength(1);
+      await flush();
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/feed", "/feed"]);
+      expect(el.loading).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("開き直すのはそのときの url: 遷移が同じタスクで書いた url を開く（前の url へはつながない）", async () => {
+      const { el } = await live({ url: "/feed?room=1" });
+      beforeUnload();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      el.url = "/feed?room=2";
+      await flush();
+      await flush();
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/feed?room=1", "/feed?room=2"]);
+    });
+
+    it("2 回目の beforeunload（WebKit のガードのリダイレクト）も、開き直した後なら閉じ、また開き直す", async () => {
+      await live();
+      beforeUnload();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(2);
+      beforeUnload();
+      expect(MockEventSource.last.close).toHaveBeenCalled();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(3);
+    });
+
+    it("閉じている間の 2 回目の beforeunload は、閉じたまま待ち直す（2 本開かない）", async () => {
+      await live();
+      beforeUnload();
+      vi.advanceTimersByTime(600);
+      beforeUnload();
+      vi.advanceTimersByTime(600);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(400);
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("開いていない要素（url が無い・閉じた・manual で開いていない）は、beforeunload で何もしない", async () => {
+      const none = createEl();
+      document.body.appendChild(none);
+      const manual = createEl({ url: "/m", manual: "" });
+      document.body.appendChild(manual);
+      const closed = createEl({ url: "/c" });
+      document.body.appendChild(closed);
+      await flush();
+      closed.close();
+      const changes: string[] = [];
+      for (const el of [none, manual, closed]) el.addEventListener("wcs-sse:connected-changed", () => changes.push(el.url));
+      beforeUnload();
+      expect(vi.getTimerCount()).toBe(0);
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/c"]);
+      expect(changes).toEqual([]);
+    });
+
+    it("manual の要素も、ページが開いていたものは開き直す（要素が自分で閉じたものだけを戻す）", async () => {
+      const { el } = await live({ url: "/m", manual: "" });
+      beforeUnload();
+      expect(el.connected).toBe(false);
+      vi.advanceTimersByTime(1000);
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/m", "/m"]);
+    });
+
+    it("auto-reconnect の開き直しを待つ（閉じている）ストリームには beforeunload で何もしない: 開き直しはそのまま", async () => {
+      const el = createEl({ url: "/feed", "auto-reconnect": "", "reconnect-interval": "5000" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(1);
+      beforeUnload();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      expect(vi.getTimerCount()).toBe(1); // auto-reconnect's, as it was
+      vi.advanceTimersByTime(4999);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(MockEventSource.instances).toHaveLength(2);
+      // the reopened stream is open again: the next beforeunload closes it
+      beforeUnload();
+      expect(MockEventSource.last.close).toHaveBeenCalled();
+      expect(el.readyState).toBe(MockEventSource.CLOSED);
+    });
+
+    it("beforeunload を聞くのは、閉じるもの（開いている・開こうとしているストリーム）か開き直すものがある間だけ", async () => {
+      const add = vi.spyOn(window, "addEventListener");
+      const remove = vi.spyOn(window, "removeEventListener");
+      const listening = (): number =>
+        add.mock.calls.filter((c) => c[0] === "beforeunload").length - remove.mock.calls.filter((c) => c[0] === "beforeunload").length;
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      expect(listening()).toBe(0); // not opened yet
+      await flush();
+      expect(listening()).toBe(1); // connecting
+      beforeUnload();
+      expect(listening()).toBe(1); // closed by it, to reopen
+      vi.advanceTimersByTime(1000);
+      expect(listening()).toBe(1); // opened again
+      el.close();
+      expect(listening()).toBe(0);
+      el.connect();
+      expect(listening()).toBe(1);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED); // the browser gave up
+      expect(listening()).toBe(0);
+      el.connect();
+      el.remove();
+      expect(listening()).toBe(0);
+      add.mockRestore();
+      remove.mockRestore();
+    });
+
+    it("閉じている間にページが close() したら開き直さない。connect() したらその 1 本だけ", async () => {
+      const { el } = await live();
+      beforeUnload();
+      el.close();
+      vi.advanceTimersByTime(1000);
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(1);
+
+      const other = await live({ url: "/other" });
+      beforeUnload();
+      other.el.connect();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      vi.advanceTimersByTime(1000);
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/feed", "/other", "/other"]);
+    });
+
+    it("currententrychange の後、マイクロタスクより先に connect() が来たら、開き直しはその 1 本に任せる", async () => {
+      const { el } = await live();
+      beforeUnload();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      el.connect();
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("閉じている間に url を空にしたら開き直さない", async () => {
+      const { el } = await live();
+      beforeUnload();
+      el.url = null;
+      await flush();
+      vi.advanceTimersByTime(1000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("閉じている間に外した要素は開き直さない。入れ直せば 1 本だけつなぐ", async () => {
+      const { el } = await live();
+      beforeUnload();
+      el.remove();
+      expect(vi.getTimerCount()).toBe(0);
+      navigation.dispatchEvent(new Event("currententrychange"));
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(1);
+      document.body.appendChild(el);
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("bfcache: persisted の pagehide で閉じ、persisted の pageshow で開き直す。2 回目の pageshow はつながない", async () => {
+      const { el } = await live();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      expect(el.connected).toBe(false);
+      expect(MockEventSource.last.close).toHaveBeenCalled();
+      window.dispatchEvent(pageEvent("pageshow", false));
+      expect(MockEventSource.instances).toHaveLength(1);
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockEventSource.instances).toHaveLength(2);
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("bfcache: beforeunload で閉じた後の persisted の pagehide でも、戻れば開き直す（そのときの url で。manual の要素で確かめる）", async () => {
+      const { el } = await live({ url: "/feed?since=1", manual: "" });
+      beforeUnload();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      el.url = "/feed?since=2";
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(1);
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/feed?since=1", "/feed?since=2"]);
+    });
+
+    it("bfcache: 開いていなかった要素、戻る前に close() した要素、外した要素、url を空にした要素は開かない", async () => {
+      const manual = createEl({ url: "/m", manual: "" });
+      document.body.appendChild(manual);
+      const closedAfter = await live({ url: "/a" });
+      const removed = await live({ url: "/b" });
+      const cleared = await live({ url: "/c" });
+      window.dispatchEvent(pageEvent("pagehide", true));
+      closedAfter.el.close();
+      removed.el.remove();
+      cleared.el.url = "";
+      await flush();
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockEventSource.instances.map((x) => x.url)).toEqual(["/a", "/b", "/c"]);
+    });
+
+    it("リスナは接続している間だけ: 外した要素は beforeunload・currententrychange・pageshow に反応しない", async () => {
+      const { el, es } = await live();
+      el.remove();
+      expect(es.close).toHaveBeenCalledTimes(1);
+      const add = vi.spyOn(window, "addEventListener");
+      beforeUnload();
+      navigation.dispatchEvent(new Event("currententrychange"));
+      window.dispatchEvent(pageEvent("pageshow", true));
+      await flush();
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(add).not.toHaveBeenCalled();
+      add.mockRestore();
+    });
+
+    it("Navigation API の無いブラウザでも、beforeunload の後は期限で開き直す", async () => {
+      delete (globalThis as any).navigation;
+      const { el } = await live();
+      beforeUnload();
+      vi.advanceTimersByTime(1000);
       expect(MockEventSource.instances).toHaveLength(2);
       el.remove();
     });

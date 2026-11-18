@@ -54,6 +54,9 @@ A `fetch()` call, `trigger=true`, the `fetch` command, and a `data-fetchtarget` 
 ### 1.6 `body` resets to null on every `fetch()`; `method="HEAD"` does not read the body
 (Supplementary. For details see the fetch README's "Design Notes".)
 
+### 1.7 `fetch(url, init)`: what is not a url runs the element's own request, with a warning since 4.26
+`fetch(url, init)` (since 4.24, what a command token carries) takes `url` as a non-empty string or, since 4.26, a `URL` (`String(url)`). Anything else in its place runs the element's own request (its `url`; with none, nothing — `error` says `url attribute is required.`), and `init` is ignored with it. The event an `on…: $command.x` binding passes first, `undefined`, `null` and `""` do so silently. Any other value — a number, an object: the `lending-desk` seam app emitted a row's id where the url goes ([seam-apps.md](./seam-apps.md)) — also warns, once per element for each kind of value (`typeof`, with arrays apart): `[wcs/fetch-url-argument]`, naming what was given. Up to 4.25 nothing was said.
+
 ---
 
 ## 2. @wcstack/intersection — the observation and firing contract
@@ -619,8 +622,8 @@ Where the promise stood for the connect-time work (`<wcs-permission>`'s query, `
 
 | Package | What waits for the microtask |
 |---|---|
-| websocket | connecting (`url`, `manual`); a later `url` change reconnects in the microtask too |
-| sse | connecting (`url`, `manual`) |
+| websocket | connecting (`url`, `manual`); a later `url` change reconnects in the microtask too, and since 4.26 a cleared one closes (§30.1) |
+| sse | connecting (`url`, `manual`); since 4.26 a cleared `url` closes in it (§30.1) |
 | storage | a reconnect's load (`key`, `manual`); the first connect loads at once (§23.2) |
 | broadcast | a reconnect's open (`name`, `manual`); the first connect opens at once |
 | worker | a reconnect's start (`src`, `manual`); the first connect starts at once |
@@ -771,3 +774,30 @@ From the `stamp-rally` seam app ([seam-apps.md](./seam-apps.md)): a page had no 
 
 ### 29.2 Testing
 `packages/credential/__tests__/credentialCore.test.ts`: the call, the cleared error, a rejection, a synchronous throw, the missing container and the missing method, a `get()` in flight that is not superseded, a completion after `dispose()`.
+
+## 30. `<wcs-sse>` and `<wcs-ws>`: a cleared `url` closes; `<wcs-sse>` and the page leaving (2026-11-19)
+
+From the `lending-desk` seam app ([seam-apps.md](./seam-apps.md)). A tab that signed out kept the previous user's stream open: its `url` getter returned `null`, and up to 4.25 a cleared `url` left the connection as it was, on purpose — `<wcs-ws>` the same. And the page's own fix for a Firefox console message — close the stream in `beforeunload`, as the SSE README said — stopped the live updates in WebKit, which fires `beforeunload` on same-document navigations too.
+
+### 30.1 A cleared `url` closes, in the connect-time microtask (`<wcs-sse>`, `<wcs-ws>`)
+A `url` that becomes empty — `null`, `""`, the attribute removed, `undefined` back to a markup that had none — is a change like any other, and the §23 decision closes the connection when the `url` it reads is empty, as `close()` does. `<wcs-sse>`: `connected`, `loading` and `readyState` (`CLOSED (2)`) are published at once. `<wcs-ws>`: an open socket is closed and its `close` event publishes the end; a socket still connecting is let go and the end is published at once (§22); a pending `auto-reconnect` is dropped by both. It applies to a `manual` element too: closing is not connecting, and the `url` was what identified the stream.
+
+Because it is the microtask's decision, changes in one task fold: a `url` cleared and written back neither closes nor reopens. `<wcs-sse>` relies on its core's guard (a `connect()` to the `url` of a stream open or opening does nothing); `<wcs-ws>` remembers the `url` it connected with and leaves a socket that is open or opening on that `url` alone — which also makes a `url` changed and changed back in one task a no-op, where up to 4.25 it reconnected. An element connected with no `url` publishes nothing: there is nothing to close.
+
+### 30.2 `<wcs-sse>` closes when the page is about to unload, and opens again if the document stays
+Firefox logs `The connection to <url> was interrupted while the page was loading.` (a `console.error`) for an `EventSource` still open when a full navigation starts; only a close in `beforeunload` comes before it — `pagehide` is too late. WebKit, which has the Navigation API, fires `beforeunload` before the `navigate` event of a navigation `@wcstack/router` intercepts — a `<wcs-link>`, a guard's redirect (twice: the navigation and its redirect), a `navigateUrl` write; not a traversal (Back) — and Chromium and Firefox do not. The order in WebKit, in one task: `beforeunload`, `navigate`, `currententrychange`, `navigatesuccess`. A leave-page prompt answered with "Stay", and a link that turns out to be a download, leave the page in place with no further event. So, while the element is connected (listeners on `window` and on `navigation` where it exists; `beforeunload` only while there is a stream open or opening, or one closed by it to open again — a listener alone keeps a page out of the back/forward cache in some browsers, as `@wcstack/router`'s `leaveConfirm` also takes into account):
+
+- **`beforeunload`**: the open or opening stream is closed (`SseCore.suspend()`), and its end is published — `connected` goes `false`. A timer of 1 s starts. A stream waiting for `auto-reconnect` has nothing open: no listener, and its reopen goes on.
+- **The document stays**: `navigation`'s `currententrychange` (a same-document navigation committed) opens the stream again in a microtask — so a `url` the navigation makes the page write is the one opened — and otherwise the timer does, when no `pagehide` came. It is opened with `connect()`, which reads the `url` and the options of that moment. A second `beforeunload` while closed waits again (it never opens two).
+- **`pagehide`** (persisted or not): it stays closed, the timer is dropped; a stream that was open — or closed by `beforeunload` — is remembered when the page may enter the back/forward cache (`persisted`).
+- **`pageshow` with `persisted`**: a remembered stream is opened again, as `<wcs-ws>` has done since 4.8 (websocket README, "The back/forward cache").
+
+Only what the element closed this way is opened again. `close()`, a cleared `url` (§30.1) and removing the element cancel the reopen; `connect()` / `trigger` and a `url` change take it over. A `manual` element that the page connected is opened again (it is the page's connection the element closed); one the page never connected has nothing to reopen. Events sent while the stream was closed are not replayed: `connected` turning `true` is the page's cue to catch up, as after any reconnect (sse README, Reconnection).
+
+What it costs: in WebKit, every router navigation closes and reopens the stream (a new request, no `Last-Event-ID`). A navigation whose response takes longer than the timer opens the stream again before the page unloads, and Firefox's message can come back for it.
+
+### 30.3 What the page no longer does
+A page's own `beforeunload` close — the recipe of the SSE README and `io-node-catalog` up to 4.25 — is to be removed: with it, WebKit under the router stays closed after the first navigation, which was the lending-desk app's failure. A page that clears `url` to disconnect no longer needs `close()` beside it.
+
+### 30.4 Testing
+`packages/sse/__tests__/sse.test.ts` (a fake `navigation` and fake timers: the close, the reopen by `currententrychange` and by the timer, the `url` read at the reopen, two `beforeunload`s, `pagehide`, `pageshow`, `close()` / `connect()` / a cleared `url` / a removal in the gap, a `manual` element, a pending `auto-reconnect` left alone, the `beforeunload` listener present only while there is something to close or reopen, no Navigation API; a cleared `url` in its forms, folding in one task) and `sseCore.test.ts` (`suspend()`); `packages/websocket/__tests__/webSocket.test.ts` (a cleared `url` on an open and a connecting socket, folding, a socket that died, `close()` before, a pending `auto-reconnect`, `manual`). In real browsers, `e2e/tests/sse-unload.spec.ts`: events after each router navigation and Back (Chromium, Firefox; WebKit run locally with a `webkit` project — the repository's e2e has none — where it checks the close and the reopen), a full navigation with a quiet console (Firefox's message is caught as a `console.error`), a prompt answered "Stay" (Chromium, Firefox), and a restore from the back/forward cache (full Chromium, with the fixture's document served without `no-store`).

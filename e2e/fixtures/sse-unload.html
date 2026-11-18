@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="data:,">
+  <title>fixture: wcs-sse when the page leaves</title>
+  <!-- The lending-desk seam app (docs/seam-apps.md): Firefox logs "The connection to <url> was interrupted while the
+       page was loading." for a stream open when a full navigation starts, and the documented fix — close it in
+       `beforeunload` — stopped the live updates in WebKit, which fires `beforeunload` on the router's same-document
+       navigations too (a <wcs-link>, a guard's redirect, a navigateUrl write). Since 4.26 <wcs-sse> closes in
+       `beforeunload` itself and opens the stream again when the document stays (timing-and-firing-contract §30).
+       /api/metrics (e2e/serve.mjs) sends a `metric` event every 300 ms. -->
+  <script>
+    window.__got = 0;
+    window.__conn = [];
+    addEventListener("wcs-sse:message", () => { window.__got++; });
+    addEventListener("wcs-sse:connected-changed", (e) => { window.__conn.push(e.detail); });
+    addEventListener("pageshow", (e) => { sessionStorage.setItem("__persisted", String(e.persisted)); });
+  </script>
+  <script type="module" src="/packages/sse/dist/auto.min.js"></script>
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        navigateUrl: null,
+        live: false,
+        signIn() {
+          sessionStorage.setItem("signed-in", "1");
+          this.navigateUrl = "/members";
+        },
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-sse url="/api/metrics?host=a" events="metric" data-wcs="connected: live"></wcs-sse>
+  <p>live: <output id="live" data-wcs="textContent: live"></output></p>
+
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/b">b</wcs-link>
+    <wcs-link to="/members">members</wcs-link>
+    <a id="away">away</a>
+  </nav>
+  <button id="sign-in" data-wcs="onclick: signIn">sign in</button>
+
+  <wcs-router basename="/e2e/fixtures" data-wcs="navigateUrl: navigateUrl">
+    <template>
+      <wcs-route path="/"><h1 id="view">home</h1></wcs-route>
+      <wcs-route path="/b"><h1 id="view">b</h1></wcs-route>
+      <wcs-route path="/login"><h1 id="view">login</h1></wcs-route>
+      <wcs-route path="/members" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            export default () => sessionStorage.getItem("signed-in") === "1";
+          </script>
+        </wcs-guard-handler>
+        <h1 id="view">members</h1>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+
+  <script>
+    // A full navigation: a page of another origin, which the router does not intercept.
+    const away = new URL("/e2e/fixtures/sse-unload-away.html", location.href);
+    away.hostname = location.hostname === "localhost" ? "127.0.0.1" : "localhost";
+    document.getElementById("away").href = away.href;
+  </script>
+</body>
+</html>

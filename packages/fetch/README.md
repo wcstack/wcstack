@@ -404,7 +404,7 @@ save() {
 },
 ```
 
-- `url` is this request's. With none — or with something that is not a string in its place, as the event an `onclick: $command.x` binding emits first — the element's own `url` is fetched, and `init` is ignored.
+- `url` is this request's: a string, or (since 4.26 (not released yet)) a `URL`. With none — or with something else in its place — the element's own `url` is fetched (with none, nothing), and `init` is ignored. The event an `onclick: $command.x` binding emits first, and an empty string, are ignored silently. Since 4.26 (not released yet), any other value — a number, an object: the id of a row emitted where the url goes — warns `[wcs/fetch-url-argument]`, once per element for each kind of value, saying what was given; up to 4.25 nothing was said, and with no `url` on the element nothing happened.
 - `init.method` replaces the element's `method`; `init.headers` are added to the `<wcs-fetch-header>` ones (a same name replaces it); `init.body` is sent in place of the element's `body`, which is then kept for the next request.
 - **Why it exists.** A command runs before the bindings of its update. With `url: pageUrl; command.fetch: $command.load`, a handler that changes what `pageUrl` reads and emits `load` in the same breath fetches the url **before** the change — the list is one page behind, and nothing says so. Give the url to the command, or write `url` first and run the request with `trigger` (bindings apply in the order written). Up to 4.23 `fetch()` ignored its arguments.
 - A url given this way counts as the last one fetched: the binding that writes the same url to the element afterwards does not fetch it again.

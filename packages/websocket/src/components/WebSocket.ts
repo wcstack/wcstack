@@ -6,6 +6,9 @@ import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
+// WebSocket.CLOSED（Core と同じく、モジュールの読み込み時に WebSocket を要らない）
+const WS_CLOSED = 3;
+
 export class WcsWebSocket extends HTMLElement {
   static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
@@ -46,6 +49,9 @@ export class WcsWebSocket extends HTMLElement {
   private _attached = false;
   // _scheduleConnect のマイクロタスクが待っている間 true
   private _connectPending = false;
+  // 最後に connect() した url（close() と切断で空に戻す）。空にして同じタスクで書き戻した url を、
+  // 開いている（開こうとしている）接続のまま残すのに使う
+  private _connectedUrl = "";
 
   constructor() {
     super();
@@ -256,6 +262,7 @@ export class WcsWebSocket extends HTMLElement {
       ? this.protocols.split(",").map(p => p.trim()).filter(Boolean)
       : undefined;
 
+    this._connectedUrl = this.url;
     this._core.connect(this.url, {
       protocols: protocols && protocols.length === 1 ? protocols[0] : protocols,
       autoReconnect: this.autoReconnect,
@@ -275,6 +282,7 @@ export class WcsWebSocket extends HTMLElement {
   // connection. WebSocket.close(event) throws InvalidAccessError, and the socket stayed open.
   close(code?: unknown, reason?: unknown): void {
     this._connectPending = false;
+    this._connectedUrl = "";
     const given = typeof code === "number";
     this._core.close(given ? code as number : undefined, given && typeof reason === "string" ? reason : undefined);
   }
@@ -282,12 +290,14 @@ export class WcsWebSocket extends HTMLElement {
   // --- Lifecycle ---
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
-    // 再接続するのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
+    // 判断し直すのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
     // setAttribute の後に、属性も書く binder — @wcstack/state 3.x の inputs[].attribute ミラー —
     // が同じ値を書く、など）
     // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
-    // connectedCallback がそのときの url で 1 回だけ接続する。
-    if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
+    // connectedCallback がそのときの url で 1 回だけ接続する。空になる url（null・""・属性の除去）も
+    // 変化: 接続を閉じる — 4.25 までは何もせず、サインアウトしたタブが前の利用者のメッセージを受け続けた
+    // （docs/seam-apps.md、lending-desk）。manual でも閉じる: 閉じることは接続ではない。
+    if (name === "url" && oldValue !== newValue && this._attached) {
       this._scheduleConnect();
     }
   }
@@ -295,16 +305,19 @@ export class WcsWebSocket extends HTMLElement {
   // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
   // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
   // params から state が url を書くのはマイクロタスク — その場で接続すると、前の url へ
-  // つないでから閉じていた（docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+  // つないでから閉じていた（docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる:
+  // 空の url は閉じ、開いている（開こうとしている）接続と同じ url は何もしない — 空にして同じタスクで
+  // 書き戻した url は、閉じも開き直しもしない。
   private _scheduleConnect(): void {
     if (this._connectPending) return;
     this._connectPending = true;
     queueMicrotask(() => {
       if (!this._connectPending) return; // an explicit command took the decision meanwhile
       this._connectPending = false;
-      if (this._attached && !this.manual && this.url) {
-        this.connect();
-      }
+      if (!this._attached) return;
+      const url = this.url;
+      if (!url) this.close();
+      else if (!this.manual && (url !== this._connectedUrl || this._core.readyState === WS_CLOSED)) this.connect();
     });
   }
 
@@ -353,6 +366,7 @@ export class WcsWebSocket extends HTMLElement {
   disconnectedCallback(): void {
     this._attached = false;
     this._reopenOnShow = false;
+    this._connectedUrl = "";
     window.removeEventListener("pagehide", this._onPageHide);
     window.removeEventListener("pageshow", this._onPageShow);
     // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。

@@ -183,7 +183,7 @@ data: {"side":"buy","qty":10}
 - 恒久的な失敗（例: 非 2xx レスポンス、誤ったコンテンツタイプ）の場合、`readyState` が `CLOSED (2)` になり `loading` が `false`
 - `error` は最新のエラー `Event` を保持
 
-再接続を止めるには、`close()` を呼ぶ（または DOM から要素を削除する）。
+再接続を止めるには、`close()` を呼ぶ、`url` をクリアする（4.26（未リリース）から）、または DOM から要素を削除する。
 
 **再接続の後に取りこぼしを埋めるのは、サーバーとページの仕事です。** ブラウザが再接続で `Last-Event-ID` を送るのは、ストリームが `id:` 付きのイベントを届けた後だけです。スナップショットを読んでからストリームを開くページは、最初の切断の時点で 1 つも受け取っていないので、再接続は何も求めず、その間の変更は失われ、`connected` はまた `true` になります。ストリームに始める位置を渡してください — スナップショットの位置を URL に入れる（`data-wcs="url: eventsUrl"` と、`"/api/events?since=" + this.streamSince` を返す getter）か、サーバーが最初に今の `id:` を送る。**開いている間、その位置は変えないでください:** `streamSince` は、ストリームを意図して開く・開き直すときに書きます（スナップショットの位置。開き直しでは最後に当てたイベント）。イベントのたびには書きません。イベントのたびに変わる `url` は、そのたびにストリームを閉じて開き直します — データは正しいままなので、何も気づかせません（docs/seam-apps.ja.md、shift-desk: 30 秒で 15 本の接続）。ページが開き直す間のブラウザ自身の再接続は `Last-Event-ID` を運びます。
 
@@ -205,13 +205,14 @@ data: {"side":"buy","qty":10}
 
 **閉じられずに死んだ接続** — ノートパソコンのスリープ、接続を落とした NAT や proxy — にブラウザは気づきません: ストリームは `OPEN` のまま、`connected` は `true` のままで、何も届きません。4.8 から、`stale-after="60000"` は、その時間（ms）イベントが 1 つも届かない開いたストリームを失われたとみなします: `connected` が `false` になり、`error` が理由を言い（`errorInfo.recoverable` は `true`）、要素は同じ `url` を開き直します。新しい `EventSource` は `Last-Event-ID` を送らないので、位置は URL が運びます（上）。サーバーは、要素が聞くイベント — 名前なし、または `events` の名前 — をそれより短い間隔で送る必要があります。SSE のコメント行（`:`）はイベントではありません。何時間も開いたままのページがほかに通るもの: [開いたままのページ](../../docs/long-lived-pages.ja.md)。
 
-**Firefox で、ページが離れるとき。** 開いた `EventSource` があるままページが離れる（ページ全体の読み込み）と、Firefox はコンソールに `The connection to <url> was interrupted while the page was loading.` と出します — 素の `EventSource` でも同じです。害はありません。コンソールを静かにするには、`beforeunload` のリスナでストリームを閉じます。`pagehide` のリスナでは遅すぎます。
+**ページが離れるとき。** 4.26（未リリース）から、`<wcs-sse>` はページが離れようとするとき（`beforeunload`）にストリームを閉じ、文書が残ればまた開きます。開いたストリームがあるまま全体の遷移が始まると、Firefox はコンソールに `The connection to <url> was interrupted while the page was loading.` と出します — 素の `EventSource` でも同じです — そして間に合うのは `beforeunload` で閉じることだけです（`pagehide` では遅すぎます）。けれども `beforeunload` は、ページが離れることを必ずしも意味しません: WebKit は同じ文書の中の遷移でも出します — Navigation API を通る `@wcstack/router` の遷移すべて（`<wcs-link>`、ガードのリダイレクト、`navigateUrl` の書き込み。戻るは除く）—。「このページを離れますか」に「留まる」と答えたとき、ダウンロードだったリンクも、ページはそのままです。そこで:
 
-```js
-window.addEventListener("beforeunload", () => document.querySelector("wcs-sse")?.close());
-```
+- `beforeunload` で、開いている（開こうとしている）ストリームを閉じます: `connected` は正直に `false` になります。要素が `beforeunload` を聞くのは、そういうストリームか、また開くものがある間だけです: リスナがあるだけでページを back/forward cache から外すブラウザがあります。`auto-reconnect` を待つストリームには開いているものが無く、その開き直しはそのまま進みます。
+- 文書が残れば、そのときの `url` でまた開きます: 同じ文書の遷移が確定したとき（Navigation API の `currententrychange`）はすぐに、そうでなければ 1 秒のうちに `pagehide` が来なかったときに。開けば `connected` が `true` になります — 変わったかもしれないものを読み直す `connected` の `$watch`（いずれにせよ要る再接続の処理。[再接続の後に取りこぼしを埋める](#再接続)）がそこで動きます: 間に送られたイベントは届きません。
+- `pagehide` では閉じたままです。back/forward cache からの `pageshow`（`persisted`）では、開いていたならまた開きます — `<wcs-ws>` と同じです。
+- また開くのは、要素がこうして自分で閉じたストリームだけです: `close()` の後、`url` が無いとき（その間にクリアされた）、ページが一度もつながなかった `manual` の要素は開きません。`connect()` / `trigger` と `url` の変化が、この開き直しを引き取ります。
 
-要素は自分ではこれをしません: 結局起きなかった遷移 — 「このページを離れますか」に「留まる」と答えた、ダウンロードだったリンク — の後、ストリームが閉じたままになるからです。
+4.25 までは、要素はここで何もせず、README はページ自身の `beforeunload` リスナで閉じるよう書いていました — router の下の WebKit では、最初の遷移の後ストリームが閉じたままになりました（docs/seam-apps.ja.md、lending-desk）。上げるときは、そのリスナを外してください: 要素が閉じ、また開きます。
 
 ## ステートサーフェス vs コマンドサーフェス
 
@@ -241,7 +242,7 @@ window.addEventListener("beforeunload", () => document.querySelector("wcs-sse")?
 | `trigger` | `boolean` | 単方向の接続トリガー |
 | `manual` | `boolean` | DOM 接続時の自動接続を無効化 |
 
-**`null` と `undefined`。** 属性に対応する入力（`url`・`withCredentials`・`events`・`raw`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`staleAfter`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`/null` や `/undefined` へ接続することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`url` をクリアしても開いているストリームはそのままです（切断は `close()`）。マークアップの `url` が今と違えば、`undefined` で戻したときにその `url` へ張り直します。`trigger` はどちらも無視します。
+**`null` と `undefined`。** 属性に対応する入力（`url`・`withCredentials`・`events`・`raw`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`staleAfter`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`/null` や `/undefined` へ接続することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。4.26（未リリース）から、クリアした `url` —— `null`、`""`、属性の除去 —— はストリームを閉じます: `connected`・`loading`・`readyState` がそのイベントとともに閉じた値になり、待っている `auto-reconnect` も外します。サインアウトで `null` を返す getter は、前の利用者のストリームを閉じます。4.25 までは開いたまま届き続け、`close()` を呼ぶ必要がありました。`manual` の要素のストリームも閉じます（閉じることは接続ではありません）。判断はマイクロタスクで行うので（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）、同じタスクでクリアして書き戻した `url` は、閉じも開き直しもしません。`undefined` はマークアップの `url` に戻します: 今と違えばその `url` へ張り直し、無ければ閉じます。`trigger` はどちらも無視します。
 
 ## `:state()` による CSS スタイリング
 
@@ -319,6 +320,7 @@ form:has(wcs-sse:state(error)) .banner { display: block; }
 
 - 属性 / プロパティマッピング
 - DOM ライフサイクル統合
+- ページが離れるとき: `beforeunload` / `pagehide` / `pageshow`（[再接続](#再接続)）
 - `trigger` などの宣言的ヘルパー
 - DOM 向け設定のための `wc-bindable-protocol` inputs
 
@@ -540,7 +542,8 @@ bootstrapSse({
 
 ## 設計メモ
 
-- **4.8 から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。
+- **4.8 から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。4.26（未リリース）から、同じ判断は、そのときの `url` が空ならストリームを閉じる。
+- **4.26（未リリース）から、ページが離れることを要素が扱う** —— `beforeunload` で閉じ、文書が残るか back/forward cache から戻れば、また開く（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §30、上の[再接続](#再接続)）。
 - `message`、`connected`、`loading`、`error`、`readyState` は **出力ステート**
 - `url`、`trigger` は **入力 / コマンドサーフェス**。`withCredentials`、`events`、`raw`、`autoReconnect`、`reconnectInterval`、`maxReconnects`、`staleAfter` は接続オプションで、接続するときに読む
 - `message` は `{ event, data, lastEventId }` を運ぶため、名前付きイベントが1つのバインド可能プロパティを共有する — state 側で `event` により分岐する

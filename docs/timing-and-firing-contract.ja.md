@@ -54,6 +54,9 @@
 ### 1.6 `body` は `fetch()` ごとに null へリセット / `method="HEAD"` は body 読まない
 （補足。詳細は fetch README「Design Notes」）
 
+### 1.7 `fetch(url, init)`: url でないものは要素自身の要求になり、4.26 からは警告する
+`fetch(url, init)`（4.24 から。コマンドトークンが運ぶもの）は、`url` を空でない文字列、または 4.26 から `URL`（`String(url)`）として受け取る。その位置にそれ以外のものがあれば要素自身の要求を実行し（その `url`。無ければ何もせず、`error` が `url attribute is required.` と言う）、`init` も無視する。`on…: $command.x` のバインディングが先頭に渡すイベント、`undefined`、`null`、`""` は黙ってそうする。それ以外の値 —— 数やオブジェクト: 継ぎ目アプリ `lending-desk` は url の位置に行の id を emit した（[seam-apps.ja.md](./seam-apps.ja.md)）—— は、要素ごと・値の種類（`typeof`、配列は別）ごとに 1 回、渡されたものを名指しして警告もする: `[wcs/fetch-url-argument]`。4.25 までは何も言わなかった。
+
 ---
 
 ## 2. @wcstack/intersection — 観測と発火の契約
@@ -608,8 +611,8 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 | パッケージ | マイクロタスクを待つもの |
 |---|---|
-| websocket | 接続（`url`・`manual`）。その後の `url` の変化による再接続もマイクロタスクで |
-| sse | 接続（`url`・`manual`） |
+| websocket | 接続（`url`・`manual`）。その後の `url` の変化による再接続もマイクロタスクで。4.26 から、クリアした `url` はそこで閉じる（§30.1） |
+| sse | 接続（`url`・`manual`）。4.26 から、クリアした `url` はそこで閉じる（§30.1） |
 | storage | 入れ直しの読み込み（`key`・`manual`）。最初の接続はその場で読む（§23.2） |
 | broadcast | 入れ直しの open（`name`・`manual`）。最初の接続はその場で開く |
 | worker | 入れ直しの起動（`src`・`manual`）。最初の接続はその場で起動する |
@@ -760,3 +763,30 @@ getter は読まれるたびにブラウザを調べ、何も保存しない。�
 
 ### 29.2 テスト
 `packages/credential/__tests__/credentialCore.test.ts`: 呼び出し、エラーが消えること、reject、同期的な throw、container が無い場合とメソッドが無い場合、進行中の `get()` が追い越されないこと、`dispose()` の後の完了。
+
+## 30. `<wcs-sse>` と `<wcs-ws>`: クリアした `url` は閉じる。`<wcs-sse>` とページの離脱（2026-11-19）
+
+継ぎ目アプリ `lending-desk` から（[seam-apps.ja.md](./seam-apps.ja.md)）。サインアウトしたタブが、前の利用者のストリームを開いたままにしていた: `url` の getter は `null` を返したが、4.25 まではクリアした `url` は接続をそのままにした（意図的に。`<wcs-ws>` も同じ）。そして Firefox のコンソールの文言へのページ自身の対処 —— SSE の README のとおり `beforeunload` でストリームを閉じる —— は WebKit でライブの更新を止めた。WebKit は同じ文書の中の遷移でも `beforeunload` を出す。
+
+### 30.1 クリアした `url` は、接続時のマイクロタスクで閉じる（`<wcs-sse>`、`<wcs-ws>`）
+空になる `url` —— `null`、`""`、属性の除去、マークアップに無かったときの `undefined` —— はほかと同じ変化であり、§23 の判断は、読んだ `url` が空なら `close()` と同じに接続を閉じる。`<wcs-sse>`: `connected`・`loading`・`readyState`（`CLOSED (2)`）をその場で知らせる。`<wcs-ws>`: 開いているソケットは閉じ、その `close` イベントが終わりを知らせる。接続中のソケットは手放し、終わりをその場で知らせる（§22）。待っている `auto-reconnect` はどちらも外す。`manual` の要素にも当てはまる: 閉じることは接続ではなく、ストリームを特定していたのは `url` だった。
+
+マイクロタスクの判断なので、1 つのタスクの変化はまとまる: クリアして書き戻した `url` は、閉じも開き直しもしない。`<wcs-sse>` は Core のガード（開いている・開こうとしているストリームの `url` への `connect()` は何もしない）に頼る。`<wcs-ws>` は接続した `url` を覚え、その `url` で開いている・開こうとしているソケットはそのままにする —— これで、1 つのタスクで変えて戻した `url` も何もしない（4.25 までは接続し直した）。`url` の無いまま付けた要素は何も知らせない: 閉じるものが無い。
+
+### 30.2 `<wcs-sse>` はページが離れようとするときに閉じ、文書が残ればまた開く
+全体の遷移が始まるときに開いている `EventSource` について、Firefox は `The connection to <url> was interrupted while the page was loading.` を出す（`console.error`）。それより先に来るのは `beforeunload` での close だけで、`pagehide` では遅い。Navigation API を持つ WebKit は、`@wcstack/router` が横取りする遷移 —— `<wcs-link>`、ガードのリダイレクト（遷移とそのリダイレクトで 2 回）、`navigateUrl` の書き込み。履歴の移動（戻る）は除く —— の `navigate` イベントの前に `beforeunload` を出す。Chromium と Firefox は出さない。WebKit での順は、1 つのタスクの中で `beforeunload`、`navigate`、`currententrychange`、`navigatesuccess`。「このページを離れますか」に「留まる」と答えたとき、ダウンロードだったリンクは、ページをそのままにし、その後のイベントは無い。そこで、要素が接続している間（`window` と、あれば `navigation` のリスナ。`beforeunload` は、開いている・開こうとしているストリームか、それで閉じてまた開くものがある間だけ —— リスナがあるだけでページを back/forward cache から外すブラウザがある。`@wcstack/router` の `leaveConfirm` も同じことを考えている）:
+
+- **`beforeunload`**: 開いている・開こうとしているストリームを閉じ（`SseCore.suspend()`）、終わりを知らせる —— `connected` は `false` になる。1 秒のタイマーを始める。`auto-reconnect` を待つストリームには開いているものが無い: リスナは無く、その開き直しはそのまま進む。
+- **文書が残る**: `navigation` の `currententrychange`（同じ文書の遷移が確定した）が、マイクロタスクでストリームをまた開く —— 遷移がページに書かせる `url` が開くものになる —— 。そうでなければ、`pagehide` が来なかったときにタイマーが開く。開くのは `connect()` で、そのときの `url` とオプションを読む。閉じている間の 2 回目の `beforeunload` は待ち直す（2 本開くことは無い）。
+- **`pagehide`**（persisted かどうかによらず）: 閉じたままにし、タイマーを外す。開いていた —— または `beforeunload` で閉じた —— ストリームは、ページが back/forward cache に入りうるとき（`persisted`）覚えておく。
+- **`persisted` の `pageshow`**: 覚えておいたストリームをまた開く。4.8 からの `<wcs-ws>` と同じ（websocket の README、「back/forward cache」）。
+
+また開くのは、要素がこうして閉じたものだけ。`close()`、クリアした `url`（§30.1）、要素を外すことは開き直しを取り消し、`connect()` / `trigger` と `url` の変化はそれを引き取る。ページがつないだ `manual` の要素はまた開く（要素が閉じたのはページの接続だから）。ページが一度もつながなかったものには、開き直すものが無い。閉じていた間に送られたイベントは届かない: `connected` が `true` になったら追いつくのはページで、ほかの再接続の後と同じ（sse の README、再接続）。
+
+代わりに払うもの: WebKit では router の遷移のたびにストリームを閉じて開き直す（新しい要求、`Last-Event-ID` なし）。応答がタイマーより遅い遷移では、ページが離れる前にストリームをまた開き、そのために Firefox の文言が戻りうる。
+
+### 30.3 ページがもうしないこと
+ページ自身の `beforeunload` での close —— 4.25 までの SSE の README と `io-node-catalog` のレシピ —— は外す: それがあると、router の下の WebKit は最初の遷移の後閉じたままになる。lending-desk のアプリが落ちたのはそれだった。切断のために `url` をクリアするページに、並べた `close()` はもう要らない。
+
+### 30.4 テスト
+`packages/sse/__tests__/sse.test.ts`（偽の `navigation` と偽のタイマー: close、`currententrychange` とタイマーによる開き直し、開き直しで読む `url`、2 回の `beforeunload`、`pagehide`、`pageshow`、間の `close()` / `connect()` / クリアした `url` / 取り外し、`manual` の要素、そのままにする待っている `auto-reconnect`、閉じるか開き直すものがある間だけの `beforeunload` のリスナ、Navigation API が無い場合。クリアした `url` のそれぞれの形、1 つのタスクでのまとまり）と `sseCore.test.ts`（`suspend()`）。`packages/websocket/__tests__/webSocket.test.ts`（開いている・接続中のソケットでのクリアした `url`、まとまり、切れたソケット、その前の `close()`、待っている `auto-reconnect`、`manual`）。実ブラウザでは `e2e/tests/sse-unload.spec.ts`: router の遷移と戻るのたびにイベントが届くこと（Chromium、Firefox。WebKit は `webkit` のプロジェクトを足して手元で走らせた —— リポジトリの e2e には無い —— そこでは閉じて開き直すことを確かめる）、全体の遷移でコンソールが静かなこと（Firefox の文言は `console.error` として捕まる）、「留まる」と答えた確認（Chromium、Firefox）、back/forward cache からの復元（完全な Chromium。fixture の文書は `no-store` なしで返す）。

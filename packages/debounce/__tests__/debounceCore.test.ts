@@ -16,9 +16,9 @@ describe("DebounceCore", () => {
     expect(new DebounceCore()).toBeInstanceOf(EventTarget);
   });
 
-  it("初期状態は value=undefined / fired=[] / pending=false", () => {
+  it("初期状態は value=null / fired=[] / pending=false（まだ何も確定していない — undefined ではない）", () => {
     const core = new DebounceCore();
-    expect(core.value).toBeUndefined();
+    expect(core.value).toBeNull();
     expect(core.fired).toEqual([]);
     expect(core.pending).toBe(false);
   });
@@ -353,6 +353,49 @@ describe("DebounceCore", () => {
     (core as any)._gen++; // dispose 相当の世代更新（cancel は呼ばずタイマーを残す）
     expired();            // _timerGen !== _gen で即 return する分岐
     expect(settled).toEqual([]);
+    expect(core.value).toBeNull();
+  });
+
+  // --- value の「まだ何も確定していない」は null（lending-desk） ---
+
+  it("cancel・flush（何も待っていない）・dispose は確定前の value を null のまま保つ", () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    core.setSource("a");
+    core.cancel();
+    expect(core.value).toBeNull();
+    core.flush();
+    expect(core.value).toBeNull();
+    core.setSource("b");
+    core.dispose();
+    vi.advanceTimersByTime(100);
+    expect(core.value).toBeNull();
+  });
+
+  it("確定した後の cancel・flush・dispose は最後に確定した値を保つ（null に戻さない）", () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    core.setSource("a");
+    vi.advanceTimersByTime(100);
+    core.setSource("b");
+    core.cancel();
+    expect(core.value).toBe("a");
+    core.flush();
+    expect(core.value).toBe("a");
+    core.dispose();
+    expect(core.value).toBe("a");
+  });
+
+  it("signal 面（trigger）を使う要素の value は null のまま", () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    core.trigger(1, 2);
+    vi.advanceTimersByTime(100);
+    expect(core.fired).toEqual([1, 2]);
+    expect(core.value).toBeNull();
+  });
+
+  it("source に書いた undefined は undefined として確定する（運ぶのは与えられた値）", () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    core.setSource(undefined);
+    vi.advanceTimersByTime(100);
     expect(core.value).toBeUndefined();
   });
 });

@@ -103,6 +103,17 @@ describe("<wcs-debounce> 振る舞い", () => {
     vi.useRealTimers();
   });
 
+  it("value は何も確定していない間 null（接続前・接続後・切断後。出力だけのバインディングが要素から読む初期値）", () => {
+    const el = create({ wait: "100" });
+    expect(el.value).toBeNull();
+    document.body.appendChild(el);
+    expect(el.value).toBeNull();
+    el.source = "a";
+    el.remove();
+    vi.advanceTimersByTime(100);
+    expect(el.value).toBeNull();
+  });
+
   it("source 書き込みを wait でデバウンスし value に反映する", () => {
     const el = create({ wait: "100" });
     document.body.appendChild(el);

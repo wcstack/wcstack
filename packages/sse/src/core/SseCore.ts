@@ -270,6 +270,18 @@ export class SseCore extends EventTarget {
     this._closeInternal();
   }
 
+  /**
+   * Closes like close() — `connected` / `loading` / `readyState` are published at once — and says
+   * whether a stream was open, opening or about to reopen (auto-reconnect). The Shell uses it when
+   * the page unloads or may enter the back/forward cache, and opens the stream again when the
+   * document stays or comes back (<wcs-ws>'s core has the same method).
+   */
+  suspend(): boolean {
+    const live = this._es !== null || this._reconnectTimer !== null;
+    this._closeInternal();
+    return live;
+  }
+
   // --- Internal ---
 
   private _doConnect(): void {
