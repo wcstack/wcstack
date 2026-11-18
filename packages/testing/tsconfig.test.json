@@ -1,0 +1,13 @@
+{
+  // Type-check the type-level assertions in `__tests__` (`expectTypeOf`, `@ts-expect-error`) — vitest does
+  // not, and the main `tsconfig.json` excludes `**/*.test.ts`. `npm run typecheck` runs
+  // `tsc --noEmit -p tsconfig.test.json`: a wrong type, a leftover `@ts-expect-error` or a missing one
+  // fails it (the same arrangement as packages/signals).
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist", ".tsc-out", "__tests__/fixtures"]
+}
