@@ -39,11 +39,11 @@ import { validateScriptReads } from "../service/scriptReadValidator.js";
 import { validateScriptWrites } from "../service/scriptWriteValidator.js";
 import { validateAccessorLists } from "../service/accessorListValidator.js";
 import { validateModuleTopReads } from "../service/moduleTopReadValidator.js";
-import { validateStateAbsent, validateStateSources } from "../service/stateSourceValidator.js";
+import { validateStateAbsent, validateStateSchemaDrift, validateStateSources } from "../service/stateSourceValidator.js";
 import { isMustacheDisabled } from "../service/stateBehavior.js";
 import { findAllMustacheSyntax } from "../service/templateSyntax.js";
 import type { FileReader } from "../service/statePathResolver.js";
-import { discoverApplicationManifest } from "./sidecar/discover.js";
+import { discoverApplicationManifest, schemaAppliesToPage } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
 import { inlineExternalStates, locateInlined } from "./externalState.js";
 import type { JsonSchemaNode } from "./sidecar/types.js";
@@ -80,6 +80,13 @@ export interface ValidateDocumentOptions {
    * 同じ `discoverApplicationManifest` を同じ reader で通るので診断が一致する。
    */
   readonly applicationSchema?: JsonSchemaNode;
+  /**
+   * The state file `applicationSchema` was generated from (the manifest's `stateSource`), relative to the HTML file's
+   * directory. When given, the schema is the contract of this page only if its root `<wcs-state src>` loads that file
+   * (sidecar/discover.ts `schemaAppliesToPage`); otherwise the page is checked as if no manifest were there. A
+   * discovered manifest's `stateSource` is read the same way.
+   */
+  readonly applicationStateSource?: string;
 }
 
 /**
@@ -88,14 +95,15 @@ export interface ValidateDocumentOptions {
 export function validateDocument(text: string, options: ValidateDocumentOptions = {}): WcsDiagnostic[] {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const fileReader = options.fileReader;
-  const applicationSchema = options.applicationSchema
-    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
+  const applicationSchema = applicationSchemaFor(text, stateTagName, options);
   // A `src` the reader cannot read: once, on the page (the second pass below would find it again). Bindings in a file
   // with no `<wcs-state>` (a fragment): their paths are not checked — said once (no state, so no second pass)
   const found = [
     ...validateText(text, options, applicationSchema),
     ...validateStateSources(text, stateTagName, options.locale, fileReader),
     ...validateStateAbsent(text, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema),
+    // a stateSchema whose top-level keys are not the root state script's: stale (once, on the page's `<wcs-state>`)
+    ...validateStateSchemaDrift(text, stateTagName, options.locale, fileReader, applicationSchema),
   ];
   // A state in a file of its own (`src=`): the page again, with each such script inline (core/externalState.ts).
   // A finding in a file is shown on its `src` value and carries where it is in the file (`origin`); one in the
@@ -133,6 +141,24 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
     out.push(mapped);
   }
   return sortDiagnostics(out);
+}
+
+/**
+ * The stateSchema that is this page's contract: the one given, or the nearest manifest's (discovered with the reader) —
+ * and not when the manifest names the state file it was generated from (`stateSource`) and the page's root state is
+ * not that file (an inline state, another `src`): the schema describes another state, and its paths were reported
+ * nonexistent on a page that has them (the lending-desk seam app).
+ */
+function applicationSchemaFor(text: string, stateTagName: string, options: ValidateDocumentOptions): JsonSchemaNode | undefined {
+  let schema = options.applicationSchema;
+  let stateSource = options.applicationStateSource;
+  if (schema === undefined && options.fileReader !== undefined) {
+    const discovered = discoverApplicationManifest(options.fileReader);
+    schema = discovered?.schema;
+    stateSource = discovered?.stateSource;
+  }
+  if (schema === undefined || stateSource === undefined) return schema;
+  return schemaAppliesToPage(text, stateTagName, stateSource, options.fileReader) ? schema : undefined;
 }
 
 /** Every validator over one text (the page, or the page with its external states inline). */
@@ -184,7 +210,7 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // a session read at the top level of a module evaluated once: a guard's (error), a state's (warning)
   out.push(...validateModuleTopReads(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
-  out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader, bindAttribute));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader, bindAttribute, applicationSchema));
   // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）
   out.push(...validateScanDeclarations(text, stateTagName, locale));
   // `$recursion` 宣言と `**` の使い方（runtime の recursion/ と同じ診断 code）。

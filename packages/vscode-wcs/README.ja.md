@@ -151,7 +151,8 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | `for:` の行の中の、`name` をリテラルで書いたラジオ（`wcs/radio-name-shared`。どの行のラジオも同じ name になり、ブラウザは全部の行を 1 つのグループにする — ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違う。ブラウザの規則なので実行時は何も言わない。行ごとに違う name を束ねる（`attr.name: .<行のフィールド>`）か、name を外す — `radio:` は name が無くても同じパスのラジオを選択に合わせる。リストと name ごとに 1 回、`name` 属性の上に出す。name を束ねてあるとき・行のものでないパス（`value: .id; radio: selectedId` — 行をまたぐ 1 つの選択）・行ごとに `<form>` があるときは言わない） | `<template data-wcs="for: rows"><input type="radio" name="sex" data-wcs="radio: .sex">` | ⚠ warning |
 | 数値のパスに、変換の無い双方向の `value:`（`wcs/number-written-as-string`。state が数値で持つデータのパス — 種 `count: 0`・JSDoc の `@type {number}`・`stateSchema`、行のフィールド `value: .qty` も。要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる — 何も知らせない。書く束縛を言う: `valueAsNumber: count`（`type="number"`・`range`・日付と時刻の型）か、左辺の入力フィルタ `value\|number: count`（`\|int`・`\|float`）。数値にする入力フィルタ・`#ro`・アクセサペア（setter が変換しうる）・文字列も取ると宣言したパス・値を入力しない入力（`checkbox`・`radio`・`hidden`・ボタン）・カスタム要素では言わない） | `<input type="number" data-wcs="value: count">` | ⚠ warning |
 | 双方向の `value:` / `valueAsNumber:` の出力フィルタ（`wcs/two-way-output-filter`。打つ欄を `input`（既定）で書き戻す束縛では、フィルタが 1 打鍵ごとに state の値を整形して欄へ書き直す — 入力中の欄が書き換わり、キャレットは末尾へ飛び、IME の変換は途切れる。state が受け取るのも整形済みの文字（出力フィルタは書き戻しで元に戻らない）。整形した文字は別の要素に表示する・欄の確定で書き戻して setter で整形する（`value#onchange:`）・一方向にする（`value#ro:`）。確定した値を書き戻す束縛（`#onchange`・スライダー・`<select>`）は入力中に書き換わらないので、戻り道の入力フィルタが無いときだけ報告する — `value#onchange\|number: price\|toFixed(2)` は言わない。要素の書いた文字をそのまま返すフィルタ（`string`・`nullIfEmpty`・`coalesce(…)`・`defaults('')`）・`#ro`・カスタム要素では言わない。報告した束縛に `wcs/number-written-as-string` は重ねない） | `<input data-wcs="value: code\|upper">` | ⚠ warning |
-| フィルタ入力型不一致 | `count\|upper` (number→string filter) | ⚠ warning |
+| フィルタ入力型不一致（`wcs/filter-input-type`。型はリテラルの種・JSDoc の `@type`（getter の `@returns`）・`stateSchema`（getter・入れ子のパスも）から取る。行のパス（`for: rows` の中の `.label`）は展開した行のフィールドの型 — 4.25 までは書き切ったパスだけを見ていた。日付のフィルタ `date`・`time`・`datetime`・`ymd`・`hms` は `Date` だけを受け（ほかはランタイムが throw。null は通す）、文字列・数値・真偽値・リストと分かる値を報告する） | `count\|upper`・`.at\|date`（ISO の文字列） | ⚠ warning |
+| 比較のフィルタ（`eq` / `ne`）のリテラルの引数が、値の取りうる有限の値に無い（`wcs/filter-arg-enum`。`stateSchema` の `enum` / `const` / `anyOf` の const、JSDoc のリテラルの合併 — `@typedef` や別モジュールの型を通しても。`eq` は決して真にならず、`ne` はいつも真。引数はランタイムと同じに比べる: 引用符を外した文字列を文字列と、数値を数値と、引用符なしの `true` / `false` / `null` を真偽値・null と。取りうる値と綴りの近い値を挙げる） | `class.st-approved: .status\|eq('aproved')` | ⚠ warning |
 | フィルタ引数不足 | `count\|mul` | ❌ error |
 | 数値の引数が数値として読めない（ランタイムは束縛の計画で #27 を投げる。引用符付きの `gt('5')` は 5 と読む — ランタイムと同じ） | `count\|gt(abc)` | ❌ error |
 | 文字列の引数に数値（ランタイムは文字列として通す） | `items\|join(1)` | ⚠ warning |
@@ -159,7 +160,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | ネイティブ要素の `command.<method>:` で、メソッドが manifest の `nativeCommands`（`native-commands` 機能の表。`<dialog>` の `showModal`、全要素の `focus` など）に無い（`wcs/token-misconfigured`。「もしかして」付き。ランタイムは初期化で #1205 を投げる） | `<div data-wcs="command.showModal: $command.open">` | ❌ error |
 | `command.<method>:` の右辺が `$command.<name>` でない（`wcs/token-misconfigured`。ランタイムは束縛の計画で #1201 を投げる） | `command.play: count` | ❌ error |
 | `command.<method>:` の右辺の `$command.<name>` が `$commandTokens` に無い（`wcs/token-undeclared`。ランタイムは取り付けで #1302 を投げ、state の初期化が失敗する。`on*: $command.<name>` はイベントのたびに #1302、`eventToken.<メンバー>: <名前>` はイベントのたびに #1301 を報告する — warning。`on*:` のものは 2.19 まで `wcs/binding-path-missing` で出ていた。スクリプトの `this.$command.<名前>` と、`$eventTokens` に無い `$on` のエントリ（state が読み込みで失敗する）は error。state に `$commandTokens` / `$eventTokens` そのものが無いときも同じに報告する — トークンが 1 つも無い、いちばん確かな場合で、2.19 までは黙っていた。「無い」と言うのは宣言を全部読める state だけ: トップレベルに spread の無い `export default { … }` か JSON の state で、キーが無いか空のリスト。リテラルでないリスト・読めないファイル・`setInitialState()` を待つ state・`bind-component` の state・アプリのコードだけが複製する `<template>` の中の束縛では黙る） | `command.play: $command.typo`・`$commandTokens` の無い state の `command.select: $command.select` | ❌ / ⚠ |
-| `wcs-*` のタグが宣言しないメンバー（`wcs/tag-member-unknown`。ランタイムは #38・#1203・#1204 で拒む。`hidden`・`title`・`textContent` などの DOM のプロパティも同じで、宣言なしで書けるのは HTML の書き込み先 — `html:`・`innerHTML:`・`outerHTML:`・`srcdoc:` — だけ） | `<wcs-fetch data-wcs="hidden: busy">` | ❌ error |
+| `wcs-*` のタグが宣言しないメンバー（`wcs/tag-member-unknown`。ランタイムは #38・#1203・#1204 で拒む。`hidden`・`title`・`textContent` などの DOM のプロパティも同じで、宣言なしで書けるのは HTML の書き込み先 — `html:`・`innerHTML:`・`outerHTML:`・`srcdoc:` — だけ。ページが自分で定義する要素（リテラルの `static wcBindable`）も同じに検査し、TypeScript のモジュール — `<script type="module" src="./main.ts">` とそれが import する `.ts`。`./x.js` の import は `.js` が無ければ `./x.ts`、拡張子の無い import は `./x.ts` → `./x.js` — は型を消して読む（`as const satisfies Decl` もリテラル。4.25 までは `.js` / `.mjs` だけを読んでいた）） | `<wcs-fetch data-wcs="hidden: busy">` | ❌ error |
 | タグが `semantics: "handle"` と宣言する出力（`<wcs-camera>` の `streamReady` ＝ 生きた `MediaStream`）を state のパスに束ねる（`wcs/handle-bound-as-value`。動くが、スナップショット・DevTools・SSR に載らないオブジェクトが state に入る。`eventToken.streamReady:` で受け、コマンドの引数として次の要素へ渡す） | `<wcs-camera data-wcs="streamReady: cam.stream">` | ⚠ warning |
 | `<template for>` 外のパターンパス・省略パス・ループの添字（`wcs/wildcard-rank`。4.0 は初期化で #1401 / #1402 を投げる — code はランタイムと同じ） | `textContent: items.*.name`・`.name`・`$1` | ⚠ warning |
 | 行の中で別のリストの `*` を読む（4.0 の #1403） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
@@ -206,6 +207,9 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | ボリュームが拒む宣言（`wcs/volume-declaration`。4.0 の scopes/volume.ts。`$stream`・`$watch`・`$listKeys`・`$renderedCallback` は接ぎ木を拒んで console.error — error。`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback` は console.warn で知らせて無視 — warning。class 構文の state は 1 段下げる） | `<wcs-state mount="cart">` の `$watch: { … }` | ❌ / ⚠ |
 | 読み込みと併記した `bind-component`（`wcs/bind-component-source`。state はホスト要素のプロパティだけで、ランタイムは読み込みを拒んで console.error — コンポーネントはマウントされない。中のスクリプトはランタイムが読まないので、ほかの検査を重ねない） | `<wcs-state bind-component="state" json='{}'>` | ❌ error |
 | 同じ root の 2 つ目の `<wcs-state>`（`wcs/second-root`。state の木は root ごとに 1 つで、後から読み込んだ方は拒まれる） | `<wcs-state>` を `mount` なしで 2 つ | ❌ error |
+| `$watch` のキーが状態に無い（`wcs/watch-path-missing`。ハンドラは黙って一度も発火しない。`stateSchema` があれば束縛と同じく schema が決める — schema が持つキーは報告せず、確かに持たないキーだけ。4.25 までは schema を見ていなかった。`.ts` の state のハンドラの引数 `count(cur: number): void { … }` をキーと読まない） | `$watch: { cuont() {} }` | ⚠ warning |
+| このページに当てた `stateSchema` と root の state のスクリプトのトップレベルのキーの食い違い（`wcs/drift-state-key`。スクリプトにあって schema に無いキー、schema にあってスクリプトに無いキーを `<wcs-state>` の上で 1 回挙げ、`wcs-schema emit` での作り直しと CI の `wcs-schema check` を案内する。schema はスクリプトの派生物で、古いと schema が勝つ — 名前を変えたキーへの束縛の取り残しが通り、新しいキーは `wcs/path-nonexistent` になっていた。読み切れるスクリプト（spread・計算したキー・`$stream` / `$scan` が無い）と schema のトップレベルの properties だけを比べ、ボリュームのマウントの根は除く） | `.ts` で `headerName` を `displayName` に変え、manifest を作り直していない | ⚠ warning |
+| 読めない別モジュールの型・`[]` の分岐の getter の行（`wcs/path-dynamic-unknown`。JSDoc の `import("./api.ts").Reservation[]` のファイルや名前が読めないキー、`return this.counter ? this.counter.pickups : []`・`X ?? []`・`X \|\| []`・早い `return []` で、もう一方の形が読めない getter の行 — その下のパスは検査せず、キー / getter の上で 1 回言う。4.25 までは `[]` から読んで行のフィールドを 1 件ずつ `wcs/binding-path-missing` にしていた） | `get pickups() { return this.counter ? this.counter.pickups : []; }` | ℹ info |
 
 診断のコードはランタイムと同じです。4.0 のランタイムは、診断の後付けが無いと `[@wcstack/state] #203 "outerHTML"` のように番号と値だけを出し（番号の百の位が code を表す — 2xx は `wcs/template-syntax`）、全部入りの `auto` は code と文を出します。どの入口を読んだか（`wcs/feature-not-installed`）など、ページを動かさないと分からないものは静的には出しません。マウントしたコンポーネントで `$watch`・`$stream`・`$renderedCallback` が動かないという警告（`wcs/mount-dollar-declaration`）も出しません — その state はコンポーネントの JavaScript のプロパティにあり、拡張は読みません（`<wcs-state bind-component>` の中に書いたスクリプトはランタイムが読まない — `wcs/bind-component-source`）。ボリュームの `$watch` は接ぎ木ごと拒まれるので、キーの存在（`wcs/watch-path-missing`）は検査しません。ページの root の `$watch` のキーはボリュームの配下（`"cart.total"` — 接ぎ木された state への書き込みで発火する）も指せるので、ボリュームのキーと照合し、ボリュームの state が読めないときは束縛と同じく報告しません。ボリュームは、root の `<wcs-state>` を持つ最も内側の `<template>`（宣言的 shadow root・DCC）の root のもので、その root の `$watch` が照合します。それ以外のボリューム（文書の中、route・レイアウトの雛形の中）はページの root のものです。
 
@@ -234,6 +238,8 @@ export default {
 
 読む型は TypeScript の JSDoc の部分集合です: 名前、オブジェクト型（`{ a: T; b?: U }`）、`T[]` / `Array<T>`、合併、`?T`、`@typedef` の名前（1 つのコメントに書いた `@typedef` はすべて読む。自己参照する typedef は入れ子の上限で止まる）。索引シグネチャ — `{ [key: string]: T }`・`Record<string, T>`・Closure の `Object<string, T>` / `Object.<string, T>` — は任意のキーのオブジェクトを宣言します: その下のパスは開いていて報告しません（`stateSchema` の開いたオブジェクトの下と同じ — `/** @returns {Record<string, boolean>} */ get soldOut()` と `soldOut.e12`）。`Record<"a" | "b", T>` はフィールド `a` と `b` を、`Readonly<T>` / `Partial<T>` / `Required<T>` は `T` の形を宣言します。読めない型（関数型・ほかの総称）は形を宣言しません。`any` / `unknown` / `*` は初期値と照合しません。
 
+別モジュールの型 — `/** @type {import("./api.ts").Reservation[]} */`、getter の `@returns`、`@typedef`（`@typedef {import("./api").Reservation} Reservation`）— は、それを書いたスクリプトからの相対でそのファイルを読みます（`<wcs-state src>` と同じ reader。`.js` の指定は `.ts` → `.d.ts`、拡張子の無い指定は `.ts`・`.d.ts`・`.js`・`/index.*` を読む）: そのファイルのトップレベルの `interface`（`extends`・`readonly`・メソッドの宣言・改行だけで区切ったメンバーも読む）と `type`（export していなくても）、`.js` の `@typedef`。`import type` / `export … from` は先のモジュールへ辿ります。メンバーの中の名前は、それを書いたファイルで解決し、どこにも無い名前（型引数・知らない大域の型）の下は開いています。読めない型のキーのパスは検査せず、1 回だけ言います（`wcs/path-dynamic-unknown`）— 分からないのであって、無いのではありません。リテラル型（`"pending" | "approved"`・`1 | 2`・`true`）はその値の型を持ち、リテラルの合併は `wcs/filter-arg-enum` が比較を照らす値の集合です。
+
 ### Nested Property Assignment Warning
 
 `<wcs-state>` スクリプト内でネストされたプロパティへの代入を検出し、リアクティブ更新がトリガーされない旨を警告します。
@@ -258,7 +264,16 @@ drift。診断には安定コード（例 `manifest-schema-version` / `manifest-
 `wcstack.manifest.json` は、どちらも同じ reader で HTML ファイル相対に読みます。IDE が読むのはディスクに
 保存した文書（`file:` の URI）のときで、未保存（untitled）や仮想ファイルシステムの文書は `src` を読みません
 （読めない `src` と同じく、そのパスは報告しません）。外部 state のファイルを編集中で保存していないときは、
-ディスク上の内容で検証します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
+ディスク上の内容で検証します。`.ts` の state は TypeScript として読みます: getter・メソッド・`$watch` / `$on` の
+ハンドラの戻りの型（`get total(): number {`・`count(cur: number): void {`・`{ a: number } | null`・`Promise<void>`・型引数）で
+メンバーが隠れなくなり（4.25 までは無いと報告し、引数の `cur:` をキーと読んでいた）、TypeScript の構文のある本体
+（`x as T`・`y!`・型付きの局所変数）・state が import する TypeScript のモジュール・ページの `.ts` のモジュールは型を消して読みます
+（Node の `module.stripTypeScriptTypes`。それの無い実行環境 — Node 22.13 より前 — では、その本体は従来どおり検査しません）。
+最寄りの manifest が stateSchema を作った state のファイルを記していれば（`wcstack.application.stateSource`、manifest からの
+相対 — `wcs-schema emit` が書く）、schema はそのファイルを root の `<wcs-state src>` で読むページにだけ当てます（同じパスの
+`.js` と `.ts`、`.mjs` と `.mts` は同じファイル）。インラインの state や別のファイルのページは manifest が無いものとして検査します
+（4.25 までは、隣のページ — 自前のインラインの state を持つ受付画面 — の正しいパスが `wcs/path-nonexistent` の error になっていた）。
+`stateSource` の無い manifest（手書き・それより前に作ったもの）は、これまでどおりすべてのページに当てます。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
 sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
 CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint)
 として配布されています（同一の CLI バンドルを同梱する依存ゼロのラッパー）:

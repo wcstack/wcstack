@@ -134,6 +134,17 @@ export interface WcsMessageCatalog {
    */
   pathDynamicUnknownOutput(path: string, count: number, tag: string, member: string): string;
   /**
+   * A key (or a getter) whose JSDoc type names a type the lint cannot read — `import("./api.ts").Reservation` where the
+   * file is not read or `Reservation` is not an `export interface` / `export type` it reads — with bindings under it:
+   * those paths are not checked. `type` as written.
+   */
+  pathDynamicUnknownType(path: string, count: number, type: string): string;
+  /**
+   * The root state's script and the stateSchema applied to the page disagree on the top-level keys: `inScript` the
+   * script declares and the schema lacks, `inSchema` the schema has and the script does not declare.
+   */
+  stateSchemaDrift(inScript: readonly string[], inSchema: readonly string[]): string;
+  /**
    * A key seeded with an object literal whose keys are read but for a spread the analyzer could not read
    * (`draft: { ...makeDraft() }`), with bindings under it: those paths are not checked. `spread` as written, `from` the
    * specifier its name is imported from.
@@ -246,6 +257,11 @@ export interface WcsMessageCatalog {
   filterMaxArgs(name: string, maxArgs: number, argCount: number): string;
   filterArgType(name: string, argPosition: number, expectedType: string, argText: string, actualType: string): string;
   filterInputType(name: string, acceptTypes: string, currentType: string): string;
+  /**
+   * A comparison filter's literal argument (`eq('aproved')`) that the value it compares never is: `members` are the
+   * values its type allows (a stateSchema `enum`, a JSDoc literal union), `suggestion` the "did you mean" suffix.
+   */
+  filterArgEnum(name: string, arg: string, members: readonly string[], suggestion: string): string;
   moustacheFouc(expression: string): string;
   /** `<title>` / `<textarea>` の中の `{{ }}`（`<template>` の外）: コメントの形はそこでは束縛にならない。 */
   moustacheFoucTextParent(expression: string, tag: 'title' | 'textarea'): string;
@@ -484,6 +500,14 @@ function shortSeed(raw: string): string {
   return flat.length <= 32 ? flat : `${flat.slice(0, 29)}…`;
 }
 
+/** At most this many keys are named in one message (the rest are counted). */
+const MAX_LISTED_KEYS = 10;
+
+/** `a, b, c` — past MAX_LISTED_KEYS, `… (+N)`. */
+function listKeys(keys: readonly string[]): string {
+  return keys.length <= MAX_LISTED_KEYS ? keys.join(', ') : `${keys.slice(0, MAX_LISTED_KEYS).join(', ')} … (+${keys.length - MAX_LISTED_KEYS})`;
+}
+
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
   boolean: 'ブーリアン型',
@@ -587,6 +611,10 @@ const ja: WcsMessageCatalog = {
     `このファイルには束縛がありますが <${tag}> が無いので、束縛のパスは検査していません（ページが取り込む断片や、state をスクリプトで作るページ）。state のあるページを検査するか、このファイルの隣（か上）の wcstack.manifest.json の stateSchema にパスを宣言すると検査されます`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
+  pathDynamicUnknownType: (path, n, type) =>
+    `"${path}" の JSDoc の型 ${type} は読めないので、その下に束ねたパス（${n} 件）は検査していません（読むのは、読めるファイルの export interface / export type、.js の @typedef）。形をその場で書くか、同じスクリプトの @typedef にするか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
+  stateSchemaDrift: (inScript, inSchema) =>
+    `このページに当てた stateSchema が state のスクリプトと食い違っています${inScript.length > 0 ? `（スクリプトにあって schema に無いキー: ${listKeys(inScript)}）` : ''}${inSchema.length > 0 ? `（schema にあってスクリプトに無いキー: ${listKeys(inSchema)}）` : ''}。schema はスクリプトから作る派生物なので、古いか、別の state（別のページ）のものです — そのまま検査すると、名前を変えたキーへの束縛が通り、あるキーが存在しないと言われます。wcs-schema emit で作り直し（作った manifest は元の state のファイルを stateSource に記し、lint はそのファイルを読むページにだけ当てます）、CI では wcs-schema check で食い違いを止めてください`,
   pathDynamicUnknownOutput: (path, n, tag, member) =>
     `"${path}" は <${tag}> の出力 "${member}" が書くので、中身は要素が渡すものです。その形は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに形を表す JSDoc の @type を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
@@ -662,6 +690,8 @@ const ja: WcsMessageCatalog = {
   filterMaxArgs: (n, max, c) => `フィルタ "${n}" の引数は最大 ${max} 個です（${c} 個指定）`,
   filterArgType: (n, i, exp, arg, act) => `フィルタ "${n}" の第${i}引数は ${exp} 型が必要です（"${arg}" は ${act} 型）`,
   filterInputType: (n, accepts, cur) => `フィルタ "${n}" は ${accepts} 型の入力が必要です（現在の型: ${cur}）`,
+  filterArgEnum: (n, arg, members, suggestion) =>
+    `"${n}(${arg})" の ${arg} は、比べる値が取りうる値（${members.join(' | ')}）にありません — ${n === 'ne' ? 'いつも真' : '決して真になりません'}${suggestion}`,
   moustacheFouc: (e) =>
     `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${e}--> またはコメント構文の使用を検討してください。`,
   moustacheFoucTextParent: (e, tag) =>
@@ -988,6 +1018,10 @@ const en: WcsMessageCatalog = {
     `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathDynamicUnknownType: (path, n, type) =>
+    `The JSDoc type ${type} of "${path}" cannot be read, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked (read are an export interface / export type of a file it can read, and a @typedef in a .js). Write the shape in place, make it a @typedef in the same script, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  stateSchemaDrift: (inScript, inSchema) =>
+    `The stateSchema applied to this page disagrees with its state's script${inScript.length > 0 ? ` (in the script, not in the schema: ${listKeys(inScript)})` : ''}${inSchema.length > 0 ? ` (in the schema, not in the script: ${listKeys(inSchema)})` : ''}. The schema is derived from a script: it is stale, or another state's (another page's). Checked against it, a binding to a renamed key passes and a key is said not to exist. Regenerate it with wcs-schema emit (the manifest it writes names its state file in stateSource, and the lint applies it only to the pages that load that file), and run wcs-schema check in CI to stop the drift`,
   pathDynamicUnknownOutput: (path, n, tag, member) =>
     `"${path}" is written by "${member}" of <${tag}>, an output, so it holds whatever the element gives: its shape cannot be read statically, and the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>
@@ -1063,6 +1097,8 @@ const en: WcsMessageCatalog = {
   filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
   filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
   filterInputType: (n, accepts, cur) => `Filter "${n}" requires input of type ${accepts} (current type: ${cur})`,
+  filterArgEnum: (n, arg, members, suggestion) =>
+    `${arg} in "${n}(${arg})" is not a value the compared value takes (${members.join(' | ')}): it is ${n === 'ne' ? 'always true' : 'never true'}${suggestion}`,
   moustacheFouc: (e) =>
     `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   moustacheFoucTextParent: (e, tag) =>

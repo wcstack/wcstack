@@ -40,6 +40,11 @@ export const WcsDiagnosticCode = {
   // --- sidecar vs live declaration drift ---
   DriftMissingMember: "wcs/drift-missing-member",
   DriftEventMismatch: "wcs/drift-event-mismatch",
+  // stateSchema と state のスクリプトのトップレベルのキーが食い違う（スクリプトにあって schema に無い・schema にあって
+  // スクリプトに無い）。schema はスクリプトから作る派生物なので古い: 名前を変えたキーの束縛の取り残しが通り、新しいキーは
+  // `wcs/path-nonexistent` になる（継ぎ目アプリ lending-desk — `wcs-schema check` だけが気付いた）。`<wcs-state>` の上で
+  // 1 回、キーを挙げて `wcs-schema emit` を案内する。warning（4.26）。
+  DriftStateKey: "wcs/drift-state-key",
   // --- path / type resolution against a stateSchema ---
   PathNonexistent: "wcs/path-nonexistent",
   PathTypeMismatch: "wcs/path-type-mismatch",
@@ -72,6 +77,10 @@ export const WcsDiagnosticCode = {
   FilterArity: "wcs/filter-arity",
   FilterArgType: "wcs/filter-arg-type",
   FilterInputType: "wcs/filter-input-type",
+  // 比較のフィルタ（`eq` / `ne`）のリテラルの引数が、入力の値の取りうる有限の集合（stateSchema の `enum` / `const` /
+  // `anyOf` の const、JSDoc のリテラルの合併）に無い: `status|eq('aproved')` は決して真にならない（`ne` は常に真）。
+  // 綴りの近い値を挙げる。warning（4.26、継ぎ目アプリ lending-desk — バッジの色が黙って消えた）。
+  FilterArgEnum: "wcs/filter-arg-enum",
   BindingPathMissing: "wcs/binding-path-missing",
   BindingTypeExpectation: "wcs/binding-type-expectation",
   TokenUndeclared: "wcs/token-undeclared",
@@ -340,7 +349,7 @@ export const WcsDiagnosticCode = {
   // 受ける要素のメソッドはイベントを第 1 引数として呼ばれる。データを取るコマンド（組み込みタグの、引数を宣言する
   // メソッド）ではそれが原因から遠い所で失敗する — `<wcs-screen-orientation>` の `lock(event)` と `<wcs-share>` の
   // `share(event)` はブラウザの TypeError が `error` に出るだけ、`<wcs-credential>` の `get(event)` は何も言わず null
-  // （stamp-rally）。`on*:` の束縛に出す。`<wcs-fetch>` の `fetch`（4.24 から url の位置の文字列でない値を無視する）と
+  // （stamp-rally）。`on*:` の束縛に出す。`<wcs-fetch>` の `fetch`（url の位置のイベントは無視する。4.26 から `URL` も受け、ほかの値は `[wcs/fetch-url-argument]`）と
   // ネイティブ要素のコマンド（native-commands の後付けは第 1 引数がイベントなら引数なしで呼ぶ）は対象外。warning。
   CommandEventArgument: "wcs/command-event-argument",
   // 既知のカスタム要素の出力だけのメンバー（`<wcs-fullscreen>` の `active: viewerFs`）に束ねたパスへ、スクリプトが

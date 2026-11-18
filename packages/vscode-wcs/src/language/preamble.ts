@@ -2,8 +2,15 @@
  * preamble.ts
  *
  * HTML インラインスクリプト用の型定義プリアンブル。
- * 仮想 TypeScript ドキュメントの先頭に注入することで、
- * import なしで defineState() + パス型補完を提供する。
+ * 仮想ドキュメントの先頭に注入することで、import なしで defineState() + パス型補完を提供する。
+ *
+ * インラインスクリプトはブラウザが JavaScript として実行するので、仮想コードも JavaScript として検査する
+ * （4.26）。プリアンブルも JavaScript で、型はすべて JSDoc（`@typedef` / `@template` / `@type`）に書く —
+ * TypeScript は JSDoc の中の型を完全な型の構文で読む（条件型・マップ型・テンプレートリテラル型）。
+ * 先頭の `// @ts-check` で、tsconfig の `checkJs` に関わらず検査を有効にする。末尾の `export {};` で
+ * 仮想ファイルをモジュールにする（`<script type="module">` と同じ。型名がほかのファイルの大域に漏れない）。
+ *
+ * 複数行の JSDoc は行頭の `*` を付けずに書く — 型の式の中の行頭の `*` を読み飛ばすかは TypeScript の版で違う。
  *
  * @wcstack/state（4.0）の defineState.ts と同等の型を含む。4.0 で外れた旧名（`$trackDependency` /
  * `$untrackDependency`）と宣言（`$scan` / `$streams`）は型に持たない — 書けば型エラーになり、
@@ -20,25 +27,32 @@ const BEHAVIOR_TYPE = `{ ${Object.entries(manifest.behaviorOptions).map(([key, o
 /** `"formats" | "diagnostics" | …`（manifest の `features`）。 */
 const FEATURE_NAME_TYPE = manifest.features.map((name) => JSON.stringify(name)).join(' | ');
 
-export const WCS_PREAMBLE = `
+export const WCS_PREAMBLE = `// @ts-check
 // --- @wcstack/state type preamble (auto-injected by vscode-wcs) ---
-type _IsAny<T> = 0 extends (1 & T) ? true : false;
-type _IsPlainObject<T> =
-  _IsAny<T> extends true ? false :
+/** @template T @typedef {0 extends (1 & T) ? true : false} _IsAny */
+/**
+@template T
+@typedef {_IsAny<T> extends true ? false :
   T extends
     | string | number | boolean | null | undefined | symbol | bigint
     | Function | Date | RegExp | Error
     | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
     | Promise<any> | readonly any[]
     ? false
-    : T extends Record<string, any> ? true : false;
-type _DataKeys<T> = {
+    : T extends Record<string, any> ? true : false} _IsPlainObject
+*/
+/**
+@template T
+@typedef {{
   [K in keyof T & string]:
     K extends \`$\${string}\` ? never :
     _IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
-}[keyof T & string];
-type _WcsPaths<T, D extends readonly any[] = []> =
-  D["length"] extends 4 ? never :
+}[keyof T & string]} _DataKeys
+*/
+/**
+@template T
+@template {readonly any[]} D
+@typedef {D["length"] extends 4 ? never :
   { [K in _DataKeys<T>]:
     | K
     | (T[K] extends readonly (infer E)[]
@@ -48,11 +62,18 @@ type _WcsPaths<T, D extends readonly any[] = []> =
         : _IsPlainObject<T[K]> extends true
           ? _WcsSubPaths<T[K], \`\${K}.\`, [...D, 0]>
           : never)
-  }[_DataKeys<T>];
-type _WcsSubPaths<T, P extends string, D extends readonly any[]> =
-  _WcsPaths<T, D> extends infer R extends string ? \`\${P}\${R}\` : never;
-type _WcsPathValue<T, P extends string> =
-  P extends keyof T ? T[P]
+  }[_DataKeys<T>]} _WcsPaths
+*/
+/**
+@template T
+@template {string} P
+@template {readonly any[]} D
+@typedef {_WcsPaths<T, D> extends infer R extends string ? \`\${P}\${R}\` : never} _WcsSubPaths
+*/
+/**
+@template T
+@template {string} P
+@typedef {P extends keyof T ? T[P]
   : P extends \`\${infer K}.*\`
     ? K extends keyof T ? T[K] extends readonly (infer E)[] ? E : never : never
   : P extends \`\${infer K}.\${infer R}\`
@@ -61,10 +82,19 @@ type _WcsPathValue<T, P extends string> =
         ? R extends \`*.\${infer S}\` ? _WcsPathValue<E, S> : R extends "*" ? E : never
         : T[K] extends Record<string, any> ? _WcsPathValue<T[K], R> : never
       : never
-    : never;
-type _WcsPathAccessor<T> = { [P in _WcsPaths<T>]: _WcsPathValue<T, P> };
-type _WcsStreamStatus = "idle" | "active" | "done" | "error";
-interface WcsStateApi {
+    : never} _WcsPathValue
+*/
+/** @template T @typedef {{ [P in _WcsPaths<T, []>]: _WcsPathValue<T, P> }} _WcsPathAccessor */
+/** @typedef {"idle" | "active" | "done" | "error"} _WcsStreamStatus */
+// WcsStateApi の索引（@wcstack/state の defineState と対）:
+// - $command: $commandTokens に書いた名前（N）の token。名前を推論できなければ Record<string, …>。
+// - \`\${string}.**.\${string}\` / \`\${string}.**\`: $recursion 宣言済みの再帰パス（\`nodes.**.total\`・素の \`nodes.**\`）。
+//   深さの族なので _WcsPaths の有限展開には現れない。\`**\` を含むキーは読める（型は any）とだけ言う。
+// - \`.\${string}\`: 行からの相対パス（\`this[".name"]\`・\`this["."]\`、4.22）。基準は評価している行のリストで、
+//   型では表せない（型は any。パスが在るかは lint が検査する）。setter は書くので readonly ではない。
+/**
+@template {string} N
+@typedef {{
   $getAll<V = any>(path: string, indexes?: number[]): V[];
   $setAll<V = any>(path: string, indexes: number[], value: V | ((current: V, ...indexes: number[]) => V | undefined)): number;
   $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: { spread: true }): number;
@@ -77,7 +107,7 @@ interface WcsStateApi {
   $eqPath(path: string, keyPath: string): boolean;
   $eqIndex(path: string, level?: number): boolean;
   readonly $stateElement: HTMLElement;
-  readonly $command: Record<string, { emit(...args: any[]): any }>;
+  readonly $command: Record<N, { emit(...args: any[]): any }>;
   readonly $streamStatus: Record<string, _WcsStreamStatus>;
   readonly $streamError: Record<string, unknown>;
   readonly [key: \`$streamStatus.\${string}\`]: _WcsStreamStatus;
@@ -85,53 +115,56 @@ interface WcsStateApi {
   readonly $1: number; readonly $2: number; readonly $3: number;
   readonly $4: number; readonly $5: number; readonly $6: number;
   readonly $7: number; readonly $8: number; readonly $9: number;
-  // $recursion 宣言済みの再帰パス（\`nodes.**.total\`）。深さの族なので \`_WcsPaths\` の
-  // 有限展開には現れず、getter のキーに書いた 1 本しか T に現れない。パターン索引で
-  // 「\`**\` を含むキーは読める」とだけ言う（型は any — 深さを型で表せない以上、値の型も
-  // 辿れない）。パターンは \`**\` を必ず含むので、通常のドットパスの型付けは損なわない。
   readonly [key: \`\${string}.**.\${string}\`]: any;
-  // 素の \`nodes.**\`（再帰 getter の中でノード自身に束縛される読み）は \`.**.\` を含まないので
-  // 末尾が \`.**\` のキーにも同じ索引を置く（@wcstack/state の defineState と対）。
   readonly [key: \`\${string}.**\`]: any;
-  // 行からの相対パス（\`this[".name"]\`・\`this["."]\`、4.22）。基準は評価している行のリスト — アクセサのキー
-  // （\`get "users.*.fullname"()\`）か、メソッドを呼んだ行で決まる。this の型は状態全体で 1 つなので、どの行かは
-  // 型では表せない（型は any。パスが在るかは lint が、アクセサのキーから展開して検査する）。setter は書くので
-  // readonly ではない（@wcstack/state の defineState と対）。
   [key: \`.\${string}\`]: any;
-}
+}} WcsStateApi
+*/
 // 1 つのアクセサを複数のパスに宣言したキー（\`get "users.*.fullname,employees.*.fullname"()\`、4.22）の各パス。
 // T にはキーの文字列そのものしか現れないので、カンマで分けた各パスにそのアクセサの型を写す。
-type _WcsListedPaths<K extends string> = K extends \`\${infer Head},\${infer Rest}\` ? Head | _WcsListedPaths<Rest> : K;
-type _WcsListedAccessors<T> = { [K in keyof T & \`\${string},\${string}\` as _WcsListedPaths<K>]: T[K] };
+/** @template {string} K @typedef {K extends \`\${infer Head},\${infer Rest}\` ? Head | _WcsListedPaths<Rest> : K} _WcsListedPaths */
+/** @template T @typedef {{ [K in keyof T & \`\${string},\${string}\` as _WcsListedPaths<K>]: T[K] }} _WcsListedAccessors */
 // $stream の値は、ランタイムが宣言キーの名前で実体化するプロパティ。T には宣言オブジェクトの中にしか
 // 現れないので、getter やメソッドの this から読めるよう any で写す。initial の型は使わない — 空配列の
 // initial が never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。
 // T に同名のプロパティを明示的に事前宣言していれば写さない（交差でその型まで any に潰さないため）。
-type _WcsDeclaredValues<T> =
-  (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
-type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>;
+/** @template T @typedef {(T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {})} _WcsDeclaredValues */
+/** @template T @template {string} N @typedef {T & WcsStateApi<N> & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>} _WcsThis */
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
 // キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
-type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
+/** @typedef {Record<string, string | ((row: any) => unknown)>} _WcsListKeys */
 // $watch: { "<path>": (cur, prev, ...indexes) => void }（watch/processWatchDeclaration.ts）。
-// ハンドラ引数に文脈型を与えるためだけの宣言（$listKeys と同じ理由）。
-// this は ThisType<_WcsThis<T>> により state 型になる。
-type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
-// $recursion: { "<anchor>": "<repeat>" }（recursion/declaration.ts）。初版は単一の自己再帰
-// のみで、アンカーも反復サブパスも「固定プロパティ列 + 末尾の .*」に限る。形の検証は
+// ハンドラ引数に文脈型を与えるためだけの宣言（$listKeys と同じ理由）。this は ThisType<_WcsThis<T, N>> により state 型になる。
+/** @typedef {Record<string, (cur: any, prev: any, ...indexes: number[]) => void>} _WcsWatch */
+// $recursion: { "<anchor>": "<repeat>" }（recursion/declaration.ts）。形の検証は
 // service/recursionValidator.ts（wcs/recursion-declaration-invalid）が担う。
-type _WcsRecursion = Record<string, string>;
+/** @typedef {Record<string, string>} _WcsRecursion */
+// $on: { "<event token>": (state, event, ...indexes) => … }（token.ts — handler(state, event, ...listIndexes) と呼ばれ、
+// this は undefined）。state の型は T ではなく S（引数から推論した T の写し）から作る: ハンドラの引数の型が T を
+// 参照すると、TypeScript は T を推論し終える前に（引数の無い制約 Record<string, any> で）確定させ、
+// state 全体の型付けが消える。S の推論は関数を unknown にした部分的なもので、state ではそれを any に読む
+// （メソッドは呼べるが検査されない）。null / undefined で初期化した値は strictNullChecks が無ければ any（T と同じ広げ方。
+// \`null extends string\` は strictNullChecks が無いときだけ真）。event は CustomEvent — wc-bindable の既定の getter が
+// detail を読むとおり（detail は any）。CustomEvent<…> や Event への注釈も通す（双変）。
+/** @template V @typedef {unknown extends V ? any : [V] extends [null | undefined] ? (null extends string ? any : V) : V} _WcsOnValue */
+/** @template S @template {string} N @typedef {_WcsThis<{ [K in keyof S]: _WcsOnValue<S[K]> }, N>} _WcsOnState */
+/** @template S @typedef {{ bivarianceHack(this: void, state: S, event: CustomEvent, ...indexes: number[]): unknown }["bivarianceHack"]} _WcsOnHandler */
 // $behavior: その木の振る舞い（4.0 で bootstrapState から移った 3 キー。既定はどれも true）。
 // 値が boolean でない形は型エラーになる。知らないキーは lint（wcs/behavior-invalid）が報告する。
-type _WcsBehavior = ${BEHAVIOR_TYPE};
+/** @typedef {${BEHAVIOR_TYPE}} _WcsBehavior */
 // $features: その state が要る後付け（4.0。分割 auto は読み込み、全部入り・バンドラは入っているかを検査する）。
-type _WcsFeatureName = ${FEATURE_NAME_TYPE};
-function defineState<T extends Record<string, any>>(
-  def: T & {
-    $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion;
-    $behavior?: _WcsBehavior; $features?: readonly _WcsFeatureName[];
-  } & ThisType<_WcsThis<T>>
-): T { return def; }
+/** @typedef {${FEATURE_NAME_TYPE}} _WcsFeatureName */
+// defineState は関数の型を @type で与える（@template / @param で書いた関数宣言では、$on の state を推論するときに
+// T まで確定してしまう — JavaScript の関数宣言の扱いの違い）。N は $commandTokens から推論する token の名前。
+/**
+@type {<T extends Record<string, any>, N extends string = string, S = T>(def: T & { [K in keyof S]: S[K] } & {
+  $commandTokens?: readonly N[]; $on?: Record<string, _WcsOnHandler<_WcsOnState<S, N>>>;
+  $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion;
+  $behavior?: _WcsBehavior; $features?: readonly _WcsFeatureName[];
+} & ThisType<_WcsThis<T, N>>) => T}
+*/
+const defineState = (def) => def;
+export {};
 // --- end preamble ---
 `;
 

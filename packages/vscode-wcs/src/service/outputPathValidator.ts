@@ -192,8 +192,9 @@ function stateBodies(script: string, root: boolean): StateBody[] {
   return out;
 }
 
-const FUNCTION_HEAD = /^\s*(?:async\s+)?function\b[^(]*\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*\{/;
-const ARROW_HEAD = /^\s*(?:async\s+)?(?:\(\s*([A-Za-z_$][\w$]*)?[^()]*\)|([A-Za-z_$][\w$]*))\s*=>\s*\{/;
+// (a TypeScript return type may stand before the body: `function (cur: number): void {`, `(state: S): void => {`)
+const FUNCTION_HEAD = /^\s*(?:async\s+)?function\b[^(]*\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*(?::[^{}=;]*)?\{/;
+const ARROW_HEAD = /^\s*(?:async\s+)?(?:\(\s*([A-Za-z_$][\w$]*)?[^()]*\)\s*(?::[^{}=;]*)?|([A-Za-z_$][\w$]*)\s*)=>\s*\{/;
 
 /**
  * The block body of a handler written as a value (`name: function (state) { … }`, `name: (state) => { … }`), with its

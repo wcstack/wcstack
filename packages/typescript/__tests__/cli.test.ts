@@ -146,6 +146,40 @@ describe("wcs-schema emit", () => {
     expect(stored.properties.i18n.properties.t.properties.hello).toEqual({ type: "string" });
   });
 
+  it("ルートの state ファイルを stateSource に書く（manifest の置き場所からの相対・/ 区切り）。--out・--out=-・--merge・--mount", () => {
+    const dir = join(tmp.dir, "source1");
+    tmp.write("source1/src/state/app.ts", STATE);
+    tmp.write("source1/src/i18n.ts", "export default { t: { hello: '' } };");
+    const ns = (file: string): Record<string, any> => JSON.parse(readFileSync(join(dir, file), "utf8")).manifestExtensions["wcstack.application"];
+
+    const root = run(["emit", "src/state/app.ts"], dir);
+    expect(root.code).toBe(0);
+    expect(root.stderr).toContain("wrote wcstack.manifest.json (state tree of src/state/app.ts)");
+    expect(ns("wcstack.manifest.json").stateSource).toBe("src/state/app.ts");
+
+    expect(run(["emit", "src/state/app.ts", "--out=tools/m.json"], dir).code).toBe(0);
+    expect(ns("tools/m.json").stateSource).toBe("../src/state/app.ts");
+    expect(run(["emit", "src/state/app.ts", "--out=src/state/m.json"], dir).code).toBe(0);
+    expect(ns("src/state/m.json").stateSource).toBe("app.ts");
+
+    const stdout = run(["emit", "state/app.ts", "--out=-"], join(dir, "src"));
+    expect(JSON.parse(stdout.stdout).manifestExtensions["wcstack.application"].stateSource).toBe("state/app.ts");
+
+    // --mount はボリュームの schema: ルートの stateSource を残す
+    expect(run(["emit", "src/i18n.ts", "--mount=i18n"], dir).code).toBe(0);
+    expect(ns("wcstack.manifest.json").stateSource).toBe("src/state/app.ts");
+    expect(ns("wcstack.manifest.json").stateSchema.properties.i18n).toBeDefined();
+
+    // --merge でルートを別のファイルから作り直すと、stateSource もそのファイルになり、filters は残る
+    tmp.write("source1/src/state.ts", STATE);
+    const merged = JSON.parse(readFileSync(join(dir, "wcstack.manifest.json"), "utf8"));
+    merged.manifestExtensions["wcstack.application"].filters = { money: { input: { type: "number" } } };
+    tmp.write("source1/wcstack.manifest.json", JSON.stringify(merged));
+    expect(run(["emit", "src/state.ts", "--merge"], dir).code).toBe(0);
+    expect(ns("wcstack.manifest.json").stateSource).toBe("src/state.ts");
+    expect(ns("wcstack.manifest.json").filters.money).toBeDefined();
+  });
+
   it("any な state は警告を出しつつ開いた schema を書く", () => {
     const dir = join(tmp.dir, "emit4");
     tmp.write("emit4/state.ts", `const s: any = {}; export default s;`);
@@ -187,5 +221,71 @@ describe("wcs-schema check", () => {
     expect(v1.code).toBe(2);
     expect(v1.stderr).toContain("schemaVersion 1");
     expect(v1.stderr).toContain("wcs-schema emit");
+  });
+
+  it("stateSource: 無い manifest は最新のまま（注記だけ）、別のファイルを指す manifest は乖離、.js と .ts は同じファイル", () => {
+    const dir = join(tmp.dir, "check2");
+    tmp.write("check2/src/state.ts", STATE);
+    expect(run(["emit", "src/state.ts", "--out=config/wcstack.manifest.json"], dir).code).toBe(0);
+    const fresh = run(["check", "src/state.ts", "--manifest=config/wcstack.manifest.json"], dir);
+    expect(fresh.code).toBe(0);
+    expect(fresh.stderr).not.toContain("note:");
+
+    // 4.26 より前に書いた manifest（stateSource が無い）は落とさない
+    const manifestPath = join(dir, "config", "wcstack.manifest.json");
+    const old = JSON.parse(readFileSync(manifestPath, "utf8"));
+    delete old.manifestExtensions["wcstack.application"].stateSource;
+    tmp.write("check2/config/wcstack.manifest.json", JSON.stringify(old));
+    const legacy = run(["check", "src/state.ts", "--manifest=config/wcstack.manifest.json"], dir);
+    expect(legacy.code).toBe(0);
+    expect(legacy.stderr).toContain("up to date");
+    expect(legacy.stderr).toContain(`note: config/wcstack.manifest.json names no stateSource`);
+    expect(legacy.stderr).toContain(`wcs-schema emit src/state.ts --merge --out=config/wcstack.manifest.json\` records "../src/state.ts"`);
+    // --mount の check は stateSource を見ない
+    expect(run(["emit", "src/state.ts", "--mount=sub", "--out=config/wcstack.manifest.json"], dir).code).toBe(0);
+    const mounted = run(["check", "src/state.ts", "--mount=sub", "--manifest=config/wcstack.manifest.json"], dir);
+    expect(mounted.code).toBe(0);
+    expect(mounted.stderr).not.toContain("note:");
+
+    // 別のファイルを指す: schema が同じでも乖離（検証器はこのファイルのページに schema を当てない）
+    old.manifestExtensions["wcstack.application"].stateSource = "../src/old-state.ts";
+    tmp.write("check2/config/wcstack.manifest.json", JSON.stringify(old));
+    const moved = run(["check", "src/state.ts", "--manifest=config/wcstack.manifest.json"], dir);
+    expect(moved.code).toBe(1);
+    expect(moved.stderr).toContain("out of date (1 change(s))");
+    expect(moved.stderr).toContain(`~ stateSource: the manifest names "../src/old-state.ts", not "../src/state.ts"`);
+
+    // ページが読むのはビルドした .js: 同じファイル
+    old.manifestExtensions["wcstack.application"].stateSource = "../src/state.js";
+    tmp.write("check2/config/wcstack.manifest.json", JSON.stringify(old));
+    expect(run(["check", "src/state.ts", "--manifest=config/wcstack.manifest.json"], dir).code).toBe(0);
+  });
+
+  it("--state-source: ページの src がビルドの出力（outDir）のとき、そのファイルを書き、check も同じ指定で比べる。--mount とは併用できない", () => {
+    const dir = join(tmp.dir, "check3");
+    tmp.write("check3/src/state.ts", STATE);
+    const emitted = run(["emit", "src/state.ts", "--state-source=public/state.js"], dir);
+    expect(emitted.code).toBe(0);
+    expect(emitted.stderr).toContain("(state tree of public/state.js)");
+    const ns = JSON.parse(readFileSync(join(dir, "wcstack.manifest.json"), "utf8")).manifestExtensions["wcstack.application"];
+    expect(ns.stateSource).toBe("public/state.js");
+    expect(run(["check", "src/state.ts", "--state-source=public/state.js"], dir).code).toBe(0);
+    const without = run(["check", "src/state.ts"], dir);
+    expect(without.code).toBe(1);
+    expect(without.stderr).toContain(`~ stateSource: the manifest names "public/state.js", not "src/state.ts"`);
+
+    // 無い manifest への注記は --state-source も添えて案内する
+    delete ns.stateSource;
+    tmp.write("check3/wcstack.manifest.json", JSON.stringify({ schemaVersion: 2, kind: "application", manifestExtensions: { "wcstack.application": ns } }));
+    expect(run(["check", "src/state.ts", "--state-source=public/state.js"], dir).stderr)
+      .toContain(`wcs-schema emit src/state.ts --state-source=public/state.js --merge --out=wcstack.manifest.json\` records "public/state.js"`);
+
+    const mounted = run(["emit", "src/state.ts", "--mount=sub", "--state-source=public/state.js"], dir);
+    expect(mounted.code).toBe(2);
+    expect(mounted.stderr).toContain("a --mount volume has none");
+    const empty = run(["check", "src/state.ts", "--state-source="], dir);
+    expect(empty.code).toBe(2);
+    expect(empty.stderr).toContain("--state-source requires a path");
+    expect(parseArgs(["emit", "s.ts", "--state-source=x.js"]).stateSource).toBe("x.js");
   });
 });

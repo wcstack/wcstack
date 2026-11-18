@@ -18,6 +18,7 @@
  */
 
 import type { FileReader } from "../../service/statePathResolver.js";
+import { createTemplateTester, parseWcsStateElements } from "../../language/htmlParse.js";
 import { LoadedManifest, loadManifest } from "./loader.js";
 import type { JsonSchemaNode } from "./types.js";
 
@@ -37,6 +38,11 @@ export interface DiscoveredApplicationManifest {
   readonly loaded: LoadedManifest;
   /** 単一ツリーの stateSchema（v2）。kind が application でなければ undefined。 */
   readonly schema: JsonSchemaNode | undefined;
+  /**
+   * The state file the stateSchema was generated from (`wcstack.application.stateSource`, which `wcs-schema emit`
+   * writes relative to the manifest), relative to the HTML file's directory. undefined when the manifest names none.
+   */
+  readonly stateSource: string | undefined;
 }
 
 /**
@@ -48,7 +54,11 @@ export function discoverApplicationManifest(fileReader: FileReader): DiscoveredA
     const text = fileReader(relativePath);
     if (text === undefined) continue;
     const loaded = loadManifest({ text, source: relativePath });
-    return { relativePath, text, loaded, schema: applicationSchemaOf(loaded) };
+    const stateSource = applicationStateSourceOf(loaded);
+    return {
+      relativePath, text, loaded, schema: applicationSchemaOf(loaded),
+      stateSource: stateSource === undefined ? undefined : stateSourceFromPage("_", relativePath, stateSource),
+    };
   }
   return undefined;
 }
@@ -66,6 +76,94 @@ export function applicationSchemaOf(loaded: LoadedManifest): JsonSchemaNode | un
     return schema as JsonSchemaNode;
   }
   return undefined;
+}
+
+/**
+ * `wcstack.application.stateSource` (since 4.26): the state file the stateSchema describes, relative to the manifest's
+ * directory, as `wcs-schema emit` writes it. undefined when absent, empty or not a string (a hand-written manifest,
+ * one written before 4.26).
+ */
+export function applicationStateSourceOf(loaded: LoadedManifest): string | undefined {
+  const manifest = loaded.manifest;
+  if (manifest === null || manifest.kind !== "application") return undefined;
+  const stateSource: unknown = manifest.manifestExtensions?.["wcstack.application"]?.stateSource;
+  return typeof stateSource === "string" && stateSource.trim() !== "" ? stateSource.trim() : undefined;
+}
+
+/** A path's segments, `.` dropped and `..` folded where it can be; whether it is absolute (`/…`, `C:/…`). */
+function segmentsOf(path: string): { readonly absolute: boolean; readonly segments: string[] } {
+  const norm = path.replace(/\\/g, "/");
+  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
+  const segments: string[] = [];
+  for (const segment of norm.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
+    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
+  }
+  return { absolute, segments };
+}
+
+/**
+ * The manifest's `stateSource` as a path relative to a page's directory: `pageSource` and `manifestSource` name the
+ * page and the manifest in one frame (both relative to the same directory, or both absolute). undefined when they are
+ * not in one frame (one absolute, one relative): which file is meant cannot be told then, and the schema is applied as
+ * before.
+ */
+export function stateSourceFromPage(pageSource: string, manifestSource: string, stateSource: string): string | undefined {
+  const page = segmentsOf(pageSource);
+  const manifest = segmentsOf(manifestSource);
+  if (page.absolute !== manifest.absolute) return undefined;
+  const target = segmentsOf([...manifest.segments.slice(0, -1), stateSource].join("/")).segments;
+  const dir = page.segments.slice(0, -1);
+  let common = 0;
+  while (common < dir.length && common < target.length && dir[common] === target[common] && dir[common] !== "..") common++;
+  return [...dir.slice(common).map(() => ".."), ...target.slice(common)].join("/");
+}
+
+/** The same file for the scoping: a path's `.ts` / `.mts` counts as its `.js` / `.mjs` (what a build emits). */
+function sameStateFile(a: string, b: string): boolean {
+  const canonical = (p: string): string => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
+  return canonical(a) === canonical(b);
+}
+
+/**
+ * Whether a stateSchema generated from `stateSource` (relative to the page's directory — DiscoveredApplicationManifest)
+ * is the contract of this page: one of its root `<wcs-state>` elements (no `mount`, no `bind-component`, outside every
+ * `<template>`) loads that file with `src` — resolved relative to the page, `.js` and `.ts` (`.mjs` and `.mts`) of the
+ * same path being the same file. A page whose state is inline, `json=`, or another file is not described by that
+ * schema: applied to it, its own correct paths were `wcs/path-nonexistent` errors (the lending-desk seam app's counter
+ * page, beside the app's manifest). A `src` from `/` is read relative to the page's directory (a Vite page's root); two
+ * paths that do not compare equal are still one file when the reader gives the same text for both (a page in a directory
+ * below the manifest's, a `src` from `/` under `--root`). A URL never matches.
+ */
+export function schemaAppliesToPage(
+  html: string,
+  stateTagName: string,
+  stateSource: string,
+  fileReader?: FileReader,
+): boolean {
+  const roots = parseWcsStateElements(html, stateTagName)
+    .filter((e) => e.mountPath === null && !e.bindComponent && e.srcAttr !== undefined);
+  if (roots.length === 0) return false;
+  const insideTemplate = createTemplateTester(html);
+  const target = segmentsOf(stateSource).segments.join("/");
+  for (const root of roots) {
+    if (insideTemplate(root.tagStart)) continue;
+    const src = (root.srcAttr as string).trim().replace(/[?#].*$/, "");
+    if (src === "" || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//")) continue;
+    if (sameStateFile(segmentsOf(src).segments.join("/"), target)) return true;
+    // the same file under two names the paths alone cannot tell apart — a page below the manifest (`../pages/state.ts`
+    // from it is `./state.ts` from the page), a `src` from `/` under `--root`: what the reader gives for both
+    if (fileReader !== undefined && sameContent(src, stateSource, fileReader)) return true;
+  }
+  return false;
+}
+
+/** Whether the reader gives the same text for `a` and `b` (each also as its `.ts` / `.js` twin). */
+function sameContent(a: string, b: string, fileReader: FileReader): boolean {
+  const twins = (p: string): string[] => [p, p.replace(/\.(m?)js$/, ".$1ts"), p.replace(/\.(m?)ts$/, ".$1js")];
+  const texts = new Set(twins(a).map((p) => fileReader(p)).filter((t): t is string => t !== undefined && t !== ""));
+  return texts.size > 0 && twins(b).some((p) => texts.has(fileReader(p) ?? "\u0000"));
 }
 
 /**

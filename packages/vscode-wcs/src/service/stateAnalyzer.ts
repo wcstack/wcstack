@@ -52,9 +52,11 @@ export interface PathCandidate {
    * `StatePathScopes.opaquePaths`). `name` is the name or the expression the value is written as (a long expression
    * shortened); `from` the specifier that name — an expression's first name — is imported from, when it is imported.
    * `spread` is set instead of `name` when the value is an object literal whose keys are read but for a spread it could
-   * not read (`draft: { ...makeDraft() }`, as written): the object has keys the analyzer does not know.
+   * not read (`draft: { ...makeDraft() }`, as written): the object has keys the analyzer does not know. `type` is set
+   * when a JSDoc type on the path names a type of another module it could not read (`import("./api.ts").Reservation`
+   * where the file or the name is not read — typeImports.ts).
    */
-  opaque?: { readonly name?: string; readonly from?: string; readonly spread?: string };
+  opaque?: { readonly name?: string; readonly from?: string; readonly spread?: string; readonly type?: string };
   /**
    * The JSDoc type declared for this path has an index signature — `Record<string, T>`, `{ [key: string]: T }` on a
    * getter's `@returns` / `@type` or a key's `@type`: any key exists below it. Nothing under it is reported missing
@@ -69,6 +71,12 @@ export interface PathCandidate {
    * (statePathResolver's `StatePathScopes.outputSlots`).
    */
   typed?: true;
+  /**
+   * The values this path's type allows when they are finitely many — a stateSchema `enum` / `const` / `anyOf` of
+   * consts, a JSDoc literal union (`"pending" | "approved"`) — with null for `null`. A comparison filter's literal
+   * argument outside them is reported (wcs/filter-arg-enum).
+   */
+  literals?: readonly (string | number | boolean | null)[];
 }
 
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
@@ -81,8 +89,12 @@ import {
   makeRecursionSpec,
   type RecursionSpec,
 } from './recursionPaths.js';
+import { withImportedTypes } from './typeImports.js';
 import {
   collectJsDocTypedefs,
+  flattenJsDocType,
+  isImportTypeName,
+  jsDocLiteralValues,
   jsDocShape,
   jsDocTypeHint,
   parseJsDocType,
@@ -135,9 +147,11 @@ export function analyzeStatePaths(scriptContent: string, location?: ModuleLocati
   // 同じキーを 2 度書いた宣言は、オブジェクトリテラルの評価順どおりに畳む（後の宣言が勝つ）
   const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
   // JSDoc `@typedef` の名前（`/** @type {Product[] | null} */` の `Product` を形に解決する）
-  const typedefs: JsDocTypedefs = scriptContent.includes('@typedef')
+  const localTypedefs: JsDocTypedefs = scriptContent.includes('@typedef')
     ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent))
     : new Map();
+  // the types the JSDoc names in other modules (`import("./api.ts").Reservation` — typeImports.ts), read through the reader
+  const typedefs = scriptContent.includes('import') ? withImportedTypes(localTypedefs, scriptContent, location) : localTypedefs;
 
   for (const prop of topLevelProps) {
     // トップレベルの `$` プレフィックスキーは予約名（$streams/$scan/$commandTokens/$eventTokens/
@@ -169,7 +183,9 @@ export function analyzeStatePaths(scriptContent: string, location?: ModuleLocati
       if (!paths.some(p => p.path === prop.name)) {
         const recursive = hasRecursionWildcard(prop.name);
         const settable = !recursive && effective !== 'data' && effective.set;
-        paths.push({ path: prop.name, kind: recursive ? 'recursive' : 'computed', ...(settable ? { settable } : {}) });
+        // the result type an `@returns` / `@type` declares: its type hint and its finite values (the filter checks)
+        const declared = prop.declaredType === undefined ? {} : declaredTypeFacts(prop.declaredType, typedefs);
+        paths.push({ path: prop.name, kind: recursive ? 'recursive' : 'computed', ...(settable ? { settable } : {}), ...declared });
       }
       // `@returns {T}` / `@type {T}` が宣言する戻りの形（本体から読めた形は collectGetterResultShapes が足す）
       if (prop.declaredType !== undefined) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
@@ -422,6 +438,8 @@ export interface WatchHandlerSource {
   readonly text: string;
   /** `text` の先頭に対応する scriptContent 内のオフセット（trim しない生の位置）。 */
   readonly start: number;
+  /** `kind: 'body'`: the method's parameter list as written, without the parentheses. */
+  readonly params?: string;
 }
 
 /**
@@ -462,13 +480,17 @@ function analyzeHandlerSources(scriptContent: string, key: string): WatchHandler
   const innerStart = root.start + prop.valueStart + leading + 1;
 
   const out: WatchHandlerSource[] = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+  const content = extractObjectContent(prop.value);
+  for (const entry of parseTopLevelProperties(content)) {
     if (entry.value === undefined || entry.valueStart === undefined) continue;
     out.push({
       name: entry.name,
       kind: entry.kind === 'data' ? 'value' : 'body',
       text: entry.value,
       start: innerStart + entry.valueStart,
+      ...(entry.paramsStart !== undefined && entry.paramsEnd !== undefined
+        ? { params: content.slice(entry.paramsStart, entry.paramsEnd) }
+        : {}),
     });
   }
   return out;
@@ -533,6 +555,47 @@ export function analyzeDeclarationEntries(scriptContent: string, key: string): T
       ? { value: entry.value.trim(), valueStart: entry.valueStart }
       : {}),
   }));
+}
+
+/**
+ * The top-level keys a stateSchema describes, as the script declares them: the data keys and the accessors whose key
+ * is one segment (`total`, not `"items.*.label"`), and apart the methods — no `$` key. `materializes` is true when a
+ * declaration makes keys the script does not write (`$stream`, `$scan`). null when the script is not read in full:
+ * no `export default { … }` literal, a top-level spread, or a computed key (`[name]: …`).
+ */
+export function analyzeTopLevelStateKeys(scriptContent: string): { keys: string[]; methods: string[]; materializes: boolean } | null {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || hasTopLevelSpread(scriptContent)) return null;
+  // a computed key (`[k]: v`, `get [k]()`, `[k]() {}`) at the top level: its name is not known
+  const scan = maskCommentsAndStrings(root.content).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => ' '.repeat(c.length));
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') {
+      if (depth === 0 && ch === '[' && /^\s*(?:(?:get|set|async|static)\s+)?\*?\s*$/.test(scan.slice(start, i))) return null;
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      depth--;
+    } else if ((ch === ',' && depth === 0) || i === scan.length) {
+      start = i + 1;
+    }
+  }
+  const keys: string[] = [];
+  const methods: string[] = [];
+  let materializes = false;
+  for (const prop of withShorthands(root.content, parseTopLevelProperties(root.content))) {
+    if (prop.name.startsWith('$')) {
+      if (RESERVED_STREAMS_KEYS.has(prop.name) || prop.name === RESERVED_SCAN_KEY) materializes = true;
+      continue;
+    }
+    if (prop.kind === 'method') {
+      if (!methods.includes(prop.name)) methods.push(prop.name);
+    } else if (!prop.name.includes('.') && !keys.includes(prop.name)) {
+      keys.push(prop.name);
+    }
+  }
+  return { keys, methods, materializes };
 }
 
 /** `export default { ... }` のオブジェクトリテラルが見つかるか（診断のゲート用）。 */
@@ -668,6 +731,8 @@ export interface CallableBody {
   readonly bodyStart: number;
   /** `kind: 'getter'` の get / set 種別（メソッドでは未設定）。 */
   readonly accessor?: 'get' | 'set';
+  /** A method's parameter list as written, without the parentheses (`e: Event` of `pick(e: Event): void { … }`). */
+  readonly params?: string;
   /**
    * カンマ列挙のキー（`get "users.*.full,employees.*.full"()`）の 1 パスとして宣言されたとき、その並び
    * （範囲は script 内の絶対オフセット）。本体は並びのどのパスでも同じもの。
@@ -710,6 +775,9 @@ export function analyzeCallableBodies(scriptContent: string): CallableBody[] {
       body: prop.value ?? '',
       bodyStart: root.start + (prop.valueStart ?? 0),
       accessor: prop.accessor,
+      ...(prop.paramsStart !== undefined && prop.paramsEnd !== undefined
+        ? { params: root.content.slice(prop.paramsStart, prop.paramsEnd) }
+        : {}),
       ...(prop.listed !== undefined
         ? { listed: { ...prop.listed, start: root.start + prop.listed.start, end: root.start + prop.listed.end } }
         : {}),
@@ -1110,6 +1178,12 @@ interface ResultShape {
    * リテラルを返せば行の形が分かる。最後まで分からなければ読めない式（null）として落ちる。
    */
   opaque?: boolean;
+  /**
+   * The rows are not known: the result is a list only because an alternative is `[]` (`cond ? X : []`, `X ?? []`,
+   * `X || []`, an early `return []`), and another alternative is one the analyzer cannot read, or a value not known
+   * to be a list (`this.counter.pickups` under a getter it cannot read). The text of that alternative.
+   */
+  openRows?: string;
 }
 
 /**
@@ -1187,7 +1261,7 @@ function collectGetterResultShapes(
     const before = paths.length;
     for (const [name, prop] of getters) {
       const shape = getterResultShape(prop.value as string, paths);
-      if (shape !== null) applyResultShape(name, shape, paths);
+      if (shape !== null) applyResultShape(name, shape, paths, true);
     }
     // 別名は候補に依って形が変わるので、パスごとに読み直す（同じ本体は 1 回）
     const aliasesByBody = new Map<string, Map<string, ResultShape>>();
@@ -1212,12 +1286,32 @@ function collectGetterResultShapes(
 function getterResultShape(body: string, paths: PathCandidate[]): ResultShape | null {
   const scan = maskCommentsAndStrings(body);
   const aliases = collectAliases(body, paths);
-  const shapes: ResultShape[] = [];
+  const texts: string[] = [];
+  const shapes: (ResultShape | null)[] = [];
   for (const start of ownReturnEnds(scan)) {
-    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
-    if (shape !== null) shapes.push(shape);
+    const text = readExpression(body, scan, start);
+    texts.push(text);
+    shapes.push(expressionShape(text, paths, aliases));
   }
-  return shapes.length === 0 ? null : mergeShapes(shapes);
+  return mergeAlternatives(texts, shapes);
+}
+
+/**
+ * The shape of alternatives (a conditional's branches, `||` / `??` operands, a getter's returns): their union. When the
+ * union is a list only because of `[]` alternatives, and another alternative cannot be read or is a value not known to
+ * be a list, the rows are not known (`openRows`) — reading them from the `[]` made every row field "missing" (the
+ * lending-desk seam app: `return this.counter ? this.counter.pickups : []`). A bare `return;` is neither.
+ */
+function mergeAlternatives(texts: readonly string[], shapes: readonly (ResultShape | null)[]): ResultShape | null {
+  const read = shapes.filter((s): s is ResultShape => s !== null);
+  if (read.length === 0) return null;
+  const merged = mergeShapes(read);
+  const open = read.find((s) => s.openRows !== undefined);
+  if (open !== undefined) return { ...merged, openRows: open.openRows };
+  if (!merged.isList) return merged;
+  const onlyEmpty = read.every((s) => !s.isList || (s.mirrors.length === 0 && s.fields.length === 0 && s.opaque !== true));
+  const unknownAt = shapes.findIndex((s, i) => (s === null && texts[i].trim() !== '') || (s !== null && !s.isList && s.fields.length === 0));
+  return onlyEmpty && unknownAt >= 0 ? { ...merged, openRows: texts[unknownAt].trim() } : merged;
 }
 
 /** Keywords whose `(…)` is followed by a block, not a function body (`if (x) {`, `catch (e) {`). */
@@ -1384,16 +1478,13 @@ function expressionShape(
   // 三項演算子（深さ 0 の `?` … `:`）・`||` / `??` は両辺の和
   const ternary = splitTernary(scan);
   if (ternary !== null) {
-    const branches = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)]
-      .map(part => expressionShape(part, paths, aliases))
-      .filter((s): s is ResultShape => s !== null);
-    return branches.length === 0 ? null : mergeShapes(branches);
+    const texts = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)];
+    return mergeAlternatives(texts, texts.map(part => expressionShape(part, paths, aliases)));
   }
   const operands = splitTopLevel(scan, /\|\||\?\?/g);
   if (operands.length > 1) {
-    const sides = operands.map(([s, e]) => expressionShape(expr.slice(s, e), paths, aliases))
-      .filter((s): s is ResultShape => s !== null);
-    return sides.length === 0 ? null : mergeShapes(sides);
+    const texts = operands.map(([s, e]) => expr.slice(s, e));
+    return mergeAlternatives(texts, texts.map(part => expressionShape(part, paths, aliases)));
   }
 
   // オブジェクトリテラル
@@ -1627,11 +1718,23 @@ function mapRows(args: string, shape: ResultShape, paths: PathCandidate[], outer
   };
 }
 
-/** 形を `getter` の下の候補として足す（既にあるパスは上書きしない）。 */
-function applyResultShape(getter: string, shape: ResultShape, paths: PathCandidate[]): void {
+/**
+ * 形を `getter` の下の候補として足す（既にあるパスは上書きしない）。`openRows`: a getter's result whose rows are not known
+ * (ResultShape.openRows) has them open — unless a JSDoc type or another source gave them fields.
+ */
+function applyResultShape(getter: string, shape: ResultShape, paths: PathCandidate[], openRows = false): void {
   if (shape.isList) {
     if (!hasPath(paths, `${getter}.*`)) paths.push({ path: `${getter}.*`, kind: 'list' });
     if (!hasPath(paths, `${getter}.length`)) paths.push({ path: `${getter}.length`, kind: 'data', typeHint: 'number' });
+    if (openRows && shape.openRows !== undefined) {
+      const rows = paths.find((p) => p.path === `${getter}.*`) as PathCandidate;
+      // (a row accessor the script declares — `get "pickups.*.time"()` — is not a field of the rows' data)
+      const fields = paths.some((p) => p.path.startsWith(`${getter}.*.`) && (p.kind === 'data' || p.kind === 'list'));
+      if (rows.typed !== true && rows.opaque === undefined && !fields) {
+        const flat = shape.openRows.replace(/\s+/g, ' ');
+        rows.opaque = { name: flat.length <= MAX_UNREAD_TEXT ? flat : `${flat.slice(0, MAX_UNREAD_TEXT - 1)}…` };
+      }
+    }
   }
   for (const { from, to } of shape.mirrors) {
     // 写す元が getter 自身の下（`get a() { return this.a… }`）なら写さない
@@ -1859,8 +1962,18 @@ function pushDataPropertyPathsAt(
   }
   if (prop.declaredType !== undefined) {
     candidate.typed = true;
+    const facts = declaredTypeFacts(prop.declaredType, typedefs);
+    if (candidate.typeHint === undefined && facts.typeHint !== undefined) candidate.typeHint = facts.typeHint;
+    if (facts.literals !== undefined) candidate.literals = facts.literals;
     pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
   }
+}
+
+/** A declared JSDoc type's type hint and finite values (each only when known), with the typedefs resolved. */
+function declaredTypeFacts(type: JsDocType, typedefs: JsDocTypedefs): Pick<PathCandidate, 'typeHint' | 'literals'> {
+  const typeHint = jsDocTypeHint(type, typedefs);
+  const literals = jsDocLiteralValues(type, typedefs);
+  return { ...(typeHint !== undefined ? { typeHint } : {}), ...(literals !== null ? { literals } : {}) };
 }
 
 /**
@@ -2185,6 +2298,14 @@ function pushDeclaredShapePaths(
     const candidate = paths.find((p) => p.path === path);
     if (candidate !== undefined) candidate.openKeys = true;
   }
+  // a type of another module the lint could not read (typeImports.ts), or a list of it: what is under the path is
+  // unknown, not missing — said at the path itself (its rows are not looked into)
+  const unread = unreadImportType(type, typedefs);
+  if (unread !== null) {
+    const candidate = paths.find((p) => p.path === path);
+    if (candidate !== undefined && candidate.opaque === undefined) candidate.opaque = { type: unread };
+    return;
+  }
   if (shape.element !== null) {
     if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: 'list' });
     if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
@@ -2195,11 +2316,27 @@ function pushDeclaredShapePaths(
   for (const field of shape.fields) {
     const fieldPath = `${path}.${field.name}`;
     if (!hasPath(paths, fieldPath)) {
-      paths.push(withHint({ path: fieldPath, kind: 'data' }, jsDocTypeHint(field.type, typedefs)));
+      const literals = jsDocLiteralValues(field.type, typedefs);
+      paths.push(withHint({ path: fieldPath, kind: 'data', ...(literals !== null ? { literals } : {}) }, jsDocTypeHint(field.type, typedefs)));
     }
     markTyped(paths, fieldPath);
     pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
   }
+}
+
+/**
+ * The name of a type of another module the typedefs could not resolve, among a type's members or its list's element
+ * (`import("./x.ts").Row` → itself, `import("./x.ts").Row[]` → with `[]`); null when there is none.
+ */
+function unreadImportType(type: JsDocType, typedefs: JsDocTypedefs): string | null {
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === 'name' && isImportTypeName(member.name)) return member.name;
+    if (member.kind === 'array') {
+      const element = flattenJsDocType(member.element, typedefs).find((m) => m.kind === 'name' && isImportTypeName(m.name));
+      if (element !== undefined) return `${(element as { name: string }).name}[]`;
+    }
+  }
+  return null;
 }
 
 /** Marks the data candidate of `path` as one a JSDoc type declares (`PathCandidate.typed`). */
@@ -2379,6 +2516,9 @@ interface PropertyInfo {
   nameStart?: number;
   nameEnd?: number;
   valueStart?: number;
+  /** A method's parameter list: where its content (inside the parentheses) starts and ends. */
+  paramsStart?: number;
+  paramsEnd?: number;
   /**
    * 1 つのアクセサを複数のパスに宣言したキー（`get "users.*.full,employees.*.full"()`、4.22）の、この宣言が
    * 属する並び。パスごとに 1 件ずつ宣言として返し（`name` はそのパス、範囲はキーの中のそのパス）、どれも
@@ -2500,9 +2640,12 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
   // 矢印関数 `cb = () => {}`）。`[^)]*` だけでは最初の `)` で止まり、メソッドが丸ごと消え、本体の
   // `word:` をトップレベルのキーと読んでいた（docs/seam-apps.md、shift-desk）。
   const params = String.raw`\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\)`;
+  // A TypeScript state (`.ts`, lending-desk seam app): type parameters before a method's parameter list
+  // (`pick<T>(x: T): T {`); the return type between `)` and the body is read by bodyBraceAfter.
+  const typeParams = String.raw`(?:<(?:[^<>()]|<(?:[^<>()]|<[^<>()]*>)*>)*>\s*)?`;
   const dataKey = allowEmptyDataKeys ? String.raw`(?:"([^"]*)"|'([^']*)'|([$\w]+))` : String.raw`(?:"([^"]+)"|'([^']+)'|([$\w]+))`;
   const regex = new RegExp(
-    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:${dataKey}\s*:\s*)`,
+    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params})|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${typeParams}${params})|(?:${dataKey}\s*:\s*)`,
     'gd',
   );
 
@@ -2516,6 +2659,23 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
       nameSpan = [span[0], span[1]];
       return objectContent.slice(span[0], span[1]);
     };
+    // An accessor's or a method's head ends at its parameter list's `)`: the body `{` follows, after a TypeScript
+    // return type when there is one (`get total(): number {`, `count(cur: number): void {`). Without a body this is not
+    // a method (a call in a spread, `...make(x)`): the scan goes on after the parameters — a key inside them
+    // (`cur:` of `cur: number`) is never read as a data key.
+    const headEnd = match.index + match[0].length;
+    const isCallable = indices[1] !== undefined || indices[2] !== undefined || indices[3] !== undefined
+      || indices[4] !== undefined || indices[5] !== undefined || indices[6] !== undefined;
+    const bodyBrace = isCallable ? bodyBraceAfter(scan, headEnd) : -1;
+    if (isCallable && bodyBrace < 0) {
+      regex.lastIndex = headEnd;
+      continue;
+    }
+    // the parameter list's content (the first `(` after the name — a type parameter list holds none)
+    const paramsSpan = (): { paramsStart: number; paramsEnd: number } => {
+      const open = scan.indexOf('(', nameSpan![1]);
+      return { paramsStart: open + 1, paramsEnd: headEnd - 1 };
+    };
     // 本体 `{ ... }` を読み飛ばして走査位置をその直後へ送る（本体内の `word:` を
     // トップレベルのプロパティと誤認しないため）。
     // 本体 `{ ... }` を読み飛ばしつつ、中身と開始位置を返す。
@@ -2524,10 +2684,9 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
     // いるか」を見るために要る。value を読む既存の消費者はすべて
     // `kind === 'data'` で絞っているので影響しない。
     const skipBody = (): { body: string; bodyStart: number } => {
-      const braceStart = match!.index + match![0].length - 1;
-      const body = extractBracedContent(objectContent, scan, braceStart);
-      regex.lastIndex = braceStart + body.length + 2; // +2 for { and }
-      return { body, bodyStart: braceStart + 1 };
+      const body = extractBracedContent(objectContent, scan, bodyBrace);
+      regex.lastIndex = bodyBrace + body.length + 2; // +2 for { and }
+      return { body, bodyStart: bodyBrace + 1 };
     };
 
     // accessor: get/set "path"() or get/set path()
@@ -2558,10 +2717,11 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
     // method: name(args) { / "path"(args) {
     const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
+      const span = paramsSpan();
       const { body, bodyStart } = skipBody();
       props.push({
         name: methodName, kind: 'method', value: body, valueStart: bodyStart,
-        nameStart: nameSpan![0], nameEnd: nameSpan![1],
+        nameStart: nameSpan![0], nameEnd: nameSpan![1], ...span,
       });
       continue;
     }
@@ -2596,6 +2756,80 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
   }
 
   return props;
+}
+
+/** Words of a TypeScript type after which a type follows (so a `{` there opens an object type). */
+const TYPE_OPERATOR_WORDS: ReadonlySet<string> = new Set([
+  'keyof', 'typeof', 'readonly', 'unique', 'infer', 'extends', 'is', 'asserts', 'new', 'abstract',
+]);
+
+/**
+ * Where the body `{` of an accessor or a method is, from just after its parameter list's `)` (offsets into `scan`, the
+ * masked mirror): right there, or after a TypeScript return type (`: number {`, `: Promise<void> {`,
+ * `: { a: number } | null {`, `: () => { a: 1 } {`, `: v is { kind: "a" } {`). A `{` belongs to the type when a type
+ * is expected there — after the `:`, `|`, `&`, `=>`, `,`, `?`, an opening `(` / `[` / `<`, or a word such as `keyof` —
+ * and anywhere inside `(…)`, `[…]`, `<…>`; the body is the first `{` at depth 0 after a complete type. -1 when there
+ * is no body (a call in a spread, not a method).
+ */
+function bodyBraceAfter(scan: string, from: number): number {
+  let i = from;
+  while (i < scan.length && /\s/.test(scan[i])) i++;
+  if (scan[i] === '{') return i;
+  if (scan[i] !== ':') return -1;
+  let expect = true;
+  let depth = 0;
+  for (i++; i < scan.length; i++) {
+    const ch = scan[i];
+    if (/\s/.test(ch)) continue;
+    if (ch === '"' || ch === "'" || ch === '`') {
+      // a string literal type (its content is blank in the mirror)
+      const close = scan.indexOf(ch, i + 1);
+      if (close < 0) return -1;
+      i = close;
+      expect = false;
+    } else if (ch === '=' && scan[i + 1] === '>') {
+      i++;
+      expect = true;
+    } else if (ch === '{') {
+      if (depth === 0 && !expect) return i;
+      const close = matchingBrace(scan, i);
+      if (close < 0) return -1;
+      i = close;
+      expect = false;
+    } else if (ch === '(' || ch === '[' || ch === '<') {
+      depth++;
+      expect = true;
+    } else if (ch === ')' || ch === ']' || ch === '>') {
+      if (depth === 0) return -1;
+      depth--;
+      expect = false;
+    } else if (ch === '}' || ch === ';') {
+      return -1;
+    } else if (ch === ',') {
+      if (depth === 0) return -1;
+      expect = true;
+    } else if (ch === '|' || ch === '&' || ch === '?' || ch === ':' || ch === '.') {
+      expect = true;
+    } else if (/[$\w]/.test(ch)) {
+      let j = i;
+      while (j < scan.length && /[$\w]/.test(scan[j])) j++;
+      expect = TYPE_OPERATOR_WORDS.has(scan.slice(i, j));
+      i = j - 1;
+    } else {
+      expect = false;
+    }
+  }
+  return -1;
+}
+
+/** The `}` that closes the `{` at `open` (in the masked mirror), or -1. */
+function matchingBrace(scan: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < scan.length; i++) {
+    if (scan[i] === '{') depth++;
+    else if (scan[i] === '}' && --depth === 0) return i;
+  }
+  return -1;
 }
 
 /**
@@ -2945,6 +3179,31 @@ function schemaTypeHint(nodes: JsonSchemaNode[]): string | undefined {
   return hints.size === 0 ? undefined : [...hints].join('|');
 }
 
+/**
+ * The values the expanded nodes allow when they are finitely many: each node an `enum`, a `const`, or `type: "null"`
+ * (null). null when a node allows anything else, or when no value but null is allowed.
+ */
+function schemaLiteralValues(nodes: JsonSchemaNode[]): (string | number | boolean | null)[] | null {
+  if (nodes.length === 0) return null;
+  const values: (string | number | boolean | null)[] = [];
+  const scalar = (v: unknown): v is string | number | boolean | null =>
+    v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+  for (const n of nodes) {
+    if (Array.isArray(n.enum)) {
+      if (!n.enum.every(scalar)) return null;
+      values.push(...(n.enum as (string | number | boolean | null)[]));
+    } else if (n.const !== undefined) {
+      if (!scalar(n.const)) return null;
+      values.push(n.const);
+    } else if (n.type === 'null') {
+      values.push(null);
+    } else {
+      return null;
+    }
+  }
+  return values.some((v) => v !== null) ? [...new Set(values)] : null;
+}
+
 function collectSchemaObjectPaths(
   node: JsonSchemaNode,
   prefix: string,
@@ -2975,7 +3234,8 @@ function pushSchemaValuePaths(
 ): void {
   const nodes = derefSchemaNodes(node, defs);
   const typeHint = schemaTypeHint(nodes);
-  paths.push(withHint({ path, kind: 'data', fromSchema: true }, typeHint));
+  const literals = schemaLiteralValues(nodes);
+  paths.push(withHint({ path, kind: 'data', fromSchema: true, ...(literals !== null ? { literals } : {}) }, typeHint));
 
   const items = nodes.map(n => n.items).find(i => i !== undefined && i !== null && typeof i === 'object');
   const isArray = items !== undefined || (typeHint?.split('|').includes('array') ?? false);

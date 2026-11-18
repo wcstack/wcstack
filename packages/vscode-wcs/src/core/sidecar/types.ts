@@ -93,6 +93,13 @@ export interface ApplicationExtension {
   readonly stateSchema?: JsonSchemaNode;
   readonly filters?: Readonly<Record<string, ApplicationFilter>>;
   readonly listContexts?: readonly string[];
+  /**
+   * The state file `stateSchema` was generated from, relative to the manifest's directory, `/`-separated
+   * (`"src/state/app.ts"` — `wcs-schema emit` writes it since 4.26). The lint applies the schema only to a page whose
+   * root `<wcs-state src>` loads that file (`.js` and `.ts` of one path being one file). Absent: every page under the
+   * manifest, as before.
+   */
+  readonly stateSource?: string;
 }
 
 export interface ManifestExtensions {

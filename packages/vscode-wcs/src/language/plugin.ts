@@ -3,7 +3,10 @@
  *
  * Volar LanguagePlugin の実装。
  * HTML ファイルを解析し、<wcs-state> 内の <script type="module"> を
- * TypeScript の仮想コードとして抽出する。
+ * JavaScript の仮想コードとして抽出する。ブラウザはインラインスクリプトを JavaScript として
+ * 実行するので、検査も JavaScript として行う（4.26）: JSDoc の型が効き、TypeScript の構文
+ * （`const x: number`・`import type`）は TS8010 系のエラーになる。検査はプリアンブル先頭の
+ * `// @ts-check` で、tsconfig の `checkJs` に関わらず有効（preamble.ts）。
  */
 
 import type {
@@ -40,18 +43,18 @@ function pathOfScriptId(id: URI | string): string {
 
 export interface WcsLanguagePluginOptions {
   /**
-   * - `language-server`（既定）: 各 `<wcs-state>` ブロックを別々の TS サービススクリプト
+   * - `language-server`（既定）: 各 `<wcs-state>` ブロックを別々の JS サービススクリプト
    *   （`getExtraServiceScripts`）として提供する。VS Code / Language Server 用。
    * - `tsc`: `@volar/typescript` の `runTsc`（`wcs-tsc`）用。proxyCreateProgram は
    *   `getExtraServiceScripts` を提供せず **1 ファイル 1 サービススクリプト**しか扱えない
-   *   ので、全ブロックを 1 本の TS に合成して `getServiceScript` で返す
+   *   ので、全ブロックを 1 本の JS に合成して `getServiceScript` で返す
    *   （docs/typescript.md §4）。診断の range は合成コードの mapping で HTML へ戻る。
    */
   readonly mode?: 'language-server' | 'tsc';
 }
 
 /**
- * HTML 内の <wcs-state><script type="module"> を TypeScript 仮想コードとして提供する
+ * HTML 内の <wcs-state><script type="module"> を JavaScript 仮想コードとして提供する
  * Volar LanguagePlugin。識別子は `URI`（Language Server）と `string`（runTsc）の両方。
  */
 export function createWcsLanguagePlugin(
@@ -62,7 +65,7 @@ export function createWcsLanguagePlugin(
   const build = (html: string): WcsHtmlVirtualCode | undefined => {
     const blocks = parseWcsScriptBlocks(html, stateTagName);
     // tsc モードは <wcs-state> のブロックが無いページにも**空の**仮想コードを返す。
-    // undefined を返すと `.html` が登録済み拡張子として素の TS ソースに読まれ、
+    // undefined を返すと `.html` が登録済み拡張子として素のソースに読まれ、
     // マークアップ全体が構文エラーになる（Language Server は undefined でよい —
     // そこでは HTML は HTML のまま）。
     if (blocks.length === 0) return tscMode ? createWcsHtmlVirtualCodeForTsc([], html) : undefined;
@@ -97,7 +100,7 @@ export function createWcsLanguagePlugin(
           getServiceScript(root) {
             const combined = root.embeddedCodes?.find((code) => code.id === COMBINED_SCRIPT_ID);
             if (combined === undefined) return undefined;
-            return { code: combined, extension: '.ts', scriptKind: 3 /* ts.ScriptKind.TS */ };
+            return { code: combined, extension: '.js', scriptKind: JS_SCRIPT_KIND };
           },
         }
       : {
@@ -116,10 +119,10 @@ export function createWcsLanguagePlugin(
             for (const embedded of root.embeddedCodes ?? []) {
               if (embedded.id.startsWith('wcs-script-')) {
                 scripts.push({
-                  fileName: fileName + '.__' + embedded.id + '.ts',
+                  fileName: fileName + '.__' + embedded.id + '.js',
                   code: embedded,
-                  extension: '.ts',
-                  scriptKind: 3, // ts.ScriptKind.TS
+                  extension: '.js',
+                  scriptKind: JS_SCRIPT_KIND,
                 });
               }
             }
@@ -129,16 +132,19 @@ export function createWcsLanguagePlugin(
   };
 }
 
+/** `ts.ScriptKind.JS`（`typescript` は型 import だけなので数値で書く）。 */
+const JS_SCRIPT_KIND = 1;
+
 /** tsc モードの合成スクリプトの embedded code id。 */
 export const COMBINED_SCRIPT_ID = 'wcs-combined';
 
 function createWcsHtmlVirtualCodeForTsc(blocks: WcsScriptBlock[], html: string): WcsHtmlVirtualCode {
   // ブロック無し = 空のスクリプト（プリアンブルすら要らない）。tsc には「型エラーの無い空の
-  // モジュール」として見え、マークアップは一切読まれない。
+  // スクリプト」として見え、マークアップは一切読まれない。
   const { code, mappings } = blocks.length === 0 ? { code: '', mappings: [] as CodeMapping[] } : buildCombinedScript(blocks);
   const combined: VirtualCode = {
     id: COMBINED_SCRIPT_ID,
-    languageId: 'typescript',
+    languageId: 'javascript',
     snapshot: {
       getText(start, end) { return code.slice(start, end); },
       getLength() { return code.length; },
@@ -168,7 +174,7 @@ function createWcsHtmlVirtualCodeForTsc(blocks: WcsScriptBlock[], html: string):
 const IMPORT_STATEMENT_RE = /import\s+(?:[\s\S]*?\sfrom\s*)?['"][^'"]+['"]\s*;?/g;
 
 /**
- * tsc モード: 全 `<wcs-state>` ブロックを 1 本の TS モジュールに合成する。
+ * tsc モード: 全 `<wcs-state>` ブロックを 1 本の JS モジュールに合成する。
  *
  *   [WCS_PREAMBLE]（1 回）
  *   [各ブロックから巻き上げた import 文]（top-level にしか書けないため）
@@ -181,7 +187,7 @@ const IMPORT_STATEMENT_RE = /import\s+(?:[\s\S]*?\sfrom\s*)?['"][^'"]+['"]\s*;?/
  * 巻き上げた import の元位置は同じ長さの空白にして、ブロック内のオフセットを保つ。
  * mapping はユーザーコードの各断片（import・export default より前・オブジェクト・
  * 末尾）を HTML のオフセットへ結ぶ。置き換えた `export default ` と挿入した記号
- * （getter の `: any` も）は対応する HTML が無いので mapping を持たない。
+ * （getter の前の戻り値の型の JSDoc も）は対応する HTML が無いので mapping を持たない。
  */
 /** @internal テスト用にエクスポート */
 export function buildCombinedScript(blocks: WcsScriptBlock[]): { code: string; mappings: CodeMapping[] } {
@@ -322,7 +328,7 @@ function createScriptVirtualCode(block: WcsScriptBlock, index: number): VirtualC
 
   return {
     id: `wcs-script-${index}`,
-    languageId: 'typescript',
+    languageId: 'javascript',
     snapshot: {
       getText(start, end) { return wrappedCode.slice(start, end); },
       getLength() { return wrappedCode.length; },
@@ -336,7 +342,7 @@ function createScriptVirtualCode(block: WcsScriptBlock, index: number): VirtualC
  * `export default { ... }` を `export default defineState({ ... })` に自動ラップする。
  *
  * ユーザーが既に defineState() を使用している場合はそのまま。
- * `this` を読む getter には戻り値の注釈 `: any` を挟む（getterAnnotations.ts）。
+ * `this` を読む getter の前には戻り値の型 `any` の JSDoc を挟む（getterAnnotations.ts）。
  * ラップ時も注釈を挟んでもソースマッピングを正確に維持する。
  */
 /** @internal テスト用にエクスポート */
@@ -376,11 +382,12 @@ export function wrapWithDefineState(
  * プリアンブルが defineState を提供するため、import は不要。
  * 行数を維持することでソースマッピングのオフセットを保持する。
  *
- * bare 指定（`@wcstack/state`）に加え、CDN の URL 指定
- * （`https://esm.run/@wcstack/state`、`https://cdn.jsdelivr.net/npm/@wcstack/state@1.32.0/+esm`
+ * bare 指定（`@wcstack/state`、define-state.md の書く `@wcstack/state/define` などの入口も）に加え、
+ * CDN の URL 指定（`https://esm.run/@wcstack/state`、`https://cdn.jsdelivr.net/npm/@wcstack/state@1.32.0/+esm`
  * 等 — `@wcstack/state` の後ろに `@version` / `/path` / `?query` が続く形）も剥がす。
  * buildless なページは URL でしか import できず、剥がさないと tsc / IDE で TS2307
- * （モジュールが見つからない）になる。
+ * （モジュールが見つからない）になる。`/define` を剥がさないと、プリアンブルの defineState と
+ * ぶつかって TS2440 になる。
  */
 /** @internal テスト用にエクスポート */
 export function stripWcsImport(code: string): string {
@@ -388,7 +395,7 @@ export function stripWcsImport(code: string): string {
   // ユーザーコードのオフセットをそのまま HTML へ結ぶので、ここで短くすると import 以降の
   // 診断位置が削った分だけ手前にずれる。
   return code.replace(
-    /import\s*\{[^}]*\}\s*from\s*['"](?:@wcstack\/state|https?:\/\/[^'"]*\/@wcstack\/state(?:@[^'"/]*)?(?:\/[^'"]*)?)['"];?[ \t]*/g,
+    /import\s*\{[^}]*\}\s*from\s*['"](?:@wcstack\/state(?:\/[^'"]*)?|https?:\/\/[^'"]*\/@wcstack\/state(?:@[^'"/]*)?(?:\/[^'"]*)?)['"];?[ \t]*/g,
     (match) => match.replace(/[^\n]/g, ' ')
   );
 }

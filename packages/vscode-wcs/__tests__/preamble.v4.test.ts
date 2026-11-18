@@ -4,16 +4,17 @@ import { WCS_PREAMBLE } from '../src/language/preamble';
 
 /**
  * preamble の 4.0 の差（@wcstack/state 4.0 の defineState と対）を、本物の TypeScript コンパイラに通して
- * 確かめる（preamble.test.ts と同じく strict・noImplicitAny）。
+ * 確かめる（preamble.test.ts と同じく strict・noImplicitAny、仮想コードは JavaScript — 型は JSDoc で書く）。
  *   - 4.0 で外れた API の旧名（`$trackDependency` / `$untrackDependency`）は型に無い
  *   - 4.0 で外れた宣言（`$scan` / `$streams`）は型付けしない。`$stream` の値は this から読める
  *   - 4.0 の設定の宣言 `$behavior`（boolean の 3 キー）と `$features`（後付けの名前）を型付けする
  */
 function typecheck(userCode: string): string[] {
-  const fileName = 'virtual.ts';
+  const fileName = 'virtual.js';
   const source = WCS_PREAMBLE + userCode;
   const options: ts.CompilerOptions = {
     strict: true,
+    allowJs: true,
     target: ts.ScriptTarget.ESNext,
     module: ts.ModuleKind.ESNext,
     lib: ['lib.esnext.d.ts', 'lib.dom.d.ts'],
@@ -43,8 +44,8 @@ describe('WCS_PREAMBLE — @wcstack/state 4.0', () => {
     const errors = typecheck(`
 defineState({
   a: 1,
-  get x(): number { this.$dependOn("a"); return this.$untracked(() => this.a); },
-  get y(): number { this.$trackDependency("a"); return 0; },
+  /** @returns {number} */ get x() { this.$dependOn("a"); return this.$untracked(() => this.a); },
+  /** @returns {number} */ get y() { this.$trackDependency("a"); return 0; },
 });
 `);
     expect(errors).toHaveLength(1);
@@ -55,15 +56,19 @@ defineState({
     expect(typecheck(`
 defineState({
   page: 1,
-  $stream: { pageResult: { args: (s: any) => s.page, source: async function* () {} } },
-  get kind(): unknown { return this.pageResult; },
+  $stream: { pageResult: { args: (/** @type {any} */ s) => s.page, source: async function* () {} } },
+  /** @returns {unknown} */ get kind() { return this.pageResult; },
 });
 `)).toEqual([]);
     const errors = typecheck(`
 defineState({
-  pageResult: 0 as number,
+  pageResult: /** @type {number} */ (0),
   $stream: { pageResult: { source: async function* () {} } },
-  m() { const k: string = this.pageResult; return k; },
+  m() {
+    /** @type {string} */
+    const k = this.pageResult;
+    return k;
+  },
 });
 `);
     expect(errors.some(message => message.includes("'number' is not assignable to type 'string'"))).toBe(true);
@@ -94,9 +99,9 @@ describe('WCS_PREAMBLE — @wcstack/state 4.22 の相対パスとカンマ列挙
 defineState({
   users: [{ first: "Ada", last: "Lovelace" }],
   tags: ["a"],
-  get "users.*.full"(): string { return this[".first"] + " " + this[".last"]; },
-  set "users.*.full"(v: string) { this[".first"] = v; },
-  get "tags.*.upper"(): string { return this["."].toUpperCase(); },
+  /** @returns {string} */ get "users.*.full"() { return this[".first"] + " " + this[".last"]; },
+  /** @param {string} v */ set "users.*.full"(v) { this[".first"] = v; },
+  /** @returns {string} */ get "tags.*.upper"() { return this["."].toUpperCase(); },
 });
 `)).toEqual([]);
   });
@@ -106,9 +111,9 @@ defineState({
 defineState({
   users: [{ first: "Ada" }],
   employees: [{ first: "Edsger" }],
-  get "users.*.full,employees.*.full"(): string { return this[".first"]; },
-  get a(): number { return this["users.*.full"].length + this["employees.*.full"].length; },
-  get b(): number { return this["guests.*.full"].length; },
+  /** @returns {string} */ get "users.*.full,employees.*.full"() { return this[".first"]; },
+  /** @returns {number} */ get a() { return this["users.*.full"].length + this["employees.*.full"].length; },
+  /** @returns {number} */ get b() { return this["guests.*.full"].length; },
 });
 `);
     expect(errors).toHaveLength(1);

@@ -48,7 +48,8 @@
  *     「読まない・書かない」を断定する規則（`wcs/setter-unobserved`）が、それを見て黙る
  */
 
-import { parse, type AnyNode, type MemberExpression, type ObjectPattern, type Pattern, type Expression } from 'acorn';
+import type { AnyNode, MemberExpression, ObjectPattern, Pattern, Expression } from 'acorn';
+import { parseErasingTypes } from './typeErasure.js';
 import type { AmbientReadKind } from '../core/messages.js';
 
 /** getter 本体で見つかった `this` 経由の読み取り 1 件。オフセットは本体テキスト相対。 */
@@ -145,7 +146,7 @@ let collecting: CollectOptions = {};
 export function collectGetterReads(body: string, options: CollectOptions = {}): GetterRead[] | null {
   let program: AnyNode;
   try {
-    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return null;
   }
@@ -631,7 +632,7 @@ export type MemberNameFilter = Pick<ReadonlySet<string>, 'has'>;
 export function collectThisMemberRefs(body: string, names: MemberNameFilter): ThisMemberRef[] | null {
   let program: AnyNode;
   try {
-    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return null;
   }
@@ -654,7 +655,7 @@ const VALUE_SUFFIX = ')\n})';
 export function collectThisMemberRefsInValue(value: string, names: MemberNameFilter): ThisMemberRef[] | null {
   let program: AnyNode;
   try {
-    program = parse(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return null;
   }
@@ -735,7 +736,7 @@ function thisMemberName(node: MemberExpression): { name: string; start: number; 
 export function readsEventCurrentTarget(params: string, body: string): boolean {
   let program: AnyNode;
   try {
-    program = parse(`(async function* (${params}) {\n${body}\n})`, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(`(async function* (${params}) {\n${body}\n})`, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return false;
   }
@@ -857,7 +858,7 @@ export function findOwnThis(text: string, kind: 'body' | 'value'): { start: numb
   let program: AnyNode;
   const prefix = kind === 'body' ? PREFIX : VALUE_PREFIX;
   try {
-    program = parse(prefix + text + (kind === 'body' ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(prefix + text + (kind === 'body' ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return null;
   }
@@ -951,7 +952,7 @@ export function findInPlaceChanges(text: string, kind: 'body' | 'value', root: s
   const prefix = kind === 'body' ? PREFIX : VALUE_PREFIX;
   let program: AnyNode;
   try {
-    program = parse(prefix + text + (kind === 'body' ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(prefix + text + (kind === 'body' ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return [];
   }
@@ -1082,7 +1083,7 @@ const LOCATION_VARYING = new Set(['pathname', 'search', 'hash', 'href']);
 export function findLocationRead(body: string): { start: number; end: number; text: string } | null {
   let program: AnyNode;
   try {
-    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return null;
   }
@@ -1184,7 +1185,7 @@ export function findAmbientRead(
 ): { start: number; end: number; text: string; kind: AmbientReadKind } | null {
   let program: AnyNode;
   try {
-    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     return null;
   }
@@ -1276,13 +1277,13 @@ export function findAmbientRead(
 
 /**
  * モジュールのトップレベルが束縛する名前（import・`const` / `let` / `var`・関数と class の宣言、`export` 付きも）。
- * getter の中の同じ名前はグローバルではなく、その束縛を読む。パースできなければ空（TypeScript の構文など）。
+ * getter の中の同じ名前はグローバルではなく、その束縛を読む。パースできなければ空（TypeScript の構文は型を消して読む — typeErasure.ts）。
  */
 export function moduleBindingNames(script: string): ReadonlySet<string> {
   const names = new Set<string>();
   let program: AnyNode;
   try {
-    program = parse(script, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true, allowAwaitOutsideFunction: true });
+    program = parseErasingTypes(script, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true, allowAwaitOutsideFunction: true });
   } catch {
     return names;
   }

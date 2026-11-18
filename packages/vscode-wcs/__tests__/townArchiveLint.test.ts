@@ -209,6 +209,8 @@ export default {
     expect([...moduleBindingNames(`import a, { b as c } from "./m.js"; import * as ns from "./n.js";
 const { d, e: [f] } = x; export let g; export function h() {} class I {} function j() { const inner = 1; }`)])
       .toEqual(['a', 'c', 'ns', 'd', 'f', 'g', 'h', 'I', 'j']);
-    expect([...moduleBindingNames('const x: number = 1;')]).toEqual([]);
+    // TypeScript is read with its types erased (4.26); a module that does not parse binds nothing
+    expect([...moduleBindingNames('const x: number = 1;')]).toEqual(['x']);
+    expect([...moduleBindingNames('const x = ;')]).toEqual([]);
   });
 });

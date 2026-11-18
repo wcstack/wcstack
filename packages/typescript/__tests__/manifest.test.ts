@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildManifest, readStateSchema, isV1Manifest, stableStringify, compareStateSchema, APPLICATION_NAMESPACE } from "../src/exports";
+import { buildManifest, readStateSchema, readStateSource, sameStateSource, isV1Manifest, stableStringify, compareStateSchema, APPLICATION_NAMESPACE } from "../src/exports";
 
 const schema = { type: "object", properties: { count: { type: "number" } }, required: ["count"] };
 
@@ -89,6 +89,38 @@ describe("buildManifest — envelope と stateSchema の組み立て（v2: 単�
   });
 });
 
+describe("stateSource — ルートの schema の元のファイル", () => {
+  it("ルートの schema と一緒に書く。--merge は置き換え、渡さなければ古いものを消す（別のファイルの schema を指したままにしない）", () => {
+    const fresh = buildManifest(null, schema, undefined, "src/state.ts");
+    expect(fresh.manifestExtensions[APPLICATION_NAMESPACE].stateSource).toBe("src/state.ts");
+    expect(readStateSource(fresh)).toBe("src/state.ts");
+    const replaced = buildManifest(null, schema, fresh, "src/state/app.ts");
+    expect(readStateSource(replaced)).toBe("src/state/app.ts");
+    expect(readStateSource(buildManifest(null, schema, fresh))).toBeUndefined();
+  });
+
+  it("--mount はボリュームの schema なので stateSource をそのまま残し、新規なら書かない", () => {
+    const root = buildManifest(null, schema, undefined, "src/state.ts");
+    const volume = { type: "object", properties: { t: { type: "object" } } };
+    expect(readStateSource(buildManifest("i18n", volume, root, "src/i18n.ts"))).toBe("src/state.ts");
+    expect(readStateSource(buildManifest("i18n", volume, undefined, "src/i18n.ts"))).toBeUndefined();
+  });
+
+  it("readStateSource は文字列だけを返す", () => {
+    expect(readStateSource(null)).toBeUndefined();
+    expect(readStateSource({ manifestExtensions: { [APPLICATION_NAMESPACE]: { stateSource: 1 } } })).toBeUndefined();
+  });
+
+  it("sameStateSource: 区切りと先頭の ./ を無視し、.js と .ts（.mjs と .mts）を同じファイルとみなす", () => {
+    expect(sameStateSource("src/state.ts", "src/state.js")).toBe(true);
+    expect(sameStateSource("./src/state.js", "src\\state.ts")).toBe(true);
+    expect(sameStateSource("state.mts", "state.mjs")).toBe(true);
+    expect(sameStateSource("state.mts", "state.js")).toBe(false);
+    expect(sameStateSource("src/state.ts", "src/app.ts")).toBe(false);
+    expect(sameStateSource("src/state.tsx", "src/state.jsx")).toBe(false);
+  });
+});
+
 describe("readStateSchema / isV1Manifest / stableStringify", () => {
   it("欠けた階層のどこで止まっても undefined", () => {
     expect(readStateSchema(null)).toBeUndefined();
@@ -155,6 +187,25 @@ describe("compareStateSchema — drift 検出（D9）", () => {
   it("開いた {} との比較はルート 1 点の差分になる", () => {
     const result = compareStateSchema(text, null, {});
     expect(result.kind === "differs" && result.changes).toEqual(["+ /", "- /properties/count/type", "- /required", "- /type"]);
+  });
+
+  it("stateSource: 別のファイルを指す manifest は乖離、無い manifest（4.26 より前）と .js / .ts の違いは乖離でない。--mount では比べない", () => {
+    const withSource = JSON.stringify(buildManifest(null, schema, undefined, "src/old.ts"));
+    expect(compareStateSchema(withSource, null, schema, "src/old.js")).toEqual({ kind: "same" });
+    expect(compareStateSchema(withSource, null, schema, "src/state.ts")).toEqual({
+      kind: "differs", changes: [], stateSource: { stored: "src/old.ts", expected: "src/state.ts" },
+    });
+    const both = compareStateSchema(withSource, null, { type: "object" }, "src/state.ts");
+    expect(both).toEqual({
+      kind: "differs",
+      changes: ["- /properties/count/type", "- /required"],
+      stateSource: { stored: "src/old.ts", expected: "src/state.ts" },
+    });
+    expect(compareStateSchema(text, null, schema, "src/state.ts")).toEqual({ kind: "same" });
+    expect(compareStateSchema(withSource, null, schema)).toEqual({ kind: "same" });
+    const volume = { type: "object", properties: { t: { type: "object" } } };
+    const mounted = JSON.stringify(buildManifest("i18n", volume, JSON.parse(withSource)));
+    expect(compareStateSchema(mounted, "i18n", volume, "src/i18n.ts")).toEqual({ kind: "same" });
   });
 
   it("stateSchema が無い / v1 manifest / JSON が壊れている", () => {

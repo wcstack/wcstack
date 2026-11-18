@@ -133,6 +133,10 @@ export interface ResolvedContracts {
    * 宣言していれば undefined(未宣言扱い = schema 検証は沈黙)。
    */
   readonly applicationSchema: JsonSchemaNode | undefined;
+  /** The artifact that declared `applicationSchema` (its source), when there is one. */
+  readonly applicationSchemaSource?: string;
+  /** That artifact's `stateSource` (relative to it — see ApplicationExtension), when it names one. */
+  readonly applicationStateSource?: string;
   /** application artifact が 1 つでも渡されたか(明示指定が発見結果を置き換える判定用)。 */
   readonly hasApplicationArtifact: boolean;
   /** 衝突/override 診断を、それを生んだ artifact の source ごとに束ねたもの。 */
@@ -163,6 +167,7 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
   const filterOwner = new Map<string, string>();
   let schemaOwner: string | undefined;
   let schemaWinner: JsonSchemaNode | undefined;
+  let schemaStateSource: unknown;
   let hasApplicationArtifact = false;
 
   for (const lm of loaded) {
@@ -232,6 +237,7 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
         if (schemaOwner === undefined) {
           schemaOwner = lm.artifact.source;
           schemaWinner = schema as JsonSchemaNode;
+          schemaStateSource = application.stateSource;
         } else {
           // 衝突 = 勝者なし（読み手はこの undefined だけを見る）
           schemaWinner = undefined;
@@ -256,5 +262,15 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
 
-  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
+  const stateSource = schemaWinner !== undefined && typeof schemaStateSource === "string" && schemaStateSource.trim() !== ""
+    ? schemaStateSource.trim()
+    : undefined;
+  return {
+    tags: winners,
+    applicationSchema: schemaWinner,
+    ...(schemaWinner !== undefined ? { applicationSchemaSource: schemaOwner } : {}),
+    ...(stateSource !== undefined ? { applicationStateSource: stateSource } : {}),
+    hasApplicationArtifact,
+    diagnosticsBySource,
+  };
 }

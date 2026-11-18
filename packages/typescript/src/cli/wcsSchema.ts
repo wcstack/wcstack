@@ -1,8 +1,8 @@
 /**
  * wcsSchema.ts — the `wcs-schema` command.
  *
- *   wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]
- *   wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]
  *
  * exit codes
  *   emit : 0 written / 2 usage, unreadable file, syntax error, or the generated manifest failed its self-check
@@ -13,17 +13,23 @@
  * the whole `stateSchema`, or the subtree at `--mount=<path>` (a volume's type
  * merges as a subtree of the single tree, docs/state-mount-design.md D15).
  *
+ * A root emit records the state file as `stateSource`, relative to the manifest's
+ * directory (the working directory for `--out=-`) — or `--state-source=<path>`, the
+ * file the page's `<wcs-state src>` names when that is not the state file itself (a
+ * build's output); `check` reports a manifest that names another file as drift, and
+ * one that names none as up to date.
+ *
  * The generated artifact is always run through the validator core's
  * `validateManifestArtifact` (dist/schema-core.cjs, built from vscode-wcs) so a
  * generator bug can never write a manifest the validator would reject.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, parentPort, Worker } from "node:worker_threads";
 import { generateStateSchema } from "../generate.js";
-import { APPLICATION_MANIFEST_FILENAME, buildManifest, compareStateSchema } from "../manifest.js";
+import { APPLICATION_MANIFEST_FILENAME, buildManifest, compareStateSchema, readStateSource } from "../manifest.js";
 import { loadSchemaCore } from "../schemaCore.js";
 import { VERSION } from "../version.js";
 
@@ -34,8 +40,8 @@ export interface CliIo {
 }
 
 const USAGE =
-  "usage: wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]\n" +
-  "       wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]\n";
+  "usage: wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]\n" +
+  "       wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--state-source=<path>] [--tsconfig=<path>] [--max-depth=5]\n";
 
 export interface ParsedArgs {
   readonly command: "emit" | "check" | "version" | "help" | undefined;
@@ -44,6 +50,8 @@ export interface ParsedArgs {
   readonly out: string;
   readonly manifest: string;
   readonly merge: boolean;
+  /** The file the page's root `<wcs-state src>` names, when it is not the state file (a build's output). */
+  readonly stateSource: string | undefined;
   readonly tsconfig: string | undefined;
   readonly maxDepth: number | undefined;
   readonly unknown: readonly string[];
@@ -56,6 +64,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let out = APPLICATION_MANIFEST_FILENAME;
   let manifest = APPLICATION_MANIFEST_FILENAME;
   let merge = false;
+  let stateSource: string | undefined;
   let tsconfig: string | undefined;
   let maxDepth: number | undefined;
   const unknown: string[] = [];
@@ -66,6 +75,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     else if (arg.startsWith("--state=")) unknown.push(arg); // v2: 名前次元は撤去 — --mount=<path> へ
     else if (arg.startsWith("--out=")) out = arg.slice("--out=".length);
     else if (arg.startsWith("--manifest=")) manifest = arg.slice("--manifest=".length);
+    else if (arg.startsWith("--state-source=")) stateSource = arg.slice("--state-source=".length);
     else if (arg.startsWith("--tsconfig=")) tsconfig = arg.slice("--tsconfig=".length);
     else if (arg.startsWith("--max-depth=")) maxDepth = Number(arg.slice("--max-depth=".length));
     else if (arg === "--merge") merge = true;
@@ -74,7 +84,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     else if (file === undefined) file = arg;
     else unknown.push(arg);
   }
-  return { command, file, mount, out, manifest, merge, tsconfig, maxDepth, unknown };
+  return { command, file, mount, out, manifest, merge, stateSource, tsconfig, maxDepth, unknown };
 }
 
 export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
@@ -100,6 +110,12 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
     io.stderr("--max-depth must be a positive integer\n");
     return 2;
   }
+  if (args.stateSource !== undefined && (args.mount !== null || args.stateSource === "")) {
+    io.stderr(args.mount !== null
+      ? "--state-source names the root state's file; a --mount volume has none\n"
+      : "--state-source requires a path\n");
+    return 2;
+  }
   if (args.mount !== null) {
     // runtime（state の validateVolumeMountPath）と同条件: 空セグメント・ワイルドカードと
     // 予約文字（$ # @ — 位置を問わず）を拒否し、数字先頭などはランタイム同様に受理する。
@@ -121,6 +137,11 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
   for (const warning of generated.warnings) io.stderr(`warning: ${warning}\n`);
 
   return args.command === "emit" ? emit(args, generated.schema, io) : check(args, generated.schema, io);
+}
+
+/** `stateSource`: the page's state file (`--state-source`, else the state file) relative to the manifest's directory, with forward slashes. */
+function stateSourceOf(io: CliIo, args: ParsedArgs, manifestDir: string): string {
+  return relative(manifestDir, resolve(io.cwd(), args.stateSource ?? args.file!)).replace(/\\/g, "/");
 }
 
 /** runtime（validateVolumeMountPath）が raise する形なら理由を返す（妥当なら null）。 */
@@ -148,7 +169,9 @@ function emit(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>["
     }
   }
 
-  const manifest = buildManifest(args.mount, schema, existing);
+  // the root state's file, for the validator to apply the schema to its pages only (a volume's emit keeps it)
+  const stateSource = args.mount === null ? stateSourceOf(io, args, outPath === undefined ? io.cwd() : dirname(outPath)) : undefined;
+  const manifest = buildManifest(args.mount, schema, existing, stateSource);
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
 
   // Self-check: the validator must accept what the generator wrote.
@@ -168,8 +191,9 @@ function emit(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>["
     io.stdout(text);
     return 0;
   }
+  mkdirSync(dirname(outPath!), { recursive: true });
   writeFileSync(outPath!, text, "utf8");
-  io.stderr(`wrote ${args.out} (${args.mount === null ? "state tree" : `mount "${args.mount}"`})\n`);
+  io.stderr(`wrote ${args.out} (${args.mount === null ? `state tree of ${stateSource}` : `mount "${args.mount}"`})\n`);
   return 0;
 }
 
@@ -182,10 +206,16 @@ function check(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>[
   const slot = args.mount === null ? "state tree" : `mount "${args.mount}"`;
   // 誘導コマンドは check と同じスロットを指すこと（--mount 抜きだとルートを差し替えてしまう）
   const mountFlag = args.mount === null ? "" : ` --mount=${args.mount}`;
-  const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.mount, schema);
+  const text = readFileSync(manifestPath, "utf8");
+  const stateSource = args.mount === null ? stateSourceOf(io, args, dirname(manifestPath)) : undefined;
+  const comparison = compareStateSchema(text, args.mount, schema, stateSource);
   switch (comparison.kind) {
     case "same":
       io.stderr(`${args.manifest}: ${slot} is up to date\n`);
+      // written before 4.26: not drift, but the validator applies the schema to every page under the manifest
+      if (stateSource !== undefined && readStateSource(JSON.parse(text)) === undefined) {
+        io.stderr(`note: ${args.manifest} names no stateSource, so the validator applies its schema to every page under it; \`wcs-schema emit ${args.file}${args.stateSource === undefined ? "" : ` --state-source=${args.stateSource}`} --merge --out=${args.manifest}\` records "${stateSource}"\n`);
+      }
       return 0;
     case "missing-state":
       io.stderr(`${args.manifest}: ${slot} has no stateSchema (run \`wcs-schema emit --merge${mountFlag}\`)\n`);
@@ -196,11 +226,16 @@ function check(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>[
     case "broken":
       io.stderr(`${args.manifest}: broken JSON: ${comparison.message}\n`);
       return 2;
-    case "differs":
-      io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length} change(s)):\n`);
+    case "differs": {
+      const source = comparison.stateSource;
+      io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length + (source === undefined ? 0 : 1)} change(s)):\n`);
       for (const change of comparison.changes) io.stderr(`  ${change}\n`);
+      if (source !== undefined) {
+        io.stderr(`  ~ stateSource: the manifest names "${source.stored}", not "${source.expected}"\n`);
+      }
       io.stderr(`run \`wcs-schema emit --merge${mountFlag} --out=${args.manifest}\` to update it\n`);
       return 1;
+    }
   }
 }
 

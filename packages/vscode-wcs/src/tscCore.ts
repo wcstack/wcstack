@@ -14,3 +14,6 @@
 
 export { createWcsLanguagePlugin, stripWcsImport } from "./language/plugin.js";
 export { WCS_PREAMBLE, WCS_PREAMBLE_LENGTH } from "./language/preamble.js";
+// wcs-tsc の設定の監査が「program の外にあるインラインの <wcs-state> のページ」を数えるのに使う
+// （プラグインと同じ読み方で、ページにインラインのスクリプトがあるかを決める）。
+export { parseWcsScriptBlocks } from "./language/htmlParse.js";

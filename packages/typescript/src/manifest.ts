@@ -13,6 +13,12 @@
  * an existing manifest (filters, listContexts); a hand-written schema for the
  * same slot does not survive, by design: there is no implicit merge in the
  * sidecar spec (§5).
+ *
+ * `stateSource` (4.26) names the file the root schema was generated from, relative
+ * to the manifest's directory with forward slashes: the validator applies the
+ * schema only to a page whose root `<wcs-state src>` is that file (`.js` / `.ts`
+ * of the same path count as the same), so one manifest at the root serves an app
+ * whose other pages have states of their own.
  */
 
 import type { JsonSchemaNode } from "./typeToSchema.js";
@@ -28,6 +34,8 @@ export interface ApplicationManifest {
     [APPLICATION_NAMESPACE]: {
       version: number;
       stateSchema?: JsonSchemaNode;
+      /** The root state file the schema comes from, relative to the manifest's directory. */
+      stateSource?: string;
       [key: string]: unknown;
     };
     [namespace: string]: unknown;
@@ -43,8 +51,13 @@ export interface ApplicationManifest {
  *
  * `mountPath === null` replaces the whole `stateSchema`; a mount path merges
  * the schema as a subtree at that path (intermediate object nodes are created).
+ *
+ * `stateSource` is recorded with the root schema: given, it replaces the one in
+ * `existing`; omitted, the root schema's source is unknown and an old
+ * `stateSource` is dropped (it named the file of the schema being replaced).
+ * A volume's schema (`mountPath` set) leaves `stateSource` as it is.
  */
-export function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown): ApplicationManifest {
+export function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown, stateSource?: string): ApplicationManifest {
   const base: Record<string, unknown> =
     existing !== null && typeof existing === "object" && !Array.isArray(existing)
       ? { ...(existing as Record<string, unknown>) }
@@ -63,6 +76,8 @@ export function buildManifest(mountPath: string | null, schema: JsonSchemaNode, 
   delete ns.states;
   if (mountPath === null) {
     ns.stateSchema = schema;
+    if (stateSource === undefined) delete ns.stateSource;
+    else ns.stateSource = stateSource;
   } else {
     const rootRaw = ns.stateSchema;
     const root: Record<string, unknown> =
@@ -96,14 +111,34 @@ export function buildManifest(mountPath: string | null, schema: JsonSchemaNode, 
   return base as unknown as ApplicationManifest;
 }
 
-/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
-export function readStateSchema(manifest: unknown): unknown {
+function applicationNamespace(manifest: unknown): Record<string, unknown> | undefined {
   if (manifest === null || typeof manifest !== "object") return undefined;
   const extensions = (manifest as Record<string, unknown>).manifestExtensions;
   if (extensions === null || typeof extensions !== "object") return undefined;
   const ns = (extensions as Record<string, unknown>)[APPLICATION_NAMESPACE];
   if (ns === null || typeof ns !== "object") return undefined;
-  return (ns as Record<string, unknown>).stateSchema;
+  return ns as Record<string, unknown>;
+}
+
+/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
+export function readStateSchema(manifest: unknown): unknown {
+  return applicationNamespace(manifest)?.stateSchema;
+}
+
+/** Read the `stateSource` (a string) from a parsed manifest object, or undefined. */
+export function readStateSource(manifest: unknown): string | undefined {
+  const source = applicationNamespace(manifest)?.stateSource;
+  return typeof source === "string" ? source : undefined;
+}
+
+/**
+ * True when two `stateSource` paths name the same state file: separators and a
+ * leading `./` aside, `.js` and `.ts` (and `.mjs` and `.mts`) of one path are the
+ * same file — a page loads the built `.js` of the `.ts` the schema came from.
+ */
+export function sameStateSource(a: string, b: string): boolean {
+  const key = (path: string): string => path.replace(/\\/g, "/").replace(/^(\.\/)+/, "").replace(/\.(m?)ts$/, ".$1js");
+  return key(a) === key(b);
 }
 
 /**
@@ -152,7 +187,13 @@ function sortKeys(value: unknown): unknown {
 
 export type SchemaComparison =
   | { readonly kind: "same" }
-  | { readonly kind: "differs"; readonly changes: readonly string[] }
+  | {
+      readonly kind: "differs";
+      /** Schema changes; empty when only `stateSource` differs. */
+      readonly changes: readonly string[];
+      /** The manifest names another root state file than the one the schema was generated from. */
+      readonly stateSource?: { readonly stored: string; readonly expected: string };
+    }
   | { readonly kind: "missing-state" }
   | { readonly kind: "v1-manifest" }
   | { readonly kind: "broken"; readonly message: string };
@@ -162,8 +203,13 @@ export type SchemaComparison =
  * (the whole tree, or the subtree at `mountPath`).
  * `changes` lists JSON pointers: `+ ptr` (only in generated), `- ptr` (only in
  * manifest), `~ ptr` (both, different value).
+ *
+ * `stateSource` (the root state file, relative to the manifest's directory) is
+ * compared too, for the root tree: a manifest that names another file is drift —
+ * the validator would apply the schema to the pages of that file, not of this one.
+ * A manifest without `stateSource` (written before 4.26) is not.
  */
-export function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode): SchemaComparison {
+export function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode, stateSource?: string): SchemaComparison {
   let parsed: unknown;
   try {
     parsed = JSON.parse(manifestText);
@@ -176,7 +222,14 @@ export function compareStateSchema(manifestText: string, mountPath: string | nul
     stored = subtreeAt(stored, mountPath);
   }
   if (stored === undefined) return { kind: "missing-state" };
-  if (stableStringify(stored) === stableStringify(generated)) return { kind: "same" };
+  const storedSource = mountPath === null && stateSource !== undefined ? readStateSource(parsed) : undefined;
+  const sourceDiff = storedSource !== undefined && !sameStateSource(storedSource, stateSource!)
+    ? { stored: storedSource, expected: stateSource! }
+    : undefined;
+  const source = sourceDiff === undefined ? {} : { stateSource: sourceDiff };
+  if (stableStringify(stored) === stableStringify(generated)) {
+    return sourceDiff === undefined ? { kind: "same" } : { kind: "differs", changes: [], stateSource: sourceDiff };
+  }
 
   const a = flatten(generated);
   const b = flatten(stored);
@@ -188,7 +241,7 @@ export function compareStateSchema(manifestText: string, mountPath: string | nul
     else if (!inA && inB) changes.push(`- ${key}`);
     else if (a.get(key) !== b.get(key)) changes.push(`~ ${key}`);
   }
-  return { kind: "differs", changes };
+  return { kind: "differs", changes, ...source };
 }
 
 /** Leaf pointer → canonical JSON. Objects with children are not listed themselves; empty objects/arrays are leaves. */

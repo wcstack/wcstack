@@ -12,7 +12,7 @@ import { WcsDiagnostic, WcsSeverity, sortDiagnostics } from "../diagnostics.js";
 import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
 import { validateManifestArtifact, validateManifestSet } from "../sidecar/validate.js";
-import { discoverApplicationManifest, joinRelativeSource } from "../sidecar/discover.js";
+import { discoverApplicationManifest, joinRelativeSource, stateSourceFromPage } from "../sidecar/discover.js";
 import { JsonSchemaNode, LiveBindableDeclaration } from "../sidecar/types.js";
 import type { FileReader } from "../../service/statePathResolver.js";
 
@@ -110,6 +110,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // 最近傍発見(D8)は行わない — 明示指定が発見結果を丸ごと置き換える。
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
   let explicitSchema: JsonSchemaNode | undefined;
+  // the explicit schema's state file (`stateSource`), with the manifest it is relative to
+  let explicitStateSource: { readonly manifest: string; readonly stateSource: string } | undefined;
   let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
@@ -122,6 +124,9 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     if (result.hasApplicationArtifact) {
       haveExplicitApplication = true;
       explicitSchema = result.resolvedSchema;
+      if (result.resolvedSchemaSource !== undefined && result.resolvedStateSource !== undefined) {
+        explicitStateSource = { manifest: result.resolvedSchemaSource, stateSource: result.resolvedStateSource };
+      }
     }
   }
 
@@ -139,9 +144,14 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       nothingToCheck.push(input.source);
     }
     let applicationSchema = explicitSchema;
+    // a schema whose manifest names its state file is this page's only when the page loads that file (validateDocument)
+    let applicationStateSource = explicitStateSource === undefined
+      ? undefined
+      : stateSourceFromPage(input.source, explicitStateSource.manifest, explicitStateSource.stateSource);
     if (!haveExplicitApplication && input.fileReader !== undefined) {
       const discovered = discoverApplicationManifest(input.fileReader);
       applicationSchema = discovered?.schema;
+      applicationStateSource = discovered?.stateSource;
       if (discovered !== undefined) {
         const source = joinRelativeSource(input.source, discovered.relativePath);
         if (!diagnosticsBySource.has(source)) {
@@ -154,6 +164,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       ...options,
       ...(input.fileReader !== undefined ? { fileReader: input.fileReader } : {}),
       ...(applicationSchema !== undefined ? { applicationSchema } : {}),
+      ...(applicationSchema !== undefined && applicationStateSource !== undefined ? { applicationStateSource } : {}),
     };
     const own: WcsDiagnostic[] = [];
     for (const d of validateDocument(input.text, docOptions)) {
