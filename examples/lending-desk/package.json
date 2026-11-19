@@ -1,0 +1,44 @@
+{
+  "name": "wcstack-example-lending-desk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@wcstack/debounce": "^4.26.0",
+    "@wcstack/fetch": "^4.26.0",
+    "@wcstack/router": "^4.26.0",
+    "@wcstack/sse": "^4.26.0",
+    "@wcstack/state": "^4.26.0",
+    "@wcstack/storage": "^4.26.0",
+    "@wcstack/timer": "^4.26.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@types/node": "26.6.6",
+    "@volar/language-core": "2.4.31",
+    "@volar/typescript": "2.4.31",
+    "@wcstack/lint": "^4.26.0",
+    "@wcstack/server": "^4.26.0",
+    "@wcstack/testing": "^4.26.0",
+    "@wcstack/typescript": "^4.26.0",
+    "happy-dom": "21.0.4",
+    "typescript": "^6.0.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  },
+  "scripts": {
+    "dev": "node scripts/run.ts dev",
+    "build": "vite build",
+    "start": "npm run build && node scripts/run.ts start",
+    "schema": "wcs-schema emit src/state/app.ts",
+    "check": "npm run check:types && npm run check:schema && npm run check:lint && npm run test:unit && npm run test:e2e",
+    "check:types": "tsc -p tsconfig.json && wcs-tsc -p tsconfig.json",
+    "check:schema": "wcs-schema check src/state/app.ts",
+    "check:lint": "wcs-validate --strict index.html counter.html qty-test.html",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

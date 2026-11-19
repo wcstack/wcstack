@@ -31,7 +31,7 @@ export default defineState({
 
 ツール向けに `WcsPaths<T>` と `WcsPathValue<T, P>` も export されている。リファレンス: [packages/state/docs/define-state.ja.md](../packages/state/docs/define-state.ja.md)。
 
-本体が `this` を読む getter には戻り値の型を書く（`get total(): number { … }`）: 書かないと、TypeScript はその戻り値が依存する読みを `any` にする。4.26（未リリース）から、lint もその注釈を読む: 4.25 までは、戻り値の型を書いた getter やメソッドが lint からまったく見えず、スクリプトの規則もそれを飛ばしていた。同じく 4.26 から、`$on` のハンドラの引数に型が付く — `state`（state: そのデータ・getter・パス・API。メソッドは `any`）、`event`（`CustomEvent`）、行の添字（`number`）、`this` は `void`（`this` を読むハンドラは投げる）— そして `this.$command` は `$commandTokens` の名前ちょうどになる: 綴りを間違えたトークンは型のエラーで、`noUncheckedIndexedAccess` で使うたびに「undefined かもしれない」と言われることもない。`<T>` だけを渡す呼び出しは、前の型付けのまま。
+本体が `this` を読む getter には戻り値の型を書く（`get total(): number { … }`）: 書かないと、TypeScript はその戻り値が依存する読みを `any` にする。4.26から、lint もその注釈を読む: 4.25 までは、戻り値の型を書いた getter やメソッドが lint からまったく見えず、スクリプトの規則もそれを飛ばしていた。同じく 4.26 から、`$on` のハンドラの引数に型が付く — `state`（state: そのデータ・getter・パス・API。メソッドは `any`）、`event`（`CustomEvent`）、行の添字（`number`）、`this` は `void`（`this` を読むハンドラは投げる）— そして `this.$command` は `$commandTokens` の名前ちょうどになる: 綴りを間違えたトークンは型のエラーで、`noUncheckedIndexedAccess` で使うたびに「undefined かもしれない」と言われることもない。`<T>` だけを渡す呼び出しは、前の型付けのまま。
 
 再帰パス（`$recursion` で宣言する `**`）はパターン索引シグネチャで `any` になる — 深さの族はユニオンとして列挙できないため — 一方、通常のドットパスは解決された型を保つ。VS Code 拡張の preamble も同じシグネチャを宣言しているので、エディタと `tsc` の報告は一致する。
 
@@ -39,7 +39,7 @@ export default defineState({
 
 ## 2. HTML に届ける: `wcs-schema` と sidecar の `stateSchema`
 
-静的検証器（`@wcstack/lint` の `wcs-validate`・VS Code 拡張）は全ての `data-wcs` パスを state と照合する — ただし state を読むのは型チェッカーでなく正規表現アナライザ（4.26（未リリース）から、戻り値の型の注釈を読み、TypeScript の構文を含む本体は Node 自身の型の除去（Node 22.13 以降）を通して読む）。`users: [] as { name: string }[]` では `users.*.name` が解決できず、typo は **warning**（`wcs/binding-path-missing`・exit 0）止まりで、正しいパスには偽警告が付く。
+静的検証器（`@wcstack/lint` の `wcs-validate`・VS Code 拡張）は全ての `data-wcs` パスを state と照合する — ただし state を読むのは型チェッカーでなく正規表現アナライザ（4.26から、戻り値の型の注釈を読み、TypeScript の構文を含む本体は Node 自身の型の除去（Node 22.13 以降）を通して読む）。`users: [] as { name: string }[]` では `users.*.name` が解決できず、typo は **warning**（`wcs/binding-path-missing`・exit 0）止まりで、正しいパスには偽警告が付く。
 
 検証器には、生産者が居なかった型付き入力がある: `application` sidecar manifest の `stateSchema`（JSON-Schema サブセット・[wcstack-manifest-schema.md](./wcstack-manifest-schema.md) §4）。`@wcstack/typescript` がその生産者:
 
@@ -55,13 +55,13 @@ npx wcs-validate --strict index.html    # HTML と同じ / 上のディレクト
 - `for:` に非配列 → `wcs/path-type-mismatch`・**error**
 - 素の `{}` の下（`Date`・`Map`・`Record<string, T>`・生成器が記述できないもの）→ 沈黙
 - インラインスクリプトのメソッド・getter・`$listKeys` は引き続き存在扱い。script と schema の両方が知るパスは schema の型が勝つ
-- 4.26（未リリース）から、最上位のキーが state のスクリプトと食い違う schema は `wcs/drift-state-key`（warning）: schema が古いか、別のページのもの。4.25 までは、`.ts` で改名して HTML に残した名前が、古い schema に対して lint を通った — 気づくのは `wcs-schema check` だけだった
+- 4.26から、最上位のキーが state のスクリプトと食い違う schema は `wcs/drift-state-key`（warning）: schema が古いか、別のページのもの。4.25 までは、`.ts` で改名して HTML に残した名前が、古い schema に対して lint を通った — 気づくのは `wcs-schema check` だけだった
 
 VS Code 拡張も同じファイルを発見するので、IDE と CI は一致する。
 
-**複数のページに 1 つの manifest。** 4.26（未リリース）から、`wcs-schema emit` は state のファイルを `stateSource`（manifest からの相対）として書き、検証器はその schema を、ルートの `<wcs-state src>` がそのファイルであるページにだけ当てる（その `.js` も同じファイルと数える）。`wcstack.manifest.json` をプロジェクトのルートに 1 つ置けば、`wcs-validate` と拡張がそれを見つける: 自分のインライン state を持つページは、この schema ではなく自分のスクリプトで検査される。別のファイルを名指す manifest は、`wcs-schema check` が乖離として報告する。4.25 以前が書いた manifest には `stateSource` が無く、作り直すまではその下のすべてのページに当たる。ページがビルドの出力を別のパスから読む（`tsc --outDir`）ときは、`--state-source=<その .js>` を付けて emit する。
+**複数のページに 1 つの manifest。** 4.26から、`wcs-schema emit` は state のファイルを `stateSource`（manifest からの相対）として書き、検証器はその schema を、ルートの `<wcs-state src>` がそのファイルであるページにだけ当てる（その `.js` も同じファイルと数える）。`wcstack.manifest.json` をプロジェクトのルートに 1 つ置けば、`wcs-validate` と拡張がそれを見つける: 自分のインライン state を持つページは、この schema ではなく自分のスクリプトで検査される。別のファイルを名指す manifest は、`wcs-schema check` が乖離として報告する。4.25 以前が書いた manifest には `stateSource` が無く、作り直すまではその下のすべてのページに当たる。ページがビルドの出力を別のパスから読む（`tsc --outDir`）ときは、`--state-source=<その .js>` を付けて emit する。
 
-**state が `.ts` のページをビルドする。** エンジンは `<wcs-state src>` を実行時に import するので、そのファイルは JavaScript として配られる必要がある。4.26（未リリース）から、Vite では `@wcstack/typescript` のプラグインを足す:
+**state が `.ts` のページをビルドする。** エンジンは `<wcs-state src>` を実行時に import するので、そのファイルは JavaScript として配られる必要がある。4.26から、Vite では `@wcstack/typescript` のプラグインを足す:
 
 ```ts
 // vite.config.ts
@@ -116,7 +116,7 @@ npx wcs-tsc --noEmit                 # または npx wcs-tsc -p tsconfig.json --
 
 仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当て、`.html` を受け付けてプラグイン経由で program を組む。それ以外の tsc 引数はそのまま素通しで、exit code も tsc のもの。
 
-- **ブラウザが走らせるとおり、JavaScript として。** 4.26（未リリース）から、スクリプトは JavaScript として検査する。検査はプラグインの `// @ts-check` が、`checkJs` によらず有効にする。JSDoc の型が効く（`/** @type {Item[]} */ items: []`・`/** @param {number} n */`・`/** @typedef {import("./api").Item} Item */`）。TypeScript の構文（型の注釈・`as`・`!`・`import type`）は、ブラウザが `SyntaxError` を投げるのと同じく、その場所で報告される（TS8010・TS8016・TS8006）。構文のエラーがあると、直すまで tsc は型のエラーを報告しない。4.25 までは TypeScript として読んでいた: JSDoc は無視され、TypeScript の構文は通った。JSDoc のコメントは行の頭から書く: 同じ行の `{` や `,` の後ろのものを、TypeScript は付けない。
+- **ブラウザが走らせるとおり、JavaScript として。** 4.26から、スクリプトは JavaScript として検査する。検査はプラグインの `// @ts-check` が、`checkJs` によらず有効にする。JSDoc の型が効く（`/** @type {Item[]} */ items: []`・`/** @param {number} n */`・`/** @typedef {import("./api").Item} Item */`）。TypeScript の構文（型の注釈・`as`・`!`・`import type`）は、ブラウザが `SyntaxError` を投げるのと同じく、その場所で報告される（TS8010・TS8016・TS8006）。構文のエラーがあると、直すまで tsc は型のエラーを報告しない。4.25 までは TypeScript として読んでいた: JSDoc は無視され、TypeScript の構文は通った。JSDoc のコメントは行の頭から書く: 同じ行の `{` や `,` の後ろのものを、TypeScript は付けない。
 - **プロジェクト側の設定。** `tsconfig.json` がページに届く（それを覆う `include`、または `include` 無し）こと、ES2015 以降を対象にする（`target` か `lib`）こと。4.26 から `noImplicitThis`・`allowJs`・`checkJs` は要らない（4.25 までは要った）。`wcs-tsc` は設定を監査し、不足があれば標準エラーに `wcs-tsc: warning: …` を 1 行出す — tsconfig のディレクトリの下にインラインの `<wcs-state>` を持つページがあるのに、どれもプログラムに入っていないときも、そのページを名指す。終了コードは tsc のもの。`--wcs-defaults` は、元の設定を extends して `include: "**/*.html"`（と `target`）を足した一時 config で実行する（終了時に削除）。全部を検査するには `strict`（少なくとも `noImplicitAny`）を使う: それが無いと JavaScript のオブジェクトリテラルは開いていて、配列の中のオブジェクトのフィールドの綴り違い（`this.items[0].nmae`）は報告されない。`this.coutn` は報告される。
 - **`$on` と `$command`。** `defineState` と同じ（4.26）: `$on` のハンドラの引数に型が付き — `state`（state。メソッドは `any`）、`event`（`CustomEvent`。`detail` は `any`）、添字（`number`）、`this` は `void` — `this.$command` は `$commandTokens` の名前に絞られる。
 - **CDN import。** buildless なページは `https://esm.run/...` から import するが、tsc はそれを解決できない。既定（`--url-imports=any`）では全ての `http(s)://` モジュールが `any` に型付き、`--url-imports=error` なら TS2307 で落ちる。`@wcstack/state` の URL import はどちらでも剥がされてプリアンブルが型を与える。

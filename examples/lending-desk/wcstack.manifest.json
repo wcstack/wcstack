@@ -1,0 +1,1929 @@
+{
+  "schemaVersion": 2,
+  "kind": "application",
+  "manifestExtensions": {
+    "wcstack.application": {
+      "version": 2,
+      "stateSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "routeName": {
+            "type": "string"
+          },
+          "routeParams": {},
+          "query": {},
+          "navigateUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replaceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nowMs": {
+            "type": "number"
+          },
+          "clockTick": {
+            "type": "number"
+          },
+          "today": {
+            "type": "string"
+          },
+          "lastDay": {
+            "type": "string"
+          },
+          "session": {},
+          "auth": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "user": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "group",
+                          "staff"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "role"
+                    ]
+                  }
+                },
+                "required": [
+                  "token",
+                  "user"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signedIn": {
+            "type": "boolean"
+          },
+          "isStaff": {
+            "type": "boolean"
+          },
+          "isGroup": {
+            "type": "boolean"
+          },
+          "headerName": {
+            "type": "string"
+          },
+          "authHeader": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentHref": {
+            "type": "string"
+          },
+          "loginForm": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "phrase": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "phrase"
+            ]
+          },
+          "loginBody": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "phrase": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "phrase"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loginSending": {
+            "type": "boolean",
+            "const": false
+          },
+          "loginLoading": {
+            "type": "boolean",
+            "const": false
+          },
+          "loginError": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loginMessage": {
+            "type": "string"
+          },
+          "signingOut": {
+            "type": "boolean",
+            "const": false
+          },
+          "loginNext": {
+            "type": "string"
+          },
+          "centersResult": {},
+          "centersError": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "centers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "selected": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "form": {
+            "type": "object",
+            "properties": {
+              "q": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "center": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "sort": {
+                "type": "string",
+                "enum": [
+                  "name",
+                  "deposit"
+                ]
+              }
+            },
+            "required": [
+              "q",
+              "category",
+              "center",
+              "from",
+              "to",
+              "sort"
+            ]
+          },
+          "settledQ": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "searchResult": {},
+          "searchLoading": {
+            "type": "boolean",
+            "const": false
+          },
+          "searchError": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "searchPage": {
+            "type": "number"
+          },
+          "searchUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "searchChecked": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "number"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string",
+                              "enum": [
+                                "テント・タープ",
+                                "机・椅子",
+                                "映像・音響",
+                                "調理・イベント",
+                                "スポーツ・レク",
+                                "防災・安全"
+                              ]
+                            },
+                            "centerId": {
+                              "type": "number"
+                            },
+                            "stock": {
+                              "type": "number"
+                            },
+                            "deposit": {
+                              "type": "number"
+                            },
+                            "note": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "free": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "category",
+                            "centerId",
+                            "stock",
+                            "deposit",
+                            "note"
+                          ]
+                        }
+                      },
+                      "total": {
+                        "type": "number"
+                      },
+                      "page": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "total",
+                      "page"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "problem": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "problem"
+            ]
+          },
+          "searchProblem": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "テント・タープ",
+                    "机・椅子",
+                    "映像・音響",
+                    "調理・イベント",
+                    "スポーツ・レク",
+                    "防災・安全"
+                  ]
+                },
+                "centerId": {
+                  "type": "number"
+                },
+                "stock": {
+                  "type": "number"
+                },
+                "deposit": {
+                  "type": "number"
+                },
+                "note": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "free": {
+                  "type": "number"
+                },
+                "href": {
+                  "type": "string"
+                },
+                "centerName": {
+                  "type": "string"
+                },
+                "depositLabel": {
+                  "type": "string"
+                },
+                "freeLabel": {
+                  "type": "string"
+                },
+                "none": {
+                  "type": "boolean"
+                },
+                "noteText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "category",
+                "centerId",
+                "stock",
+                "deposit",
+                "note"
+              ]
+            }
+          },
+          "searchTotal": {
+            "type": "number"
+          },
+          "searchHasPeriod": {
+            "type": "boolean"
+          },
+          "periodWrong": {
+            "type": "boolean"
+          },
+          "pageLinks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "number"
+                },
+                "href": {
+                  "type": "string"
+                },
+                "current": {
+                  "type": "boolean"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "n",
+                "href",
+                "current",
+                "label"
+              ]
+            }
+          },
+          "showPager": {
+            "type": "boolean"
+          },
+          "searchSummary": {
+            "type": "string"
+          },
+          "itemResult": {},
+          "itemLoading": {
+            "type": "boolean",
+            "const": false
+          },
+          "itemError": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itemUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itemChecked": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "booked": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string"
+                            },
+                            "to": {
+                              "type": "string"
+                            },
+                            "quantity": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "quantity"
+                          ]
+                        }
+                      },
+                      "id": {
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string",
+                        "enum": [
+                          "テント・タープ",
+                          "机・椅子",
+                          "映像・音響",
+                          "調理・イベント",
+                          "スポーツ・レク",
+                          "防災・安全"
+                        ]
+                      },
+                      "centerId": {
+                        "type": "number"
+                      },
+                      "stock": {
+                        "type": "number"
+                      },
+                      "deposit": {
+                        "type": "number"
+                      },
+                      "note": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "free": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "booked",
+                      "id",
+                      "name",
+                      "category",
+                      "centerId",
+                      "stock",
+                      "deposit",
+                      "note"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "problem": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "problem"
+            ]
+          },
+          "item": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "booked": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "to",
+                        "quantity"
+                      ]
+                    }
+                  },
+                  "id": {
+                    "type": "number"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "テント・タープ",
+                      "机・椅子",
+                      "映像・音響",
+                      "調理・イベント",
+                      "スポーツ・レク",
+                      "防災・安全"
+                    ]
+                  },
+                  "centerId": {
+                    "type": "number"
+                  },
+                  "stock": {
+                    "type": "number"
+                  },
+                  "deposit": {
+                    "type": "number"
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "free": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "booked",
+                  "id",
+                  "name",
+                  "category",
+                  "centerId",
+                  "stock",
+                  "deposit",
+                  "note"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itemNotFound": {
+            "type": "boolean"
+          },
+          "itemProblem": {
+            "type": "string"
+          },
+          "itemCenterName": {
+            "type": "string"
+          },
+          "itemDepositLabel": {
+            "type": "string"
+          },
+          "itemNote": {
+            "type": "string"
+          },
+          "pick": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "quantity"
+            ]
+          },
+          "calMonth": {
+            "type": "string"
+          },
+          "addedMessage": {
+            "type": "string"
+          },
+          "calendarWeeks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "date": {
+                        "type": "string"
+                      },
+                      "day": {
+                        "type": "number"
+                      },
+                      "free": {
+                        "type": "number"
+                      },
+                      "disabled": {
+                        "type": "boolean"
+                      },
+                      "isToday": {
+                        "type": "boolean"
+                      },
+                      "none": {
+                        "type": "boolean"
+                      },
+                      "edge": {
+                        "type": "boolean"
+                      },
+                      "inRange": {
+                        "type": "boolean"
+                      },
+                      "pad": {
+                        "type": "boolean"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "date",
+                      "day",
+                      "free",
+                      "disabled",
+                      "isToday",
+                      "none",
+                      "edge",
+                      "inRange",
+                      "pad",
+                      "label"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "days"
+              ]
+            }
+          },
+          "calTitle": {
+            "type": "string"
+          },
+          "canPrevMonth": {
+            "type": "boolean"
+          },
+          "canNextMonth": {
+            "type": "boolean"
+          },
+          "pickProblem": {
+            "type": "string"
+          },
+          "pickFree": {
+            "type": "number"
+          },
+          "pickMax": {
+            "type": "number"
+          },
+          "pickSummary": {
+            "type": "string"
+          },
+          "cannotAdd": {
+            "type": "boolean"
+          },
+          "cart": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "centerId": {
+                  "type": "number"
+                },
+                "deposit": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "saved": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "itemId": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "centerId": {
+                      "type": "number"
+                    },
+                    "deposit": {
+                      "type": "number"
+                    },
+                    "max": {
+                      "type": "number"
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "itemId",
+                    "name",
+                    "centerId",
+                    "deposit",
+                    "max",
+                    "from",
+                    "to",
+                    "quantity"
+                  ]
+                },
+                "period": {
+                  "type": "string"
+                },
+                "depositLabel": {
+                  "type": "string"
+                },
+                "centerName": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "hasError": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "itemId",
+                "name",
+                "centerId",
+                "deposit",
+                "max",
+                "from",
+                "to",
+                "quantity"
+              ]
+            }
+          },
+          "savedCart": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "centerId": {
+                  "type": "number"
+                },
+                "deposit": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "itemId",
+                "name",
+                "centerId",
+                "deposit",
+                "max",
+                "from",
+                "to",
+                "quantity"
+              ]
+            }
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "lines": {
+                "type": "number"
+              },
+              "items": {
+                "type": "number"
+              },
+              "deposit": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lines",
+              "items",
+              "deposit"
+            ]
+          },
+          "totalDepositLabel": {
+            "type": "string"
+          },
+          "cartCount": {
+            "type": "number"
+          },
+          "cartEmpty": {
+            "type": "boolean"
+          },
+          "order": {
+            "type": "object",
+            "properties": {
+              "purpose": {
+                "type": "string"
+              },
+              "pickupAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "purpose",
+              "pickupAt"
+            ]
+          },
+          "purposeCount": {
+            "type": "number"
+          },
+          "purposeTooLong": {
+            "type": "boolean"
+          },
+          "submitBody": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "itemId": {
+                          "type": "number"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "itemId",
+                        "from",
+                        "to",
+                        "quantity"
+                      ]
+                    }
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "pickupAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "lines",
+                  "purpose",
+                  "pickupAt"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitSending": {
+            "type": "boolean",
+            "const": false
+          },
+          "submitLoading": {
+            "type": "boolean",
+            "const": false
+          },
+          "submitError": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sentKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submitMessage": {
+            "type": "string"
+          },
+          "submitProblems": {
+            "type": "object",
+            "properties": {
+              "byLine": {},
+              "purpose": {
+                "type": "string"
+              },
+              "pickupAt": {
+                "type": "string"
+              },
+              "form": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "byLine",
+              "purpose",
+              "pickupAt",
+              "form"
+            ]
+          },
+          "cannotSubmit": {
+            "type": "boolean"
+          },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "groupId": {
+                  "type": "string"
+                },
+                "groupName": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "denied",
+                    "cancelled"
+                  ]
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "itemName": {
+                        "type": "string"
+                      },
+                      "centerId": {
+                        "type": "number"
+                      },
+                      "stock": {
+                        "type": "number"
+                      },
+                      "deposit": {
+                        "type": "number"
+                      },
+                      "itemId": {
+                        "type": "number"
+                      },
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "itemName",
+                      "centerId",
+                      "stock",
+                      "deposit",
+                      "itemId",
+                      "from",
+                      "to",
+                      "quantity"
+                    ]
+                  }
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "pickupAt": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "decidedAt": {
+                  "type": "string"
+                },
+                "decidedBy": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "cancelledAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "groupId",
+                "groupName",
+                "status",
+                "lines",
+                "purpose",
+                "pickupAt",
+                "createdAt"
+              ]
+            }
+          },
+          "resResult": {},
+          "resLoading": {
+            "type": "boolean",
+            "const": false
+          },
+          "resError": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resProblem": {
+            "type": "string"
+          },
+          "resLoaded": {
+            "type": "boolean",
+            "const": false
+          },
+          "resUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statusFilter": {
+            "type": "string"
+          },
+          "shownReservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "groupId": {
+                  "type": "string"
+                },
+                "groupName": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "denied",
+                    "cancelled"
+                  ]
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "itemName": {
+                        "type": "string"
+                      },
+                      "centerId": {
+                        "type": "number"
+                      },
+                      "stock": {
+                        "type": "number"
+                      },
+                      "deposit": {
+                        "type": "number"
+                      },
+                      "itemId": {
+                        "type": "number"
+                      },
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "itemName",
+                      "centerId",
+                      "stock",
+                      "deposit",
+                      "itemId",
+                      "from",
+                      "to",
+                      "quantity"
+                    ]
+                  }
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "pickupAt": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "decidedAt": {
+                  "type": "string"
+                },
+                "decidedBy": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "cancelledAt": {
+                  "type": "string"
+                },
+                "statusLabel": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "createdLabel": {
+                  "type": "string"
+                },
+                "canCancel": {
+                  "type": "boolean"
+                },
+                "unseen": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "groupId",
+                "groupName",
+                "status",
+                "lines",
+                "purpose",
+                "pickupAt",
+                "createdAt"
+              ]
+            }
+          },
+          "noReservations": {
+            "type": "boolean"
+          },
+          "statusTabs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "href"
+              ]
+            }
+          },
+          "cancelMessage": {
+            "type": "string"
+          },
+          "seenIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seenKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unseenCount": {
+            "type": "number"
+          },
+          "hasUnseen": {
+            "type": "boolean"
+          },
+          "reservationId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reservation": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "number"
+                  },
+                  "groupId": {
+                    "type": "string"
+                  },
+                  "groupName": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "approved",
+                      "denied",
+                      "cancelled"
+                    ]
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "itemName": {
+                          "type": "string"
+                        },
+                        "centerId": {
+                          "type": "number"
+                        },
+                        "stock": {
+                          "type": "number"
+                        },
+                        "deposit": {
+                          "type": "number"
+                        },
+                        "itemId": {
+                          "type": "number"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "itemName",
+                        "centerId",
+                        "stock",
+                        "deposit",
+                        "itemId",
+                        "from",
+                        "to",
+                        "quantity"
+                      ]
+                    }
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "pickupAt": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "decidedAt": {
+                    "type": "string"
+                  },
+                  "decidedBy": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "cancelledAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "groupId",
+                  "groupName",
+                  "status",
+                  "lines",
+                  "purpose",
+                  "pickupAt",
+                  "createdAt"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reservationNotFound": {
+            "type": "boolean"
+          },
+          "detailStatusLabel": {
+            "type": "string"
+          },
+          "detailCanCancel": {
+            "type": "boolean"
+          },
+          "detailSteps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "at"
+              ]
+            }
+          },
+          "detailLines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "period": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "deposit": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "period",
+                "quantity",
+                "deposit"
+              ]
+            }
+          },
+          "detailPickup": {
+            "type": "string"
+          },
+          "detailReason": {
+            "type": "string"
+          },
+          "reasonDrafts": {},
+          "adminMessage": {
+            "type": "string"
+          },
+          "pendingList": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "groupId": {
+                  "type": "string"
+                },
+                "groupName": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "denied",
+                    "cancelled"
+                  ]
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "itemName": {
+                        "type": "string"
+                      },
+                      "centerId": {
+                        "type": "number"
+                      },
+                      "stock": {
+                        "type": "number"
+                      },
+                      "deposit": {
+                        "type": "number"
+                      },
+                      "itemId": {
+                        "type": "number"
+                      },
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "itemName",
+                      "centerId",
+                      "stock",
+                      "deposit",
+                      "itemId",
+                      "from",
+                      "to",
+                      "quantity"
+                    ]
+                  }
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "pickupAt": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "decidedAt": {
+                  "type": "string"
+                },
+                "decidedBy": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "cancelledAt": {
+                  "type": "string"
+                },
+                "conflict": {
+                  "type": "string"
+                },
+                "hasConflict": {
+                  "type": "boolean"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "createdLabel": {
+                  "type": "string"
+                },
+                "pickupLabel": {
+                  "type": "string"
+                },
+                "reasonDraft": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "groupId",
+                "groupName",
+                "status",
+                "lines",
+                "purpose",
+                "pickupAt",
+                "createdAt"
+              ]
+            }
+          },
+          "noPending": {
+            "type": "boolean"
+          },
+          "sseConnected": {
+            "type": "boolean",
+            "const": false
+          },
+          "sseUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "todayLabel": {
+            "type": "string"
+          },
+          "periodDaysLabel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "routeName",
+          "routeParams",
+          "query",
+          "navigateUrl",
+          "replaceUrl",
+          "nowMs",
+          "clockTick",
+          "today",
+          "lastDay",
+          "session",
+          "auth",
+          "signedIn",
+          "isStaff",
+          "isGroup",
+          "headerName",
+          "authHeader",
+          "currentHref",
+          "loginForm",
+          "loginBody",
+          "loginSending",
+          "loginLoading",
+          "loginError",
+          "loginMessage",
+          "signingOut",
+          "loginNext",
+          "centersResult",
+          "centersError",
+          "centers",
+          "categories",
+          "form",
+          "settledQ",
+          "searchResult",
+          "searchLoading",
+          "searchError",
+          "searchPage",
+          "searchUrl",
+          "searchChecked",
+          "searchProblem",
+          "items",
+          "searchTotal",
+          "searchHasPeriod",
+          "periodWrong",
+          "pageLinks",
+          "showPager",
+          "searchSummary",
+          "itemResult",
+          "itemLoading",
+          "itemError",
+          "itemId",
+          "itemUrl",
+          "itemChecked",
+          "item",
+          "itemNotFound",
+          "itemProblem",
+          "itemCenterName",
+          "itemDepositLabel",
+          "itemNote",
+          "pick",
+          "calMonth",
+          "addedMessage",
+          "calendarWeeks",
+          "calTitle",
+          "canPrevMonth",
+          "canNextMonth",
+          "pickProblem",
+          "pickFree",
+          "pickMax",
+          "pickSummary",
+          "cannotAdd",
+          "cart",
+          "savedCart",
+          "totals",
+          "totalDepositLabel",
+          "cartCount",
+          "cartEmpty",
+          "order",
+          "purposeCount",
+          "purposeTooLong",
+          "submitBody",
+          "submitSending",
+          "submitLoading",
+          "submitError",
+          "sentKeys",
+          "submitMessage",
+          "submitProblems",
+          "cannotSubmit",
+          "reservations",
+          "resResult",
+          "resLoading",
+          "resError",
+          "resProblem",
+          "resLoaded",
+          "resUrl",
+          "statusFilter",
+          "shownReservations",
+          "noReservations",
+          "statusTabs",
+          "cancelMessage",
+          "seenIds",
+          "seenKey",
+          "unseenCount",
+          "hasUnseen",
+          "reservationId",
+          "reservation",
+          "reservationNotFound",
+          "detailStatusLabel",
+          "detailCanCancel",
+          "detailSteps",
+          "detailLines",
+          "detailPickup",
+          "detailReason",
+          "reasonDrafts",
+          "adminMessage",
+          "pendingList",
+          "noPending",
+          "sseConnected",
+          "sseUrl",
+          "todayLabel",
+          "periodDaysLabel"
+        ]
+      },
+      "stateSource": "src/state/app.ts"
+    }
+  }
+}

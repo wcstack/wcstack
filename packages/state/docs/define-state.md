@@ -63,7 +63,7 @@ export default defineState({
 
 In the browser, a bare specifier needs an import map entry — for example `"@wcstack/state/define": "https://cdn.jsdelivr.net/npm/@wcstack/state@4/dist/define.js"` (jsDelivr's `/npm/` path does not read `exports`, so name the file).
 
-An inline script is JavaScript — the browser runs it as one. Since 4.26 (not released yet), `wcs-tsc` and the VS Code extension check it as JavaScript too: JSDoc types count (`/** @type {Reservation[]} */ pickups: []`, `/** @param {number} n */`, `/** @typedef {import("./api").Reservation} Reservation */`), and TypeScript syntax — `const n: number`, `set(v: string)`, `items: [] as string[]`, `import type` — is an error (TS8010 and its siblings), as it is a `SyntaxError` in the browser. Up to 4.25 they read the script as TypeScript: JSDoc was ignored and TypeScript syntax passed. Put a JSDoc comment on a line of its own: TypeScript does not attach one that follows a `{` or `,` on the same line. ([docs/typescript.md](../../../docs/typescript.md) §4)
+An inline script is JavaScript — the browser runs it as one. Since 4.26, `wcs-tsc` and the VS Code extension check it as JavaScript too: JSDoc types count (`/** @type {Reservation[]} */ pickups: []`, `/** @param {number} n */`, `/** @typedef {import("./api").Reservation} Reservation */`), and TypeScript syntax — `const n: number`, `set(v: string)`, `items: [] as string[]`, `import type` — is an error (TS8010 and its siblings), as it is a `SyntaxError` in the browser. Up to 4.25 they read the script as TypeScript: JSDoc was ignored and TypeScript syntax passed. Put a JSDoc comment on a line of its own: TypeScript does not attach one that follows a `{` or `,` on the same line. ([docs/typescript.md](../../../docs/typescript.md) §4)
 
 ## How It Works
 
@@ -79,7 +79,7 @@ WcsThis<T, N> = T & WcsStateApi<N> & WcsPathAccessor<T>
 | `WcsStateApi<N>` | Proxy APIs — `this.$getAll()`, `this.$postUpdate()`, `this.$1`–`$9`, `this["$streamStatus.<name>"]`, `this.$command.<name>` |
 | `WcsPathAccessor<T>` | Dot-path resolution — `this["users.*.name"]`, `this["cart.items.*.price"]` |
 
-`N` is the union of the names in `$commandTokens` (Since 4.26 (not released yet)): `defineState` infers it, so `this.$command` holds exactly the declared tokens. With no `$commandTokens`, or when you pass only `<T>` (`defineState<MyState>({ … })`), `N` is `string` and `$command` is `Record<string, …>` as before. The third type parameter `S` is what types the `$on` handlers ([Event token handlers (`$on`)](#event-token-handlers-on)); you never write it.
+`N` is the union of the names in `$commandTokens` (Since 4.26): `defineState` infers it, so `this.$command` holds exactly the declared tokens. With no `$commandTokens`, or when you pass only `<T>` (`defineState<MyState>({ … })`), `N` is `string` and `$command` is `Record<string, …>` as before. The third type parameter `S` is what types the `$on` handlers ([Event token handlers (`$on`)](#event-token-handlers-on)); you never write it.
 
 There is no catch-all index signature: a bracket access is typed only when its key is one of the paths above, so a path that does not exist (`this["users.*.nmae"]`) is a type error, and so is a dynamic path ([Dynamic paths are not typed](#dynamic-paths-are-not-typed)). One exception: inside a getter whose return type is inferred, the reads its return value depends on are typed `any` ([Getters with an inferred return type](#getters-with-an-inferred-return-type)).
 
@@ -211,7 +211,7 @@ The README's [Proxy APIs](../README.md#proxy-apis) and [Keyed selection](../READ
 | API | Type | Description |
 |---|---|---|
 | `$stateElement` | `HTMLElement` | Reference to the `<wcs-state>` element |
-| `$command` | `Record<N, { emit(...args: any[]): any }>` | The command tokens declared in `$commandTokens`. Since 4.26 (not released yet), `N` is the declared names: a misspelt token is a type error, and under `noUncheckedIndexedAccess` `this.$command.reload` is not "possibly undefined". Without `$commandTokens`, `Record<string, …>` |
+| `$command` | `Record<N, { emit(...args: any[]): any }>` | The command tokens declared in `$commandTokens`. Since 4.26, `N` is the declared names: a misspelt token is a type error, and under `noUncheckedIndexedAccess` `this.$command.reload` is not "possibly undefined". Without `$commandTokens`, `Record<string, …>` |
 | `$streamStatus` / `$streamError` | `Record<string, …>` | The `$stream` companion namespaces (reads through this object register no dependency) |
 | `this["$streamStatus.<name>"]` / `this["$streamError.<name>"]` | `"idle" \| "active" \| "done" \| "error"` / `unknown` | The tracked form to use inside getters |
 | `$1` – `$9` | `number` | Loop index variables (0-based value, 1-based naming). The runtime resolves up to `$128`; the types stop at `$9` |
@@ -242,7 +242,7 @@ The 3.x name `$updatedCallback` throws when the state loads; write `$renderedCal
 
 ### Event token handlers (`$on`)
 
-A `$on` handler is called as `handler(state, event, ...listIndexes)` — the state proxy, the event the element dispatched for the `eventToken.<property>:` binding, then the loop indexes — and `this` is `undefined` inside it. Since 4.26 (not released yet), `defineState` types those parameters, so a handler needs no annotation under `strict`:
+A `$on` handler is called as `handler(state, event, ...listIndexes)` — the state proxy, the event the element dispatched for the `eventToken.<property>:` binding, then the loop indexes — and `this` is `undefined` inside it. Since 4.26, `defineState` types those parameters, so a handler needs no annotation under `strict`:
 
 ```typescript
 export default defineState({
@@ -433,7 +433,7 @@ defineState({
 });
 ```
 
-Methods are not affected, and neither is a read whose result the return value does not depend on. Annotate a getter's return type when you want its body checked — in JavaScript with JSDoc (`/** @returns {number} */ get total() { … }`). In an inline `<wcs-state>` script you need not: from 4.6.2, `wcs-tsc` and the VS Code extension give each getter that reads `this` and has no JSDoc return type the return type `any` in the code they check (a `/** @returns {any} */` JSDoc since 4.26 (not released yet)), so its body is checked there ([docs/typescript.md](../../../docs/typescript.md) §4).
+Methods are not affected, and neither is a read whose result the return value does not depend on. Annotate a getter's return type when you want its body checked — in JavaScript with JSDoc (`/** @returns {number} */ get total() { … }`). In an inline `<wcs-state>` script you need not: from 4.6.2, `wcs-tsc` and the VS Code extension give each getter that reads `this` and has no JSDoc return type the return type `any` in the code they check (a `/** @returns {any} */` JSDoc since 4.26), so its body is checked there ([docs/typescript.md](../../../docs/typescript.md) §4).
 
 ### Dynamic paths are not typed
 

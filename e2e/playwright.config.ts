@@ -45,9 +45,11 @@ export default defineConfig({
     // passwords; a forbidding frame told only by fullscreenEnabled), the orientation lock Firefox refuses while
     // fullscreen, the pointer lock, and saved passwords where the browser has no PasswordCredential (stamp-rally).
     // And <wcs-sse> when the page leaves: Firefox logged a stream open at a full navigation (sse-unload).
+    // And the lending-desk seam app: its live updates with no listener of its own around <wcs-sse> (reloads, sign-out
+    // in another tab, a restart), the counter screen, and its dates in three time zones (lending-desk).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },
