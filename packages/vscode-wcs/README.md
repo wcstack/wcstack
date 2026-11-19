@@ -10,7 +10,7 @@ The same validator core is shipped headlessly as the `wcs-validate` CLI ([`@wcst
 
 ### Inline Script Type Support
 
-TypeScript completions work inside `<script type="module">` within `<wcs-state>`. No `import` or `defineState()` required — the script is wrapped for you. Since 4.26 (not released yet) the script is checked as JavaScript, as the browser runs it: JSDoc types count (`/** @type {Item[]} */ items: []`), and TypeScript syntax (`const n: number`, `as`, `import type`) is an error — up to 4.25 it was read as TypeScript, which ignored JSDoc and let that syntax pass.
+TypeScript completions work inside `<script type="module">` within `<wcs-state>`. No `import` or `defineState()` required — the script is wrapped for you. Since 4.26 the script is checked as JavaScript, as the browser runs it: JSDoc types count (`/** @type {Item[]} */ items: []`), and TypeScript syntax (`const n: number`, `as`, `import type`) is an error — up to 4.25 it was read as TypeScript, which ignored JSDoc and let that syntax pass.
 
 ```html
 <wcs-state>

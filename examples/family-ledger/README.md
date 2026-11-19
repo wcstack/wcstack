@@ -92,7 +92,7 @@ The published lint gives the page 0 errors, 0 warnings and 0 infos (`--strict` t
 - **A stream whose token expired is retried every 3 s**, each a 401 (an `EventSource` cannot tell a 401 from a 502), with the "再接続しています…" banner, until the page's next request finds the expiry and asks for the login. Tokens are not refreshed.
 - **A draft survives a forced login**, which stays in the page; a reload on the login page loses it.
 - **The server's 413 / 415 are reached only through `/__receipt-max`**: the page refuses a file of another type or over 5 MB before sending it.
-- **Firefox's "The connection … was interrupted while the page was loading."** on a full navigation with the stream open is gone since 4.26 (not released yet): `<wcs-sse>` closes its stream in `beforeunload` and opens it again when the page stays — a leave prompt answered "stay" included (the sse README, "When the page leaves").
+- **Firefox's "The connection … was interrupted while the page was loading."** on a full navigation with the stream open is gone since 4.26: `<wcs-sse>` closes its stream in `beforeunload` and opens it again when the page stays — a leave prompt answered "stay" included (the sse README, "When the page leaves").
 - **The data lives in memory**: a restart of the server brings back the seeded entries, and every session ends.
 
 ## Tests
