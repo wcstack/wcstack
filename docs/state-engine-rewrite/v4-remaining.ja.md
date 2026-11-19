@@ -1977,3 +1977,35 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - core の残りは 6 B。diagnostics は基準値の取り直しで上限に余裕が戻った。
   - 記録だけ: ページの可視性の要素、センサーの「動いている」の出力、ポリシーで禁じられたページでの `share()` のエラーの種類、全画面を禁じた枠の中で `fullscreenEnabled` を読むたびに WebKit が記録するエラー。
   - 止める目安には当たっていない。3 巡目の 5 本はこれで終わり。次は 3 巡目の予備（TypeScript で書く作者、静的に書き出したサイト）か、4 巡目の候補を著者と決める。
+
+### 4.26.0 の公開（2026-11-19）
+
+- **中身**: minor。継ぎ目アプリ lending-desk（3 巡目の予備の 1 本目、TypeScript で書く作者 — 市の地区センターの備品の貸出を、strict・共有の型・本番のビルドで書くチーム。型と wcstack の道具が間違いからの帰り道）と、stamp-rally の取り込みで見つけた #707。作者の `npm run check` は通り、わざとした間違い 20 個のうち 3 個は、すべての検査と 140 のブラウザのテストを通った。見つかったのは主に道具の穴。
+  - lint: `.ts` の state の戻り値の型を読む（getter・メソッド・`$watch` / `$on` のハンドラ。見えずに誤報 143 件、スキーマがあればエラー、スクリプトの規則が型付きの getter を飛ばしていた）。本体とモジュールの TypeScript は Node の `module.stripTypeScriptTypes` を通して読む。`.ts` のモジュールの自作要素を検査する。JSDoc の `import("…").Name` を辿り、読めない型と `cond ? x : []` は「わからない」。`$watch` はスキーマを見る。`wcs/filter-input-type` は行とスキーマの型も見る。新しい警告 `wcs/filter-arg-enum`・`wcs/drift-state-key`。`stateSource` のあるマニフェストは、生成元を `src` に持つページにだけ当たる。
+  - `wcs-tsc` と VS Code の拡張: ページ内の `<wcs-state>` のスクリプトを JavaScript として検査する（JSDoc が効き、TypeScript の構文はエラー）。監査は `allowJs` / `checkJs` / `noImplicitThis` を求めず、`warning:` と書き、プログラムから外れたページを名指す。
+  - 型: `$on` のハンドラの引数、`$command` を `$commandTokens` の名前に。`@wcstack/testing` の `state<S>()`。
+  - `@wcstack/typescript`: `wcs-schema emit` が `stateSource` を書く（`--state-source`）。新しい `@wcstack/typescript/vite`（`wcstack()`）。
+  - 実行時（diagnostics と I/O、core 0 B）: 宣言していない `this.$command.x` に名前を付けて投げる。ページ内の state の構文エラーに TypeScript の構文を言う。`<wcs-sse>` がページを離れるときの接続を扱う（WebKit は Navigation API の遷移ごとに `beforeunload` を出し、文書が勧めていた `beforeunload` での `close()` がライブ更新を止めた）。`url` を消すと sse / ws は閉じる。debounce / throttle の `value` は `null` で始まる。`<wcs-fetch>` の `fetch()` は `URL` を受け、ほかの値は `[wcs/fetch-url-argument]`。成功した `204` / `205` を `HEAD` と同じに読む（#707）。
+  - `@wcstack/server` / `@wcstack/testing`: 表の中の `<template>`（happy-dom が外へ出す）。`setInnerHTML`。happy-dom に issue capricorn86/happy-dom#2624。
+- **著者の決定（2026-11-19）**: 9 つの問いを推奨の案に決めた（§5.21）。
+- **実装**: 道具 #714（merge commit 9b27bd2a）、I/O #711（b784ddf6）、server と testing #712（a0cafd34）、state #713（24b1f0ee）、記録 #715（f06e917c）、目録と準備 #716（aa39c419。目録は 230 項目）。実装は 5 人のサブエージェントが同じ作業ツリーで別々のパッケージを受け持った。
+  - core は 20,474 B のまま（上限まで 6 B）。diagnostics は 13,689 → 13,958 B（+269 B）。
+  - リポジトリの全ページに 4.25.0 と新しい lint を掛けて比べた: 新しい error・warning は 0、誤報の `wcs/binding-path-missing` 23 件が info 6 件になった。
+  - 作者の主張のうち 1 つは再現しなかった（「HTML をプログラムから外しても `wcs-tsc` は警告しない」— 標準エラーに出ていた行を、作者の道具が落としていた）。
+  - 私の落ち度: 作者に渡した文書から `packages/*/docs/`（`define-state.md` を含む）が漏れていた。道具を直した。
+- **準備**: PR #716 に含めた。CHANGELOG を `[4.26.0] — 2026-11-19` として締め、docs/upgrading-4x.md（日英）に 4.26.0 の節と「まだ要るもの」の 1 項目（ガードは HTML の中の JavaScript）を書き、固定版 18 か所を動かした。
+- **main で `minor`（run 44408023640）**: 成功した。版を上げたコミット 0699ebfe、タグ `v4.26.0`、GitHub Release（`sri.json` 付き。本文の先頭に CHANGELOG の節を足した）。
+  - 検証: 1 回目は npm 49/49・`latest` 49/49・来歴証明 49/49・分割エントリのダイジェスト 24/24 で、jsDelivr の 502 が 3 件（SRI 42/44・固定 URL 7/8）。取り直しで SRI 44/44・固定 URL 8/8。
+- **公開後の作業**:
+  - PR #717（merge commit 5849472e）: サイズの基準値を 4.26.0 の dist で取り直した。`core.min.js` 20,474 B（残り 6 B）、diagnostics 13,958 B、分割の core 24,793 B、`index.esm.js` 60,360 B、`auto.min.js` 56,990 B。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換えた。拡張を 2.21.0 に。
+  - 拡張 2.21.0: 5849472e の main の作業ツリーからそのまま作った（packages/state の dist はリリースのビルド）。試験 1752 件通過、vsix の SHA-256 `5d803977d8a6341f96d3fb238de2f98e5034e6d489776919be7f3252999e0ffd`。
+  - wcstack-skill: PR #73（merge commit 13b40bd）と注釈付きタグ `v4.26.0`。SKILL.md の概要に「TypeScript とビルドを頼まれたら Vite と `@wcstack/typescript/vite`」、完了の関門に `wcs-schema check`。verification・io-node-catalog・router・state-binding・versions。刻印の前に npm の `@wcstack/lint@4.26.0` と `@wcstack/typescript@4.26.0` で確かめた。
+  - LP（wcstack.github.io 98cca76）: リリースの表示、v4.26.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-9iWlWq…`、gzip 85,834 B ＝約 84 KB）、llms。ローカル 7/7、本番 8/9（落ちる 1 つは前回と同じ /tutorial/16-publish/app/ の API の 404）。
+  - 例の取り込み: PR #718（merge commit 7fb8254a）。`examples/lending-desk`（Vite と TypeScript の例。fw-inventory と同じく `WCS_LOCAL=1` でこのツリーの dist を使う。サーバーは TypeScript のまま — サーバーとページが同じ `shared/` の型を使うのがこのアプリの主題）と `e2e/tests/lending-desk.spec.ts`（ポートは 8500 + 10 × ワーカーの番号）。4.26.0 で要らなくなった回避策 8 つを外した（自作の Vite プラグインと `vite-ignore`、`: void` を外したメソッド、注釈なしの受付の画面、手で渡すスキーマ、`interface OnTarget` と `$command.x!`、`close-streams.ts` と `closeStream`、debounce の `undefined` の防御、単体テストの `<ul>` とキャスト）。例の `npm run check` はブラウザのテスト 140 件まで通り、e2e は Chromium 105/105・Firefox 30/30。4.26.0 の CHANGELOG どおりでなかったものは無い。
+  - 取り込みで分かった型の穴（記録）: `app.state<S>()` と `defineState` の `this` はワイルドカードのパスに型を付け、添字のパスには付けない — `s["cart.0.quantity"] = 4` は動くのに TS2551、`s["cart.*.quantity"]` は通るのに行の外では投げる。
+  - リリースが未リリースの印を外すのは、公開するパッケージの README だけだった。`docs/typescript`・`define-state`・拡張と family-ledger の README に残った 24 か所を #718 で外した。
+- **残り**:
+  - 拡張 2.21.0 の公開とタグ（著者）。
+  - core の残りは 6 B。diagnostics は 13,958 B。
+  - 記録だけ: ルートのガードを外部ファイルや TypeScript で書く形。添字のパスの型。
+  - 止める目安には当たっていない。次は 3 巡目の予備の 2 本目（静的に書き出したサイト）か、4 巡目の候補を著者と決める。
