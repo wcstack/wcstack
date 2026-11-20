@@ -143,7 +143,7 @@ lint と VS Code 拡張は、ランタイムが読む表を manifest から読�
 ## 6. 今後の候補
 
 - 描画の後に emit する手段（`$renderedCallback` を書かずに「表示してから focus」を書ける形）。
-- `animate`・`requestFullscreen` などの追加は、需要と I/O ノードとの棲み分けを見て決める。
+- `animate`・`requestFullscreen` などの追加は、需要と I/O ノードとの棲み分けを見て決める。`animate` は、I/O ノード案（`<wcs-animation>`）とあわせて 2026-11-21 に見送った（[animation-tag-design.md](../animation-tag-design.md)）。
 - wcstack-skill（別リポジトリ）の command-token の参照を更新する。
 - VS Code 拡張の補完で、ネイティブ要素の `command.` の後に表のメソッドを出す（組み込みの wcs-* タグの `command.` にも補完は無い）。
 
