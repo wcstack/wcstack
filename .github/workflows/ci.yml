@@ -133,6 +133,23 @@ jobs:
       # committed dist が入力なので npm ci 不要・src が dist より先行していても安定。
       - run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs --check
 
+  checklist:
+    # The traps of this repository, each with a trigger read from the diff, what to check and where it
+    # came from (scripts/diff-checklist.json; docs/verification-practices-study.md §2.6). This lists the
+    # items a pull request triggers — usually a few — in the job summary and as notices, and checks
+    # itself that a document with a .ja.md twin did not change alone. Observe mode: it never fails.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/diff-checklist.mjs --base "${BASE_SHA:?not a pull_request event}"
+
   release-plan:
     # The release planning release.yml runs before it publishes (version bump,
     # npm dist-tag, the branch / engine guards, internal range alignment):
