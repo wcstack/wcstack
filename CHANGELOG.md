@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/state`, `@wcstack/signals`: **a binding hears only its element's own event.** I/O nodes dispatch bubbling events, and an event of the same name from a nested element — a `<wcs-intersect>` inside a `<wcs-intersect>` — also reached the outer element's `eventToken.<property>:`, its output-property binding and `bindNode`'s signals, with the inner element's `detail`. The outer token fired and its `#prevent` / `#stop` acted on the inner event. Now an event whose `target` is not the bound element is left to that element's own bindings. Found by the `town-archive` seam app's e2e spec, where the outer card's visibility handler recorded the inner thumbnail as the card and "back to the list" lost the focus one time in ten (docs/v4-direction-2026-10.md §5.22). `@wcstack/state`'s `core.min.js` is 20,476 B (+2).
+
 ## [4.26.0] — 2026-11-19
 
 A minor from the `lending-desk` seam app, the first of the third round's spares in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: an equipment-lending app for a city's community centres, written by a TypeScript team for whom the types and wcstack's tools — `tsc`, `wcs-tsc`, `wcs-schema`, the lint, `@wcstack/testing` — are the way back from a mistake ([docs/seam-apps.md](./docs/seam-apps.md)). Its `npm run check` passed, and three of its twenty mistakes passed every check and 140 browser tests. The tools were the finding: a TypeScript return type hid a member from the lint, `wcs-tsc` checked an inline script as TypeScript, one schema was applied to every page, a stale schema won, and nothing built a `.ts` state for production. Decided by the author as recommended (§5.21). No core bytes.

@@ -519,6 +519,39 @@ describe("イベントトークン（eventToken.<property>:）", () => {
       error.mockRestore();
     }
   });
+
+  it("入れ子にした同じ要素の bubble するイベントでは、外側のトークンは発火せず、#prevent も効かない（town-archive）", async () => {
+    const tag = nextTag();
+    defineNotifier(tag);
+    const got: string[] = [];
+    const { root } = await page(
+      `<${tag} class="outer" data-wcs="eventToken.created#prevent: outerMade"><${tag} class="inner" data-wcs="eventToken.created: innerMade"></${tag}></${tag}>`,
+      { $eventTokens: ["outerMade", "innerMade"], $on: { outerMade(_s: unknown, e: CustomEvent) { got.push(`outer:${e.detail}`); }, innerMade(_s: unknown, e: CustomEvent) { got.push(`inner:${e.detail}`); } } },
+    );
+    const fromInner = (root.querySelector(".inner") as any).fire("i");
+    expect(got).toEqual(["inner:i"]);
+    expect(fromInner.defaultPrevented).toBe(false);
+    (root.querySelector(".outer") as any).fire("o");
+    expect(got).toEqual(["inner:i", "outer:o"]);
+  });
+});
+
+describe("入れ子にした要素の出力（自分のイベントだけを読む）", () => {
+  it("内側の同じ要素の bubble するイベントは、外側の出力の束縛に書き込まない", async () => {
+    const tag = nextTag();
+    defineOutput(tag);
+    const { root, read } = await page(
+      `<${tag} class="outer" data-wcs="status: outerStatus"><${tag} class="inner" data-wcs="status: innerStatus"></${tag}></${tag}>`,
+      { outerStatus: "o0", innerStatus: "i0" },
+    );
+    const fire = (cls: string, detail: string) => root.querySelector(`.${cls}`)!.dispatchEvent(new CustomEvent(`${tag}:status`, { detail, bubbles: true }));
+    fire("inner", "i1");
+    await flush();
+    expect([read("outerStatus"), read("innerStatus")]).toEqual(["own", "i1"]);
+    fire("outer", "o1");
+    await flush();
+    expect([read("outerStatus"), read("innerStatus")]).toEqual(["o1", "i1"]);
+  });
 });
 
 describe("スプレッド（...:）", () => {

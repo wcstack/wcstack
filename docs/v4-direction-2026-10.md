@@ -383,6 +383,13 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 
 記録だけにしたもの: ルーターのガードを外部ファイルや TypeScript で書く形。
 
+### 5.22 flaky な e2e が隠していたものから決めたこと（2026-11-21、著者）
+
+継ぎ目アプリではなく、検証の手法の検討（[verification-practices-study.ja.md](./verification-practices-study.ja.md) §2.4.1）から。CI の e2e は落ちたテストを 2 回まで再試行し、直近 15 回のうち 8 回で、再試行で通ったテストがあった。原因を調べると、5 つの spec のうち 1 つはテストの誤りで、残りの 4 つは無言の欠陥を 2 つ隠していた。2 つの問いを推奨の案に決めた。
+
+1. **入れ子にした要素のイベントは、外側の束縛に届かない（4.27）。** I/O ノードは bubble するイベントを出す（Core 42 ファイル）。state の `eventToken.*` と出力プロパティのリスナー（`dom/wc.ts`）、signals の `bindNode` は `event.target` を見ていなかったので、`<wcs-intersect>` の中の `<wcs-intersect>` のイベントで外側の束縛も走った。town-archive では外側の `cardVisibility` が内側のサムネイルの entry を受け取り、「一覧へ戻る」の後のフォーカスが 10 回に 1 回落ちた。束縛はその要素自身のイベント（`event.target === el`）だけを読む。core は +17 B だったので、mangle の名前を 3 つ足し（`literals`・`watchIndex`・`root`）、宣言の無い要素の 2 つの失敗を既存の `noBindable` に寄せて、20,474 → 20,476 B（残り 4 B）。wc-bindable の applier の規則としても提案する。比べた案: I/O ノードの bubble をやめる（42 ファイル、祖先で聞くページの振る舞いが変わり、他者の要素には効かない）、文書だけ。
+2. **state が束ねる前のルートのフォームは、forms の後付けで守る（4.27）。** router は自分のスクリプトが走るとすぐにルートを描き、state はルートの state を読み込んでから束ねる。その間の送信はネイティブの GET になってパスワードが URL と履歴に載り、その間に打った文字は束ねたときに state の値で消えた（family-ledger・router-auth・homeroom。`state.js` を 1.5 秒遅らせると毎回再現）。SSR では §5.1 で「読者の値が勝つ」と決め、`typed()` が打った値を戻している。forms の後付けで同じことをクライアントが描くページにもする: 束ねる前に打った値を束ねた後に戻し、`onsubmit#prevent` を宣言したフォームは束ねるまでネイティブの送信を止める。core は 0 B で、`/core` だけのページには効かない。比べた案: 文書と例だけ（送信ボタンを HTML で `disabled` にしておく）、core で直す（余地が無い）。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。
