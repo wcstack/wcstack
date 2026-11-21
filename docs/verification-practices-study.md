@@ -134,6 +134,18 @@ Decided 2026-11-21 (the author took the recommended order):
 
 Each new gate starts in observe mode, as the article says, and enforces once its false positives are known.
 
+### 3.1 Decisions taken along the way (2026-11-21, the author, each as recommended)
+
+1. **A submit made before binding is made again** (#724). Stopping it alone would leave the first click during loading doing nothing, and the e2e login helpers flaky. After the typed values are back, the form is submitted with the button that was pressed. Disabling the button while sending prevents a second submit. Recorded in v4-direction §5.22. Compared: stop only (the decision as first written); stop and warn in diagnostics (only the developer hears it).
+2. **No Stop hook that runs tests at the end of a turn, for now** (§2.3). PRs to main always get CI, and the branches without CI are rarely used. A Stop hook would cost minutes at the end of every turn that changed `packages/`. Revisit it in observe mode if the observe gates show commits going in untested. Compared: observe, which reports and does not block; enforce, which refuses the stop and lets the third through.
+3. **The forms add-on's 640 B slack (#724) is removed when the release re-records the baselines.** A slack survives `--update`, so #728's checklist reminds whoever changes the baseline. Compared: re-record the entry now (an unreleased number in the baseline); keep the slack (a gate loosened by 40 % of the add-on for good).
+4. **`failOnFlakyTests` is turned on once #722, #723 and #724 have landed and the job summary has shown 0 flaky tests for 10 runs in a row.** Compared: at once after the three land (an unknown flaky spec would block unrelated PRs); never (the retries keep turning defects green).
+
+Later, by the same rule:
+
+- The observe gates (#725's `gate-changes` and the base's size gate, #728's checklist) get a decision after about 10 PRs. `gate-changes` could fail a PR whose description names no decision. The checklist stays advice by nature.
+- The skill's lint hooks (wcstack/wcstack-skill#74) become enforcing by default only after static-wiring-dx D10's cold-start probe.
+
 ## 4. Progress
 
 | Step | Section | State |
