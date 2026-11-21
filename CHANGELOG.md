@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/state` (the `forms` add-on, in `/auto` and `.`): **a form the router drew before state bound it no longer loses what was typed, and no longer sends the password in the URL.** The router draws a route as soon as its script runs; state binds it once the root state has loaded (a `src=` file, an inline module). In between, a submit went out as the browser's own GET — the fields, a password too, in the URL and the history — and text typed there was erased when the binding wrote the state's value (then `required` fields refused the submit). Now a form whose submit is prevented (`onsubmit#prevent`) is never sent by the browser, what the user typed before binding is given back and told to state, as the `ssr` add-on does for a server's page (v4-direction §5.1), and a submit made in that window is made again once the form is bound. Only controls the user changed count (an `input` or `change` event). Found behind flaky e2e tests of the `family-ledger`, `router-auth` and `homeroom` seam apps: with `state.js` delayed by 1.5 s it happened every time (docs/v4-direction-2026-10.md §5.22). The `forms` add-on is 1,612 B (+630); the core is unchanged.
+
 ## [4.26.0] — 2026-11-19
 
 A minor from the `lending-desk` seam app, the first of the third round's spares in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: an equipment-lending app for a city's community centres, written by a TypeScript team for whom the types and wcstack's tools — `tsc`, `wcs-tsc`, `wcs-schema`, the lint, `@wcstack/testing` — are the way back from a mistake ([docs/seam-apps.md](./docs/seam-apps.md)). Its `npm run check` passed, and three of its twenty mistakes passed every check and 140 browser tests. The tools were the finding: a TypeScript return type hid a member from the lint, `wcs-tsc` checked an inline script as TypeScript, one schema was applied to every page, a stale schema won, and nothing built a `.ts` state for production. Decided by the author as recommended (§5.21). No core bytes.
