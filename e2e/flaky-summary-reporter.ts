@@ -7,7 +7,7 @@ import { relative } from "node:path";
  * that passes on a retry counts as passed: a defect that fails one attempt in three goes green 26 times in 27. This
  * reporter lists every test that passed only on a retry — in the job summary, and as a warning on its line — with
  * its first failure, so that each one is looked into: fixed, or deleted with the reason written down. It does not
- * fail the run; `failOnFlakyTests` does that, once the count stays at 0.
+ * fail the run; `failOnFlakyTests` does that, once the count has stayed at 0 for 10 runs in a row.
  */
 export default class FlakySummaryReporter implements Reporter {
   private readonly tests = new Set<TestCase>();
