@@ -1,0 +1,72 @@
+{
+  "$comment": "The traps of this repository, each with a trigger read from a diff, what to check, and where it came from (docs/verification-practices-study.md §2.6). scripts/diff-checklist.mjs prints the items a change triggers. `paths` are regular expressions on the changed paths; `auto` names a check the script runs itself. Prune an item that no longer bites.",
+  "items": [
+    {
+      "id": "doc-pair",
+      "paths": ["\\.md$"],
+      "auto": "pair",
+      "check": "A document with a .ja.md twin (or a .md twin of a .ja.md) changed alone: update both, or say why one stays (packages/wcstack has an English README only).",
+      "source": "CLAUDE.md, Docs & Design Notes: per-package README.md / README.ja.md are normative — update both"
+    },
+    {
+      "id": "skill-references",
+      "paths": ["^packages/state/src/parser/", "^packages/state/README\\.md$", "^protocol/", "^packages/router/src/components/", "^packages/router/README\\.md$"],
+      "check": "data-wcs syntax, a protocol or router attributes/behaviour may have changed: update the wcstack-skill references (separate repository, wcstack/wcstack-skill) with the release.",
+      "source": "CLAUDE.md, Docs & Design Notes: the wcstack-app skill"
+    },
+    {
+      "id": "state-package-json",
+      "paths": ["^packages/state/package\\.json$"],
+      "check": "src/version.ts imports this file, so a fresh build renames the chunk holding VERSION: do not commit a rebuilt dist between releases.",
+      "source": "CLAUDE.md, The 4.0 engine: Build"
+    },
+    {
+      "id": "committed-dist",
+      "paths": ["^packages/[^/]+/dist/"],
+      "check": "A committed dist changed. Dists are rebuilt only at a release; outside one, restore it (git checkout -- packages/<pkg>/dist). The testing build rebuilds state, router and server in place.",
+      "source": "CLAUDE.md, Build Pipeline (two traps around committed dists); #183 (a stale dist stayed green until the release)"
+    },
+    {
+      "id": "generated-files",
+      "paths": ["^packages/vscode-wcs/src/service/generated/builtinTags\\.generated\\.ts$", "^packages/vscode-wcs/wcs\\.html-data\\.json$", "^packages/[^/]+/src/protocol/", "^packages/[^/]+/src/core/(operation-lane|platform-capability)\\.ts$", "^packages/[^/]+/(rollup|eslint)\\.config\\.js$"],
+      "check": "A generated copy changed: edit the canonical source (protocol/, io-core/, config-templates/, emit-builtin-tags.mjs) and re-run its sync script; CI's --check fails on drift.",
+      "source": "CLAUDE.md, Repository Layout (generated copies carry a do-not-edit banner)"
+    },
+    {
+      "id": "state-core-bytes",
+      "paths": ["^packages/state/src/(engine|element|list|pattern|token|hooks)\\.ts$", "^packages/state/src/(dom|parser|strategy)/", "^packages/state/src/filters/(?!formats)"],
+      "check": "The core has a few bytes left under its 20 KiB limit: build and run scripts/check-state-size.mjs; a fix goes into an add-on unless the author decides otherwise, with its byte count.",
+      "source": "CLAUDE.md, The 4.0 engine: core size target"
+    },
+    {
+      "id": "size-slack",
+      "paths": ["^scripts/state-size-baseline\\.json$"],
+      "check": "A slack is kept across --update. When this re-records the baselines at a release, remove each slack set \"until the release re-records it\" (the forms add-on's 640 B from #724); between releases, a new slack needs the author's decision, named in the PR.",
+      "source": "bd9c6944 (a 640 B slack for diagnostics until the release); docs/verification-practices-study.md §3.1"
+    },
+    {
+      "id": "mangle",
+      "paths": ["^packages/state/mangle\\.mjs$"],
+      "check": "Read the header first: a name the DOM, a protocol (protocol-sources.test.ts), a config key, a public method, DevTools or a string lookup reaches must not be listed. Run the bundle, split, quality-core and protocol-sources tests.",
+      "source": "CLAUDE.md, The 4.0 engine: mangle.mjs; the verification study (source was refused by protocol-sources.test.ts)"
+    },
+    {
+      "id": "workflow",
+      "paths": ["^\\.github/workflows/"],
+      "check": "A workflow change runs for an open pull request only after its merge ref is rebuilt (gh pr update-branch, or merge main): a reopened PR keeps the old workflow.",
+      "source": "the CI history (a reopened PR ran a stale workflow)"
+    },
+    {
+      "id": "router-suite-reads-state",
+      "paths": ["^packages/state/src/"],
+      "check": "packages/router/__tests__/routeRange.state.test.ts and devtools' protocol drift test import packages/state/src: run them (CI selects router and devtools for a state change).",
+      "source": "CLAUDE.md, The 4.0 engine: Cross-package tests"
+    },
+    {
+      "id": "e2e-flaky",
+      "paths": ["^e2e/"],
+      "check": "A test that passes only on a retry hides a failure: find its cause and fix it, or delete it and write down why — never sleep, skip or retry it green (flaky-summary-reporter.ts lists them).",
+      "source": "docs/verification-practices-study.md §2.4 (four flaky specs hid two defects)"
+    }
+  ]
+}
