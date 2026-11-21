@@ -35,6 +35,11 @@ afterEach(() => {
 const segment = fc
   .string({ unit: 'grapheme', minLength: 1, maxLength: 8 })
   .filter((s) => !/[/\\%\t\n\r]/.test(s) && s !== '.' && s !== '..' && !/[\u0000- ]$/.test(s));
+/**
+ * A static segment of a route's path: the route syntax is not one — a whole segment `*` is the catch-all and
+ * one starting with `:` a param (README §3; CI's fast-check seed found `path="/s/*"` matching `/s/&`).
+ */
+const staticSegment = segment.filter((s) => s !== '*' && !s.startsWith(':'));
 /** Any path the app may write (what the laws of idempotence take): anything but a backslash. */
 const anyPath = fc.string({ unit: 'grapheme', maxLength: 16 }).filter((s) => !s.includes('\\'));
 
@@ -73,7 +78,7 @@ describe('パスの法則（property、§2.5 (c)）', () => {
   });
 
   it('アプリが書いたパスは意図したルートに当たる: 静的なセグメントは書いたままの文字で、param はデコードして返る', () => {
-    fc.assert(fc.property(segment, segment, (lit, value) => {
+    fc.assert(fc.property(staticSegment, segment, (lit, value) => {
       fc.pre(lit !== value);
       document.body.innerHTML = '';
       const router = routerOf(`/s/${lit}`, '/p/:id');
