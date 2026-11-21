@@ -141,6 +141,6 @@
 | 1 | §2.7 | 本書とともに済み（#721） |
 | 2 | §2.4 | 原因を特定した（§2.4.1）。observe モードの reporter と V7 の修正は #722。2 つの欠陥は決定し（v4-direction §5.22）、#723（入れ子のイベント）と #724（束ねる前のフォーム）で直した。`failOnFlakyTests` は、それらが入って件数が 0 のまま続くのを待つ |
 | 3 | §2.1 | #725: `gate-changes`（CI のジョブとスクリプト）、PR のビルドを base の size ゲートでも測る、`.claude/settings.json` の `ask` の規則。どれも observe モード |
-| 4 | §2.5 (a) | 未着手 |
-| 5 | §2.8 | 未着手 |
-| 6 | §2.3、§2.2、§2.6 | 未着手 |
+| 4 | §2.5 (a) | #726: ランダムな書き込みの列の後の DOM を、ゼロからの描画と比べる property。わざと壊したキー付きの差分を 3 手の反例で捕まえた。(b) と (c) は未着手 |
+| 5 | §2.8 | ユーザーレベルのスキル（リポジトリの外）で済み: 3 ラウンド、修正者が build / test / lint を走らせる、却下台帳、Important / Nit、リポジトリの REVIEW.md |
+| 6 | §2.3、§2.2、§2.6 | §2.3 は #727（`scripts/verify.mjs`、CI の選択。300 件のマージで bash と同じ。Stop hook は著者に委ねた）。§2.2 は wcstack/wcstack-skill#74（プラグインの lint の hook。既定は observe、enforce は D10 の後）。§2.6 は #728（`scripts/diff-checklist.json`、10 項目） |
