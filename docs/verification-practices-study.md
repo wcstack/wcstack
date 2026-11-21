@@ -72,9 +72,21 @@ The article describes how a team that has Claude write and review most of its co
 | `town-archive.spec.ts` | 1 | the card is not focused after "back to the list" |
 | `state-mount.spec.ts` V7 | 1 | the volume's `$connectedCallback` did not run |
 
-Turning the option on now would turn about half of the PRs red, and the article's warning applies. In two apps the login form went out as a native GET with the password in the URL, which looks like a submit that came before the page was bound. A slow network could do the same to a real user. V7 may be an engine timing defect. None of these has been investigated yet.
+Turning the option on now would turn about half of the PRs red, and the article's warning applies. In two apps the login form went out as a native GET with the password in the URL, which looks like a submit that came before the page was bound. A slow network could do the same to a real user. V7 might be an engine timing defect. §2.4.1 records what the investigation found.
 
 **To do.** (1) Find each spec's root cause, then fix it, or delete the test and write down why. (2) Write the flaky count to the job summary (observe mode). (3) Turn on `failOnFlakyTests` once the count stays at 0, and add one line to CLAUDE.md.
+
+#### 2.4.1 What the flaky specs hid (2026-11-21)
+
+Of the five specs, one was a test bug. The other four hid two defects in wcstack. A user can meet both, and neither says anything.
+
+| Spec | Root cause | How it was reproduced |
+|---|---|---|
+| `state-mount.spec.ts` V7 | **Test bug.** The test waited for the root's `connectedCallbackPromise`, then read the volume. A volume loads its own `src` and settles on its own promise; the root does not wait for it (the state README, Volumes). | With the volume's `src` delayed by 800 ms, the test reads `undefined` every time. Fixed: it waits for both. |
+| `family-ledger`, `router-auth`, `homeroom` | **A route is usable before state binds it.** The router draws `/login` as soon as its script runs. state binds it once the root state has loaded (`state.js`, or an inline module). A submit in between goes out as a native GET, with the password in the URL and the history. Text typed in between is erased when the binding writes the state's empty value; `homeroom`'s `required` fields then stop the submit. The SSR add-on already gives typed text back (`typed()`, the author's decision in v4-direction §5.1). A page the client draws has nothing like it. | With `state.js` delayed by 1.5 s, family-ledger's login goes to `/login?email=mom%40example.com&password=pass` every time, and the typed values of both apps become `""`. Without the delay, nothing goes wrong. |
+| `town-archive` | **An outer binding hears an inner element's event.** `<wcs-intersect>` dispatches bubbling events, as most I/O nodes do (42 Core files). The element itself ignores a descendant's event (`event.target !== this`), but state's `eventToken.*` and output-property listeners (`dom/wc.ts`) do not check the target, and neither does signals' `bindNode`. The outer seen-probe's `cardVisibility` also ran for the inner thumb-probe, and recorded `span.thumb` as the card. `focusCard` then found no `.card-link` in it. Seen counts and the anchor read the same wrong entries. | 3 of 30 local runs. A temporary trace showed `span.thumb` in `rt.cardEls` on every failure and `article.card` on every pass. |
+
+The two defects need the author's decisions before they are fixed. Until then, their specs stay flaky, and `failOnFlakyTests` waits for them.
 
 ### 2.5 Property and differential tests for the state engine
 
@@ -126,8 +138,8 @@ Each new gate starts in observe mode, as the article says, and enforces once its
 
 | Step | Section | State |
 |---|---|---|
-| 1 | §2.7 | done with this document |
-| 2 | §2.4 | not started |
+| 1 | §2.7 | done with this document (#721) |
+| 2 | §2.4 | the root causes found (§2.4.1); the observe-mode reporter and the V7 fix in #722; two defects wait for the author's decisions |
 | 3 | §2.1 | not started |
 | 4 | §2.5 (a) | not started |
 | 5 | §2.8 | not started |
