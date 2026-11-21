@@ -139,8 +139,8 @@ Each new gate starts in observe mode, as the article says, and enforces once its
 | Step | Section | State |
 |---|---|---|
 | 1 | §2.7 | done with this document (#721) |
-| 2 | §2.4 | the root causes found (§2.4.1); the observe-mode reporter and the V7 fix in #722; two defects wait for the author's decisions |
-| 3 | §2.1 | not started |
+| 2 | §2.4 | the root causes found (§2.4.1); the observe-mode reporter and the V7 fix in #722; the two defects decided (v4-direction §5.22) and fixed in #723 (nested events) and #724 (forms before binding); `failOnFlakyTests` waits for those to land and the count to stay at 0 |
+| 3 | §2.1 | #725: `gate-changes` (CI job and script), the base's size gate over the PR's build, `ask` rules in `.claude/settings.json` — all observe mode |
 | 4 | §2.5 (a) | not started |
 | 5 | §2.8 | not started |
 | 6 | §2.3, §2.2, §2.6 | not started |
