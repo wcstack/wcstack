@@ -73,6 +73,7 @@ Four rules go with it:
 | [formal-methods-study.md](./formal-methods-study.md) | [formal-methods-study.ja.md](./formal-methods-study.ja.md) |
 | [script-write-checks.md](./script-write-checks.md) | [script-write-checks.ja.md](./script-write-checks.ja.md) |
 | [signals-performance-study.md](./signals-performance-study.md) | [signals-performance-study.ja.md](./signals-performance-study.ja.md) |
+| [verification-practices-study.md](./verification-practices-study.md) | [verification-practices-study.ja.md](./verification-practices-study.ja.md) |
 
 That is the whole priority set — every document code, an example, or a README points at. What remains untranslated is the internal design notes and implementation plans (`*-tag-design.md`, `*-impl-plan.md`, `state-*.md`, `io-node-*.md`, `architecture-hardening/01`-`08`, `11`), translated on demand as they are touched.
 
