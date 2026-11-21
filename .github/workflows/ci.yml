@@ -101,6 +101,27 @@ jobs:
             echo "packages=$json" >> "$GITHUB_OUTPUT"
           fi
 
+  gate-changes:
+    # A pull request can change every input of the gates that judge it: the state size and
+    # coupling baselines (a slack included), the limits in the gate scripts, the coverage
+    # thresholds, a coverage exclusion in a source file, the e2e retry policy, the workflows
+    # (docs/verification-practices-study.md §2.1). Such a change is often right — a new add-on
+    # needs a baseline entry — but it is the author's decision, and it must be seen: this job lists
+    # what the pull request touches in them, in the job summary and as notices on the files.
+    # Observe mode: it never fails. The state job below also runs the base's size gate over the
+    # pull request's build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/gate-changes.mjs --base "${BASE_SHA:?not a pull_request event}"
+
   protocol-types-sync:
     # Content mirrored from a single canonical source into many files — copies of
     # source files that live outside packages/* (protocol/wc-bindable.ts →
@@ -329,6 +350,33 @@ jobs:
       - name: Check the shipped sizes of @wcstack/state against the release baseline and the core target
         if: ${{ matrix.package == 'state' }}
         run: node ../../scripts/check-state-size.mjs --check
+      # The step above judges the build by the pull request's own gate, which the pull request can
+      # change: its limits, its baseline, a slack (docs/verification-practices-study.md §2.1). Judge
+      # the same build by the base's gate too — the base's script and baseline, over this dist — and
+      # say in the job summary whether it passes. Observe mode: it never fails the job; a pull request
+      # that passes only by moving its own gate shows here, next to gate-changes' list.
+      - name: Judge the build by the base's size gate too (observe)
+        if: ${{ matrix.package == 'state' && github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          base="$RUNNER_TEMP/base-gate"
+          mkdir -p "$base/scripts" "$base/packages/state"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git show "$BASE_SHA:scripts/check-state-size.mjs" > "$base/scripts/check-state-size.mjs"
+          git show "$BASE_SHA:scripts/state-size-baseline.json" > "$base/scripts/state-size-baseline.json"
+          # (the script reads ../packages/state/dist from where it is: this build's dist)
+          ln -s "$GITHUB_WORKSPACE/packages/state/dist" "$base/packages/state/dist"
+          out=$(node "$base/scripts/check-state-size.mjs" --check 2>&1); code=$?
+          echo "$out"
+          {
+            if [ "$code" -eq 0 ]; then echo "### The base's size gate: this build passes it"
+            else echo "### The base's size gate: this build does not pass it (observe mode)"; echo
+              echo "The pull request's own gate passed, so it changed the gate. Say which decision in the pull request."
+            fi
+            echo; echo '```'; echo "$out" | grep -E 'core.min.js|EXCEEDED|refus|missing'; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # Structure gate (requirement B13, wiring design §7-1): bundles src with esbuild in memory
       # and checks that each add-on carries only its own code beyond the core chunk, that the core
       # entries reach no add-on, that `/define` imports nothing, and that the core <-> add-on
