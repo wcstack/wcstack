@@ -12,6 +12,8 @@ on:
       - "packages/state/mangle.mjs"
       - "packages/state/minify.mjs"
       - "e2e/**"
+      # It decides which dists are rebuilt before the suite.
+      - "scripts/verify.mjs"
       # A change to this workflow must run it, or the change lands untested.
       - ".github/workflows/e2e.yml"
   workflow_dispatch:
@@ -47,34 +49,18 @@ jobs:
       # package left the stale dist in place and the suite ran the last release's
       # bundles (the DCC e2e specs failing on PR #136). Reading the tree also
       # makes workflow_dispatch behave like a PR run instead of always falling
-      # back to the committed dist.
+      # back to the committed dist. The rule lives in scripts/verify.mjs
+      # (--stale-dists), so a local run rebuilds the same packages
+      # (docs/verification-practices-study.md §2.3).
       - name: Build the dist bundles of packages whose src outpaces their dist
         working-directory: .
         run: |
           set -euo pipefail
-
+          stale=$(node scripts/verify.mjs --stale-dists)
           built=0
-          for dir in packages/*/; do
-            [ -f "${dir}package.json" ] || continue
-            name=$(node -p "require('./${dir}package.json').name")
-            case "$name" in
-              @wcstack/*) ;;
-              *) continue ;;
-            esac
-            pkg=$(basename "$dir")
-            distSha=$(git log -1 --format=%H -- "${dir}dist")
-            inputs=("${dir}src" "${dir}build.mjs" "${dir}mangle.mjs" "${dir}minify.mjs")
-            # A package that has never committed a dist has nothing to compare
-            # against; build it so the suite never loads a missing bundle.
-            if [ -n "$distSha" ]; then
-              # A change to the shared root tsconfig rebuilds every package.
-              if [ -z "$(git log --oneline "${distSha}..HEAD" -- "${inputs[@]}")" ] \
-                && [ -z "$(git log --oneline "${distSha}..HEAD" -- tsconfig.json)" ]; then
-                continue
-              fi
-            fi
+          for pkg in $stale; do
             echo "::group::build ${pkg}"
-            (cd "$dir" && npm ci && npm run build)
+            (cd "packages/${pkg}" && npm ci && npm run build)
             echo "::endgroup::"
             built=$((built + 1))
           done

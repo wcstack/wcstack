@@ -19,10 +19,12 @@ CI selects the packages a change affects and runs each one's checks. `scripts/ve
    node scripts/verify.mjs --base main --worktree --heavy
    ```
    It runs lint, build, the `@wcstack/state` size and coupling gates, typecheck and `test:coverage`. A committed `dist` that the build rewrote is put back, as long as it was clean before (dists are rebuilt only at a release).
-3. **When the change touches a page, an example or a package's runtime**, run the e2e suite over the built dists. Build the affected packages first, then put their dists back:
+3. **When the change touches a page, an example or a package's runtime**, run the e2e suite as e2e.yml does:
    ```bash
-   cd e2e && npx playwright test --project=chromium
+   node scripts/verify.mjs --e2e                 # every spec, Chromium
+   node scripts/verify.mjs --e2e -- tests/town-archive.spec.ts --repeat-each=10
    ```
+   It rebuilds the packages whose dist is older than their src (`--stale-dists` lists them), runs the suite and puts the dists back.
 4. **When the change touches a gate input** (a baseline, a gate script, coverage thresholds, the e2e config, a workflow):
    ```bash
    node scripts/gate-changes.mjs --base main --worktree

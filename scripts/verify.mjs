@@ -20,11 +20,14 @@
 //   node scripts/verify.mjs --base <ref> [--head <ref> | --worktree] --list [--json]   the selection
 //   node scripts/verify.mjs --base main --worktree                                       quick: lint + tests
 //   node scripts/verify.mjs --base main --worktree --heavy                               + build, gates, coverage
+//   node scripts/verify.mjs --stale-dists [--head <ref>]                                 the dists e2e.yml rebuilds
+//   node scripts/verify.mjs --e2e [-- <playwright args>]                                 rebuild them, run e2e, put back
 //
 // The quick tier runs `npm run lint` and `npm test` in each selected package. The heavy tier runs what CI's
 // package job runs — lint, build, the state gates, typecheck, test:coverage — and puts back a committed dist
-// the build rewrote (only one that was clean before). e2e is not run here: it prints the command. At the end
-// it prints a `Verified:` line to put in the commit message, so a branch without CI says what was run.
+// the build rewrote (only one that was clean before). `--e2e` does what e2e.yml does: rebuilds the stale dists,
+// runs the suite in Chromium, puts the dists back. Each prints a `Verified:` line to put in the commit message,
+// so a branch without CI says what was run.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -64,6 +67,31 @@ export function select(changed, root = ROOT) {
   return selected;
 }
 
+/**
+ * The @wcstack/* packages whose committed dist is older than what builds it, as of `ref` — the ones e2e.yml
+ * rebuilds before the suite (e2e serves packages/*\/dist, which is committed only at a release). Read off the
+ * tree, not off a diff: a package is stale when its src, or a build script at its root that shapes the
+ * bundles (@wcstack/state's build.mjs, mangle.mjs, minify.mjs), or the root tsconfig.json moved after its dist
+ * was last committed. A diff against the PR base got this wrong once src changes piled up between releases:
+ * a PR touching only tests left a stale dist and the suite ran the last release's bundles (PR #136). A
+ * package that never committed a dist is stale too, so no page loads a missing bundle.
+ */
+export function staleDists(ref = 'HEAD', root = ROOT) {
+  const g = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim();
+  const out = [];
+  for (const pkg of allPackages(root)) {
+    if (!JSON.parse(readFileSync(join(root, 'packages', pkg, 'package.json'), 'utf8')).name.startsWith('@wcstack/')) continue;
+    const dir = `packages/${pkg}/`;
+    const distSha = g('log', '-1', '--format=%H', ref, '--', `${dir}dist`);
+    if (distSha) {
+      const inputs = ['src', 'build.mjs', 'mangle.mjs', 'minify.mjs'].map((f) => dir + f);
+      if (!g('log', '--oneline', `${distSha}..${ref}`, '--', ...inputs) && !g('log', '--oneline', `${distSha}..${ref}`, '--', 'tsconfig.json')) continue;
+    }
+    out.push(pkg);
+  }
+  return out;
+}
+
 function changedFiles(base) {
   if (has('--worktree')) {
     const tracked = git('diff', '--name-only', base).split('\n');
@@ -88,7 +116,35 @@ function run(pkg, script, results, extra = []) {
   return ok;
 }
 
+/**
+ * What e2e.yml does, here: build the stale dists (staleDists), run the suite in Chromium over them, and put
+ * back each dist the build rewrote that was clean before. Extra arguments after `--` go to Playwright.
+ */
+function e2e() {
+  const stale = staleDists();
+  const clean = stale.filter((pkg) => git('status', '--porcelain', '--', `packages/${pkg}/dist`).trim() === '');
+  console.log(`[verify] e2e: rebuilding ${stale.length ? stale.join(', ') : 'nothing (every dist is fresh)'}`);
+  let ok = true;
+  for (const pkg of stale) ok = run(pkg, 'build', []) && ok;
+  const extra = args.includes('--') ? args.slice(args.indexOf('--') + 1) : [];
+  const r = ok
+    ? spawnSync('npx', ['playwright', 'test', '--project=chromium', ...extra], { cwd: join(ROOT, 'e2e'), stdio: 'inherit', shell: process.platform === 'win32' })
+    : { status: 1 };
+  for (const pkg of clean) {
+    git('restore', '--', `packages/${pkg}/dist`);
+    git('clean', '-fq', '--', `packages/${pkg}/dist`);
+  }
+  const sha = git('rev-parse', '--short', 'HEAD').trim() + (git('status', '--porcelain').trim() ? '+changes' : '');
+  console.log(`Verified: e2e chromium (${r.status === 0 ? 'passed' : 'FAILED'}) over ${stale.length ? `rebuilt ${stale.join(', ')}` : 'the committed dists'} @ ${sha}`);
+  process.exit(r.status === 0 ? 0 : 1);
+}
+
 function main() {
+  if (has('--stale-dists')) {
+    console.log(staleDists(opt('--head') ?? 'HEAD').join('\n'));
+    return;
+  }
+  if (has('--e2e')) return e2e();
   const base = opt('--base') ?? process.env.BASE_SHA;
   if (!base) {
     console.error('[verify] needs --base <ref>');
@@ -130,7 +186,7 @@ function main() {
   const sha = git('rev-parse', '--short', 'HEAD').trim() + (git('status', '--porcelain').trim() ? '+changes' : '');
   console.log('');
   console.log(failed.length ? `[verify] ${failed.length} step(s) failed: ${failed.map((r) => `${r.pkg} ${r.step}`).join('; ')}` : '[verify] every step passed');
-  if (heavy) console.log('[verify] e2e is not run here: cd e2e && npx playwright test --project=chromium');
+  if (heavy) console.log('[verify] e2e: node scripts/verify.mjs --e2e');
   console.log(`Verified: ${heavy ? 'heavy' : 'quick'} (${failed.length ? 'FAILED' : 'passed'}) ${selected.join(', ')} @ ${sha}`);
   process.exit(failed.length ? 1 : 0);
 }
