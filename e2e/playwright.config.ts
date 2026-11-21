@@ -6,8 +6,10 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // The retries are for diagnosis. A test that passes only on a retry is listed (flaky-summary-reporter.ts,
+  // observe mode) until failOnFlakyTests can be turned on (docs/verification-practices-study.md §2.4).
   retries: process.env.CI ? 2 : 0,
-  reporter: "list",
+  reporter: process.env.CI ? [["list"], ["./flaky-summary-reporter.ts"]] : "list",
   // CI runners are slow to first paint; the debounce/fetch chains need headroom.
   expect: { timeout: 10_000 },
   use: {
