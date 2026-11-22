@@ -1,5 +1,22 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "ask": [
+      "Edit(**/scripts/state-size-baseline.json)",
+      "Edit(**/scripts/state-coupling-baseline.json)",
+      "Edit(**/scripts/check-state-size.mjs)",
+      "Edit(**/scripts/check-state-coupling.mjs)",
+      "Edit(**/scripts/gate-changes.mjs)",
+      "Edit(**/packages/*/vitest.config.ts)",
+      "Edit(**/e2e/playwright.config.ts)",
+      "Edit(**/.github/workflows/*.yml)",
+      "Edit(**/.claude/settings.json)",
+      "Bash(node scripts/check-state-size.mjs --update*)",
+      "Bash(node scripts/check-state-coupling.mjs --update*)",
+      "Bash(node ../../scripts/check-state-size.mjs --update*)",
+      "Bash(node ../../scripts/check-state-coupling.mjs --update*)"
+    ]
   }
 }
