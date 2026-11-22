@@ -124,6 +124,7 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   // element → state (a declared property)
   if (out !== null && !spec.ro) {
     el.addEventListener(out.event, (e) => {
+      if (e.target !== el) return;
       let v: unknown;
       if (out.getter !== null) v = out.getter(e);
       else {
@@ -175,7 +176,7 @@ export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Bl
   const call = bd === null ? hooks.nativeCommand?.(el, method) : null;
   if (!call) {
     if (bd === null) noBindable(M.NoBindable, el, `command.${method}`);
-    if (!bd.commands.has(method)) raise(M.NoCommand, [el.localName, method]);
+    if (!bd.commands.has(method)) noBindable(M.NoCommand, el, method);
   }
   const ref = new WeakRef(el);
   const fn = (...args: unknown[]): unknown => {
@@ -196,9 +197,10 @@ export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: S
   const prop = spec.name;
   if (bd === null) noBindable(M.NoBindable, el, `eventToken.${prop}`);
   const decl = bd.properties.get(prop);
-  if (decl === undefined) raise(M.NoProperty, [el.localName, prop]);
+  if (decl === undefined) noBindable(M.NoProperty, el, prop);
   const name = spec.token!;
   el.addEventListener(decl.event, (e) => {
+    if (e.target !== el) return;
     if (spec.prevent) e.preventDefault();
     if (spec.stop) e.stopPropagation();
     try {

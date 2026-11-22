@@ -299,6 +299,8 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
 
     const read = prop.getter ?? DEFAULT_GETTER;
     const handler = (event: Event): void => {
+      // the node's own event only: a nested node's bubbling event of the same name is not its
+      if (event.target !== node) return;
       cell.set(read(event));
     };
     node.addEventListener(prop.event, handler);
@@ -330,6 +332,7 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
       const cell = signal<T | undefined>(options.initial, () => false);
       const read = propDesc.getter ?? DEFAULT_GETTER;
       const handler = (event: Event): void => {
+        if (event.target !== node) return; // (as above: the node's own event only)
         const chunk = read(event) as C;
         cell.set(fold(cell.peek(), chunk));
       };
