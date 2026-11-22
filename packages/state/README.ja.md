@@ -719,6 +719,8 @@ authority はバインディング単位で `#init=` により上書きできま
 
 しないこと: スクリプトがイベントなしでチェックした checkbox と radio は見えません。自作のフォーム部品の reset は部品の仕事です（`formResetCallback` で自分のイベントを出します）。欄の文字を変える書き込みは、今もキャレットを末尾に送ります。
 
+**state がフォームを束ねる前。** router は自分のスクリプトが走るとすぐにルートを描き、state はルートの state（`src=` のファイルかインラインのモジュール。遅い回線では 1 秒かかることもある）を読み込んでから束ねます。4.27（未リリース）から、`forms` 後付けがこの間も受け持ちます。その間に打った値は、フォームを束ねたときに戻り、state に伝わります（4.26 までは、束縛が state の値で上書きしていました）。送信を止めるフォーム（`onsubmit#prevent`）は、ブラウザが送ることはありません。4.26 までは、その間の送信がブラウザ自身の GET になり、欄の値（パスワードも）が URL と履歴に載りました。その送信は、フォームを束ね、打った値を戻した後にやり直します。数えるのは利用者が変えたコントロール（`input` か `change` が出たもの）だけで、スクリプトや履歴のキャッシュ（Turbo、htmx）が入れた値は state に任せます。shadow root の中のフォームと、スクリプトが走る前のサーバー描画のページは対象外です。後者には、フォーム自身の `method` と `action` を持たせてください。
+
 **自作のフォーム部品は `value` を両方向に宣言します。** `static formAssociated = true` のカスタム要素の `value` を state が束ねるなら、それは利用者が入力する欄なので、`value` は `wcBindable.properties`（出すイベントと一緒に）と `wcBindable.inputs` の両方に要ります。それ以外の形は、どれも何も知らせません: 宣言が無いか、`value` が inputs にだけあると、利用者の入力は state に届きません。`value` が properties にだけあると、state は部品に書かず、部品の最初の値が state の値を置き換えます — 保存した下書きが、ページを読み込んだときに消えます。4.23 から、`diagnostics` add-on がタグごとに 1 回、ページの準備ができてから 5 秒後に知らせます: `[wcs/form-control-one-way] <my-date> is a form control (static formAssociated) that declares "value" as an output only …`。向きを自分で書いた束縛（`#ro`・`#init=`・`#sync=`）は知らせません。
 
 書き方 — 打った文字を整形する欄、変換中の Enter、フリガナの欄、数の欄、行の中の radio、動く行に付けるサーバーの誤り、ステップ、フォーム関連カスタム要素 — は [docs/forms.ja.md](../../docs/forms.ja.md) にあります。
