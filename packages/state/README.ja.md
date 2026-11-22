@@ -608,6 +608,8 @@ property[#modifier]: path[|filter[|filter(args)...]]
 
 要素が `properties[].event` を dispatch したとき、state に書かれる値は **`getter(event)`** です。`getter` を省略するとプロトコル既定の [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter) が適用され、**`detail` 全体がそのまま**書かれます。このとき宣言したプロパティは要素から読まれ*ません*。イベントのペイロードが正です。`wcBindable` を持たない素の HTML 要素は逆で、`input`/`change` 時に `element[propName]` を読みます。
 
+4.27（未リリース）から、数えるのはその要素自身のイベントだけです。入れ子にした要素（`<wcs-intersect>` の中の `<wcs-intersect>`）から bubble してきた同じ名前のイベントは内側の要素のもので、外側の束縛は無視します。4.26 までは、外側の束縛が内側の要素の値を書いていました。`eventToken.<property>:` も同じ規則に従います。
+
 したがって `getter` なしで `detail: { value: 7654321 }` を dispatch する要素は、数値ではなく**オブジェクト** `{ value: 7654321 }` を state に書きます。しかもこの失敗はほぼ無言です。書き戻し（`Number({ value: … })` → `NaN`）は例外を投げず、`@wcstack/lint` にも見えません（ペイロードの形は静的に分かりません）。`diagnostics` アドオン（全部入りのエントリに含まれる）は、イベント時点で見分けられる 2 形についてだけ、要素 × プロパティごとに 1 回警告します（`wcs/default-getter-mismatch`）: 要素プロパティに値があるのに `detail` が `undefined`（素の `Event`、または `detail` の付け忘れ）、および要素プロパティがオブジェクトでないのに `detail` が `<propName>` キーを持つオブジェクト（上のラッパー）。それ以外の不整合は気づかれずに通り、どちらの場合も書き込み自体はそのまま行われます。次の 2 形のどちらかに揃えてください：
 
 ```javascript
@@ -2553,7 +2555,7 @@ $on: {
 
 キーを生イベント名ではなくプロパティ名にすることで、command バインディングと同じ `wcBindable` 契約を経由でき、namespaced なイベント名（`ns:evt`）がバインディングの `:` 区切りと衝突しません。フレームワークは `properties[].event` を引いてその実イベントのリスナーを attach します：
 
-ハンドラーが受け取るのは、要素が出したそのイベントです: `event.detail` は要素が入れたもので、束ねたプロパティの値とは限りません。複数のプロパティが 1 つのイベントを共有する所 —— `<wcs-accelerometer>` の `x` / `y` / `z`（`wcs-accelerometer:reading`）、`<wcs-tilt>` の `alpha` / `beta` / `gamma`（`wcs-tilt:change`）—— では、`eventToken.x` と `eventToken.y` は同じイベントを聞き、`event.detail` は値の全体（`{ x, y, z }`）です。イベントの `detail` は各要素の README にあります。`event.target` はその要素なので、ハンドラーから今のプロパティを読むこともできます。
+ハンドラーが受け取るのは、要素が出したそのイベントです: `event.detail` は要素が入れたもので、束ねたプロパティの値とは限りません。複数のプロパティが 1 つのイベントを共有する所 —— `<wcs-accelerometer>` の `x` / `y` / `z`（`wcs-accelerometer:reading`）、`<wcs-tilt>` の `alpha` / `beta` / `gamma`（`wcs-tilt:change`）—— では、`eventToken.x` と `eventToken.y` は同じイベントを聞き、`event.detail` は値の全体（`{ x, y, z }`）です。イベントの `detail` は各要素の README にあります。`event.target` はその要素なので、ハンドラーから今のプロパティを読むこともできます。4.27（未リリース）から、トークンはその要素自身のイベントでだけ発火します。入れ子にした要素から bubble してきた同じ名前のイベントは入れ子の要素のトークンを発火し、こちらは発火せず、`#prevent` / `#stop` もそのイベントに触れません（4.26 までは両方が発火し、外側には内側の要素の `event` が渡っていました）。
 
 ```javascript
 class MyTarget extends HTMLElement {
