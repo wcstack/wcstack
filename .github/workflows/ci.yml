@@ -13,93 +13,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The selection rules live in scripts/verify.mjs, which a local run uses too, so CI and a
+      # branch without CI select the same packages (docs/verification-practices-study.md §2.3; the
+      # bash it replaced selected the same packages for each of the 300 merges before it).
+      # Diff against the PR base SHA from the event payload. HEAD is the PR merge ref built on this
+      # same SHA, so it is always present locally (fetch-depth: 0) and the diff is exactly the PR's
+      # changes. The previous `git fetch --depth=1` + `git merge-base origin/main` approach raced
+      # with pushes to the base branch: when main advanced during the run, the shallow fetch grafted
+      # the new tip with clipped parents and merge-base exited 1 without output (PR #77's run).
       - id: detect
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-
-          # Discover CI-target packages: any packages/* whose package.json is
-          # scoped under @wcstack/, plus the unscoped `wcstack` entry bundle
-          # (a buildable package since docs/distribution-robustness-impl-plan.md
-          # Phase 4). Auto-includes new scoped packages, private ones too;
-          # still excludes the unscoped ones (e.g. the vscode-wcs extension).
-          all=()
-          for dir in packages/*/; do
-            [ -f "${dir}package.json" ] || continue
-            name=$(node -p "require('./${dir}package.json').name")
-            case "$name" in
-              @wcstack/*) all+=("$(basename "$dir")") ;;
-              wcstack)    all+=("$(basename "$dir")") ;;
-            esac
-          done
-
-          # Diff against the PR base SHA from the event payload. HEAD is the PR
-          # merge ref built on this same SHA, so it is always present locally
-          # (fetch-depth: 0) and the diff is exactly the PR's changes. The
-          # previous `git fetch --depth=1` + `git merge-base origin/main`
-          # approach raced with pushes to the base branch: when main advanced
-          # during the run, the shallow fetch grafted the new tip with clipped
-          # parents and merge-base exited 1 without output (PR #77's run).
-          changed=$(git diff --name-only "${BASE_SHA:?not a pull_request event}" HEAD)
-
-          # Every test below reads "$changed" from a here-string, never `echo "$changed" |
-          # grep -q`: under pipefail, grep -q exits at its first match, echo then dies of
-          # SIGPIPE once the list outgrows the pipe buffer, and the pipeline fails as if
-          # nothing matched — the 4.0 merge (#433) selected 12 of the 49 packages.
-
-          # A change to the shared root tsconfig rebuilds every package.
-          if grep -qx 'tsconfig.json' <<< "$changed"; then
-            selected=("${all[@]}")
-          else
-            selected=()
-            for pkg in "${all[@]}"; do
-              if grep -qE "^packages/${pkg}/" <<< "$changed"; then
-                selected+=("$pkg")
-              fi
-            done
-
-            # The unscoped `wcstack` entry bundle has almost no source of its own:
-            # rollup + node-resolve inline each member's dist/auto.min.js (the
-            # file:../ devDependencies below). So a member change is what breaks
-            # that bundle — a renamed tag fails its tag census, a member bundle
-            # that gained a static import breaks the single-SRI-hash property —
-            # yet a member-only PR never selects the wcstack job and the breakage
-            # first appears in release.yml's "Build all packages". Select it here,
-            # and the job's member rebuild step (below) is what makes the gate real.
-            members=$(node -p "Object.values(require('./packages/wcstack/package.json').devDependencies).filter((v) => v.startsWith('file:../')).map((v) => v.slice(8)).join(' ')")
-            if ! grep -qE '^packages/wcstack/' <<< "$changed"; then
-              for pkg in $members; do
-                if grep -qE "^packages/${pkg}/" <<< "$changed"; then
-                  selected+=("wcstack")
-                  break
-                fi
-              done
-            fi
-
-            # Two suites run packages/state/src directly: devtools' protocol drift test
-            # (the 4.0 runtime's event / summary shapes against the consumer's types) and
-            # router's routeRange.state test. A state-only change must run them too.
-            if grep -qE '^packages/state/' <<< "$changed"; then
-              for pkg in devtools router; do
-                [[ " ${selected[*]} " == *" $pkg "* ]] || selected+=("$pkg")
-              done
-            fi
-
-            # The @wcstack/state size / structure gates and their baselines live in scripts/:
-            # a PR that changes only them must still run them.
-            if grep -qE '^scripts/(check-state-[a-z]+\.mjs|state-[a-z]+-baseline\.json)$' <<< "$changed" \
-              && [[ " ${selected[*]} " != *" state "* ]]; then
-              selected+=("state")
-            fi
-          fi
-
-          if [ ${#selected[@]} -eq 0 ]; then
-            echo "packages=[]" >> "$GITHUB_OUTPUT"
-          else
-            json=$(printf '%s\n' "${selected[@]}" | jq -R . | jq -sc .)
-            echo "packages=$json" >> "$GITHUB_OUTPUT"
-          fi
+          packages=$(node scripts/verify.mjs --base "${BASE_SHA:?not a pull_request event}" --head HEAD --list --json)
+          echo "selected: $packages"
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
   gate-changes:
     # A pull request can change every input of the gates that judge it: the state size and
