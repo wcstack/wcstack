@@ -127,7 +127,11 @@ test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリュ�
     await page.goto("/e2e/fixtures/mount-volume.html");
     const connected = await page.evaluate(async () => {
       const root = document.querySelector("wcs-state:not([mount])") as any;
-      await root.connectedCallbackPromise;
+      // the volume loads its own src and settles on its own promise: the root does not wait for it
+      // (the state README, Volumes). Waiting for the root alone read i18n.connected before the volume
+      // was grafted, now and then (undefined).
+      const volume = document.querySelector("wcs-state[mount]") as any;
+      await Promise.all([root.connectedCallbackPromise, volume.connectedCallbackPromise]);
       let value: unknown;
       await root.createStateAsync("readonly", async (s: any) => { value = s["i18n.connected"]; });
       return value;
