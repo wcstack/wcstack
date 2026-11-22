@@ -181,6 +181,7 @@ Two more traps around committed dists: `npm run build` in `packages/testing` reb
 - Test descriptions are written in Japanese
 - Real-browser coverage lives in `e2e/` (Playwright, over the local `packages/*/dist`)
 - Bounded exhaustive suites replay the real code over every sequence of operations up to a depth and check named laws after each step, with the shortest counterexample per law ([docs/formal-methods-study.md](docs/formal-methods-study.md)): `packages/fetch/__tests__/operationLane.exhaustive.test.ts` (`LANE_DEPTH`, 5 in CI) and `packages/router/__tests__/navigation.exhaustive.test.ts` (`NAV_DEPTH`, 4 in CI; 6 locally takes about 6 minutes). A broken variant goes on the test side, never as a switch in `src/`
+- Property tests (fast-check, shrinking to the shortest failing input) cover what is too wide to enumerate: `packages/signals/__tests__/reactive.property.test.ts` (against a naive reference) and `packages/state/__tests__/property.equivalence.test.ts` — after random writes (list operations, `$update`, two writes in one drain), the page's DOM equals the same final data drawn by a new `<wcs-state>` (docs/verification-practices-study.md §2.5)
 
 ## Linting
 
