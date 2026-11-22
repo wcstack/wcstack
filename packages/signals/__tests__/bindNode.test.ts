@@ -654,3 +654,31 @@ describe("bindNode: 型安全な NodeShape（D1）", () => {
     expect(node.aborted).toBe(1);
   });
 });
+
+describe("bindNode: 入れ子にしたノードのイベント（自分のイベントだけを読む）", () => {
+  const desc: WcBindableDescriptor = { properties: [{ name: "value", event: "nest:change" }] };
+  const nested = () => {
+    const outer = document.createElement("div");
+    const inner = document.createElement("div");
+    outer.appendChild(inner);
+    const fire = (el: Element, detail: string) => el.dispatchEvent(new CustomEvent("nest:change", { detail, bubbles: true }));
+    return { outer, inner, fire };
+  };
+
+  it("内側の同じ名前の bubble するイベントは、外側の property のシグナルに入らない", () => {
+    const { outer, inner, fire } = nested();
+    const bound = bindNode(outer, desc);
+    fire(inner, "from-inner");
+    expect(bound.signals.value.peek()).toBeUndefined();
+    fire(outer, "from-outer");
+    expect(bound.signals.value.peek()).toBe("from-outer");
+  });
+
+  it("bindNode.on も外側自身のイベントだけを畳み込む", () => {
+    const { outer, inner, fire } = nested();
+    const s = bindNode(outer, desc).on<string[], string>("value", { fold: (acc = [], chunk) => [...acc, chunk], initial: [] });
+    fire(inner, "i");
+    fire(outer, "o");
+    expect(s.peek()).toEqual(["o"]);
+  });
+});
