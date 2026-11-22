@@ -160,7 +160,7 @@
       "mistake": { "en": "Puts `features=` on a `<wcs-state>` that is not the document's root.", "ja": "文書の root でない `<wcs-state>` に `features=` を書く。" },
       "effect": { "en": "`split/auto.js` reads the root's attribute only: those add-ons are not loaded, and what needs them fails later with `[wcs/feature-not-installed]` (no effect on the full entries).", "ja": "`split/auto.js` は root の属性しか読まないので、その後付けは読み込まれず、それを要るものが後で `[wcs/feature-not-installed]` で失敗する（全部入りの入口では影響なし）。" },
       "disposition": "runtime-report",
-      "note": { "en": "`split/auto.js` could warn at startup; design A3 chose the lint only (its 635 B baseline would need re-recording).", "ja": "`split/auto.js` が起動時に警告できる。設計 A3 は lint だけを選んだ（635 B の基準値を取り直すことになる）。" }
+      "note": { "en": "`split/auto.js` could warn at startup; design A3 chose the lint only (its size baseline would need re-recording).", "ja": "`split/auto.js` が起動時に警告できる。設計 A3 は lint だけを選んだ（size の基準値を取り直すことになる）。" }
     },
     {
       "id": "volume-declaration",
@@ -597,7 +597,7 @@
       "mistake": { "en": "Binds `onsubmit:` on a `<form>` without `#prevent`, and the handler does not call `preventDefault`.", "ja": "`<form>` の `onsubmit:` を `#prevent` なしで束ね、ハンドラも `preventDefault` を呼ばない。" },
       "effect": { "en": "The handler runs, then the browser submits the form: the page reloads, or with the router a GET puts the fields, a password too, in the URL and the history.", "ja": "ハンドラが走った後、ブラウザがフォームを送る。ページが読み直されるか、router があれば GET が欄 — パスワードも — を URL と履歴に載せる。" },
       "disposition": ["runtime-report", "design-out"], "breaking": true,
-      "note": { "en": "4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (536 B of room), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default. The lint's finding is an error since 4.21: as a warning up to 4.20, `--errors-only` hid it from the ledger-repair seam app's maintainer.", "ja": "4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（残り 536 B）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。lint の指摘は 4.21 から error: 4.20 までの warning は、継ぎ目アプリ ledger-repair の保守担当から `--errors-only` に隠れた。" }
+      "note": { "en": "4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (whose room is a few bytes: see the size gate), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default. The lint's finding is an error since 4.21: as a warning up to 4.20, `--errors-only` hid it from the ledger-repair seam app's maintainer.", "ja": "4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（余地は数バイト: size ゲートを見る）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。lint の指摘は 4.21 から error: 4.20 までの warning は、継ぎ目アプリ ledger-repair の保守担当から `--errors-only` に隠れた。" }
     },
     {
       "id": "devtools-after-state",

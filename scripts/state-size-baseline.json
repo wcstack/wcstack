@@ -33,7 +33,8 @@
   "split/features/forms.js (beyond the core)": {
     "files": 1,
     "bytes": 1963,
-    "gzip": 982
+    "gzip": 982,
+    "slack": 640
   },
   "split/features/list-keys.js (beyond the core)": {
     "files": 1,

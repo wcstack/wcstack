@@ -608,6 +608,8 @@ property[#modifier]: path[|filter[|filter(args)...]]
 
 要素が `properties[].event` を dispatch したとき、state に書かれる値は **`getter(event)`** です。`getter` を省略するとプロトコル既定の [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter) が適用され、**`detail` 全体がそのまま**書かれます。このとき宣言したプロパティは要素から読まれ*ません*。イベントのペイロードが正です。`wcBindable` を持たない素の HTML 要素は逆で、`input`/`change` 時に `element[propName]` を読みます。
 
+4.27（未リリース）から、数えるのはその要素自身のイベントだけです。入れ子にした要素（`<wcs-intersect>` の中の `<wcs-intersect>`）から bubble してきた同じ名前のイベントは内側の要素のもので、外側の束縛は無視します。4.26 までは、外側の束縛が内側の要素の値を書いていました。`eventToken.<property>:` も同じ規則に従います。
+
 したがって `getter` なしで `detail: { value: 7654321 }` を dispatch する要素は、数値ではなく**オブジェクト** `{ value: 7654321 }` を state に書きます。しかもこの失敗はほぼ無言です。書き戻し（`Number({ value: … })` → `NaN`）は例外を投げず、`@wcstack/lint` にも見えません（ペイロードの形は静的に分かりません）。`diagnostics` アドオン（全部入りのエントリに含まれる）は、イベント時点で見分けられる 2 形についてだけ、要素 × プロパティごとに 1 回警告します（`wcs/default-getter-mismatch`）: 要素プロパティに値があるのに `detail` が `undefined`（素の `Event`、または `detail` の付け忘れ）、および要素プロパティがオブジェクトでないのに `detail` が `<propName>` キーを持つオブジェクト（上のラッパー）。それ以外の不整合は気づかれずに通り、どちらの場合も書き込み自体はそのまま行われます。次の 2 形のどちらかに揃えてください：
 
 ```javascript
@@ -716,6 +718,8 @@ authority はバインディング単位で `#init=` により上書きできま
 「state に知らせる」とは、コントロールの上で、バブルしない `input` イベント（その束縛が聞くかもしれないところでは `change` も）を出すことです。そのコントロール自身の双方向バインディングは、利用者の入力と同じように聞きます: 入力フィルタを通し、`#on<event>` のイベントで、`#ro` なら聞きません。上に束ねたハンドラは走りません（`oninput:` は委譲です）。コントロール自身に付けたリスナーは走ります。
 
 しないこと: スクリプトがイベントなしでチェックした checkbox と radio は見えません。自作のフォーム部品の reset は部品の仕事です（`formResetCallback` で自分のイベントを出します）。欄の文字を変える書き込みは、今もキャレットを末尾に送ります。
+
+**state がフォームを束ねる前。** router は自分のスクリプトが走るとすぐにルートを描き、state はルートの state（`src=` のファイルかインラインのモジュール。遅い回線では 1 秒かかることもある）を読み込んでから束ねます。4.27（未リリース）から、`forms` 後付けがこの間も受け持ちます。その間に打った値は、フォームを束ねたときに戻り、state に伝わります（4.26 までは、束縛が state の値で上書きしていました）。送信を止めるフォーム（`onsubmit#prevent`）は、ブラウザが送ることはありません。4.26 までは、その間の送信がブラウザ自身の GET になり、欄の値（パスワードも）が URL と履歴に載りました。その送信は、フォームを束ね、打った値を戻した後にやり直します。数えるのは利用者が変えたコントロール（`input` か `change` が出たもの）だけで、スクリプトや履歴のキャッシュ（Turbo、htmx）が入れた値は state に任せます。shadow root の中のフォームと、スクリプトが走る前のサーバー描画のページは対象外です。後者には、フォーム自身の `method` と `action` を持たせてください。
 
 **自作のフォーム部品は `value` を両方向に宣言します。** `static formAssociated = true` のカスタム要素の `value` を state が束ねるなら、それは利用者が入力する欄なので、`value` は `wcBindable.properties`（出すイベントと一緒に）と `wcBindable.inputs` の両方に要ります。それ以外の形は、どれも何も知らせません: 宣言が無いか、`value` が inputs にだけあると、利用者の入力は state に届きません。`value` が properties にだけあると、state は部品に書かず、部品の最初の値が state の値を置き換えます — 保存した下書きが、ページを読み込んだときに消えます。4.23 から、`diagnostics` add-on がタグごとに 1 回、ページの準備ができてから 5 秒後に知らせます: `[wcs/form-control-one-way] <my-date> is a form control (static formAssociated) that declares "value" as an output only …`。向きを自分で書いた束縛（`#ro`・`#init=`・`#sync=`）は知らせません。
 
@@ -2553,7 +2557,7 @@ $on: {
 
 キーを生イベント名ではなくプロパティ名にすることで、command バインディングと同じ `wcBindable` 契約を経由でき、namespaced なイベント名（`ns:evt`）がバインディングの `:` 区切りと衝突しません。フレームワークは `properties[].event` を引いてその実イベントのリスナーを attach します：
 
-ハンドラーが受け取るのは、要素が出したそのイベントです: `event.detail` は要素が入れたもので、束ねたプロパティの値とは限りません。複数のプロパティが 1 つのイベントを共有する所 —— `<wcs-accelerometer>` の `x` / `y` / `z`（`wcs-accelerometer:reading`）、`<wcs-tilt>` の `alpha` / `beta` / `gamma`（`wcs-tilt:change`）—— では、`eventToken.x` と `eventToken.y` は同じイベントを聞き、`event.detail` は値の全体（`{ x, y, z }`）です。イベントの `detail` は各要素の README にあります。`event.target` はその要素なので、ハンドラーから今のプロパティを読むこともできます。
+ハンドラーが受け取るのは、要素が出したそのイベントです: `event.detail` は要素が入れたもので、束ねたプロパティの値とは限りません。複数のプロパティが 1 つのイベントを共有する所 —— `<wcs-accelerometer>` の `x` / `y` / `z`（`wcs-accelerometer:reading`）、`<wcs-tilt>` の `alpha` / `beta` / `gamma`（`wcs-tilt:change`）—— では、`eventToken.x` と `eventToken.y` は同じイベントを聞き、`event.detail` は値の全体（`{ x, y, z }`）です。イベントの `detail` は各要素の README にあります。`event.target` はその要素なので、ハンドラーから今のプロパティを読むこともできます。4.27（未リリース）から、トークンはその要素自身のイベントでだけ発火します。入れ子にした要素から bubble してきた同じ名前のイベントは入れ子の要素のトークンを発火し、こちらは発火せず、`#prevent` / `#stop` もそのイベントに触れません（4.26 までは両方が発火し、外側には内側の要素の `event` が渡っていました）。
 
 ```javascript
 class MyTarget extends HTMLElement {
