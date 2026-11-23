@@ -1931,6 +1931,95 @@
       "mistake": { "en": "Declares the slot bound to `<wcs-debounce>`'s `value` as `null` and handles it as `string | null` (`settledQ: null` with `cur.trim()` in its `$watch`).", "ja": "`<wcs-debounce>` の `value` に束ねるスロットを `null` と宣言し、`string | null` として扱う（`settledQ: null` と、その `$watch` の `cur.trim()`）。" },
       "effect": { "en": "An output-only member seeds its slot from the element when it is bound, and up to 4.25 `value` started `undefined`: the slot became `undefined` at load and the `$watch` threw. Since 4.26 `<wcs-debounce>` / `<wcs-throttle>` `value` starts `null`.", "ja": "出力だけのメンバーは束ねるときに要素からスロットへ種をまき、4.25 までは `value` が `undefined` で始まっていた: スロットは読み込みの直後に `undefined` になり、`$watch` が投げた。4.26 から、`<wcs-debounce>` / `<wcs-throttle>` の `value` は `null` で始まる。" },
       "note": { "en": "Found by the lending-desk seam app (docs/seam-apps.md). Of 44 tags, only these two started an output as `undefined`.", "ja": "継ぎ目アプリ lending-desk が見つけた（docs/seam-apps.ja.md）。 44 のタグのうち、出力を `undefined` で始めていたのはこの 2 つだけ。" }
+    },
+    {
+      "id": "part-seam-name",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Hands a part its data under one name and reads it under another — `state.veiw: view` on the page, `veiw.x` in the part, `nmae` in the part's template or a getter — or reads a path of the page inside a mounted part (`pageTitle`; a `<wcs-storage>` in the part bound to `settings.theme`).", "ja": "部品にデータを渡す名前と、部品が読む名前が食い違う — ページの `state.veiw: view`、部品の `veiw.x`、部品のテンプレートや getter の `nmae` — または、マウントした部品の中でページのパスを読む（`pageTitle`、部品の中で `settings.theme` に束ねた `<wcs-storage>`）。" },
+      "effect": { "en": "Inside a mounted part a read falls through to its host and fails nothing: the field is empty, the tile disabled, nothing stored. Up to 4.27 nothing was said — the lint does not read a class's template. Since 4.28 the diagnostics add-on checks a part's path on its host when its first key is what is missing, and warns once per key (`[wcs/binding-path-missing]`, `[wcs/read-path-missing]`) with the names the part has and those it was handed; in a row it needs a near name or a path of the host. Deeper than the first key it stays silent: the part may answer the path itself.", "ja": "マウントした部品の中の読みは、ホストへ落ちて何も失敗しない: フィールドは空、タイルは無効、何も保存されない。4.27 までは何も言わなかった — lint はクラスのテンプレートを読まない。4.28 から、診断の後付けが、部品のパスを先頭のキーが無いときにホストで調べ、キーごとに 1 度警告する（`[wcs/binding-path-missing]`・`[wcs/read-path-missing]`）。部品が持つ名前と渡された名前を挙げる。行の中では、近い名前かホストのパスが要る。先頭のキーより深い所は言わない: 部品が自分で答えることがある。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "its host's" }],
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md): five of its fifteen silent mistakes were this one.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）: 何も言わなかった 15 件のうち 5 件がこれだった。" }
+    },
+    {
+      "id": "dcc-attribute-input",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Gives a DCC its input as an attribute: `<my-pager total=\"120\" per=\"20\">`, or `setAttribute` later.", "ja": "DCC の入力を属性で渡す: `<my-pager total=\"120\" per=\"20\">`、後からの `setAttribute`。" },
+      "effect": { "en": "A DCC's inputs are the properties `$bindables` lists: the attribute is not read, and the part shows its default (page 1 of 1, 0 items). Since 4.28 the scopes add-on warns once per tag and name (`[wcs/dcc-attribute]`); up to 4.27 nothing was said.", "ja": "DCC の入力は `$bindables` に並べたプロパティ。属性は読まれず、部品は既定のまま（1 / 1 ページ、0 件）。4.28 から、scopes の後付けがタグと名前ごとに 1 度警告する（`[wcs/dcc-attribute]`）。4.27 までは何も言わなかった。" },
+      "evidence": [{ "file": "packages/state/src/scopes/dcc.ts", "text": "wcs/dcc-attribute" }],
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md): the first thing an HTML designer tries. Bind it (`data-wcs=\"total: path\"`) or set the property.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）: HTML を書くデザイナーが最初に試すこと。束ねる（`data-wcs=\"total: path\"`）か、プロパティに書く。" }
+    },
+    {
+      "id": "mount-readonly-nested-write",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Hands a part its data `#ro` and lets a part mounted inside it write that data (`state.view#ro: view` on the card, `state.view: view` on the tiles inside, a tile writing `view.selectedId`).", "ja": "部品にデータを `#ro` で渡し、その中にマウントした部品にそのデータを書かせる（カードに `state.view#ro: view`、中のタイルに `state.view: view`、タイルが `view.selectedId` に書く）。" },
+      "effect": { "en": "Since 4.28 the inner part's write throws `[wcs/mount-readonly]`, naming the part that was handed the data read-only, and its two-way bindings do not write back. Up to 4.27 a write under one mapped key landed on the page's data without a word (a whole mount's `#ro` did reach the inner part): a page meant to be read-only was not.", "ja": "4.28 から、内側の部品の書き込みは、読み取り専用で渡された部品の名前で `[wcs/mount-readonly]` を投げ、その双方向束縛は書き戻さない。4.27 までは、対応付けた 1 つのキーの下への書き込みは、何も言わずにページのデータに着いた（丸ごとのマウントの `#ro` は内側の部品に届いていた）: 読み取り専用のつもりのページが、そうではなかった。" },
+      "evidence": [{ "file": "packages/state/src/scopes/component.ts", "text": "wcs/mount-readonly" }],
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。" }
+    },
+    {
+      "id": "root-code-before-volume",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Calls a volume's method, or reads or writes its keys, from the root's `$connectedCallback` or `$watch` — before the volume's file has arrived.", "ja": "ルートの `$connectedCallback` や `$watch` から、ボリュームのメソッドを呼ぶ・そのキーを読み書きする — ボリュームのファイルがまだ届いていないうちに。" },
+      "effect": { "en": "`this[\"map.load\"] is not a function`, or `Path \"map\" does not exist on the state tree` for `this.map.x` and for a write; `this[\"map.x\"]` reads `undefined`. By the order two files arrive in. A volume's `connectedCallbackPromise` resolves once it has grafted: wait for it.", "ja": "`this[\"map.load\"] is not a function`、`this.map.x` と書き込みは `Path \"map\" does not exist on the state tree`。`this[\"map.x\"]` は `undefined` を読む。2 つのファイルの届く順で決まる。ボリュームの `connectedCallbackPromise` は接ぎ木の後に解決する: それを待つ。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "does not exist on the state tree" }],
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). The README's \"Load order does not matter\" was about a volume that connects before its root.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 README の「読み込み順は自由」は、ルートより先に接続したボリュームのことだった。" }
+    },
+    {
+      "id": "dcc-definition-not-parsed",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Brings a DCC's definition into a page with `innerHTML`, a cloned `<template>` or `DOMParser`, to share one file between pages.", "ja": "1 つのファイルを複数のページで使おうとして、DCC の定義を `innerHTML`・`<template>` の複製・`DOMParser` でページに入れる。" },
+      "effect": { "en": "Only a page's own parser, `setHTMLUnsafe()` and `parseHTMLUnsafe()` turn `<template shadowrootmode>` into a shadow root: the definition has none and its tag is never defined (Chromium alone says so, for `innerHTML`). The diagnostics add-on reports a tag the page binds 5 s after the page was ready (`[wcs/element-undefined]`); an instance the page does not bind stays an unknown element without a word. Since 4.28 the autoloader's `dcc` loader reads a definition from a file of its own.", "ja": "`<template shadowrootmode>` を shadow root にするのは、ページ自身のパーサと `setHTMLUnsafe()`・`parseHTMLUnsafe()` だけ。定義は shadow root を持たず、タグは定義されない（そう言うのは Chromium だけで、`innerHTML` のときだけ）。診断の後付けは、ページが束ねているタグを、ページの準備ができて 5 秒後に報告する（`[wcs/element-undefined]`）。ページが束ねていないインスタンスは、何も言わずに未知の要素のまま。4.28 から、autoloader の `dcc` ローダーが定義を別のファイルから読む。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "wcs/element-undefined" }],
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md), whose author wrote the loader by hand.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 作者は loader を手で書いた。" }
+    },
+    {
+      "id": "volume-write-before-graft",
+      "lint": [],
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Binds an element that writes when it is bound — `<wcs-storage data-wcs=\"value#init=element: settings.stored\">` — to a path under a volume whose file may arrive after the root's.", "ja": "束ねた時点で書く要素 — `<wcs-storage data-wcs=\"value#init=element: settings.stored\">` — を、ファイルがルートより後に届くかもしれないボリュームの下のパスに束ねる。" },
+      "effect": { "en": "Since 4.28 the write is kept and lands when the volume grafts. Up to 4.27 it threw `Path \"settings\" does not exist`, the root failed to initialize and nothing on the page was bound — one load in three, by the order two files arrived in.", "ja": "4.28 から、書き込みは預かり、ボリュームが接ぎ木されたときに着く。4.27 までは `Path \"settings\" does not exist` を投げ、ルートの初期化が失敗し、ページは何も束ねられなかった — 3 回に 1 回、2 つのファイルの届く順で。" },
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。" }
+    },
+    {
+      "id": "volume-reads-root",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Reads a key of the root, or calls a root method, from inside a volume: `this[\"title\"]` in the `cart` volume.", "ja": "ボリュームの中から、ルートのキーを読む・ルートのメソッドを呼ぶ: `cart` のボリュームの `this[\"title\"]`。" },
+      "effect": { "en": "Inside a volume every path starts at the mount: the read is `cart.title` — `undefined`, without a word (a getter's read of a missing key is reported only beside a near name), and a root method is not there.", "ja": "ボリュームの中では、どのパスもマウントから始まる: 読むのは `cart.title` — 何も言わずに `undefined`（getter が読む無いキーは、近い名前があるときだけ報告される）。ルートのメソッドも無い。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). The diagnostics add-on could say the key is the root's, as it does for a mounted part since 4.28. The root hands a volume what it needs.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 診断の後付けは、4.28 からマウントした部品に対してするように、そのキーがルートのものだと言える。ボリュームに要るものは、ルートが渡す。" }
+    },
+    {
+      "id": "dcc-shared-object-field",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Writes, in a DCC, a field inside an object or array the page gave it (`this[\"tabs.0.label\"] = …`) and expects the page to follow — or writes it on the page and expects the DCC to.", "ja": "DCC の中で、ページから渡されたオブジェクトや配列の中の項目に書き（`this[\"tabs.0.label\"] = …`）、ページが付いてくると思う — またはページで書いて、DCC が付いてくると思う。" },
+      "effect": { "en": "The object is the same on both sides, so the data changes, and the page's bindings on that exact path and its getters follow; a row of the page's `for:` over the array keeps the old value, and the page's write inside the object does not reach the DCC's rows. One field is shown with two values.", "ja": "オブジェクトは両側で同じものなので、データは変わり、ページの、そのパスそのものへの束縛と getter は付いてくる。配列へのページの `for:` の行は古い値のままで、ページがオブジェクトの中に書いても DCC の行には届かない。1 つの項目が 2 つの値で表示される。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). Write the member itself: a new array or object. Making rows follow is to be measured first (docs/v4-direction-2026-10.md §5.24).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 メンバーそのものを書く: 新しい配列やオブジェクト。行まで届かせる修正は、先にバイト数を測る（docs/v4-direction-2026-10.md §5.24）。" }
+    },
+    {
+      "id": "dcc-first-value-watch",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Seeds a DCC's own state from one of its inputs with a `$watch` on the member alone.", "ja": "DCC 自身の状態を、入力の 1 つから、そのメンバーの `$watch` だけで作る。" },
+      "effect": { "en": "Watches start after `$connectedCallback`, and the value the page gives first is in the state before: the watch does not run for it, and the part draws from its default (a pager with one page number). Since 4.28 `$connectedCallback` sees that value; up to 4.27 it landed after the callback and before the watches, and neither saw it.", "ja": "watch は `$connectedCallback` の後に始まり、ページが最初に渡す値はその前に状態に入っている: watch はその値では走らず、部品は既定から描く（番号が 1 つだけのページ送り）。4.28 から、`$connectedCallback` はその値を見る。4.27 までは、コールバックの後・watch の前に着いて、どちらも見なかった。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). Read it in `$connectedCallback` as well, or derive with a getter.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 `$connectedCallback` でも読むか、getter で導く。" }
+    },
+    {
+      "id": "class-part-method-mutation",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Writes `this.tenant.name = v` or `this.plots.push(p)` in a method of a class part (the state of a `bind-component` component).", "ja": "クラスの部品（`bind-component` のコンポーネントの状態）のメソッドで `this.tenant.name = v` や `this.plots.push(p)` と書く。" },
+      "effect": { "en": "As on a page, the write misses the state: the tile keeps the old name, no row is added. On a page the lint reports both as errors (`wcs/nested-assign`, `wcs/array-mutation`); it reads no class file, so in a part nothing says it — `push` passed every check the author had.", "ja": "ページと同じく、書き込みは状態を通らない: タイルは古い名前のまま、行は増えない。ページでは lint がどちらもエラーにする（`wcs/nested-assign`・`wcs/array-mutation`）が、クラスのファイルは読まないので、部品では何も言わない — `push` は作者のすべての検査を通った。" },
+      "disposition": "lint-rule",
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). Whether the lint reads a part — a class's template and methods, its exported getters, a DCC's declarations — is one question, to be decided (docs/v4-direction-2026-10.md §5.24).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 lint が部品を読むか — クラスのテンプレートとメソッド、公開 getter、DCC の宣言 — は 1 つの問いで、これから決める（docs/v4-direction-2026-10.md §5.24）。" }
     }
   ],
   "uncounted": [

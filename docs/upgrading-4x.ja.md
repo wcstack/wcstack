@@ -493,10 +493,28 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: state が束ねるまでマークアップで `disabled` にしておく送信ボタン。同じ種類の要素を入れ子に持つ要素のハンドラでの `event.target` の確認。
 
-## 4.27.0 でもまだ要るもの
+### 4.28.0
+
+2026-11-23 — [CHANGELOG](../CHANGELOG.md#4280--2026-11-23)
+
+- `@wcstack/state`（`scopes` 後付け）: マウントの 1 つのキーの `#ro` は、中にマウントしたコンポーネントにも効く。`state.view#ro: view` で渡され、`view` をさらに渡すと、内側のコンポーネントの `view` の下への書き込みは `[wcs/mount-readonly]` を投げ、その双方向束縛は書き戻さない。それまではページのデータに着いていた。それに頼っていたページは `#ro` を外すか、ホストで書く。
+- `@wcstack/state`（`scopes`）: DCC の `$connectedCallback` は、ページが最初に渡した値を見る（それまでは既定値を見ていた。値はコールバックの後・watch の始まる前に着いていた）。
+- `@wcstack/state`（`scopes`）: まだ接ぎ木されていないボリュームのマウントパスの下への、要素の書き込みは、接ぎ木まで預かる。それまでは `Path "…" does not exist` を投げ、ページを束ねている間の書き込みはルートごと失敗させた。
+- コンソール: `[wcs/binding-path-missing]` / `[wcs/read-path-missing]` は、マウントしたコンポーネントが名指すパスも、先頭のキーがコンポーネントにもホストにも無いときに報告する（`… in <plot-tile> — its host's "…" — …`）。キーごとに 1 度。`[wcs/dcc-attribute]` は、属性で書いた DCC の入力を報告する。出なくなったもの: ボリュームがルートより先に読み込まれたときのマウントパスと、渡された木に書くマウントしたコンポーネントへの `[wcs/write-path-missing]`。コンポーネントのファイルが届く途中の、その公開 getter への `[wcs/binding-path-missing]`。
+- `@wcstack/autoloader`: ローダーを名指さない eager のキーは、対応付けたファイルに postfix が合うローダーを得る（それまではキーと比べていたので、いつも既定のローダーだった）。postfix つきのローダーを登録し、その拡張子の eager のファイルが既定のローダーへ行くことに頼っていたページは、キーでローダーを名指す（`|vanilla`）。`.html` のファイルに対応付けた eager のキーは、新しい `dcc` ローダーへ行く。
+- `@wcstack/router`: フォールバックの経路（Navigation API なし）で、離れるルートの中身にある `<wcs-link>` のクリックが投げなくなった。
+- `@wcstack/testing`: `mount()` は `<template shadowrootmode>` を shadow root にし、ページの DCC を待つ。`installDom()` の restore は先に window を閉じる。`@wcstack/typescript`: `wcs-schema emit --mount` はマウントを記録し（`stateMounts`）、ボリュームのある木でルートの `check` が通る —— 前の版で merge した manifest は、ボリュームをそれぞれもう一度 emit する。
+
+要らなくなった回避策: DCC のファイルを fetch して `setHTMLUnsafe()` で読むページ自身のローダーと、すべての eager のキーの `|loader`。ルートのキーに束ねて `$watch` でボリュームと写し合う I/O の要素。ブラウザのテストで許していたマウントパスの `[wcs/write-path-missing]` と、「ボリュームがそろった」を待つポーリング（ボリュームの `connectedCallbackPromise` は接ぎ木の後に解決する）。`$watch` が最初の値を逃すので、キャッシュつきの getter でリストを導く DCC。ルートの中で `<wcs-link>` の代わりにルーターに頼む素のリンク。単体テストで `mount()` の前に手で入れる DCC の定義。ボリュームだけに走らせる `wcs-schema check`。
+
+## 4.28.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
+- lint はコンポーネントを読まない: クラスのテンプレートやメソッドも、DCC の宣言も。マウントしたコンポーネントが公開し、ページが読む getter は `wcs/binding-path-missing` と報告される。ページの JSDoc に宣言すると報告は消えるが、後の改名も隠れる（state の README、「公開 getter」）。実行時は、コンポーネントの先頭のキーの誤りを報告し（4.28）、DCC の誤った宣言を拒む。残りは単体テストで見る。
+- ボリュームはルートを読まない。ルートの `$connectedCallback` と `$watch` は、後から届くボリュームのキーやメソッドがそろう前に走る: ボリュームに要るものは渡し、その `connectedCallbackPromise` を待つ（state の README、「追加の状態をマウントする」）。
+- DCC は、プロパティで値を丸ごと受け取る: ページと共有するオブジェクトや配列の中の項目への書き込みは、相手側の行には届かない。入力の `$watch` は最初の値では走らない —— `$connectedCallback` でも読む（state の README、「DCC に渡すもの」）。
+- ページ内の state を import している最中にページを離れるブラウザのテストは、Firefox と WebKit で `<wcs-state> failed to initialize` を見ることがある: import が unload で打ち切られただけで、ページは壊れていない。
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - 重複するクエリのキー（`?tag=a&tag=b`）は 2 通りに読まれる: `searchParams` は最後の値を持ち、`<wcs-link>` はすべての値を比べる。state がキーを `searchParams` から読むなら、リンクでもそのキーに値を 1 つにする（router の README、「Active state」）。
