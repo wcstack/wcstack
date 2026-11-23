@@ -83,26 +83,30 @@ describe('importmap', () => {
       const { loadMap, prefixMap } = buildMap(importmap);
 
       expect(prefixMap).toEqual({});
+      // (path: キーが指すファイル。loader を名指ししないキーは、その拡張子で loader が決まる)
       expect(loadMap['my-button']).toEqual({
         key: '@components/my-button',
         tagName: 'my-button',
         loaderKey: null,
         extends: null,
-        isNameSpaced: false
+        isNameSpaced: false,
+        path: './components/button.js'
       });
       expect(loadMap['my-input']).toEqual({
         key: '@components/my-input|loader1',
         tagName: 'my-input',
         loaderKey: 'loader1',
         extends: null,
-        isNameSpaced: false
+        isNameSpaced: false,
+        path: './components/input.js'
       });
       expect(loadMap['my-card']).toEqual({
         key: '@components/my-card|loader2,my-base-card',
         tagName: 'my-card',
         loaderKey: 'loader2',
         extends: 'my-base-card',
-        isNameSpaced: false
+        isNameSpaced: false,
+        path: './components/card.js'
       });
     });
 

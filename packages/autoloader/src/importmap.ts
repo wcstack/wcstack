@@ -57,7 +57,7 @@ export function buildMap(importmap: IImportMap): {
 } {
   const prefixMap: IPrefixMap = {};
   const loadMap: ILoadMap = {};
-  for (const [key, _value] of Object.entries(importmap.imports)) {
+  for (const [key, value] of Object.entries(importmap.imports)) {
     const keyInfo = getKeyInfoFromImportmapKey(key);
     if (keyInfo === null) {
       continue;
@@ -65,7 +65,7 @@ export function buildMap(importmap: IImportMap): {
     if (keyInfo.isNameSpaced) {
       prefixMap[keyInfo.prefix] = keyInfo;
     } else {
-      loadMap[keyInfo.tagName] = keyInfo;
+      loadMap[keyInfo.tagName] = { ...keyInfo, path: value };
     }
   }
   return { prefixMap, loadMap };

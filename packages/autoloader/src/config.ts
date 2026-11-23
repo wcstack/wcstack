@@ -1,6 +1,7 @@
 
 import { IConfig, ILoader, IWritableConfig } from "./types.js"
 import { load } from "./vanilla.js"
+import { loadDcc } from "./dcc.js"
 
 interface IInternalConfig extends IConfig {
   loaders: Record<string, ILoader | string>;
@@ -19,9 +20,18 @@ export const VANILLA_LOADER = {
   loader: load
 }
 
+export const DCC_KEY = "dcc";
+
+/** A Declarative Custom Component in a file of its own (@wcstack/state): `.html`, or `|dcc` in the key. */
+export const DCC_LOADER = {
+  postfix: ".html",
+  loader: loadDcc
+}
+
 const _config: IInternalConfig = {
   loaders: {
     [VANILLA_KEY]: VANILLA_LOADER,
+    [DCC_KEY]: DCC_LOADER,
     [DEFAULT_KEY]: VANILLA_KEY
   },
   observable: true,

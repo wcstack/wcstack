@@ -1,0 +1,15 @@
+<!-- <x-badge>: its file does not end in .html, so the page's key names the loader (|dcc). -->
+<x-badge data-wc-definition>
+  <template shadowrootmode="open">
+    <span class="box" data-wcs="textContent: label"></span><slot></slot>
+    <wcs-state>
+      <script type="module">
+export default {
+  kind: "info",
+  get label() { return `[${this.kind}]`; },
+  $bindables: ["kind"],
+};
+      </script>
+    </wcs-state>
+  </template>
+</x-badge>
