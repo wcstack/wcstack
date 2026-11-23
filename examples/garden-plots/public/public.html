@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>市民農園の空き状況 — みどり市</title>
+  <link rel="stylesheet" href="/parts/tokens.css">
+  <link rel="stylesheet" href="/public/public.css">
+  <!-- workaround: the saved theme before the first paint (see index.html) -->
+  <script>
+    try {
+      const s = JSON.parse(localStorage.getItem("midori.settings") || "null");
+      if (s && s.theme) document.documentElement.dataset.theme = s.theme;
+      if (s && s.density) document.documentElement.dataset.density = s.density;
+    } catch {}
+  </script>
+  <!-- The parts this page uses — the same files as the staff app's. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/garden-card": "/parts/garden-card.js",
+        "@components/area-block": "/parts/area-block.js",
+        "@components/plot-tile": "/parts/plot-tile.js",
+        "@components/midori-badge": "/parts/midori-badge.html",
+        "@components/midori-tabs": "/parts/midori-tabs.html"
+      }
+    }
+  </script>
+  <script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/defined/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<wcs-autoloader></wcs-autoloader>
+<wcs-state src="public/state.js"></wcs-state>
+<wcs-storage key="midori.settings" data-wcs="value#init=element: savedSettings"></wcs-storage>
+<wcs-defined timeout="8000" tags="garden-card,area-block,plot-tile,midori-badge,midori-tabs"
+  data-wcs="pending: partsPending; missing: partsMissing"></wcs-defined>
+
+<header class="site-header">
+  <p class="city">みどり市</p>
+  <h1>市民農園の空き状況</h1>
+  <p class="lead">いま空いている区画 <strong class="free-total" data-wcs="textContent: freeText">—</strong> 区画</p>
+</header>
+<main>
+  <p class="banner" role="alert" data-wcs="hidden: partsBroken|not; textContent: partsMissingText" hidden></p>
+  <p class="banner" role="alert" data-wcs="hidden: loadError|not; textContent: loadError" hidden></p>
+  <midori-tabs class="public-tabs" data-wcs="tabs: tabs; selected: tab">
+    <section slot="vacancy">
+      <p class="legend">
+        <template data-wcs="for: legend">
+          <midori-badge data-wcs="kind: .key">{{ .label }}</midori-badge>
+        </template>
+      </p>
+      <div class="cards">
+        <template data-wcs="for: gardens">
+          <garden-card data-wcs="state#ro: .; state.view#ro: view"></garden-card>
+        </template>
+      </div>
+    </section>
+    <section slot="guide" class="guide">
+      <h2>ご利用案内</h2>
+      <p>市民農園は、みどり市にお住まいの方がどなたでも申し込めます。区画の広さは 10〜30 ㎡、利用期間は 1 年（更新できます）です。</p>
+      <p>空き区画のお申し込み・待機登録は、市役所 農政課（本庁舎 3 階）の窓口またはお電話（000-000-0000）で受け付けています。</p>
+    </section>
+  </midori-tabs>
+</main>
+</body>
+</html>

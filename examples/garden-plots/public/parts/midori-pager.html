@@ -1,0 +1,84 @@
+<!--
+  みどり市 共通部品 <midori-pager> — 前へ 1 2 … n 次へ.
+  Designers: edit the <style> and the markup below; the state is the small object at the bottom.
+
+  Use:   <midori-pager data-wcs="total: waiting.total; per: waiting.per; page: waiting.page"></midori-pager>
+  Bindable: total, per (in), page (both directions; 1-based).
+  Which numbers are shown: the first, the last, and the current one with one on each side; "…" for a gap.
+-->
+<midori-pager data-wc-definition>
+  <template shadowrootmode="open">
+    <style>
+      :host { display: block; }
+      :host([hidden]) { display: none; }
+      nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25em; }
+      button { font: inherit; min-width: 2.3em; padding: 0.25em 0.6em; border-radius: 4px; cursor: pointer;
+        border: 1px solid var(--midori-line, #c9ced6); background: var(--midori-surface, #fff); color: var(--midori-fg, #1b1f24); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      button:focus-visible { outline: 3px solid var(--midori-focus, #1a73e8); outline-offset: 1px; }
+      button.current { background: var(--midori-accent, #2f62a3); border-color: var(--midori-accent, #2f62a3);
+        color: var(--midori-on-accent, #fff); font-weight: 700; }
+      .gap { padding: 0 0.3em; color: var(--midori-muted, #4a5260); }
+      .summary { margin-left: 0.6em; font-size: 0.85em; color: var(--midori-muted, #4a5260); }
+    </style>
+    <nav aria-label="ページ">
+      <button type="button" class="prev" data-wcs="onclick: prev; disabled: atFirst">前へ</button>
+      <template data-wcs="for: items">
+        <template data-wcs="if: .gap">
+          <span class="gap" aria-hidden="true">…</span>
+        </template>
+        <template data-wcs="else:">
+          <button type="button" class="num" data-wcs="onclick: go; textContent: .n; class.current: .current; attr.aria-current: .ariaCurrent; attr.aria-label: .label"></button>
+        </template>
+      </template>
+      <button type="button" class="next" data-wcs="onclick: next; disabled: atLast">次へ</button>
+      <span class="summary" data-wcs="textContent: summary"></span>
+    </nav>
+    <wcs-state>
+      <script type="module">
+        export default {
+          total: 0,
+          per: 20,
+          page: 1,
+          // The numbers shown, as data: $listKeys keeps a row by its key, so the button just pressed stays the same
+          // element and keeps the focus. (A getter's list has no keys: its rows are made again each time.)
+          /** @type {{ key: string, n: number, gap: boolean }[]} */
+          items: [],
+          get pageCount() { return Math.max(1, Math.ceil((Number(this.total) || 0) / (Number(this.per) || 1))); },
+          get current() { return Math.min(Math.max(1, Math.trunc(Number(this.page) || 1)), this.pageCount); },
+          get atFirst() { return this.current <= 1; },
+          get atLast() { return this.current >= this.pageCount; },
+          get summary() { return `${this.current} / ${this.pageCount} ページ（全 ${Number(this.total) || 0} 件）`; },
+          // The numbers shown: 1, the last, the current one ± 1; a gap of one number is shown as that number.
+          build() {
+            const last = this.pageCount, cur = this.current;
+            const shown = [...new Set([1, cur - 1, cur, cur + 1, last])].filter((n) => n >= 1 && n <= last).sort((a, b) => a - b);
+            const items = [];
+            shown.forEach((n, i) => {
+              const before = shown[i - 1];
+              if (before !== undefined && n - before === 2) items.push({ key: `p${before + 1}`, n: before + 1, gap: false });
+              else if (before !== undefined && n - before > 2) items.push({ key: `gap-${before}`, n: 0, gap: true });
+              items.push({ key: `p${n}`, n, gap: false });
+            });
+            this.items = items;
+          },
+          get "items.*.current"() { return this[".n"] === this.current; },
+          get "items.*.ariaCurrent"() { return this[".current"] ? "page" : null; },
+          get "items.*.label"() { return `${this[".n"]} ページ`; },
+          go(event, i) { this.page = this.items[i].n; },
+          prev() { if (!this.atFirst) this.page = this.current - 1; },
+          next() { if (!this.atLast) this.page = this.current + 1; },
+          $listKeys: { items: "key" },
+          // What the page gave first is here when this runs; what it gives later comes through the watches.
+          $connectedCallback() { this.build(); },
+          $watch: {
+            total() { this.build(); },
+            per() { this.build(); },
+            page() { this.build(); },
+          },
+          $bindables: ["total", "per", "page"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</midori-pager>

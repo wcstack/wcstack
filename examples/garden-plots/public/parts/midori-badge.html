@@ -1,0 +1,45 @@
+<!--
+  みどり市 共通部品 <midori-badge> — a small label.
+  Designers: edit the <style> and the markup below; the state is the small object at the bottom.
+
+  Use:   <midori-badge data-wcs="kind: plot.status">空き</midori-badge>
+         (kind: free / used / renewal / paused / info / warn — the text is the content)
+  Bindable: kind
+-->
+<midori-badge data-wc-definition>
+  <template shadowrootmode="open">
+    <style>
+      :host { display: inline-block; vertical-align: middle; font-size: 0.85em; }
+      :host([hidden]) { display: none; }
+      .icon { font-size: 0.9em; line-height: 1; }
+      .k-free    { --badge-bg: var(--midori-free-bg, #dff3e4);    --badge-fg: var(--midori-free-fg, #0d5a26); }
+      .k-used    { --badge-bg: var(--midori-used-bg, #e6eef8);    --badge-fg: var(--midori-used-fg, #123e6b); }
+      .k-renewal { --badge-bg: var(--midori-renewal-bg, #fff1cc); --badge-fg: var(--midori-renewal-fg, #6b4a00); }
+      .k-paused  { --badge-bg: var(--midori-paused-bg, #ececec);  --badge-fg: var(--midori-paused-fg, #3b3b3b); }
+      .k-info    { --badge-bg: var(--midori-info-bg, #e6eef8);    --badge-fg: var(--midori-info-fg, #123e6b); }
+      .k-warn    { --badge-bg: var(--midori-warn-bg, #fde2e1);    --badge-fg: var(--midori-warn-fg, #8a1c13); }
+      .box { display: inline-flex; align-items: center; gap: 0.3em; padding: 0.05em 0.6em 0.05em 0.45em;
+        border-radius: 999px; font-weight: 600; line-height: 1.6; white-space: nowrap;
+        border: 1px solid var(--midori-badge-border, transparent); background: var(--badge-bg); color: var(--badge-fg); }
+    </style>
+    <span class="box" data-wcs="className: boxClass">
+      <span class="icon" aria-hidden="true" data-wcs="textContent: icon"></span>
+      <slot></slot>
+    </span>
+    <wcs-state>
+      <script type="module">
+        export default {
+          kind: "info",
+          get icon() {
+            return { free: "○", used: "●", renewal: "↻", paused: "‖", info: "i", warn: "!" }[this.kind] ?? "i";
+          },
+          get boxClass() {
+            const k = ["free", "used", "renewal", "paused", "info", "warn"].includes(this.kind) ? this.kind : "info";
+            return `box k-${k}`;
+          },
+          $bindables: ["kind"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</midori-badge>

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>みどり市 市民農園 区画管理</title>
+  <link rel="stylesheet" href="/parts/tokens.css">
+  <link rel="stylesheet" href="/app/app.css">
+  <!-- workaround: apply the saved theme before the first paint (state loads later; without this the page flashes
+       light before turning dark). Reads the same key <wcs-storage> writes. -->
+  <script>
+    try {
+      const s = JSON.parse(localStorage.getItem("midori.settings") || "null");
+      if (s && s.theme) document.documentElement.dataset.theme = s.theme;
+      if (s && s.density) document.documentElement.dataset.density = s.density;
+    } catch {}
+  </script>
+  <!-- The parts this page uses (みどり市 共通部品), each loaded by @wcstack/autoloader: a .js file is a developers'
+       part (a class), an .html file a designers' part (a Declarative Custom Component — the "dcc" loader, picked by
+       the file's extension). -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/garden-card": "/parts/garden-card.js",
+        "@components/area-block": "/parts/area-block.js",
+        "@components/plot-tile": "/parts/plot-tile.js",
+        "@components/tenant-editor": "/parts/tenant-editor.js",
+        "@components/faq-node": "/parts/faq-node.js",
+        "@components/midori-badge": "/parts/midori-badge.html",
+        "@components/midori-toggle": "/parts/midori-toggle.html",
+        "@components/midori-pager": "/parts/midori-pager.html",
+        "@components/midori-tabs": "/parts/midori-tabs.html",
+        "@components/midori-dialog": "/parts/midori-dialog.html",
+        "@components/midori-toast": "/parts/midori-toast.html"
+      }
+    }
+  </script>
+  <!-- The autoloader, the I/O nodes and the router first, @wcstack/state last. -->
+  <script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/defined/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+<wcs-autoloader></wcs-autoloader>
+
+<!-- State: the root, then one volume per feature (each file has one owner). -->
+<wcs-state src="app/state/app.js"></wcs-state>
+<wcs-state mount="map" src="app/state/map.js"></wcs-state>
+<wcs-state mount="plot" src="app/state/plot.js"></wcs-state>
+<wcs-state mount="waiting" src="app/state/waiting.js"></wcs-state>
+<wcs-state mount="faq" src="app/state/faq.js"></wcs-state>
+<wcs-state mount="settings" src="app/state/settings.js"></wcs-state>
+
+<!-- Headless nodes -->
+<!-- What is saved goes straight to the settings volume: the value the element holds when it is bound is kept until
+     the volume has grafted, whichever file arrives first. -->
+<wcs-storage key="midori.settings" data-wcs="value#init=element: settings.stored"></wcs-storage>
+<wcs-sse url="/api/events" events="plot,waiting" auto-reconnect reconnect-interval="1000"
+  data-wcs="eventToken.message: serverEvent; connected: liveConnected"></wcs-sse>
+<wcs-defined timeout="8000"
+  tags="garden-card,area-block,plot-tile,tenant-editor,faq-node,midori-badge,midori-toggle,midori-pager,midori-tabs,midori-dialog,midori-toast"
+  data-wcs="pending: partsPending; missing: partsMissing"></wcs-defined>
+
+<header class="app-header">
+  <h1>みどり市 市民農園 区画管理<small>農政課</small></h1>
+  <nav aria-label="メニュー">
+    <wcs-link to="/">区画マップ</wcs-link>
+    <wcs-link to="/waiting" match="prefix">待機者</wcs-link>
+    <wcs-link to="/help">よくある質問</wcs-link>
+    <wcs-link to="/settings">設定</wcs-link>
+  </nav>
+  <p class="free-now">いま空いている区画 <strong data-wcs="textContent: freeNowText">—</strong></p>
+  <span class="live" data-wcs="textContent: liveLabel; class.off: liveOff"></span>
+</header>
+
+<p class="banner" role="alert" data-wcs="hidden: partsBroken|not; textContent: partsMissingText" hidden></p>
+<p class="banner" role="alert" data-wcs="hidden: appError|not; textContent: appError" hidden></p>
+<p class="banner" role="alert" data-wcs="hidden: map.loadError|not; textContent: map.loadError" hidden></p>
+
+<main id="main" tabindex="-1">
+<wcs-router focus="heading" announce="title"
+  data-wcs="routeName: routeName; typedParams: routeParams; searchParams: routeQuery; path: routePath; navigateUrl: navigateUrl">
+  <template>
+    <!-- ───────────── 区画マップ ───────────── -->
+    <wcs-route path="/" name="map">
+      <wcs-head><title>区画マップ — みどり市 市民農園 区画管理</title></wcs-head>
+      <section aria-labelledby="h-map">
+        <h2 id="h-map">区画マップ</h2>
+        <div class="toolbar">
+          <nav class="filters" aria-label="状態で絞り込む">
+            <wcs-link to="/?">すべて</wcs-link>
+            <wcs-link to="/?status=free">空き</wcs-link>
+            <wcs-link to="/?status=used">利用中</wcs-link>
+            <wcs-link to="/?status=renewal">更新待ち</wcs-link>
+            <wcs-link to="/?status=paused">休止</wcs-link>
+          </nav>
+          <span class="loading" data-wcs="hidden: map.loading|not">読み込み中…</span>
+        </div>
+        <!-- Until the gardens are there the counts would read "0 区画" — say it is loading instead. -->
+        <p class="summary loading" data-wcs="hidden: map.loaded">区画を読み込み中…</p>
+        <dl class="summary" aria-label="集計" data-wcs="hidden: map.loaded|not" hidden>
+          <dt>空き区画（市全体）</dt>
+          <dd><strong class="city-free" data-wcs="textContent: mapCityFree"></strong> 区画</dd>
+          <dt>絞り込み</dt>
+          <dd><span class="filter-label" data-wcs="textContent: mapFilterLabel"></span>：
+            <strong class="match-total" data-wcs="textContent: mapMatchTotal"></strong> 区画が該当
+            （<template data-wcs="for: mapFilterLinks"><span class="status-count" data-wcs="attr.data-status: .key">{{ .label }} {{ .n }}</span> </template>）</dd>
+          <template data-wcs="for: map.gardens">
+            <dt class="garden-name">{{ .name }}</dt>
+            <dd class="garden-usage" data-wcs="attr.data-garden-id: .id">利用率 {{ .usage }}%（空き {{ .freeCount }}）</dd>
+          </template>
+        </dl>
+        <div class="map-layout">
+          <div class="cards">
+            <template data-wcs="for: map.gardens">
+              <garden-card data-wcs="state: .; state.view: map.view"></garden-card>
+            </template>
+          </div>
+          <aside class="panel" aria-labelledby="h-selected">
+            <h3 id="h-selected">選択中の区画</h3>
+            <template data-wcs="if: mapHasSelection">
+              <div class="selected-plot">
+                <dl>
+                  <dt>区画</dt><dd class="sel-no">{{ map.selectedPlot.gardenName }} {{ map.selectedPlot.areaName }} {{ map.selectedPlot.no }}</dd>
+                  <dt>状態</dt><dd><midori-badge class="sel-status" data-wcs="kind: map.selectedPlot.status">{{ map.selectedStatusLabel }}</midori-badge></dd>
+                  <dt>利用者</dt><dd class="sel-tenant">{{ map.selectedTenant }}</dd>
+                  <dt>利用開始</dt><dd class="sel-since">{{ map.selectedSince }}</dd>
+                </dl>
+                <wcs-link class="sel-link" data-wcs="to: map.selectedHref">この区画のページへ</wcs-link>
+              </div>
+            </template>
+            <template data-wcs="else:">
+              <p class="loading">区画をクリックすると、ここに詳しい内容が出ます。矢印キーで隣の区画へ移れます。</p>
+            </template>
+          </aside>
+        </div>
+      </section>
+    </wcs-route>
+
+    <!-- ───────────── 区画 ───────────── -->
+    <wcs-route path="/plots/:id(int)" name="plot">
+      <wcs-head><title data-wcs="textContent: plotDocTitle">区画 — みどり市 市民農園 区画管理</title></wcs-head>
+      <section aria-labelledby="h-plot">
+        <template data-wcs="if: plot.isLoading">
+          <h2 id="h-plot">区画</h2>
+          <p class="loading">読み込み中…</p>
+        </template>
+        <template data-wcs="if: plot.notFound">
+          <div class="not-found">
+            <h2>見つかりません</h2>
+            <p>この番号の区画はありません。</p>
+            <p><wcs-link to="/">区画マップへ戻る</wcs-link></p>
+          </div>
+        </template>
+        <template data-wcs="if: plot.ready">
+          <div class="plot-page">
+            <div class="plot-head">
+              <h2 class="plot-title" data-wcs="textContent: plot.title"></h2>
+              <midori-badge class="plot-status" data-wcs="kind: plot.detail.status">{{ plot.statusLabel }}</midori-badge>
+            </div>
+            <template data-wcs="if: plot.conflict">
+              <div class="box conflict" role="alert">
+                <p class="conflict-text">{{ plot.conflictText }}</p>
+                <div class="actions">
+                  <button type="button" class="take-theirs" data-wcs="onclick: plotTakeTheirs">最新の内容を表示する（自分の変更は捨てる）</button>
+                  <button type="button" class="save-mine" data-wcs="onclick: plotSaveMine">自分の変更で上書きする</button>
+                </div>
+              </div>
+            </template>
+            <template data-wcs="if: plot.changedElsewhere">
+              <div class="box conflict changed-elsewhere" role="alert">
+                <p>この区画は他の職員によって変更されました。</p>
+                <button type="button" data-wcs="onclick: plotReload">最新の内容を読み込む</button>
+              </div>
+            </template>
+            <div class="plot-grid">
+              <div class="box">
+                <h3>利用者</h3>
+                <template data-wcs="if: plot.hasTenant">
+                  <div class="tenant">
+                    <tenant-editor data-wcs="state: plot.tenant"></tenant-editor>
+                    <div class="actions">
+                      <button type="button" class="primary save" data-wcs="onclick: plotSave; disabled: plot.canSave|not">保存</button>
+                      <span class="loading" data-wcs="hidden: plot.saving|not">保存中…</span>
+                    </div>
+                  </div>
+                </template>
+                <template data-wcs="else:">
+                  <p class="no-tenant">利用者はいません。</p>
+                </template>
+                <div class="actions">
+                  <button type="button" class="assign" data-wcs="onclick: plotOpenAssign; hidden: plot.canAssign|not">利用開始</button>
+                  <button type="button" class="danger return" data-wcs="onclick: plot.openReturn; hidden: plot.canReturn|not">返還</button>
+                  <midori-toggle class="pause" data-wcs="checked: plot.pausedView; disabled: plot.saving">休止</midori-toggle>
+                </div>
+              </div>
+              <div class="box">
+                <h3>区画の情報</h3>
+                <dl class="info">
+                  <dt>面積</dt><dd>{{ plot.detail.size }} ㎡</dd>
+                  <dt>利用開始日</dt><dd class="since">{{ plot.detail.since|defaults('—') }}</dd>
+                </dl>
+                <h3>履歴</h3>
+                <ol class="history" reversed>
+                  <template data-wcs="for: plot.history">
+                    <li><time>{{ .at }}</time><span class="what">{{ .what }}</span>（{{ .who }}）</li>
+                  </template>
+                </ol>
+              </div>
+            </div>
+            <nav class="prevnext" aria-label="前後の区画">
+              <template data-wcs="if: plot.prevHref"><wcs-link class="prev" data-wcs="to: plot.prevHref">← 前の区画</wcs-link></template>
+              <template data-wcs="if: plot.nextHref"><wcs-link class="next" data-wcs="to: plot.nextHref">次の区画 →</wcs-link></template>
+            </nav>
+
+            <midori-dialog class="assign-dialog" data-wcs="open: plot.assignOpen; title: titles.assign">
+              <p>待機者の上位から、この区画を使う人を選んでください。</p>
+              <p class="loading" data-wcs="hidden: plot.candidatesLoading|not">読み込み中…</p>
+              <p data-wcs="hidden: plot.noCandidates|not">待機者がいません。</p>
+              <ul class="candidates">
+                <template data-wcs="for: plot.candidates">
+                  <li><label>
+                    <input type="radio" name="applicant" data-wcs="attr.value: .value; radio: plot.chosen">
+                    <span>{{ .priority }}. {{ .name }}</span>
+                    <span class="wish" data-wcs="hidden: .wishHere|not">この農園を希望</span>
+                    <small>申込 {{ .appliedAt }}</small>
+                  </label></li>
+                </template>
+              </ul>
+              <div slot="actions">
+                <button type="button" class="primary confirm-assign" data-wcs="onclick: plotAssign; disabled: plot.chosen|not">利用を開始する</button>
+                <button type="button" data-wcs="onclick: plot.cancelAssign">やめる</button>
+              </div>
+            </midori-dialog>
+            <midori-dialog class="return-dialog" data-wcs="open: plot.returnOpen; title: titles.return">
+              <p class="return-text">{{ plot.returnText }}</p>
+              <div slot="actions">
+                <button type="button" class="danger confirm-return" data-wcs="onclick: plotReturn">返還する</button>
+                <button type="button" autofocus data-wcs="onclick: plot.cancelReturn">やめる</button>
+              </div>
+            </midori-dialog>
+          </div>
+        </template>
+        <template data-wcs="if: plot.phase|eq('error')">
+          <div>
+            <h2>区画</h2>
+            <p class="banner">{{ plot.loadError }}</p>
+            <button type="button" data-wcs="onclick: plotReload">もう一度読み込む</button>
+          </div>
+        </template>
+      </section>
+    </wcs-route>
+
+    <!-- ───────────── 待機者 ───────────── -->
+    <wcs-route path="/waiting" name="waiting">
+      <wcs-head><title>待機者 — みどり市 市民農園 区画管理</title></wcs-head>
+      <section aria-labelledby="h-waiting">
+        <h2 id="h-waiting">待機者</h2>
+        <div class="toolbar">
+          <span>並び順：</span>
+          <button type="button" class="sort-applied" data-wcs="onclick: sortByApplied; attr.aria-pressed: waiting.sortedByApplied|string">申込日順</button>
+          <button type="button" class="sort-priority" data-wcs="onclick: sortByPriority; attr.aria-pressed: waiting.sortedByPriority|string">優先順</button>
+          <button type="button" class="add" data-wcs="onclick: waiting.openAdd">追加</button>
+          <button type="button" class="reload" data-wcs="onclick: waitingReload">再読み込み</button>
+          <span class="loading" data-wcs="hidden: waiting.loading|not">読み込み中…</span>
+        </div>
+        <p class="banner" data-wcs="hidden: waiting.loadError|not; textContent: waiting.loadError" hidden></p>
+        <table class="list waiting-list">
+          <thead><tr><th scope="col">優先順</th><th scope="col">氏名</th><th scope="col">希望の農園</th><th scope="col">申込日</th><th scope="col">操作</th></tr></thead>
+          <tbody>
+            <template data-wcs="for: waiting.items">
+              <tr class="person" data-wcs="class.editing: .isOpen; attr.data-id: .id">
+                <td class="num priority">{{ .priority }}</td>
+                <td class="name">{{ .name }}</td>
+                <td>{{ .gardenName }}</td>
+                <td class="applied">{{ .appliedAt }}</td>
+                <td><div class="row-buttons">
+                  <button type="button" class="edit" data-wcs="onclick: waiting.toggleRow; attr.aria-expanded: .isOpen|string; textContent: .toggleLabel"></button>
+                  <button type="button" class="up" aria-label="優先順を上げる" data-wcs="onclick: waitingUp; disabled: .atTop">↑</button>
+                  <button type="button" class="down" aria-label="優先順を下げる" data-wcs="onclick: waitingDown; disabled: .atBottom">↓</button>
+                  <button type="button" class="danger delete" data-wcs="onclick: waiting.askDelete">削除</button>
+                </div></td>
+              </tr>
+              <template data-wcs="if: .isOpen">
+                <tr class="editing editor-row" data-wcs="attr.data-id: .id">
+                  <td colspan="5"><div class="row-editor">
+                    <tenant-editor data-wcs="state: ."></tenant-editor>
+                    <div class="actions">
+                      <button type="button" class="primary save-row" data-wcs="onclick: waitingSaveRow; disabled: .isBusy">保存</button>
+                      <button type="button" class="revert-row" data-wcs="onclick: waiting.revertRow">取消</button>
+                    </div>
+                  </div></td>
+                </tr>
+              </template>
+            </template>
+          </tbody>
+        </table>
+        <p data-wcs="hidden: waiting.empty|not">待機者はいません。</p>
+        <midori-pager class="pager" data-wcs="total: waiting.total; per: waiting.per; page: waiting.page"></midori-pager>
+
+        <midori-dialog class="add-dialog" data-wcs="open: waiting.addOpen; title: titles.add">
+          <tenant-editor class="new-person" data-wcs="state: waiting.draft"></tenant-editor>
+          <p><label>希望の農園
+            <select class="garden" data-wcs="value|number: waiting.draft.gardenId">
+              <option value="0">選んでください</option>
+              <template data-wcs="for: waiting.gardenOptions"><option data-wcs="attr.value: .id; textContent: .name"></option></template>
+            </select></label></p>
+          <p class="field-msg" data-wcs="textContent: waiting.draftGardenError"></p>
+          <div slot="actions">
+            <button type="button" class="primary confirm-add" data-wcs="onclick: waitingAdd; disabled: waiting.adding">追加する</button>
+            <button type="button" data-wcs="onclick: waiting.cancelAdd">やめる</button>
+          </div>
+        </midori-dialog>
+        <midori-dialog class="delete-dialog" data-wcs="open: waiting.deleteOpen; title: titles.delete">
+          <p class="delete-text">{{ waiting.deleteText }}</p>
+          <div slot="actions">
+            <button type="button" class="danger confirm-delete" data-wcs="onclick: waitingDelete">削除する</button>
+            <button type="button" autofocus data-wcs="onclick: waiting.cancelDelete">やめる</button>
+          </div>
+        </midori-dialog>
+      </section>
+    </wcs-route>
+
+    <!-- ───────────── よくある質問 ───────────── -->
+    <wcs-route path="/help" name="help">
+      <wcs-head><title>よくある質問 — みどり市 市民農園 区画管理</title></wcs-head>
+      <section aria-labelledby="h-help">
+        <h2 id="h-help">よくある質問</h2>
+        <div class="faq-search">
+          <label for="faq-q">検索</label>
+          <input id="faq-q" type="search" placeholder="例：水道" data-wcs="value: faq.query">
+          <span class="faq-result" role="status" data-wcs="textContent: faq.resultText"></span>
+        </div>
+        <p class="loading" data-wcs="hidden: faq.loading|not">読み込み中…</p>
+        <div class="faq-tree">
+          <template data-wcs="for: faq.nodes">
+            <faq-node data-wcs="state: .; state.q#ro: faq.query"></faq-node>
+          </template>
+        </div>
+      </section>
+    </wcs-route>
+
+    <!-- ───────────── 設定 ───────────── -->
+    <wcs-route path="/settings" name="settings">
+      <wcs-head><title>設定 — みどり市 市民農園 区画管理</title></wcs-head>
+      <section aria-labelledby="h-settings">
+        <h2 id="h-settings">設定</h2>
+        <p class="note">設定はこのパソコンに保存され、すぐに全部の画面に反映されます。</p>
+        <midori-tabs class="settings-tabs" data-wcs="tabs: settings.tabs; selected: settings.tab">
+          <div slot="display" class="settings">
+            <fieldset>
+              <legend>テーマ</legend>
+              <template data-wcs="for: settings.themeOptions">
+                <label class="choice"><input type="radio" name="theme" data-wcs="attr.value: .value; radio: settings.theme"> {{ .label }}</label>
+              </template>
+            </fieldset>
+            <fieldset>
+              <legend>表示の密度</legend>
+              <template data-wcs="for: settings.densityOptions">
+                <label class="choice"><input type="radio" name="density" data-wcs="attr.value: .value; radio: settings.density"> {{ .label }}</label>
+              </template>
+            </fieldset>
+          </div>
+          <div slot="notify" class="settings stack">
+            <midori-toggle class="notify-saved" data-wcs="checked: settings.notifySaved">保存や操作の結果を知らせる</midori-toggle>
+            <midori-toggle class="notify-live" data-wcs="checked: settings.notifyLive">ほかの職員の変更を知らせる</midori-toggle>
+            <midori-toggle class="sticky-errors" data-wcs="checked: settings.stickyErrors">エラーのお知らせを自動で消さない</midori-toggle>
+          </div>
+        </midori-tabs>
+      </section>
+    </wcs-route>
+
+    <wcs-route fallback name="notfound">
+      <wcs-head><title>見つかりません — みどり市 市民農園 区画管理</title></wcs-head>
+      <section class="not-found">
+        <h2>見つかりません</h2>
+        <p>このページはありません。</p>
+        <p><wcs-link to="/">区画マップへ戻る</wcs-link></p>
+      </section>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+</main>
+
+<midori-toast data-wcs="command.show: $command.toast"></midori-toast>
+</body>
+</html>

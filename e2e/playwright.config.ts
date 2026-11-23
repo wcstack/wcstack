@@ -50,9 +50,12 @@ export default defineConfig({
     // And <wcs-sse> when the page leaves: Firefox logged a stream open at a full navigation (sse-unload).
     // And the lending-desk seam app: its live updates with no listener of its own around <wcs-sse> (reloads, sign-out
     // in another tab, a restart), the counter screen, and its dates in three time zones (lending-desk).
+    // And the garden-plots seam app: parts that arrive late (a DCC from its file, a class), a dialog's focus, the
+    // pager's focus kept by key, the settings saved straight into a volume and read by another tab, a row moved
+    // with a part open in it, and the previous / next links between plots (garden-plots).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk|garden-plots)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },
