@@ -146,6 +146,34 @@ describe("wcs-schema emit", () => {
     expect(stored.properties.i18n.properties.t.properties.hello).toEqual({ type: "string" });
   });
 
+  it("ボリュームを merge したツリーでも、ルートの check は通る。ルートの emit --merge はボリュームを落とさない", () => {
+    const dir = join(tmp.dir, "volumes1");
+    tmp.write("volumes1/state.ts", STATE);
+    tmp.write("volumes1/map.ts", "export default { filter: 'all', loading: false, setFilter(v: string) { this.filter = v; } };");
+    expect(run(["emit", "state.ts"], dir).code).toBe(0);
+    expect(run(["emit", "map.ts", "--mount=map", "--merge"], dir).code).toBe(0);
+    const ns = (): Record<string, any> => JSON.parse(readFileSync(join(dir, "wcstack.manifest.json"), "utf8")).manifestExtensions["wcstack.application"];
+    expect(ns().stateMounts).toEqual(["map"]);
+
+    // 文書どおりのゲート: ルートもボリュームも通る
+    const root = run(["check", "state.ts"], dir);
+    expect(root.code).toBe(0);
+    expect(root.stderr).toContain("state tree is up to date");
+    expect(run(["check", "map.ts", "--mount=map"], dir).code).toBe(0);
+
+    // ルートの型が変わる: check は乖離を言い、勧めるコマンド（emit --merge）はボリュームを残す
+    tmp.write("volumes1/state.ts", STATE.replace("count: 0,", "count: 0,\n  total: 0,"));
+    const drift = run(["check", "state.ts"], dir);
+    expect(drift.code).toBe(1);
+    expect(drift.stderr).toContain("+ /properties/total/type");
+    expect(drift.stderr).not.toContain("/properties/map");
+    expect(run(["emit", "state.ts", "--merge"], dir).code).toBe(0);
+    expect(ns().stateSchema.properties.total).toEqual({ type: "number" });
+    expect(ns().stateSchema.properties.map.properties.filter).toEqual({ type: "string" });
+    expect(run(["check", "state.ts"], dir).code).toBe(0);
+    expect(run(["check", "map.ts", "--mount=map"], dir).code).toBe(0);
+  });
+
   it("ルートの state ファイルを stateSource に書く（manifest の置き場所からの相対・/ 区切り）。--out・--out=-・--merge・--mount", () => {
     const dir = join(tmp.dir, "source1");
     tmp.write("source1/src/state/app.ts", STATE);

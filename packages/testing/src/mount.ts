@@ -11,6 +11,10 @@
  * The HTML goes in through `@wcstack/server`'s `setInnerHTML`, as in `renderToString`: happy-dom's
  * parser moves a `<template>` written in a table (`<tbody><template data-wcs="for: rows"><tr>…`) out
  * of it and leaves its rows behind, where browsers keep it; `setInnerHTML` puts it back.
+ *
+ * A `<template shadowrootmode>` in the HTML becomes its parent's shadow root, as a browser's parser
+ * makes it (happy-dom leaves it a child), so a Declarative Custom Component's definition written in
+ * the mounted HTML defines its tag; `mount()` waits for the definitions and for their instances.
  */
 
 import { pathToFileURL } from "node:url";
@@ -94,6 +98,53 @@ export interface MountedApp {
 interface StateElementLike extends HTMLElement {
   createState(mutability: "readonly" | "writable", callback: (state: any) => void): void;
   createStateAsync(mutability: "readonly" | "writable", callback: (state: any) => Promise<void>): Promise<void>;
+  readonly connectedCallbackPromise?: Promise<void>;
+}
+
+/**
+ * A browser's parser turns `<template shadowrootmode>` into its parent's shadow root; happy-dom's
+ * leaves it a child. A Declarative Custom Component's definition then had no shadow root: its
+ * `<wcs-state>` never ran, its tag was never defined, `mount()` resolved, and nothing was said before
+ * the test ended (docs/seam-apps.md, garden-plots). Done here for what was mounted, nested ones too.
+ */
+function attachDeclarativeShadowRoots(root: ParentNode): void {
+  for (const template of [...root.querySelectorAll<HTMLTemplateElement>("template[shadowrootmode]")]) {
+    const host = template.parentElement;
+    const mode = template.getAttribute("shadowrootmode");
+    if (host === null || host.shadowRoot !== null || (mode !== "open" && mode !== "closed")) continue;
+    const shadow = host.attachShadow({ mode });
+    shadow.appendChild(template.content);
+    template.remove();
+    attachDeclarativeShadowRoots(shadow);
+  }
+}
+
+/**
+ * Waits for the page's Declarative Custom Components: each definition's `<wcs-state>` (which defines
+ * the tag), then the instances it made — theirs are in shadow roots, where `waitForReady` does not
+ * look — and the ones those hold. A definition that fails is @wcstack/state's to report.
+ */
+async function waitForDccs(root: ParentNode, stateTagName: string, maxIterations: number = 10): Promise<void> {
+  const seen = new WeakSet<Element>();
+  for (let i = 0; i < maxIterations; i++) {
+    const states: StateElementLike[] = [];
+    const walk = (parent: ParentNode): void => {
+      for (const el of parent.querySelectorAll("*")) {
+        const shadow = el.shadowRoot;
+        if (shadow === null) continue;
+        // a definition, or an instance of one (a DCC's class has `stateElement`)
+        if (!seen.has(el) && (el.hasAttribute("data-wc-definition") || "stateElement" in el)) {
+          seen.add(el);
+          const state = shadow.querySelector<StateElementLike>(stateTagName);
+          if (state !== null) states.push(state);
+        }
+        walk(shadow);
+      }
+    };
+    walk(root);
+    if (states.length === 0) break;
+    await Promise.all(states.map((state) => state.connectedCallbackPromise?.then(undefined, () => undefined)));
+  }
 }
 
 let inlineScriptLoaderPatched = false;
@@ -267,16 +318,19 @@ export async function mount(html: string, options: MountOptions = {}): Promise<M
       host.setAttribute("data-wcs-testing-host", "");
       const shadow = host.attachShadow({ mode: "open" });
       setInnerHTML(shadow, html);
+      attachDeclarativeShadowRoots(shadow);
       document.body.appendChild(host);
       root = shadow;
       container = host;
     } else {
       setInnerHTML(document.body, html);
+      attachDeclarativeShadowRoots(document.body);
       root = document;
       container = document.body;
     }
 
     await waitForReady(root, { maxIterations: options.maxIterations });
+    await waitForDccs(root, stateTagName, options.maxIterations);
   } finally {
     restoreResolver();
   }

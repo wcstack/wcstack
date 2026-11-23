@@ -36,8 +36,11 @@ export async function installDom(options: InstallDomOptions = {}): Promise<() =>
   const window = options.window ?? (await createWindow(options.url ?? "http://localhost/"));
   const restore = installGlobals(window as Parameters<typeof installGlobals>[0]);
   return async () => {
-    restore();
+    // The window first: closing it takes the page's elements out, and their disconnect callbacks still
+    // read the globals (`document`). Restored first, a page with a <wcs-state> made this throw
+    // "Cannot read properties of undefined (reading 'documentElement')" (docs/seam-apps.md, garden-plots)
     await (window as HappyDomWindowLike).happyDOM.close();
+    restore();
   };
 }
 

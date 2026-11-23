@@ -46,7 +46,8 @@ describe("installDom（素の Node 向け）", () => {
   it("渡した window のグローバルを差し替え、restore で戻して close する", async () => {
     const before = globalThis.document;
     let closed = false;
-    const fake: Record<string, unknown> = { happyDOM: { close: async () => { closed = true; } } };
+    let documentAtClose: unknown;
+    const fake: Record<string, unknown> = { happyDOM: { close: async () => { closed = true; documentAtClose = (globalThis as any).document; } } };
     for (const key of GLOBALS_KEYS) fake[key] = { fake: key };
     const restore = await installDom({ window: fake });
     expect((globalThis as any).document).toEqual({ fake: "document" });
@@ -54,6 +55,8 @@ describe("installDom（素の Node 向け）", () => {
     await restore();
     expect(globalThis.document).toBe(before);
     expect(closed).toBe(true);
+    // 窓を閉じるのが先: 閉じるとページの要素が取り外され、その後片付けはまだグローバル（document）を読む
+    expect(documentAtClose).toEqual({ fake: "document" });
   });
 
   it("window を渡さなければ happy-dom を読み込んで Window を作る（url を反映）", async () => {
