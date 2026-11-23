@@ -2,44 +2,43 @@
   "$comment": "gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry's optional \"slack\" in bytes (kept across --update). \"with its chunks\" sums the entry and every chunk it imports; \"beyond the core\" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,480 B = 20 KiB, define.js 1,024 B) live in the script. Update with --update after a release build.",
   "index.esm.js": {
     "files": 1,
-    "bytes": 172596,
-    "gzip": 60360
+    "bytes": 174050,
+    "gzip": 60840
   },
   "auto.min.js": {
     "files": 1,
-    "bytes": 161135,
-    "gzip": 56990
+    "bytes": 162589,
+    "gzip": 57461
   },
   "split/core.js (with its chunks)": {
     "files": 12,
-    "bytes": 59475,
-    "gzip": 24793
+    "bytes": 59445,
+    "gzip": 24792
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
-    "bytes": 5665,
-    "gzip": 2515
+    "bytes": 5656,
+    "gzip": 2513
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
-    "bytes": 36654,
-    "gzip": 13958
+    "bytes": 36639,
+    "gzip": 13956
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
     "bytes": 4914,
-    "gzip": 1713
+    "gzip": 1714
   },
   "split/features/forms.js (beyond the core)": {
     "files": 1,
-    "bytes": 1963,
-    "gzip": 982,
-    "slack": 640
+    "bytes": 3453,
+    "gzip": 1610
   },
   "split/features/list-keys.js (beyond the core)": {
     "files": 1,
     "bytes": 1822,
-    "gzip": 963
+    "gzip": 960
   },
   "split/features/native-commands.js (beyond the core)": {
     "files": 1,
@@ -49,27 +48,27 @@
   "split/features/recursion.js (beyond the core)": {
     "files": 1,
     "bytes": 5953,
-    "gzip": 2625
+    "gzip": 2627
   },
   "split/features/release.js (beyond the core)": {
     "files": 1,
     "bytes": 989,
-    "gzip": 530
+    "gzip": 531
   },
   "split/features/scopes.js (beyond the core)": {
     "files": 1,
-    "bytes": 24064,
-    "gzip": 9041
+    "bytes": 24046,
+    "gzip": 9039
   },
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
-    "bytes": 14678,
-    "gzip": 5784
+    "bytes": 14672,
+    "gzip": 5783
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
-    "bytes": 9628,
-    "gzip": 3928
+    "bytes": 9631,
+    "gzip": 3929
   },
   "split/auto.js (beyond the core)": {
     "files": 1,

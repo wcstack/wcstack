@@ -41,7 +41,7 @@
     {
       "id": "size-slack",
       "paths": ["^scripts/state-size-baseline\\.json$"],
-      "check": "A slack is kept across --update. When this re-records the baselines at a release, remove each slack set \"until the release re-records it\" (the forms add-on's 640 B from #724); between releases, a new slack needs the author's decision, named in the PR.",
+      "check": "A slack is kept across --update. When this re-records the baselines at a release, remove each slack set \"until the release re-records it\"; between releases, a new slack needs the author's decision, named in the PR.",
       "source": "bd9c6944 (a 640 B slack for diagnostics until the release); docs/verification-practices-study.md §3.1"
     },
     {
