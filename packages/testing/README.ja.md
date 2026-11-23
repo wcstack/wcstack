@@ -49,7 +49,7 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 
 4.11 から、`mount()` が持たないオプションや、オプションの型と違う値は、文書に触れる前にその場で reject します — どのパッケージの `bootstrapXxx()` とも同じく、オプションの名前を言い、オプションの一覧を添えます。綴り違いの `resolveModul` は無視され、テストは後で Node の `ERR_UNSUPPORTED_ESM_URL_SCHEME` で落ちていました。値が `undefined` のオプションは飛ばします。`fire()` の `init` と `installDom()` のオプションも同じに検査します。
 
-**ページの中の宣言的カスタムコンポーネント。** 4.28（未リリース）から、マウントする HTML の `<template shadowrootmode>` は、ブラウザのパーサがするとおり、親の shadow root になります — happy-dom は子のまま残します。だから、HTML に書いた（または部品のファイルから読んでページのマークアップの前に置いた）DCC の定義がタグを定義し、`mount()` は定義とそのインスタンスを待ちます: 最初の検証の前に `settle()` は要りません。4.27 までは、定義は shadow root を持たず、タグは定義されず、`mount()` は何も言わずに解決していました。失敗する定義の報告は `@wcstack/state` がします（happy-dom の下では `console.error`）。`mount()` は解決します。
+**ページの中の宣言的カスタムコンポーネント。** 4.28 から、マウントする HTML の `<template shadowrootmode>` は、ブラウザのパーサがするとおり、親の shadow root になります — happy-dom は子のまま残します。だから、HTML に書いた（または部品のファイルから読んでページのマークアップの前に置いた）DCC の定義がタグを定義し、`mount()` は定義とそのインスタンスを待ちます: 最初の検証の前に `settle()` は要りません。4.27 までは、定義は shadow root を持たず、タグは定義されず、`mount()` は何も言わずに解決していました。失敗する定義の報告は `@wcstack/state` がします（happy-dom の下では `console.error`）。`mount()` は解決します。
 
 ```ts
 const pager = readFileSync("parts/midori-pager.html", "utf8");
@@ -136,7 +136,7 @@ try {
 }
 ```
 
-4.28（未リリース）から、返る関数は window を閉じてからグローバルを戻します: 閉じるとページの要素が取り外され、その後片付けはまだ `document` を読みます。4.27 までは、`<wcs-state>` を 1 つでもマウントしていると `Cannot read properties of undefined (reading 'documentElement')` を投げていました — そして素の Node では、4.12 から `mount()` そのものが `addEventListener is not defined` で reject していました。
+4.28 から、返る関数は window を閉じてからグローバルを戻します: 閉じるとページの要素が取り外され、その後片付けはまだ `document` を読みます。4.27 までは、`<wcs-state>` を 1 つでもマウントしていると `Cannot read properties of undefined (reading 'documentElement')` を投げていました — そして素の Node では、4.12 から `mount()` そのものが `addEventListener is not defined` で reject していました。
 
 ## 死角
 

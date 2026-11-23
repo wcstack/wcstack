@@ -41,7 +41,59 @@ function checkOptions(helper, options, spec, hint = "") {
  * The HTML goes in through `@wcstack/server`'s `setInnerHTML`, as in `renderToString`: happy-dom's
  * parser moves a `<template>` written in a table (`<tbody><template data-wcs="for: rows"><tr>…`) out
  * of it and leaves its rows behind, where browsers keep it; `setInnerHTML` puts it back.
+ *
+ * A `<template shadowrootmode>` in the HTML becomes its parent's shadow root, as a browser's parser
+ * makes it (happy-dom leaves it a child), so a Declarative Custom Component's definition written in
+ * the mounted HTML defines its tag; `mount()` waits for the definitions and for their instances.
  */
+/**
+ * A browser's parser turns `<template shadowrootmode>` into its parent's shadow root; happy-dom's
+ * leaves it a child. A Declarative Custom Component's definition then had no shadow root: its
+ * `<wcs-state>` never ran, its tag was never defined, `mount()` resolved, and nothing was said before
+ * the test ended (docs/seam-apps.md, garden-plots). Done here for what was mounted, nested ones too.
+ */
+function attachDeclarativeShadowRoots(root) {
+    for (const template of [...root.querySelectorAll("template[shadowrootmode]")]) {
+        const host = template.parentElement;
+        const mode = template.getAttribute("shadowrootmode");
+        if (host === null || host.shadowRoot !== null || (mode !== "open" && mode !== "closed"))
+            continue;
+        const shadow = host.attachShadow({ mode });
+        shadow.appendChild(template.content);
+        template.remove();
+        attachDeclarativeShadowRoots(shadow);
+    }
+}
+/**
+ * Waits for the page's Declarative Custom Components: each definition's `<wcs-state>` (which defines
+ * the tag), then the instances it made — theirs are in shadow roots, where `waitForReady` does not
+ * look — and the ones those hold. A definition that fails is @wcstack/state's to report.
+ */
+async function waitForDccs(root, stateTagName, maxIterations = 10) {
+    const seen = new WeakSet();
+    for (let i = 0; i < maxIterations; i++) {
+        const states = [];
+        const walk = (parent) => {
+            for (const el of parent.querySelectorAll("*")) {
+                const shadow = el.shadowRoot;
+                if (shadow === null)
+                    continue;
+                // a definition, or an instance of one (a DCC's class has `stateElement`)
+                if (!seen.has(el) && (el.hasAttribute("data-wc-definition") || "stateElement" in el)) {
+                    seen.add(el);
+                    const state = shadow.querySelector(stateTagName);
+                    if (state !== null)
+                        states.push(state);
+                }
+                walk(shadow);
+            }
+        };
+        walk(root);
+        if (states.length === 0)
+            break;
+        await Promise.all(states.map((state) => state.connectedCallbackPromise?.then(undefined, () => undefined)));
+    }
+}
 let inlineScriptLoaderPatched = false;
 /**
  * Route `<wcs-state>` inline `<script type="module">` through the `data:` URL
@@ -201,16 +253,32 @@ async function mount(html, options = {}) {
             host.setAttribute("data-wcs-testing-host", "");
             const shadow = host.attachShadow({ mode: "open" });
             setInnerHTML(shadow, html);
+            attachDeclarativeShadowRoots(shadow);
             document.body.appendChild(host);
             root = shadow;
             container = host;
         }
         else {
-            setInnerHTML(document.body, html);
+            if (html.includes("shadowrootmode")) {
+                // built out of the page, so that a declarative shadow root is whole when its host connects —
+                // as a browser's parser leaves it before a module script runs. Filled in place, its nodes
+                // connected one by one: a `<wcs-state>` written before a DCC definition's markup took the
+                // content as it stood then, and the instances came up without that markup, without a word.
+                const holder = document.createElement("div");
+                setInnerHTML(holder, html);
+                attachDeclarativeShadowRoots(holder);
+                document.body.innerHTML = "";
+                while (holder.firstChild !== null)
+                    document.body.appendChild(holder.firstChild);
+            }
+            else {
+                setInnerHTML(document.body, html);
+            }
             root = document;
             container = document.body;
         }
         await waitForReady(root, { maxIterations: options.maxIterations });
+        await waitForDccs(root, stateTagName, options.maxIterations);
     }
     finally {
         restoreResolver();
@@ -315,8 +383,11 @@ async function installDom(options = {}) {
     const window = options.window ?? (await createWindow(options.url ?? "http://localhost/"));
     const restore = installGlobals(window);
     return async () => {
-        restore();
+        // The window first: closing it takes the page's elements out, and their disconnect callbacks still
+        // read the globals (`document`). Restored first, a page with a <wcs-state> made this throw
+        // "Cannot read properties of undefined (reading 'documentElement')" (docs/seam-apps.md, garden-plots)
         await window.happyDOM.close();
+        restore();
     };
 }
 async function createWindow(url) {

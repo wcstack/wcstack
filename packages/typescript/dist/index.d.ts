@@ -110,6 +110,12 @@ declare function generateStateSchema(file: string, options?: GenerateOptions): G
  * schema only to a page whose root `<wcs-state src>` is that file (`.js` / `.ts`
  * of the same path count as the same), so one manifest at the root serves an app
  * whose other pages have states of their own.
+ *
+ * `stateMounts` (4.28) lists the mount paths written with `--mount`: the tree is the
+ * root's type plus those subtrees, each generated from a file of its own. The root's
+ * `check` compares the tree without them, and a root `emit` into an existing manifest
+ * keeps them — without the list, `check <root>` reported every volume's key as drift,
+ * and the `emit --merge` it suggested dropped the volumes (docs/seam-apps.md, garden-plots).
  */
 
 declare const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
@@ -124,6 +130,8 @@ interface ApplicationManifest {
             stateSchema?: JsonSchemaNode;
             /** The root state file the schema comes from, relative to the manifest's directory. */
             stateSource?: string;
+            /** The mount paths whose subtrees were written with `--mount` (each from a volume's own file). */
+            stateMounts?: string[];
             [key: string]: unknown;
         };
         [namespace: string]: unknown;
@@ -142,7 +150,8 @@ interface ApplicationManifest {
  * `stateSource` is recorded with the root schema: given, it replaces the one in
  * `existing`; omitted, the root schema's source is unknown and an old
  * `stateSource` is dropped (it named the file of the schema being replaced).
- * A volume's schema (`mountPath` set) leaves `stateSource` as it is.
+ * A volume's schema (`mountPath` set) leaves `stateSource` as it is, and is recorded in
+ * `stateMounts`; a root schema written into `existing` keeps the recorded mounts' subtrees.
  */
 declare function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown, stateSource?: string): ApplicationManifest;
 /** Read the single `stateSchema` from a parsed manifest object, or undefined. */
@@ -192,6 +201,8 @@ type SchemaComparison = {
  * compared too, for the root tree: a manifest that names another file is drift —
  * the validator would apply the schema to the pages of that file, not of this one.
  * A manifest without `stateSource` (written before 4.26) is not.
+ *
+ * The root tree is compared without the subtrees `stateMounts` records.
  */
 declare function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode, stateSource?: string): SchemaComparison;
 

@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.27.0";
+var version = "4.28.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -4410,7 +4410,11 @@ class Link extends HTMLElement {
                     return;
                 e.preventDefault();
                 await this.router.navigate(this._path);
-                this._updateActiveState();
+                // 遷移がこのリンクを取り外したとき（離れるルートの中のリンク）は、もう更新する anchor が無い。
+                // 取り外されたリンクは router を見つけられず、ここで throw していた — クリックのたびに捕まえる者の
+                // いない例外になった（遷移そのものは済んでいる。docs/seam-apps.md、garden-plots）
+                if (this.isConnected)
+                    this._updateActiveState();
             };
             link.addEventListener('click', this._onClick);
         }

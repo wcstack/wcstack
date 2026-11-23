@@ -13,6 +13,10 @@ import { WcsThis } from '@wcstack/state/define';
  * The HTML goes in through `@wcstack/server`'s `setInnerHTML`, as in `renderToString`: happy-dom's
  * parser moves a `<template>` written in a table (`<tbody><template data-wcs="for: rows"><tr>…`) out
  * of it and leaves its rows behind, where browsers keep it; `setInnerHTML` puts it back.
+ *
+ * A `<template shadowrootmode>` in the HTML becomes its parent's shadow root, as a browser's parser
+ * makes it (happy-dom leaves it a child), so a Declarative Custom Component's definition written in
+ * the mounted HTML defines its tag; `mount()` waits for the definitions and for their instances.
  */
 
 type BootstrapFunction = () => void | Promise<void>;

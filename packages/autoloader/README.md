@@ -113,7 +113,7 @@ To load a specific component immediately, use a key that does NOT end with `/`.
 
 Format: `"@components/<tagName>[|<loader>[,<extends>]]": "<path>"`
 
-- **Loader** (Optional): If omitted, it is automatically resolved based on the file extension (e.g., `.js` -> default loader, `.lit.js` -> lit-loader, `.html` -> the `dcc` loader). The extension is that of the file the key is mapped to; a query or a fragment after it does not count. Since 4.28 (not released yet): up to 4.27 the postfix was matched against the key, which has no extension, so a key that named no loader always got the default loader — the example below included.
+- **Loader** (Optional): If omitted, it is automatically resolved based on the file extension (e.g., `.js` -> default loader, `.lit.js` -> lit-loader, `.html` -> the `dcc` loader). The extension is that of the file the key is mapped to; a query or a fragment after it does not count. Since 4.28: up to 4.27 the postfix was matched against the key, which has no extension, so a key that named no loader always got the default loader — the example below included.
 - **Extends** (Optional): If omitted, it is automatically detected if the component class extends a built-in HTML element (e.g., `HTMLButtonElement` -> `extends: 'button'`).
 
 **Examples:**
@@ -176,7 +176,7 @@ A wrapper that re-exports one class (`export { WcsFetch as default } from "https
 
 ## Declarative Custom Components
 
-Since 4.28 (not released yet). A [Declarative Custom Component](../state/README.md#declarative-custom-components-dcc) of `@wcstack/state` is a part in HTML alone: `<my-part data-wc-definition><template shadowrootmode="open">…`. The browser turns that template into a shadow root only while it parses a page, so a definition written into a page with `innerHTML`, or cloned from a `<template>`, never defines its tag. The `dcc` loader brings a definition in from a file of its own, so one file serves every page:
+Since 4.28. A [Declarative Custom Component](../state/README.md#declarative-custom-components-dcc) of `@wcstack/state` is a part in HTML alone: `<my-part data-wc-definition><template shadowrootmode="open">…`. The browser turns that template into a shadow root only while it parses a page, so a definition written into a page with `innerHTML`, or cloned from a `<template>`, never defines its tag. The `dcc` loader brings a definition in from a file of its own, so one file serves every page:
 
 ```html
 <script type="importmap">
@@ -282,7 +282,7 @@ interface IWritableConfig {
 ```
 
 - **`vanilla`**: The built-in loader that dynamically imports a module and returns its `default` export as the custom element constructor.
-- **`dcc`**: Since 4.28 (not released yet). The built-in loader for [a Declarative Custom Component kept in a file](#declarative-custom-components).
+- **`dcc`**: Since 4.28. The built-in loader for [a Declarative Custom Component kept in a file](#declarative-custom-components).
 - **`"*"` (default key)**: Fallback loader. Its value is a string alias `"vanilla"`, meaning unmatched components use the vanilla loader.
 
 ### Loader Resolution

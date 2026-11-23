@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/midi","version":"4.27.0"};
+var pkg = {"name":"@wcstack/midi","version":"4.28.0"};
 
 /**
  * midiCapabilities.ts

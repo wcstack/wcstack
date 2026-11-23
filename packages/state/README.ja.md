@@ -430,7 +430,7 @@ Vite の設定に `@wcstack/typescript/vite` の `wcstack()` を足してくだ�
 
 ボリュームはデータ・getter・setter・メソッドを持ち、`$connectedCallback` / `$disconnectedCallback` を宣言できます。そのどれの中でも `this` はマウントパスを基点にします: `this.items` はツリーの `cart.items` で、パスを取る `$` API（`$getAll`・`$setAll`・`$update`・`$resolve`・`$postUpdate`・`$dependOn`・`$eq`・`$eqPath`・`$eqIndex`）もマウント相対のパスを取ります。getter と setter はツリーの `cart.<キー>` のアクセサになり、メソッドはパスで呼べます —— `onclick: cart.checkout`、ルートからは `this["cart.checkout"]()`。読み込み順は自由です: ルートより先に接続されたボリュームは、ルートのエンジンが作られるとき、ページがバインドされる前に接ぎ木されます。ルートの `<wcs-state>` がページから外れている間に接続されたボリュームは、それが戻されたときに接ぎ木されます。
 
-**ページが束ねられた後に届くボリューム** — `src=` のファイルがルートのものより遅いとき。そのパスの下の束縛は、接ぎ木されるまで `undefined` を読み、その間は「無い」とは報告されません。4.28（未リリース）から、そのパスの下への要素の書き込み — 束縛の書き戻しや、束ねた時点で要素が持っていた値（`<wcs-storage data-wcs="value#init=element: settings.stored">`）— は預かり、ボリュームが接ぎ木されたときに着きます。4.27 までは `Path "settings" does not exist` で失敗し、ページを束ねている最中の書き込みはルートごと落としました: ページは何も束ねられず、2 つのファイルの届く順で決まりました。接ぎ木されなかったボリュームは理由を報告し、預かった書き込みは捨てます。
+**ページが束ねられた後に届くボリューム** — `src=` のファイルがルートのものより遅いとき。そのパスの下の束縛は、接ぎ木されるまで `undefined` を読み、その間は「無い」とは報告されません。4.28 から、そのパスの下への要素の書き込み — 束縛の書き戻しや、束ねた時点で要素が持っていた値（`<wcs-storage data-wcs="value#init=element: settings.stored">`）— は預かり、ボリュームが接ぎ木されたときに着きます。4.27 までは `Path "settings" does not exist` で失敗し、ページを束ねている最中の書き込みはルートごと落としました: ページは何も束ねられず、2 つのファイルの届く順で決まりました。接ぎ木されなかったボリュームは理由を報告し、預かった書き込みは捨てます。
 
 コードの書き込みは預かりません。ルートの `$connectedCallback` と `$watch` は、まだ届いていないボリューム抜きで走ります: `this["settings.theme"]` は `undefined`、`this.settings.theme` と書き込みは `Path "settings" does not exist` を投げ、ボリュームのメソッドはまだありません（`this["map.load"] is not a function`）。ボリュームの `connectedCallbackPromise` は接ぎ木の後に解決します — ボリュームを呼ぶ前に待ってください:
 
@@ -2143,7 +2143,7 @@ customElements.define("user-card", UserCard);
 > **マウントの `#ro` を尊重します:** `state#ro: user` や `state.title#ro: doc.title` では、
 > コンポーネントはそのエントリを読めても書けません — `element.state.title = …`・メソッド内の
 > `this.title = …`・`$setAll` / `$update` / `$resolve` の書き込みは `[wcs/mount-readonly]` で落ち、コンポーネント内の
-> 双方向束縛（`value: title`）は書き戻しません。ホストはそのパスに書けます。4.28（未リリース）から、その中に
+> 双方向束縛（`value: title`）は書き戻しません。ホストはそのパスに書けます。4.28 から、その中に
 > マウントしたコンポーネントにも効きます: 同じデータを渡された（`state.view#ro: view` を渡されたコンポーネントの中の
 > `state.view: view`）内側のコンポーネントの書き込みは、読み取り専用で渡されたコンポーネントの名前で同じエラーを
 > 投げ、その双方向束縛は書き戻しません。4.27 までは、届くのは丸ごとのマウントの `#ro` だけで、対応付けた 1 つの
@@ -2164,7 +2164,7 @@ customElements.define("user-card", UserCard);
 - 行マウントは行ごとに公開されます: `$getAll("users.*.display")` や同じ `for` 内の `text: .display` は各行のコンポーネントの getter を読みます。依存も流れます — `user.name` が変われば `user.display` を読んだものはすべて再描画されます
 - `get "children.*.label"()` のようにコンポーネント内のパスにワイルドカードを含む accessor は、内部では使えますが**公開されません**。各子行にマウントしたコンポーネントの `get label()` として定義してください。公開対象は、公開パスのワイルドカード数がマウント先のワイルドカード数と一致する accessor だけです
 - 親は子コンポーネントの登録より先に評価されるので、初回の読みは `undefined` になりえます。コンポーネントがマウントされ次第、値は収束します。派生式は `(x ?? 0)` のように防御的に書いてください
-- 未存在パスの警告は `getBindingsReady` とは独立に 1 マクロタスク（`setTimeout(0)`）だけ遅延します。4.28（未リリース）から、ページが配線している要素（`<garden-card data-wcs="state: g">` と `g.freeCount`）がまだ定義されていないとき、その下のパスは、その定義を待つか、ページの準備ができて 5 秒後の未定義の要素の確認を待ちます。4.27 までは、autoloader が読む部品は、ファイルが届く前に「無い」（updates will be silently dropped）と報告され、その後で束縛は解決していました。行の中のコンポーネントはこの扱いになりません: 行のフィールドは、近い名前があるときだけ報告されます
+- 未存在パスの警告は `getBindingsReady` とは独立に 1 マクロタスク（`setTimeout(0)`）だけ遅延します。4.28 から、ページが配線している要素（`<garden-card data-wcs="state: g">` と `g.freeCount`）がまだ定義されていないとき、その下のパスは、その定義を待つか、ページの準備ができて 5 秒後の未定義の要素の確認を待ちます。4.27 までは、autoloader が読む部品は、ファイルが届く前に「無い」（updates will be silently dropped）と報告され、その後で束縛は解決していました。行の中のコンポーネントはこの扱いになりません: 行のフィールドは、近い名前があるときだけ報告されます
 - `@wcstack/lint` はコンポーネントのクラスを読まないので、それが公開する getter を知りません: 公開 getter を読むページ（カードをマウントした行の `{{ .usage }}`）は `wcs/binding-path-missing` と報告されます。lint が知るまでは、コンポーネントをマウントするデータの JSDoc の型に、省略できるキーとして書いてください — `/** @type {{ name: string, usage?: number }[]} */ gardens: []` — そして、手でコンポーネントとそろえてください: そうすると、コンポーネントで改名した getter は報告されません
 - ツリーに同名のキーがある場合（継承したプロパティも含む）はツリーが勝ち、ランタイムが 1 回だけ warn します（`wcs/mount-export-shadowed`）。同一インスタンスに同名キーを公開するコンポーネントが 2 つある形は設定ミスで、候補走査時に検出して throw します（`wcs/mount-export-ambiguous`）。検証付きキャッシュに命中すると他の候補は再走査しないため、初回解決後に追加した競合コンポーネントは検出されない場合があります
 - 公開キーへの外からの書き込みは accessor の setter を実行し、getter しか無ければ throw します（getter を隠すキーをツリーに作ることはありません）。`in` は公開キーを見ません
@@ -3009,7 +3009,7 @@ export default {
 
 定義はマークアップで、ブラウザが `<template shadowrootmode>` を shadow root にするのは、ページを解析している間だけです。`innerHTML` でページに書いたり、`<template>` から複製したりした定義は shadow root を持たず、タグは定義されません — そう言うのは Chromium だけで、それも `innerHTML` のときだけです。だから定義は、使うページごとに書くか、`setHTMLUnsafe()` で解析するスクリプトが持ってくるかのどちらかです。
 
-4.28（未リリース）から、[`@wcstack/autoloader`](../autoloader/README.ja.md#宣言的カスタムコンポーネント) がそのスクリプトです: 部品ごとにファイルを置き、クラスのモジュールと同じように、ページの import map で名指しします。
+4.28 から、[`@wcstack/autoloader`](../autoloader/README.ja.md#宣言的カスタムコンポーネント) がそのスクリプトです: 部品ごとにファイルを置き、クラスのモジュールと同じように、ページの import map で名指しします。
 
 ```html
 <script type="importmap">
@@ -3026,8 +3026,8 @@ export default {
 
 ### DCC に渡すもの
 
-- **属性ではなくプロパティ。** `<my-counter count="3">` は読まれません: DCC の入力は `$bindables` に並べたプロパティで、束縛（`data-wcs="count: path"`）かコード（`element.count = 3`）が書きます。4.28（未リリース）から、`scopes` の後付けがタグと名前ごとに 1 度そう言います — `[wcs/dcc-attribute] <my-counter count="…">: a DCC does not read attributes.` 4.27 までは、属性は何も言わずに無視されていました。
-- **最初の値。** インスタンスの状態ができる前にページが書いた値は、束縛が作られ `$connectedCallback` が走る前に状態に入っています（4.28（未リリース）から）。4.27 までは `$connectedCallback` の後、watch が始まる前に着いたので、そのコールバックも、そのメンバーの `$watch` も見ませんでした — 見たのは getter だけです。後からの書き込みはふつうの書き込みで、`$watch` に届きます。
+- **属性ではなくプロパティ。** `<my-counter count="3">` は読まれません: DCC の入力は `$bindables` に並べたプロパティで、束縛（`data-wcs="count: path"`）かコード（`element.count = 3`）が書きます。4.28 から、`scopes` の後付けがタグと名前ごとに 1 度そう言います — `[wcs/dcc-attribute] <my-counter count="…">: a DCC does not read attributes.` 4.27 までは、属性は何も言わずに無視されていました。
+- **最初の値。** インスタンスの状態ができる前にページが書いた値は、束縛が作られ `$connectedCallback` が走る前に状態に入っています（4.28 から）。4.27 までは `$connectedCallback` の後、watch が始まる前に着いたので、そのコールバックも、そのメンバーの `$watch` も見ませんでした — 見たのは getter だけです。後からの書き込みはふつうの書き込みで、`$watch` に届きます。
 - **値ごと。** DCC とページは、それぞれ自分の状態を動かしていて、渡したオブジェクトや配列は両側で同じオブジェクトです。その中の項目への書き込み（DCC の `this["tabs.0.label"] = …`）は、共有しているオブジェクトを変え、メンバーの変更イベントを出します。ページの、そのパスそのものへの束縛と getter は付いてきます — ページの `for: tabs` の行は付いてきません。ページがオブジェクトの中に書いても、DCC の行には届きません。メンバーそのものを書いてください: DCC では `this.tabs = this.tabs.map(…)`、ページからは新しい配列やオブジェクトを。
 
 ### Shadow Root モード
@@ -3294,7 +3294,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `$postUpdate` のパスの打ち間違い（`cells` に対する `` `rows.${r}.cell.${c}.text` ``） | 4.4 から: `console.warn`（`wcs/post-update-path-missing`）。単一セグメントでも報告する — その呼び出しは何も更新しない |
 | state が宣言していないトップレベルのキーへの書き込みで、近い宣言済みのキーがあるもの（`this.selectedID` と `selectedId`） | 4.4 から: キーごとに 1 回 `console.warn`（`wcs/write-path-missing`） — 書き込みは新しいキーを作るだけで、宣言したキーに束ねたものは変わらない。近い名前の無い新しいキーは、state がわざと足すことがあるので報告しない |
 | getter が読むパスの打ち間違い（`this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`） | 4.4 から: パスごとに 1 回、読んだ getter の名前を添えて `console.warn`（`wcs/read-path-missing`）。近い名前があるときだけ — 読みは `undefined` になり、getter がそこから計算する値は違う。getter がそのパスを読んだあとで調べるので、後から足した行は描かれたときに調べる。トップレベルのキー（`this.totl`）は読んだ時点で throw する（`#301`）。`@wcstack/lint` は getter とメソッドの中の同じ読みを、実行せずに検査する |
-| マウントしたコンポーネントが名指すパスで、先頭のキーが無いもの — ページが `state.veiw:` で渡した、コンポーネントが `veiw.x` を読む・`nmae` を束ねる、ホストのパス（`pageTitle`）を読む | 4.28（未リリース）から: 無いキーごとに 1 回 `console.warn`（`wcs/binding-path-missing`、getter の読みは `wcs/read-path-missing`）。木のあるホストで調べる: `Bound path "veiw.selectable" in <plot-tile> — its host's "gardens.*.plots.*.veiw.selectable" — does not resolve on the state tree: "veiw" is not declared. Did you mean "view"?` 近い名前は、木のもの・コンポーネント自身のもの・渡されたものから挙げ、ホストのパスならそう言う（`hand it over (data-wcs="state.pageTitle: pageTitle")`）。行の中では、行のフィールドと同じく、近い名前かホストのパスが要る。4.27 までは、フィールドは空で、何も言わなかった: コンポーネントの中の読みはホストへ落ちて、何も失敗しない |
+| マウントしたコンポーネントが名指すパスで、先頭のキーが無いもの — ページが `state.veiw:` で渡した、コンポーネントが `veiw.x` を読む・`nmae` を束ねる、ホストのパス（`pageTitle`）を読む | 4.28 から: 無いキーごとに 1 回 `console.warn`（`wcs/binding-path-missing`、getter の読みは `wcs/read-path-missing`）。木のあるホストで調べる: `Bound path "veiw.selectable" in <plot-tile> — its host's "gardens.*.plots.*.veiw.selectable" — does not resolve on the state tree: "veiw" is not declared. Did you mean "view"?` 近い名前は、木のもの・コンポーネント自身のもの・渡されたものから挙げ、ホストのパスならそう言う（`hand it over (data-wcs="state.pageTitle: pageTitle")`）。行の中では、行のフィールドと同じく、近い名前かホストのパスが要る。4.27 までは、フィールドは空で、何も言わなかった: コンポーネントの中の読みはホストへ落ちて、何も失敗しない |
 
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 
@@ -3305,7 +3305,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 - 途中の getter の戻り値のサブプロパティ —— ただし、リストを返す getter の行（`get rows()` と `for: rows`）は除きます。4.21 から、行フィールドを getter が返す行に対して、データのリストと同じく検査します（近い名前があるときだけ）。4.20 までは、そこでの打ち間違い（`.amountLabl`）に黙っていた
 - まだ読み込み中のボリュームのマウントパス配下のパス —— ボリュームが決着した時点で検査される
 - マウントしたコンポーネントの中の、先頭のキーより深いパス（`address.cty`）: コンポーネントが自分で答えることがある — 渡されたリストの下に自分で宣言した行の getter、中にマウントしたコンポーネントが公開する getter
-- ページが配線している、まだ定義されていない要素の下のパス —— 定義されたとき、またはページの未定義の要素と一緒に検査される（4.28（未リリース）から）
+- ページが配線している、まだ定義されていない要素の下のパス —— 定義されたとき、またはページの未定義の要素と一緒に検査される（4.28 から）
 - `$` 始まりの予約名前空間（`$command.*` など）
 - 要素が書き込むオブジェクトの下のキー —— router の `searchParams: query` は URL のキーを持つので、`query.next` は URL にあるときだけある。4.10 から。4.9 までは、そうした束縛を「silently dropped」と報告していた
 

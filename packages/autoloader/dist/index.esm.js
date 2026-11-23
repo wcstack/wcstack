@@ -3,15 +3,89 @@ async function load(path) {
     return module.default;
 }
 
+/** How long a definition may take to define its tag (@wcstack/state does, once it has loaded). */
+const DCC_DEFINE_TIMEOUT = 10000;
+const NAME = "[@wcstack/autoloader]";
+/** The page's Trusted Types policy, where wcstack's packages share one (docs/csp.md). */
+function trusted(html) {
+    const policy = globalThis[Symbol.for("wcstack.trustedTypes.policy")];
+    return (typeof policy?.createHTML === "function" ? policy.createHTML(html) : html);
+}
+/** Where the loaded definitions live: one hidden element at the end of the page. */
+function container() {
+    const id = "wcs-autoloader-definitions";
+    let host = document.getElementById(id);
+    if (host === null) {
+        host = document.createElement("div");
+        host.id = id;
+        host.hidden = true;
+        (document.body ?? document.documentElement).append(host);
+    }
+    return host;
+}
+/**
+ * Makes the loader. `resolve` turns what the autoloader hands a loader — the import-map specifier,
+ * `"@components/my-part|dcc"` or `"@components/ui|dcc/part.html"` — into the file's URL.
+ */
+function createDccLoader(resolve = (specifier) => import.meta.resolve(specifier), timeout = DCC_DEFINE_TIMEOUT) {
+    return async (path) => {
+        const url = resolve(path);
+        const response = await fetch(url);
+        if (!response.ok)
+            throw new Error(`${NAME} ${url}: HTTP ${response.status}`);
+        const text = await response.text();
+        const holder = document.createElement("div");
+        if (typeof holder.setHTMLUnsafe !== "function") {
+            throw new Error(`${NAME} ${url}: this browser has no setHTMLUnsafe(), which a Declarative Custom Component in a file needs.`);
+        }
+        holder.setHTMLUnsafe(trusted(text));
+        const definitions = Array.from(holder.querySelectorAll("[data-wc-definition]"));
+        if (definitions.length === 0)
+            throw new Error(`${NAME} ${url} has no element with data-wc-definition.`);
+        const pending = [];
+        for (const definition of definitions) {
+            // (a tag defined already — the same file under two keys, a copy written in the page — is left as it is)
+            if (customElements.get(definition.localName) === undefined) {
+                pending.push(definition.localName);
+                container().append(definition);
+            }
+        }
+        // Its tag is defined by @wcstack/state, when the definition's own <wcs-state> has loaded. Waited for —
+        // the autoloader takes a class from a loader — but not for ever: a page without @wcstack/state would
+        // hold every other load back
+        let timer;
+        try {
+            await Promise.race([
+                Promise.all(pending.map((tag) => customElements.whenDefined(tag))),
+                new Promise((_, reject) => {
+                    timer = setTimeout(() => reject(new Error(`${NAME} ${url}: <${pending.join(">, <")}> ${pending.length === 1 ? "was" : "were"} not defined within ${timeout} ms. A Declarative Custom Component is defined by @wcstack/state: load it on the page.`)), timeout);
+                }),
+            ]);
+        }
+        finally {
+            clearTimeout(timer);
+        }
+        return customElements.get(definitions[0].localName);
+    };
+}
+const loadDcc = createDccLoader();
+
 const DEFAULT_KEY = "*";
 const VANILLA_KEY = "vanilla";
 const VANILLA_LOADER = {
     postfix: ".js",
     loader: load
 };
+const DCC_KEY = "dcc";
+/** A Declarative Custom Component in a file of its own (@wcstack/state): `.html`, or `|dcc` in the key. */
+const DCC_LOADER = {
+    postfix: ".html",
+    loader: loadDcc
+};
 const _config = {
     loaders: {
         [VANILLA_KEY]: VANILLA_LOADER,
+        [DCC_KEY]: DCC_LOADER,
         [DEFAULT_KEY]: VANILLA_KEY
     },
     observable: true,
@@ -81,7 +155,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/autoloader","version":"4.27.0"};
+var pkg = {"name":"@wcstack/autoloader","version":"4.28.0"};
 
 const COMPONENT_KEYWORD = "@components/";
 function loadImportmap() {
@@ -137,7 +211,7 @@ function getKeyInfoFromImportmapKey(key) {
 function buildMap(importmap) {
     const prefixMap = {};
     const loadMap = {};
-    for (const [key, _value] of Object.entries(importmap.imports)) {
+    for (const [key, value] of Object.entries(importmap.imports)) {
         const keyInfo = getKeyInfoFromImportmapKey(key);
         if (keyInfo === null) {
             continue;
@@ -146,7 +220,7 @@ function buildMap(importmap) {
             prefixMap[keyInfo.prefix] = keyInfo;
         }
         else {
-            loadMap[keyInfo.tagName] = keyInfo;
+            loadMap[keyInfo.tagName] = { ...keyInfo, path: value };
         }
     }
     return { prefixMap, loadMap };
@@ -168,8 +242,10 @@ function resolveLoader(path, loaderKey, loaders) {
         }
         // Sort by postfix length descending to match longest extension first
         candidates.sort((a, b) => b.postfix.length - a.postfix.length);
+        // (a query or a fragment after the file name is not part of its extension: `./part.html?v=2`)
+        const file = path.replace(/[?#].*$/, "");
         for (const currentLoader of candidates) {
-            if (path.endsWith(currentLoader.postfix)) {
+            if (file.endsWith(currentLoader.postfix)) {
                 resolvedLoader = currentLoader;
                 break;
             }
@@ -328,7 +404,11 @@ async function eagerLoad(loadMap, loaders) {
     for (const [tagName, info] of Object.entries(loadMap)) {
         let loader;
         try {
-            loader = resolveLoader(info.key, info.loaderKey, loaders);
+            // The loader a key does not name is picked by the extension of the file the key is mapped to
+            // (README "Eager Loading": `"@components/my-lit-button": "./my-button.lit.js"`). It was matched
+            // against the key, which has no extension: every such entry went to the default loader, and one
+            // mapped to a file that is not a module failed to import (docs/seam-apps.md, garden-plots)
+            loader = resolveLoader(info.path ?? info.key, info.loaderKey, loaders);
         }
         catch (_e) {
             throw new Error("Loader redirection is not supported for eager loaded components: " + tagName);

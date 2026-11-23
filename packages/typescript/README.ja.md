@@ -64,7 +64,7 @@ exit code: `0` 最新 · `1` 乖離あり（変更は JSON pointer で列挙: `+
 npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 ```
 
-**ボリュームのある木。** 4.28（未リリース）から、`emit --mount=<path>` はマウントパスを manifest に記録します（application 名前空間の `stateMounts`）。ルートの `check` は、記録された部分木を除いて木を比べ — ボリュームはそれぞれ自分の `--mount` で検査します — ルートの `emit --merge` はそれらを残します。ルートと 2 つのボリュームのゲートは
+**ボリュームのある木。** 4.28 から、`emit --mount=<path>` はマウントパスを manifest に記録します（application 名前空間の `stateMounts`）。ルートの `check` は、記録された部分木を除いて木を比べ — ボリュームはそれぞれ自分の `--mount` で検査します — ルートの `emit --merge` はそれらを残します。ルートと 2 つのボリュームのゲートは
 
 ```bash
 npx wcs-schema check src/state/app.ts \

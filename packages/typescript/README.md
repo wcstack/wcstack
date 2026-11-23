@@ -64,7 +64,7 @@ The recommended CI gate is
 npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 ```
 
-**A tree with volumes.** Since 4.28 (not released yet), `emit --mount=<path>` records the mount path in the manifest (`stateMounts` in the application namespace). The root's `check` then compares the tree without the recorded subtrees — each volume is checked with its own `--mount` — and a root `emit --merge` keeps them. So the gate for a root and two volumes is
+**A tree with volumes.** Since 4.28, `emit --mount=<path>` records the mount path in the manifest (`stateMounts` in the application namespace). The root's `check` then compares the tree without the recorded subtrees — each volume is checked with its own `--mount` — and a root `emit --merge` keeps them. So the gate for a root and two volumes is
 
 ```bash
 npx wcs-schema check src/state/app.ts \
