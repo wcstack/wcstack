@@ -61,6 +61,53 @@ describe("mount(): ページに書いた DCC の定義", () => {
     expect(app.state().read((s) => s.rows.length)).toBe(2);
   });
 
+  /** A definition whose `<wcs-state>` comes before its markup, as a page often writes its own. */
+  const pager = (tag: string) => `<${tag} data-wc-definition>
+  <template shadowrootmode="open">
+    <wcs-state><script type="module">
+      export default {
+        page: 1, total: 0, per: 20,
+        get pages() { return Math.max(1, Math.ceil(this.total / this.per)); },
+        $bindables: ["page", "total", "per"],
+      };
+    </script></wcs-state>
+    <span class="info">{{ page }} / {{ pages }}</span>
+    <button class="next" data-wcs="onclick: next">next</button>
+  </template>
+</${tag}>`;
+
+  it("定義の中で <wcs-state> をマークアップより前に書いても、インスタンスにその後ろのマークアップが入る", async () => {
+    // (happy-dom は shadow root に入れるノードを 1 つずつ接続する: その場で組むと、<wcs-state> が接続した
+    //  時点の中身 — 自分より前だけ — が定義になり、インスタンスは何も言わずに空になっていた)
+    const tag = `t-pager-${seq++}`;
+    const app = await mount(`${pager(tag)}
+      <wcs-state json='{"total": 120, "page": 2}'></wcs-state>
+      <${tag} id="use" data-wcs="total: total; page: page"></${tag}>`);
+    // (through the mounted root: happy-dom's document.getElementById keeps an element that was upgraded
+    //  late — every DCC instance — after it left the page, here the first test's #use)
+    const shadow = app.root.querySelector("#use")!.shadowRoot!;
+    expect(shadow.querySelector(".info")!.textContent).toBe("2 / 6");
+    expect(shadow.querySelector(".next")).not.toBeNull();
+    // the definition keeps its own content, unbound
+    expect(document.querySelector(`${tag}[data-wc-definition]`)!.shadowRoot!.querySelector(".info")!.textContent).toBe("{{ page }} / {{ pages }}");
+  });
+
+  it("root: \"shadow\" でも、<wcs-state> が前の定義のインスタンスにマークアップが入る", async () => {
+    const tag = `t-pager-${seq++}`;
+    const app = await mount(`${pager(tag)}<wcs-state json='{"total": 50, "page": 3}'></wcs-state><${tag} id="use" data-wcs="total: total; page: page"></${tag}>`, { root: "shadow" });
+    const use = (app.root as ShadowRoot).getElementById("use")!;
+    expect(use.shadowRoot!.querySelector(".info")!.textContent).toBe("3 / 3");
+  });
+
+  it("shadow root のあるページを載せ直すと、前のページは置き換わる", async () => {
+    const tag = `t-pager-${seq++}`;
+    await mount(`<p id="old">old</p><wcs-state json='{"a":1}'></wcs-state>`);
+    const app = await mount(`${pager(tag)}<wcs-state json='{"total": 20, "page": 1}'></wcs-state><${tag} id="use" data-wcs="total: total; page: page"></${tag}>`);
+    expect(document.getElementById("old")).toBeNull();
+    expect(document.body.querySelectorAll("wcs-state").length).toBe(1);
+    expect(app.root.querySelector("#use")!.shadowRoot!.querySelector(".info")!.textContent).toBe("1 / 1");
+  });
+
   it("root: \"shadow\" でも同じ", async () => {
     const tag = `t-badge-${seq++}`;
     const app = await mount(`${badge(tag)}<wcs-state json='{"kind":"used"}'></wcs-state><${tag} id="use" data-wcs="kind: kind"></${tag}>`, { root: "shadow" });

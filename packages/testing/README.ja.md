@@ -55,8 +55,8 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 const pager = readFileSync("parts/midori-pager.html", "utf8");
 const app = await mount(`${pager}
   <wcs-state json='{"total": 120, "page": 2}'></wcs-state>
-  <midori-pager data-wcs="total: total; page: page"></midori-pager>`);
-expect(app.root.querySelector("midori-pager")!.shadowRoot!.querySelector(".info")!.textContent).toBe("2 / 6");
+  <midori-pager id="pager" data-wcs="total: total; page: page"></midori-pager>`);
+expect(app.root.querySelector("#pager")!.shadowRoot!.querySelector(".info")!.textContent).toBe("2 / 6");
 ```
 
 返る `MountedApp`:
@@ -142,7 +142,7 @@ try {
 
 happy-dom が再現できない 2 点。実ブラウザの e2e（Playwright）を 1 本残してください:
 
-- `customElements.define` は既存ノードを**差し替えて**アップグレードするので、「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できない。
+- `customElements.define` は既存ノードを**差し替えて**アップグレードするので、「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できない。そうしてアップグレードされた、`id` のある要素 — 宣言的カスタムコンポーネントのインスタンスはいつもそう — は、ページから外れた後も happy-dom の id の索引に残る: `document.getElementById("pager")` は外した要素を返し、同じファイルの後の `mount()` でもそうなる（happy-dom 21）。マウントしたルートから読む: `app.root.querySelector("#pager")`。
 - イベントのタイミングが実ブラウザと違う。
 
 表の中の `<template>` は 4.26 から扱えます: `mount()` がブラウザと同じ所に置きます（上記）。テストが自分で `innerHTML` で挿入する HTML は対象外です — `@wcstack/server` の `setInnerHTML(element, html)` で挿入してください。
