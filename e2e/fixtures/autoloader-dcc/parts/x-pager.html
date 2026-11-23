@@ -1,0 +1,18 @@
+<!-- <x-pager>: a part in HTML alone. Bindable: page, total. -->
+<x-pager data-wc-definition>
+  <template shadowrootmode="open">
+    <span class="info">{{ page }} / {{ pages }}</span>
+    <button class="own-next" data-wcs="onclick: next">›</button>
+    <wcs-state>
+      <script type="module">
+export default {
+  page: 1,
+  total: 0,
+  get pages() { return Math.max(1, Math.ceil(this.total / 20)); },
+  next() { if (this.page < this.pages) this.page++; },
+  $bindables: ["page", "total"],
+};
+      </script>
+    </wcs-state>
+  </template>
+</x-pager>

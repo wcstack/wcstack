@@ -49,6 +49,8 @@ export interface IEagerLoadInfo {
   tagName: string;
   loaderKey: string | null;
   extends: string | null;
+  /** The file the import map maps the key to: its extension picks the loader when the key names none. */
+  path?: string;
 }
 
 export type IKeyInfo =

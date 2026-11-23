@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>fixture: Declarative Custom Components kept in files, loaded by the autoloader</title>
+  <!-- A DCC's definition is markup, which the browser turns into a shadow root only while it parses a
+       page. The autoloader's `dcc` loader brings a definition in from a file of its own, so one file
+       serves every page (docs/seam-apps.md, garden-plots).
+
+       Three ways a page names a part:
+       - an eager key mapped to an .html file — the loader is picked by the file's extension;
+       - an eager key that names the loader (`|dcc`), whatever the file is called;
+       - a namespace (`@components/lazy|dcc/`): <lazy-note> is fetched from parts/lazy/note.html when
+         the tag is met, here and inside a row.
+       A file that is not there is reported and leaves the rest of the page working. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/x-pager": "/e2e/fixtures/autoloader-dcc/parts/x-pager.html",
+        "@components/x-badge|dcc": "/e2e/fixtures/autoloader-dcc/parts/badge.part",
+        "@components/x-missing": "/e2e/fixtures/autoloader-dcc/parts/missing.html",
+        "@components/lazy|dcc/": "/e2e/fixtures/autoloader-dcc/parts/lazy/"
+      }
+    }
+  </script>
+  <script type="module" src="/packages/autoloader/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { visibility: hidden; }
+  </style>
+</head>
+<body>
+  <wcs-autoloader></wcs-autoloader>
+  <wcs-state>
+    <script type="module">
+export default {
+  page: 2,
+  total: 120,
+  kind: "warn",
+  notes: [{ text: "first" }, { text: "second" }],
+  next() { this.page++; },
+};
+    </script>
+  </wcs-state>
+
+  <p id="pager"><x-pager data-wcs="page: page; total: total"></x-pager></p>
+  <p id="badge"><x-badge data-wcs="kind: kind">text of the page</x-badge></p>
+  <ul id="notes">
+    <template data-wcs="for: notes"><li><lazy-note data-wcs="msg: .text"></lazy-note></li></template>
+  </ul>
+  <p id="missing"><x-missing></x-missing></p>
+  <button id="next" data-wcs="onclick: next">next</button>
+  <p id="page">{{ page }}</p>
+</body>
+</html>

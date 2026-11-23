@@ -120,7 +120,11 @@ export async function eagerLoad(
   for(const [tagName, info] of Object.entries(loadMap)) {
     let loader: ILoader;
     try {
-      loader = resolveLoader(info.key, info.loaderKey, loaders);
+      // The loader a key does not name is picked by the extension of the file the key is mapped to
+      // (README "Eager Loading": `"@components/my-lit-button": "./my-button.lit.js"`). It was matched
+      // against the key, which has no extension: every such entry went to the default loader, and one
+      // mapped to a file that is not a module failed to import (docs/seam-apps.md, garden-plots)
+      loader = resolveLoader(info.path ?? info.key, info.loaderKey, loaders);
     } catch (_e) {
       throw new Error("Loader redirection is not supported for eager loaded components: " + tagName);
     }

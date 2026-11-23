@@ -23,8 +23,10 @@ export function resolveLoader(
     // Sort by postfix length descending to match longest extension first
     candidates.sort((a, b) => b.postfix.length - a.postfix.length);
 
+    // (a query or a fragment after the file name is not part of its extension: `./part.html?v=2`)
+    const file = path.replace(/[?#].*$/, "");
     for (const currentLoader of candidates) {
-      if (path.endsWith(currentLoader.postfix)) {
+      if (file.endsWith(currentLoader.postfix)) {
         resolvedLoader = currentLoader;
         break;
       }
