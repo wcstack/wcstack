@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--midori-bg); color: var(--midori-fg); font-family: var(--midori-font); line-height: 1.55; }
+body { margin: 0; }
+.top { padding: 1em 1.5em; background: var(--midori-surface); border-bottom: 1px solid var(--midori-line); }
+.top h1 { margin: 0 0 0.3em; font-size: 1.4em; }
+main { padding: 1em 1.5em 6em; display: grid; gap: 1em; max-width: 70em; }
+main > h2 { margin: 0.8em 0 0; }
+.demo { padding: 0.8em 1.1em; border-radius: 8px; border: 1px solid var(--midori-line); background: var(--midori-surface); }
+.demo h3 { margin: 0 0 0.5em; font-family: ui-monospace, monospace; }
+.controls { display: flex; flex-wrap: wrap; gap: 0.8em; align-items: center; padding: 0.4em 0.6em; border-radius: 6px; background: var(--midori-surface-2); }
+.stage { padding: 0.8em 0; }
+.tile-stage { width: 8em; }
+input, select, button { font: inherit; }
+output { font-family: ui-monospace, monospace; font-weight: 600; }
+.banner { padding: 0.6em 1em; border-radius: 6px; border: 1px solid var(--midori-error); background: var(--midori-warn-bg); color: var(--midori-warn-fg); }

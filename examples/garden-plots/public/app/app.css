@@ -1,0 +1,94 @@
+/* みどり市 市民農園 区画管理 — the app's own layout. The colours come from /parts/tokens.css. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--midori-bg); color: var(--midori-fg); font-family: var(--midori-font); line-height: 1.55; }
+body { margin: 0; min-height: 100vh; }
+a { color: var(--midori-accent); }
+:focus-visible { outline: 3px solid var(--midori-focus); outline-offset: 2px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.skip { position: absolute; left: 0.5em; top: -3em; padding: 0.4em 0.8em; background: var(--midori-surface); z-index: 10; }
+.skip:focus { top: 0.5em; }
+
+.app-header { display: flex; align-items: center; gap: 1.5em; padding: 0.6em 1.4em; background: var(--midori-surface);
+  border-bottom: 1px solid var(--midori-line); position: sticky; top: 0; z-index: 5; }
+.app-header h1 { margin: 0; font-size: 1.15em; white-space: nowrap; }
+.app-header h1 small { display: block; font-size: 0.7em; font-weight: 400; color: var(--midori-muted); }
+.app-header nav { display: flex; gap: 0.3em; }
+.app-header nav a { padding: 0.35em 0.8em; border-radius: 6px; text-decoration: none; color: var(--midori-fg); }
+.app-header nav a.active { background: var(--midori-surface-2); font-weight: 700; box-shadow: inset 0 -3px 0 var(--midori-accent); }
+.free-now { margin-left: auto; white-space: nowrap; }
+.free-now strong { font-size: 1.3em; font-variant-numeric: tabular-nums; }
+.live { font-size: 0.8em; color: var(--midori-muted); white-space: nowrap; }
+.live.off { color: var(--midori-error); }
+
+.banner { margin: 0.6em 1.4em 0; padding: 0.6em 1em; border-radius: 6px; border: 1px solid var(--midori-error);
+  background: var(--midori-warn-bg); color: var(--midori-warn-fg); }
+.banner[hidden] { display: none; }
+.note { margin: 0.6em 0; padding: 0.5em 0.9em; border-radius: 6px; background: var(--midori-surface-2); }
+
+main { padding: 1em 1.4em 4em; }
+main h2 { margin: 0 0 0.6em; font-size: 1.35em; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin-bottom: 0.8em; }
+.filters { display: flex; gap: 0.25em; flex-wrap: wrap; }
+.filters a { padding: 0.3em 0.8em; border-radius: 99px; border: 1px solid var(--midori-line); text-decoration: none;
+  color: var(--midori-fg); background: var(--midori-surface); }
+.filters a[aria-current="page"] { background: var(--midori-accent); border-color: var(--midori-accent); color: var(--midori-on-accent); }
+.filters .n { font-variant-numeric: tabular-nums; opacity: 0.85; margin-left: 0.3em; }
+
+.summary { display: grid; grid-template-columns: max-content 1fr; gap: 0.2em 1.2em; padding: 0.7em 1em; margin-bottom: 0.9em;
+  border-radius: 8px; background: var(--midori-surface); border: 1px solid var(--midori-line); }
+.summary dt { font-weight: 600; }
+.summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+.map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 19em; gap: 1em; align-items: start; }
+.cards { display: grid; gap: var(--midori-gap); }
+.panel { position: sticky; top: 4.5em; padding: 0.9em 1em; border-radius: 8px; background: var(--midori-surface);
+  border: 1px solid var(--midori-line); }
+.panel h3 { margin: 0 0 0.4em; }
+.panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25em 0.8em; margin: 0 0 0.8em; }
+.panel dd { margin: 0; }
+
+button, .button { font: inherit; padding: 0.35em 0.95em; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block;
+  border: 1px solid var(--midori-line-strong); background: var(--midori-surface); color: var(--midori-fg); }
+button.primary { background: var(--midori-accent); border-color: var(--midori-accent); color: var(--midori-on-accent); font-weight: 700; }
+button.danger { border-color: var(--midori-error); color: var(--midori-error); }
+button:disabled { opacity: 0.5; cursor: default; }
+input, select { font: inherit; padding: 0.3em 0.5em; border-radius: 4px; border: 1px solid var(--midori-line-strong);
+  background: var(--midori-surface); color: var(--midori-fg); }
+
+.plot-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.8em; margin-bottom: 0.6em; }
+.plot-head h2 { margin: 0; }
+.plot-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 1.2em; align-items: start; }
+.box { padding: 0.9em 1.1em; border-radius: 8px; background: var(--midori-surface); border: 1px solid var(--midori-line); }
+.box h3 { margin: 0 0 0.6em; font-size: 1.05em; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin-top: 0.8em; }
+.history { list-style: none; margin: 0; padding: 0; }
+.history li { padding: 0.35em 0; border-bottom: 1px solid var(--midori-line); }
+.history time { font-variant-numeric: tabular-nums; color: var(--midori-muted); margin-right: 0.6em; }
+.prevnext { display: flex; gap: 1em; margin-top: 1em; }
+.conflict { border-color: var(--midori-renewal-accent); background: var(--midori-renewal-bg); color: var(--midori-renewal-fg); }
+
+table.list { width: 100%; border-collapse: collapse; background: var(--midori-surface); border: 1px solid var(--midori-line); }
+table.list th, table.list td { padding: 0.45em 0.6em; border-bottom: 1px solid var(--midori-line); text-align: left; vertical-align: top; }
+table.list th { background: var(--midori-surface-2); font-weight: 600; }
+table.list td.num { font-variant-numeric: tabular-nums; text-align: right; }
+table.list tr.editing td { background: var(--midori-surface-2); }
+.row-editor { padding: 0.6em 0.4em 0.8em; }
+.row-buttons { display: flex; gap: 0.3em; flex-wrap: wrap; }
+
+.faq-search { display: flex; gap: 0.6em; align-items: center; margin-bottom: 0.8em; }
+.faq-search input { width: min(28em, 100%); }
+
+.settings fieldset { border: 1px solid var(--midori-line); border-radius: 8px; margin: 0 0 1em; padding: 0.6em 1em 0.9em; }
+.settings legend { font-weight: 700; padding: 0 0.3em; }
+.settings label.choice { display: inline-flex; gap: 0.35em; align-items: center; margin-right: 1.2em; }
+.stack { display: grid; gap: 0.8em; justify-items: start; }
+
+.candidates { list-style: none; padding: 0; margin: 0.4em 0; display: grid; gap: 0.3em; }
+.candidates label { display: flex; gap: 0.6em; align-items: baseline; padding: 0.35em 0.5em; border-radius: 6px; border: 1px solid var(--midori-line); }
+.candidates .wish { font-size: 0.8em; color: var(--midori-free-fg); }
+.field-msg { color: var(--midori-error); font-size: 0.85em; margin: 0.2em 0 0; }
+.field-msg:empty { display: none; }
+.loading { color: var(--midori-muted); }
+.box dl.info { display: grid; grid-template-columns: max-content 1fr; gap: 0.25em 1em; margin: 0 0 1em; }
+.box dl.info dd { margin: 0; }
+.status-count + .status-count::before { content: "・"; }

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>みどり市 共通部品 ショーケース</title>
+  <link rel="stylesheet" href="/parts/tokens.css">
+  <link rel="stylesheet" href="/showcase/showcase.css">
+  <!-- workaround: the saved theme before the first paint (see index.html) -->
+  <script>
+    try {
+      const s = JSON.parse(localStorage.getItem("midori.settings") || "null");
+      if (s && s.theme) document.documentElement.dataset.theme = s.theme;
+      if (s && s.density) document.documentElement.dataset.density = s.density;
+    } catch {}
+  </script>
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/garden-card": "/parts/garden-card.js",
+        "@components/area-block": "/parts/area-block.js",
+        "@components/plot-tile": "/parts/plot-tile.js",
+        "@components/tenant-editor": "/parts/tenant-editor.js",
+        "@components/faq-node": "/parts/faq-node.js",
+        "@components/midori-badge": "/parts/midori-badge.html",
+        "@components/midori-toggle": "/parts/midori-toggle.html",
+        "@components/midori-pager": "/parts/midori-pager.html",
+        "@components/midori-tabs": "/parts/midori-tabs.html",
+        "@components/midori-dialog": "/parts/midori-dialog.html",
+        "@components/midori-toast": "/parts/midori-toast.html"
+      }
+    }
+  </script>
+  <script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/defined/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<wcs-autoloader></wcs-autoloader>
+<wcs-state src="showcase/state.js"></wcs-state>
+<wcs-defined timeout="8000"
+  tags="garden-card,area-block,plot-tile,tenant-editor,faq-node,midori-badge,midori-toggle,midori-pager,midori-tabs,midori-dialog,midori-toast"
+  data-wcs="pending: partsPending; missing: partsMissing"></wcs-defined>
+<header class="top">
+  <h1>みどり市 共通部品 ショーケース</h1>
+  <p>部品をひとつずつ、見本のデータと操作で確かめるページです。テーマ：
+    <button type="button" onclick="document.documentElement.dataset.theme='light'">ライト</button>
+    <button type="button" onclick="document.documentElement.dataset.theme='dark'">ダーク</button>
+    <button type="button" onclick="document.documentElement.dataset.theme='contrast'">高コントラスト</button>
+  </p>
+</header>
+<main>
+  <p class="banner" role="alert" data-wcs="hidden: partsBroken|not; textContent: partsMissingText" hidden></p>
+  <h2>デザイナーの部品（HTML だけ）</h2>
+
+  <section id="badge" class="demo">
+    <h3>&lt;midori-badge&gt;</h3>
+    <div class="controls">
+      <label>kind <select data-wcs="value: badgeKind">
+        <template data-wcs="for: badgeKinds"><option data-wcs="attr.value: .kind; textContent: .kind"></option></template>
+      </select></label>
+      <label>文字 <input class="badge-text" data-wcs="value: badgeText"></label>
+    </div>
+    <p class="stage"><midori-badge class="subject" data-wcs="kind: badgeKind"><!--@@: badgeText--></midori-badge></p>
+    <p class="all">
+      <template data-wcs="for: badgeKinds"><midori-badge data-wcs="kind: .kind; attr.data-kind: .kind">{{ .label }}</midori-badge> </template>
+    </p>
+  </section>
+
+  <section id="toggle" class="demo">
+    <h3>&lt;midori-toggle&gt;</h3>
+    <div class="controls">
+      <label><input type="checkbox" class="page-checked" data-wcs="checked: toggleOn"> ページの値（checked）</label>
+      <label><input type="checkbox" class="page-disabled" data-wcs="checked: toggleDisabled"> disabled</label>
+    </div>
+    <p class="stage"><midori-toggle class="subject" data-wcs="checked: toggleOn; disabled: toggleDisabled">休止にする</midori-toggle></p>
+    <p>ページが見ている値：<output class="readback" data-wcs="textContent: toggleOn|string"></output></p>
+  </section>
+
+  <section id="pager" class="demo">
+    <h3>&lt;midori-pager&gt;</h3>
+    <div class="controls">
+      <label>total <input type="number" class="total" data-wcs="value|number: pagerTotal"></label>
+      <label>per <input type="number" class="per" data-wcs="value|number: pagerPer"></label>
+      <label>page <input type="number" class="page" data-wcs="value|number: pagerPage"></label>
+    </div>
+    <div class="stage"><midori-pager class="subject" data-wcs="total: pagerTotal; per: pagerPer; page: pagerPage"></midori-pager></div>
+    <p>ページが見ている page：<output class="readback" data-wcs="textContent: pagerPage"></output></p>
+  </section>
+
+  <section id="tabs" class="demo">
+    <h3>&lt;midori-tabs&gt;</h3>
+    <div class="controls">
+      <label>selected <input class="selected" data-wcs="value: tabsSelected"></label>
+    </div>
+    <div class="stage">
+      <midori-tabs class="subject" data-wcs="tabs: tabsList; selected: tabsSelected">
+        <div slot="one" class="panel-one"><p>一つ目のパネル。<input class="in-panel" data-wcs="value: tabsNote"></p></div>
+        <div slot="two" class="panel-two"><p>二つ目のパネル：<span class="echo" data-wcs="textContent: tabsNote"></span></p></div>
+        <div slot="three" class="panel-three"><p>三つ目のパネル。</p></div>
+      </midori-tabs>
+    </div>
+    <p>ページが見ている selected：<output class="readback" data-wcs="textContent: tabsSelected"></output></p>
+  </section>
+
+  <section id="dialog" class="demo">
+    <h3>&lt;midori-dialog&gt;</h3>
+    <div class="controls">
+      <button type="button" class="open" data-wcs="onclick: openDialog">開く</button>
+      <label>title <input class="title" data-wcs="value: dialogTitle"></label>
+    </div>
+    <midori-dialog class="subject" data-wcs="open: dialogOpen; title: dialogTitle">
+      <form class="dlg-form" data-wcs="onsubmit#prevent: dialogOk">
+        <label>名前 <input class="dlg-name" autofocus data-wcs="value: dialogName"></label>
+      </form>
+      <div slot="actions">
+        <button type="button" class="ok" data-wcs="onclick: dialogOk">OK</button>
+      </div>
+    </midori-dialog>
+    <p>open：<output class="readback" data-wcs="textContent: dialogOpen|string"></output> ／ 記録：<output class="log" data-wcs="textContent: dialogLogText"></output></p>
+  </section>
+
+  <section id="toast" class="demo">
+    <h3>&lt;midori-toast&gt;</h3>
+    <div class="controls">
+      <label>kind <select class="kind" data-wcs="value: toastKind"><option>info</option><option>success</option><option>warn</option><option>error</option></select></label>
+      <label>文 <input class="text" data-wcs="value: toastText"></label>
+      <label>秒 <input type="number" class="seconds" data-wcs="value|number: toastSeconds"></label>
+      <button type="button" class="show" data-wcs="onclick: showToast">表示</button>
+      <button type="button" class="five" data-wcs="onclick: showFive">5 件まとめて（自動で消えない）</button>
+    </div>
+    <midori-toast class="subject" data-wcs="command.show: $command.toast"></midori-toast>
+  </section>
+
+  <h2>開発者の部品（クラス）</h2>
+
+  <section id="tile" class="demo">
+    <h3>&lt;plot-tile&gt;</h3>
+    <div class="controls">
+      <button type="button" class="cycle" data-wcs="onclick: cycleTile">状態を変える</button>
+      <button type="button" class="rename" data-wcs="onclick: renameTenant">利用者を変える</button>
+      <label>filter <select class="filter" data-wcs="value: tileView.filter"><option>all</option><option>free</option><option>used</option><option>renewal</option><option>paused</option></select></label>
+      <label><input type="checkbox" class="selectable" data-wcs="checked: tileView.selectable"> 選べる</label>
+    </div>
+    <div class="stage tile-stage"><plot-tile class="subject" data-wcs="state: tile; state.view: tileView"></plot-tile></div>
+    <p>status：<output class="status" data-wcs="textContent: tile.status"></output> ／ 選択中：<output class="readback" data-wcs="textContent: tileSelected|string"></output></p>
+  </section>
+
+  <section id="area" class="demo">
+    <h3>&lt;area-block&gt;</h3>
+    <div class="controls">
+      <label>filter <select class="filter" data-wcs="value: areaView.filter"><option>all</option><option>free</option><option>used</option><option>renewal</option><option>paused</option></select></label>
+    </div>
+    <div class="stage"><area-block class="subject" data-wcs="state: area; state.view: areaView"></area-block></div>
+    <p>ページが読む空き（部品の値）：<output class="free" data-wcs="textContent: areaFree"></output> ／ 選択中の id：<output class="readback" data-wcs="textContent: areaView.selectedId"></output></p>
+  </section>
+
+  <section id="garden" class="demo">
+    <h3>&lt;garden-card&gt;</h3>
+    <div class="stage"><garden-card class="subject" data-wcs="state: garden; state.view: gardenView"></garden-card></div>
+    <p>ページが読む利用率（部品の値）：<output class="usage" data-wcs="textContent: gardenUsage"></output>%</p>
+  </section>
+
+  <section id="editor" class="demo">
+    <h3>&lt;tenant-editor&gt;</h3>
+    <div class="controls">
+      <button type="button" class="server-errors" data-wcs="onclick: serverErrors">サーバーのエラーを渡す</button>
+      <button type="button" class="mark-saved" data-wcs="onclick: markSaved">保存したことにする</button>
+    </div>
+    <div class="stage"><tenant-editor class="subject" data-wcs="state: tenant"></tenant-editor></div>
+    <p>ページのデータ：<output class="json" data-wcs="textContent: tenantJson"></output></p>
+    <p>dirty：<output class="dirty" data-wcs="textContent: tenantDirty"></output> ／ valid：<output class="valid" data-wcs="textContent: tenantValid"></output></p>
+  </section>
+
+  <section id="faq" class="demo">
+    <h3>&lt;faq-node&gt;</h3>
+    <div class="controls">
+      <label>検索 <input class="query" data-wcs="value: faqQuery"></label>
+      <button type="button" class="add-child" data-wcs="onclick: addFaqChild">子を足す</button>
+    </div>
+    <div class="stage">
+      <template data-wcs="for: faq"><faq-node data-wcs="state: .; state.q#ro: faqQuery"></faq-node></template>
+    </div>
+    <p>ページが読む質問数（部品の値の合計）：<output class="total" data-wcs="textContent: faqTotal"></output></p>
+  </section>
+</main>
+</body>
+</html>

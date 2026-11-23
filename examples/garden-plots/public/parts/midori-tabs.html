@@ -1,0 +1,71 @@
+<!--
+  みどり市 共通部品 <midori-tabs> — tab buttons and panels.
+  Designers: edit the <style> and the markup below; the state is the small object at the bottom.
+
+  Use:   <midori-tabs data-wcs="tabs: settingsTabs; selected: settings.tab">
+           <section slot="display"> … the page's own markup, with the page's bindings … </section>
+           <section slot="notify">  … </section>
+         </midori-tabs>
+         settingsTabs: [{ id: "display", label: "表示" }, { id: "notify", label: "通知" }]
+  Bindable: tabs (in: [{ id, label }] — each panel is the page's element with slot="<id>"), selected (both directions).
+  Keyboard: ← → Home End move between the tabs (the selection follows the focus).
+-->
+<midori-tabs data-wc-definition>
+  <template shadowrootmode="open">
+    <style>
+      :host { display: block; }
+      :host([hidden]) { display: none; }
+      [role="tablist"] { display: flex; gap: 0.2em; border-bottom: 2px solid var(--midori-line, #c9ced6); }
+      [role="tab"] { font: inherit; padding: 0.45em 1.1em; margin-bottom: -2px; cursor: pointer; border: 2px solid transparent;
+        border-bottom-color: var(--midori-line, #c9ced6); border-radius: 6px 6px 0 0; background: transparent;
+        color: var(--midori-muted, #4a5260); }
+      [role="tab"][aria-selected="true"] { color: var(--midori-fg, #1b1f24); font-weight: 700; background: var(--midori-surface, #fff);
+        border-color: var(--midori-line, #c9ced6); border-bottom-color: var(--midori-surface, #fff); }
+      [role="tab"]:focus-visible { outline: 3px solid var(--midori-focus, #1a73e8); outline-offset: -3px; }
+      [role="tabpanel"] { padding: var(--midori-pad, 0.8em) 0.2em; }
+      [role="tabpanel"][hidden] { display: none; }
+    </style>
+    <div role="tablist" data-wcs="onkeydown: keys">
+      <template data-wcs="for: tabs">
+        <button type="button" role="tab" data-wcs="attr.id: .tabId; attr.aria-selected: .ariaSelected; attr.tabindex: .tabIndex; attr.aria-controls: .panelId; attr.data-tab: .id; onclick: pick; textContent: .label"></button>
+      </template>
+    </div>
+    <template data-wcs="for: tabs">
+      <div role="tabpanel" tabindex="0" data-wcs="attr.id: .panelId; attr.aria-labelledby: .tabId; hidden: .hidden">
+        <slot data-wcs="attr.name: .id"></slot>
+      </div>
+    </template>
+    <wcs-state>
+      <script type="module">
+        export default {
+          /** @type {{ id: string, label: string }[]} */
+          tabs: [],
+          selected: "",
+          // The tab shown when `selected` names none of the tabs: the first.
+          get current() {
+            const ids = this.$getAll("tabs.*.id", []);
+            return ids.includes(this.selected) ? this.selected : (ids[0] ?? "");
+          },
+          get "tabs.*.isCurrent"() { return this[".id"] === this.current; },
+          get "tabs.*.ariaSelected"() { return String(this[".isCurrent"]); },
+          get "tabs.*.tabIndex"() { return this[".isCurrent"] ? "0" : "-1"; },
+          get "tabs.*.hidden"() { return !this[".isCurrent"]; },
+          get "tabs.*.tabId"() { return `tab-${this[".id"]}`; },
+          get "tabs.*.panelId"() { return `panel-${this[".id"]}`; },
+          pick(event, i) { this.selected = this.$resolve("tabs.*.id", [i]); },
+          keys(event) {
+            const buttons = [...event.target.parentElement.querySelectorAll('[role="tab"]')];
+            const i = buttons.indexOf(event.target);
+            if (i < 0) return;
+            const j = { ArrowRight: (i + 1) % buttons.length, ArrowLeft: (i - 1 + buttons.length) % buttons.length, Home: 0, End: buttons.length - 1 }[event.key];
+            if (j === undefined) return;
+            event.preventDefault();
+            this.selected = this.$resolve("tabs.*.id", [j]);
+            buttons[j].focus();
+          },
+          $bindables: ["tabs", "selected"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</midori-tabs>

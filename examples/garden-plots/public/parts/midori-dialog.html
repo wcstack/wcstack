@@ -1,0 +1,86 @@
+<!--
+  みどり市 共通部品 <midori-dialog> — a modal dialog (a real <dialog> inside) with a title.
+  Designers: edit the <style> and the markup below; the state is the small object at the bottom.
+
+  Use:   <midori-dialog data-wcs="open: returnOpen; title: returnTitle">
+           <p> … the page's own markup, bound to the page's data … </p>
+           <div slot="actions">
+             <button data-wcs="onclick: confirmReturn">返還する</button>
+             <button data-wcs="onclick: cancelReturn">やめる</button>
+           </div>
+         </midori-dialog>
+  Bindable: open (both directions: the page opens and closes it; Escape, the × and a click outside close it and
+            set open to false), title.
+  The focus goes into the dialog when it opens (put `autofocus` on the field to start in) and back to where it was
+  when it closes — the browser's own <dialog> behaviour.
+-->
+<midori-dialog data-wc-definition>
+  <template shadowrootmode="open">
+    <style>
+      :host { display: contents; }
+      dialog { box-sizing: border-box; width: min(36em, calc(100vw - 2em)); max-height: calc(100vh - 2em); padding: 0;
+        border: 1px solid var(--midori-line, #c9ced6); border-radius: 10px; background: var(--midori-surface, #fff);
+        color: var(--midori-fg, #1b1f24); box-shadow: 0 12px 40px rgb(0 0 0 / 0.3); font: inherit; }
+      dialog::backdrop { background: rgb(10 20 30 / 0.45); }
+      header { display: flex; align-items: center; gap: 0.6em; padding: 0.8em 1em 0.4em; }
+      h2 { margin: 0; font-size: 1.15em; flex: 1; }
+      .x { font: inherit; font-size: 1.3em; line-height: 1; width: 1.8em; height: 1.8em; border-radius: 50%; cursor: pointer;
+        border: 1px solid transparent; background: transparent; color: var(--midori-fg, #1b1f24); }
+      .x:hover { background: var(--midori-surface-2, #f1f3f5); }
+      .x:focus-visible { outline: 3px solid var(--midori-focus, #1a73e8); }
+      .body { padding: 0.4em 1em 0.8em; overflow: auto; }
+      footer { display: flex; justify-content: flex-end; gap: 0.5em; padding: 0.6em 1em 0.9em; }
+      footer:not(:has(slot[name="actions"])) { display: none; }
+    </style>
+    <dialog part="dialog" aria-labelledby="title"
+      data-wcs="command.showModal: $command.showDialog; command.close: $command.closeDialog; onclose: closed; onclick: outside">
+      <header>
+        <h2 id="title" data-wcs="textContent: title"></h2>
+        <button type="button" class="x" aria-label="閉じる" data-wcs="onclick: dismiss">×</button>
+      </header>
+      <div class="body"><slot></slot></div>
+      <footer><slot name="actions"></slot></footer>
+    </dialog>
+    <wcs-state>
+      <script type="module">
+        export default {
+          open: false,
+          title: "",
+          $commandTokens: ["showDialog", "closeDialog"],
+          // The page writes `open`; the <dialog> follows.
+          $watch: {
+            open(now) {
+              if (now) this.show();
+              else this.$command.closeDialog.emit();
+            },
+          },
+          // A dialog bound open from the start (`open` true before this instance was ready).
+          $connectedCallback() { if (this.open) this.show(); },
+          show() {
+            this.$command.showDialog.emit();
+            // Chromium starts on the page's [autofocus] field inside the dialog; Firefox and WebKit do not look into
+            // the slotted content, so point the focus there ourselves.
+            const root = /** @type {ShadowRoot} */ (this.$stateElement.getRootNode());
+            const start = [...root.querySelectorAll("slot")]
+              .flatMap((s) => s.assignedElements({ flatten: true }))
+              .map((el) => (el.matches("[autofocus]") ? el : el.querySelector("[autofocus]")))
+              .find(Boolean);
+            /** @type {HTMLElement | undefined} */ (start)?.focus();
+          },
+          // Escape, the ×, or the page's own close: tell the page.
+          closed() { if (this.open) this.open = false; },
+          dismiss() { this.open = false; },
+          // A click on the backdrop lands on the <dialog> itself, outside its box.
+          outside(event) {
+            const d = event.target;
+            if (d?.localName !== "dialog") return;
+            const r = d.getBoundingClientRect();
+            const inside = event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+            if (!inside) this.open = false;
+          },
+          $bindables: ["open", "title"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</midori-dialog>

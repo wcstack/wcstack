@@ -1,0 +1,17 @@
+{
+  "name": "wcstack-garden-plots",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a city's allotment-garden console assembled from parts — designers' parts in HTML alone (Declarative Custom Components, loaded from their own files by the autoloader), developers' parts as classes mounted on the page's data (bind-component), another vendor's element, and a state split into one volume per feature.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/server": "^4.28.0",
+    "@wcstack/state": "^4.28.0",
+    "@wcstack/testing": "^4.28.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.0.5"
+  }
+}

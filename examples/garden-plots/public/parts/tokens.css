@@ -1,0 +1,113 @@
+/* みどり市 共通部品 — design tokens. Every page links this file; every part reads these custom properties (they cross
+   shadow roots by inheritance). The theme and the density are attributes on <html>:
+   <html data-theme="light|dark|contrast" data-density="normal|compact"> — written by the page from the settings. */
+
+:root {
+  color-scheme: light;
+  --midori-font: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "BIZ UDPGothic", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
+  --midori-bg: #f4f6f8;
+  --midori-surface: #ffffff;
+  --midori-surface-2: #f1f3f5;
+  --midori-fg: #1b1f24;
+  --midori-muted: #4a5260;
+  --midori-line: #c9ced6;
+  --midori-line-strong: #8a929c;
+  --midori-accent: #2f62a3;
+  --midori-on-accent: #ffffff;
+  --midori-focus: #1a73e8;
+  --midori-error: #b3261e;
+  --midori-hit: #fff3b0;
+  --midori-toggle-off: #8a929c;
+  --midori-toggle-on: #2e8b47;
+
+  --midori-free-accent: #2e8b47; --midori-free-tile: #f1faf3; --midori-free-bg: #dff3e4; --midori-free-fg: #0d5a26;
+  --midori-used-accent: #2f62a3; --midori-used-tile: #f2f6fc; --midori-used-bg: #e6eef8; --midori-used-fg: #123e6b;
+  --midori-renewal-accent: #c08a00; --midori-renewal-tile: #fff9e8; --midori-renewal-bg: #fff1cc; --midori-renewal-fg: #6b4a00;
+  --midori-paused-accent: #7a7a7a; --midori-paused-tile: #f3f3f3; --midori-paused-bg: #ececec; --midori-paused-fg: #3b3b3b;
+  --midori-info-bg: #e6eef8; --midori-info-fg: #123e6b;
+  --midori-warn-bg: #fde2e1; --midori-warn-fg: #8a1c13;
+
+  --midori-pad: 0.7em;
+  --midori-gap: 0.7em;
+  --midori-tile-w: 4.6em;
+  --midori-tile-h: 3.4em;
+  font-size: 16px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --midori-bg: #14181d;
+  --midori-surface: #1d232a;
+  --midori-surface-2: #262d35;
+  --midori-fg: #e8ecf0;
+  --midori-muted: #aab4bf;
+  --midori-line: #3a434d;
+  --midori-line-strong: #6b7682;
+  --midori-accent: #7fb0ff;
+  --midori-on-accent: #0b1a2e;
+  --midori-focus: #8ab4ff;
+  --midori-error: #ff8a80;
+  --midori-hit: #5c4d00;
+  --midori-toggle-off: #5b6570;
+  --midori-toggle-on: #4cc27a;
+  --midori-free-accent: #4cc27a; --midori-free-tile: #17291e; --midori-free-bg: #1e3a28; --midori-free-fg: #b9f0cc;
+  --midori-used-accent: #7fb0ff; --midori-used-tile: #18222f; --midori-used-bg: #1f3149; --midori-used-fg: #cfe0ff;
+  --midori-renewal-accent: #f0c24b; --midori-renewal-tile: #2b2513; --midori-renewal-bg: #3d3313; --midori-renewal-fg: #ffe7a6;
+  --midori-paused-accent: #9aa3ad; --midori-paused-tile: #22262b; --midori-paused-bg: #30353b; --midori-paused-fg: #dde1e5;
+  --midori-info-bg: #1f3149; --midori-info-fg: #cfe0ff;
+  --midori-warn-bg: #4a1f1c; --midori-warn-fg: #ffd0cb;
+}
+
+:root[data-theme="contrast"] {
+  color-scheme: light;
+  --midori-bg: #ffffff;
+  --midori-surface: #ffffff;
+  --midori-surface-2: #ffffff;
+  --midori-fg: #000000;
+  --midori-muted: #000000;
+  --midori-line: #000000;
+  --midori-line-strong: #000000;
+  --midori-accent: #0000b3;
+  --midori-on-accent: #ffffff;
+  --midori-focus: #c00000;
+  --midori-error: #a00000;
+  --midori-hit: #ffff00;
+  --midori-toggle-off: #000000;
+  --midori-toggle-on: #0000b3;
+  --midori-free-accent: #005a00; --midori-free-tile: #ffffff; --midori-free-bg: #ffffff; --midori-free-fg: #005a00;
+  --midori-used-accent: #0000b3; --midori-used-tile: #ffffff; --midori-used-bg: #ffffff; --midori-used-fg: #0000b3;
+  --midori-renewal-accent: #6b3d00; --midori-renewal-tile: #ffffff; --midori-renewal-bg: #ffffff; --midori-renewal-fg: #6b3d00;
+  --midori-paused-accent: #000000; --midori-paused-tile: #ffffff; --midori-paused-bg: #ffffff; --midori-paused-fg: #000000;
+  --midori-info-bg: #ffffff; --midori-info-fg: #000000;
+  --midori-warn-bg: #ffffff; --midori-warn-fg: #a00000;
+  --midori-badge-border: #000000;
+}
+
+:root[data-density="compact"] {
+  --midori-pad: 0.4em;
+  --midori-gap: 0.4em;
+  --midori-tile-w: 3.9em;
+  --midori-tile-h: 2.8em;
+  font-size: 14px;
+}
+
+/* A part whose file has not arrived yet. Designers' parts whose content is the page's own text stay readable; parts
+   that render everything themselves hold their place with a quiet box. */
+midori-badge:not(:defined) { display: inline-block; padding: 0 0.5em; border-radius: 99px; font-size: 0.85em;
+  background: var(--midori-surface-2); color: var(--midori-muted); }
+midori-toggle:not(:defined) { display: inline-block; opacity: 0.6; }
+midori-toggle:not(:defined)::before { content: "○ "; }
+midori-tabs:not(:defined) > :not(:first-child) { display: none; }
+midori-tabs:not(:defined) { display: block; opacity: 0.7; }
+midori-dialog:not(:defined) { display: none; }
+midori-toast:not(:defined) { display: none; }
+midori-pager:not(:defined) { display: block; min-height: 2.2em; }
+midori-pager:not(:defined)::before { content: "ページ送りを読み込み中…"; color: var(--midori-muted); font-size: 0.9em; }
+garden-card:not(:defined), area-block:not(:defined) { display: block; min-height: 12em; border-radius: 8px;
+  border: 1px dashed var(--midori-line); background: var(--midori-surface-2); }
+garden-card:not(:defined)::before, area-block:not(:defined)::before, tenant-editor:not(:defined)::before,
+faq-node:not(:defined)::before { content: "読み込み中…"; display: block; padding: 1em; color: var(--midori-muted); }
+plot-tile:not(:defined) { display: block; min-height: var(--midori-tile-h); border-radius: 4px; background: var(--midori-surface-2); }
+tenant-editor:not(:defined) { display: block; min-height: 10em; border: 1px dashed var(--midori-line); border-radius: 6px; }
+faq-node:not(:defined) { display: block; min-height: 2em; }
+[data-wc-definition] { display: none; }

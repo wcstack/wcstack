@@ -1,0 +1,83 @@
+<!--
+  みどり市 共通部品 <midori-toast> — a stack of messages at the bottom of the window.
+  Designers: edit the <style> and the markup below; the state is the small object at the bottom.
+
+  Use:   <midori-toast data-wcs="command.show: $command.toast"></midori-toast>
+         page state: $commandTokens: ["toast"], … this.$command.toast.emit({ kind: "info", text: "保存しました", seconds: 4 })
+  Command: show({ kind, text, seconds }) — kind: info / success / warn / error; seconds: how long it stays (default 5,
+           0 = until its × is pressed).
+  At most three are visible; the rest wait and come up as the visible ones go.
+-->
+<midori-toast data-wc-definition>
+  <template shadowrootmode="open">
+    <style>
+      :host { position: fixed; left: 50%; bottom: 1.2em; transform: translateX(-50%); z-index: 1000;
+        width: min(32em, calc(100vw - 2em)); pointer-events: none; }
+      ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5em; }
+      li { pointer-events: auto; display: flex; align-items: flex-start; gap: 0.6em; padding: 0.7em 0.8em 0.7em 1em;
+        border-radius: 8px; border-left: 0.4em solid var(--toast-accent); background: var(--midori-surface, #fff);
+        color: var(--midori-fg, #1b1f24); box-shadow: 0 6px 24px rgb(0 0 0 / 0.22); }
+      li.k-info { --toast-accent: var(--midori-accent, #2f62a3); }
+      li.k-success { --toast-accent: var(--midori-free-accent, #2e8b47); }
+      li.k-warn { --toast-accent: var(--midori-renewal-accent, #c08a00); }
+      li.k-error { --toast-accent: var(--midori-error, #b3261e); }
+      .text { flex: 1; }
+      button { font: inherit; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1.2em; line-height: 1; }
+      button:focus-visible { outline: 3px solid var(--midori-focus, #1a73e8); }
+      .more { justify-self: center; pointer-events: auto; font-size: 0.85em; padding: 0.2em 0.8em; border-radius: 99px;
+        background: var(--midori-surface-2, #f1f3f5); color: var(--midori-muted, #4a5260); }
+      @starting-style { li { opacity: 0; translate: 0 0.6em; } }
+      li { transition: opacity 0.2s, translate 0.2s; }
+    </style>
+    <ol role="status" aria-live="polite" aria-label="お知らせ">
+      <template data-wcs="for: visible">
+        <li data-wcs="className: .cls; attr.data-kind: .kind">
+          <span class="text" data-wcs="textContent: .text"></span>
+          <button type="button" aria-label="閉じる" data-wcs="onclick: dismiss">×</button>
+        </li>
+      </template>
+    </ol>
+    <p class="more" data-wcs="hidden: waitingCount|eq(0); textContent: moreLabel"></p>
+    <wcs-state>
+      <script type="module">
+        const LIMIT = 3;
+        export default {
+          messages: [],
+          nextId: 1,
+          get visible() { return this.messages.slice(0, LIMIT); },
+          get waitingCount() { return Math.max(0, this.messages.length - LIMIT); },
+          get moreLabel() { return `ほか ${this.waitingCount} 件`; },
+          get "messages.*.cls,visible.*.cls"() { return `k-${this[".kind"]}`; },
+          show(message) {
+            const m = typeof message === "string" ? { text: message } : (message ?? {});
+            const kind = ["info", "success", "warn", "error"].includes(m.kind) ? m.kind : "info";
+            const seconds = m.seconds === undefined ? 5 : Number(m.seconds);
+            const id = this.nextId;
+            this.nextId = id + 1;
+            this.messages = this.messages.concat({ id, kind, text: String(m.text ?? ""), seconds, started: false });
+            this.schedule();
+            return id;
+          },
+          // Start the clock of each visible message that has not started yet.
+          schedule() {
+            const start = this.messages.slice(0, LIMIT).filter((m) => !m.started);
+            if (start.length === 0) return;
+            const ids = new Set(start.map((m) => m.id));
+            this.messages = this.messages.map((m) => (ids.has(m.id) ? { ...m, started: true } : m));
+            for (const m of start) {
+              if (m.seconds > 0) setTimeout(() => this.remove(m.id), m.seconds * 1000);
+            }
+          },
+          remove(id) {
+            if (!this.messages.some((m) => m.id === id)) return;
+            this.messages = this.messages.filter((m) => m.id !== id);
+            this.schedule();
+          },
+          dismiss(event, i) { this.remove(this.visible[i].id); },
+          $listKeys: { messages: "id" },
+          $commands: ["show"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</midori-toast>
