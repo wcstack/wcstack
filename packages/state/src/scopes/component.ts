@@ -14,7 +14,8 @@
  * owns an independent tree; a Light DOM one cannot (it shares the page) and fails loudly.
  *
  * `#ro` on an entry (`state#ro: user`) is honoured as in 3.3: a component's code writing through it
- * throws `[wcs/mount-readonly]`, an element's write-back inside the component is dropped.
+ * throws `[wcs/mount-readonly]`, an element's write-back inside the component is dropped — and so
+ * does a component mounted inside it, whatever it was handed that entry's data as.
  *
  * A whole mount's accessors are exported at the mount point (README "Exported getters"): the host
  * reads `user.display` (row by row for `state: .`) from the component mounted there, unless the
@@ -209,11 +210,17 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
   // element's class is defined — or, written in its markup on a host the page did not bind, now
   const marked = wiredInMarkup(host, prop);
   if (marked && wiring().length === 0) wireLate(host);
+  // A row the server rendered without the component's class (an autoloader does not run there) has no
+  // mark: the page's state binds its wiring when it adopts the row. A component defined before that
+  // started unwired, and the wiring then could not reach it (docs/seam-apps.md, garden-plots)
+  if (!marked && wiring().length === 0) await ((host.getRootNode() as ParentNode).querySelector?.(`${config.tagNames.state}[enable-ssr]`) as WcsState | null)?.initializePromise;
   if (wiring().length === 0 && (marked || wiredOnServer(host, prop))) {
     // (if the page's state fails, its wiring never comes)
     let stop!: () => boolean;
     await new Promise<void>((r, j) => {
-      waiting.set(host, r);
+      // (a second <wcs-state bind-component> of the host waits with the first: it is refused when it starts)
+      const w = waiting.get(host);
+      waiting.set(host, () => { w?.(); r(); });
       stop = onRootFailed(host.getRootNode(), () => j(new Error(`[@wcstack/state] <${tag}>.${prop} will not mount: the root state failed to initialize.`)));
     }).finally(() => stop());
   }
@@ -610,6 +617,24 @@ function exportReached(m: Mount, g: Pattern): void {
   }
 }
 
+/** The mounted key component pattern `p` is, or is under, and the host's pattern for `p`. */
+function hostPattern(m: Mount, p: Pattern): [Synth, Pattern] | undefined {
+  for (let s: Pattern | null = p; s !== null; s = s.parent) {
+    const info = m.synth.get(s);
+    if (info !== undefined) return [info, s === p ? info.p : m.host.engine!.pattern(info.p.path + p.path.slice(s.path.length))];
+  }
+}
+
+/**
+ * The `hostOf` hook (diagnostics): what a mounted component's pattern reads — its host's engine and
+ * pattern — with the component's tag and the names it has for a key (its own, and those it was handed).
+ */
+export function hostOf(C: Engine, p: Pattern): [Engine, Pattern, string, string[]] | undefined {
+  const m = mounts.get(C);
+  const at = m && hostPattern(m, p);
+  if (at) return [m!.host.engine!, at[1], m!.host.el.localName, [...Object.keys(m!.host.state), ...m!.host.entries.map((e) => headOf(e.inner))]];
+}
+
 /**
  * The `beforeWrite` hook: a component's write through a `#ro` entry, or through an entry whose
  * host row is gone. Code (a method, `element.state`, `$setAll` / `$resolve`) is refused; an
@@ -617,15 +642,15 @@ function exportReached(m: Mount, g: Pattern): void {
  * would (@wcstack/state 3.3).
  */
 export function guardReadonlyMount(E: Engine, p: Pattern, element: boolean): boolean {
-  const m = mounts.get(E);
-  if (m === undefined) return false;
-  let info: Synth | undefined;
-  for (let s: Pattern | null = p; s !== null && info === undefined; s = s.parent) info = m.synth.get(s);
-  if (info === undefined) return false;
-  const e = info.e;
+  const m = mounts.get(E)!;
+  const at = m && hostPattern(m, p);
+  if (!at) return false;
+  const e = at[0].e;
   // the host's row went away (an await outlived it): the write has nowhere to land (3.3.x)
   const gone = e.row !== null && !e.row.alive;
-  if (!gone && !e.ro) return false;
+  // not read-only here: the component it is mounted in may have been handed the data read-only. A write
+  // under a mounted key lands in the shared object, never asking that one (docs/seam-apps.md, garden-plots)
+  if (!gone && !e.ro) return guardReadonlyMount(m.host.engine!, at[1], element);
   if (element) return true;
   live(m, e.row);
   raiseError(`[wcs/mount-readonly] <${m.host.el.localName}> cannot write "${p.path}": it is mounted read-only ("${m.host.prop}${e.inner === "" ? "" : `.${e.inner}`}#ro: ${e.outer.path}"). Write it on the host, or drop #ro from the mount.`);
