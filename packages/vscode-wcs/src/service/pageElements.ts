@@ -26,6 +26,7 @@ import type { AnyNode } from 'acorn';
 import { parseErasingTypes } from './typeErasure.js';
 import { extractAttribute } from '../language/htmlParse.js';
 import type { FileReader } from './statePathResolver.js';
+import { collectDccContracts, mayUseDcc, scopeSource } from './dccDefinitions.js';
 
 /** A page element's members, in the shape of a built-in tag's contract (ioNodeValidator). */
 export interface PageElementContract {
@@ -172,7 +173,12 @@ let lastRead: { html: string; fileReader: FileReader | undefined; contracts: Rea
  */
 export function collectPageElementContracts(html: string, fileReader?: FileReader): ReadonlyMap<string, PageElementContract> {
   if (lastRead !== null && lastRead.fileReader === fileReader && lastRead.html === html) return lastRead.contracts;
-  const contracts = readPageElementContracts(html, fileReader);
+  // (a scope cut from a page — core/validateDocument.ts — is read with the page's scripts and definitions)
+  const contracts = readPageElementContracts(scopeSource(html), fileReader);
+  // the Declarative Custom Components the page uses: `$bindables` / `$commands` are their contract (dccDefinitions.ts)
+  if (mayUseDcc(html)) {
+    for (const [tag, contract] of collectDccContracts(html, fileReader)) if (!contracts.has(tag)) contracts.set(tag, contract);
+  }
   lastRead = { html, fileReader, contracts };
   return contracts;
 }
@@ -248,6 +254,6 @@ function readPageElementContracts(html: string, fileReader?: FileReader): Map<st
 
 /** Whether the page might define custom elements (a cheap gate before the scripts are read). */
 export function mayDefineElements(html: string): boolean {
-  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(html);
+  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(scopeSource(html)) || mayUseDcc(html);
 }
 

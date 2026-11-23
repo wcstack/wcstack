@@ -46,6 +46,8 @@ import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest, schemaAppliesToPage } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
 import { inlineExternalStates, locateInlined } from "./externalState.js";
+import { blankRanges, findDccDefinitions, keepOnly, registerScopeSource } from "../service/dccDefinitions.js";
+import { validateDccAttributes, validateDccDeclarations } from "../service/dccDeclarationValidator.js";
 import type { JsonSchemaNode } from "./sidecar/types.js";
 
 export interface ValidateDocumentOptions {
@@ -93,13 +95,46 @@ export interface ValidateDocumentOptions {
  * HTML テキストを全 validator で検査し、code 付き診断を安定順で返す。
  */
 export function validateDocument(text: string, options: ValidateDocumentOptions = {}): WcsDiagnostic[] {
+  return validateScopes(text, options, text);
+}
+
+/**
+ * A Declarative Custom Component's definition is a scope of its own: the markup in its template is bound by its own
+ * `<wcs-state>`, never by the page's. So the page is checked without its definitions, and each definition's content
+ * (with its `<template shadowrootmode>` tags) as a document of its own — the same text with the rest blanked, so
+ * every offset stays where it is, and the content is in a template for the rules that ask, as it always was. Up to 4.28 the
+ * definition's keys and the page's were one set: a page's binding passed on a key only a part had, and a part's on a
+ * key only the page had (the garden-plots seam app).
+ *
+ * `env` is the text the page-level rules read (the scripts a page loads, its `<base>`, its outlets): the whole page
+ * for the page, none for a definition.
+ */
+function validateScopes(text: string, options: ValidateDocumentOptions, env: string | null, inDefinition: boolean = false): WcsDiagnostic[] {
+  const definitions = findDccDefinitions(text);
+  if (definitions.length === 0) return validateScope(text, options, env, inDefinition);
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const page = blankRanges(text, definitions.map((d) => [d.hostStart, d.hostEnd] as const));
+  registerScopeSource(page, text);
+  const out = [...validateScope(page, options, env, inDefinition)];
+  for (const definition of definitions) {
+    const scope = keepOnly(text, definition.templateStart, definition.templateEnd);
+    registerScopeSource(scope, text);
+    out.push(...validateScopes(scope, options, null, true));
+    out.push(...validateDccDeclarations(text, definition, stateTagName, options.locale, options.fileReader));
+  }
+  return sortDiagnostics(out);
+}
+
+/** One scope: the page (or a fragment) without its definitions, or one definition's content. */
+function validateScope(text: string, options: ValidateDocumentOptions, env: string | null, inDefinition: boolean): WcsDiagnostic[] {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const fileReader = options.fileReader;
-  const applicationSchema = applicationSchemaFor(text, stateTagName, options);
+  // (an application's stateSchema describes the page's tree, not a part's)
+  const applicationSchema = inDefinition ? undefined : applicationSchemaFor(text, stateTagName, options);
   // A `src` the reader cannot read: once, on the page (the second pass below would find it again). Bindings in a file
   // with no `<wcs-state>` (a fragment): their paths are not checked — said once (no state, so no second pass)
   const found = [
-    ...validateText(text, options, applicationSchema),
+    ...validateText(text, options, applicationSchema, env),
     ...validateStateSources(text, stateTagName, options.locale, fileReader),
     ...validateStateAbsent(text, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema),
     // a stateSchema whose top-level keys are not the root state script's: stale (once, on the page's `<wcs-state>`)
@@ -113,7 +148,9 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const key = (d: WcsDiagnostic): string => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\u0000");
   const seen = new Set(found.map(key));
   const out = [...found];
-  for (const d of validateText(page.text, options, applicationSchema)) {
+  // (the page-level rules read the inlined text too, as they always did — a state file's imports count among the page's;
+  //  with definitions cut out of the page they were asked over the whole page in the first pass, and are not asked again)
+  for (const d of validateText(page.text, options, applicationSchema, env === text ? page.text : null)) {
     const start = locateInlined(page, d.start);
     const end = locateInlined(page, d.end);
     let mapped: WcsDiagnostic;
@@ -161,8 +198,11 @@ function applicationSchemaFor(text: string, stateTagName: string, options: Valid
   return schemaAppliesToPage(text, stateTagName, stateSource, options.fileReader) ? schema : undefined;
 }
 
-/** Every validator over one text (the page, or the page with its external states inline). */
-function validateText(text: string, options: ValidateDocumentOptions, applicationSchema: JsonSchemaNode | undefined): WcsDiagnostic[] {
+/**
+ * Every validator over one text (a scope, or a scope with its external states inline). `env`: the text the
+ * page-level rules read, or null when they are not asked (a definition; the second pass, which would say them twice).
+ */
+function validateText(text: string, options: ValidateDocumentOptions, applicationSchema: JsonSchemaNode | undefined, env: string | null): WcsDiagnostic[] {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
@@ -188,9 +228,13 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateIoAttributes(text, bindAttribute, locale));
   // `on*: $command.x` wired straight to a command that takes data: the event lands in the data's place
   out.push(...validateCommandArguments(text, bindAttribute, locale));
-  out.push(...validateDocumentEnv(text, locale));
-  // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
-  out.push(...validatePackageLoads(text, locale, fileReader));
+  if (env !== null) {
+    out.push(...validateDocumentEnv(env, locale));
+    // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
+    out.push(...validatePackageLoads(env, locale, fileReader));
+  }
+  // an instance of a DCC that carries one of the part's inputs as an attribute
+  out.push(...validateDccAttributes(text, stateTagName, locale, fileReader));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));

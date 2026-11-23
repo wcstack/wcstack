@@ -368,7 +368,7 @@ export function createTemplateChain(html: string): (offset: number) => readonly 
 }
 
 /** The `<template>` start and end tags of the document, in order (not in comments or raw text elements). */
-function collectTemplateTags(html: string): { at: number; close: boolean }[] {
+export function collectTemplateTags(html: string): { at: number; close: boolean }[] {
   const lower = asciiLowerCase(html);
   const tags: { at: number; close: boolean }[] = [];
   let pos = 0;

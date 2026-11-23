@@ -341,6 +341,26 @@ export interface WcsMessageCatalog {
   bindComponentSource(prop: string, sources: readonly string[]): string;
   /** 同じ root の 2 つ目の `<wcs-state>`（ランタイムの #47。後から読み込んだ方を拒んで console.error）。 */
   secondRoot(): string;
+  /** A `<wcs-state bind-component>` in a DCC definition (`tag`): the runtime refuses the definition. */
+  dccBindComponent(tag: string): string;
+  /** A second `<wcs-state>` of the definition's own (not in a template of its content). */
+  dccSecondState(tag: string): string;
+  /** `$bindables` / `$commands` (`key`) whose value is a literal that is not a list. */
+  dccListNotArray(key: string): string;
+  /** An empty string in the list. */
+  dccEntryEmpty(key: string): string;
+  /** An entry that starts with `$`. */
+  dccEntryInternal(key: string, name: string): string;
+  /** An entry written twice. */
+  dccEntryDuplicated(key: string, name: string): string;
+  /** An entry the state does not have. */
+  dccEntryMissing(key: string, name: string): string;
+  /** A method listed in `$bindables`. */
+  dccBindableIsMethod(name: string): string;
+  /** A value (a data key, a getter) listed in `$commands`. */
+  dccCommandIsValue(name: string): string;
+  /** An instance of a DCC (`tag`) carrying one of its `$bindables` (`name`) as an attribute. */
+  dccAttribute(tag: string, name: string): string;
   /** `$1`〜`$128` の範囲の外の添字（ランタイムの `[wcs/index-param-range]`。`max` は manifest の `syntax.indexParam.maxDepth`）。 */
   indexParamRange(key: string, max: number): string;
   /** マークアップの `$0` / `$01` / `$1000`（添字の形でなく、`$` の名前空間にパスも無い。ランタイムは `[wcs/binding-path-missing]` でバインディングを失敗させる）。 */
@@ -751,6 +771,26 @@ const ja: WcsMessageCatalog = {
     `${key} はボリューム（mount="${mountPath}"）では実行されません。ランタイムは接ぎ木を拒んで console.error で報告します（この state は木に載りません）。root の state に宣言してください`,
   volumeDeclarationNotRun: (key, mountPath) =>
     `${key} はボリューム（mount="${mountPath}"）では実行されません（ランタイムは console.warn で知らせ、この宣言を無視します — root の state のものです）。root の state に宣言してください`,
+  dccBindComponent: (tag) =>
+    `<${tag} data-wc-definition> の中の <wcs-state> に bind-component があります。DCC の state は定義のテンプレートのもので、インスタンスごとに読み込まれます。ランタイムはこの定義を拒み（a <wcs-state bind-component> cannot define a component）、<${tag}> はどのページでも定義されません。bind-component を外すか、クラスの部品として書いてください`,
+  dccSecondState: (tag) =>
+    `<${tag} data-wc-definition> に 2 つ目の <wcs-state> があります。定義の state は 1 つです: それぞれがタグを定義しようとし、ランタイムは 2 つ目を拒みます（<${tag}> is already defined）。インスタンスでも 2 つ目の root として拒まれます。1 つにまとめてください`,
+  dccListNotArray: (key) =>
+    `${key} は state のメンバー名のリストです（${key}: ["name", …]）。リストでないと、ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccEntryEmpty: (key) =>
+    `${key} の項目は空でない文字列です。空の項目があると、ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccEntryInternal: (key, name) =>
+    `${key} の "${name}" は $ で始まります。$ で始まるメンバーは内部のもので、公開できません。ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccEntryDuplicated: (key, name) =>
+    `${key} に "${name}" が 2 回あります。ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccEntryMissing: (key, name) =>
+    `${key} の "${name}" は、この定義の state にありません。ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccBindableIsMethod: (name) =>
+    `$bindables の "${name}" はメソッドです。メソッドは $commands に書きます。ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccCommandIsValue: (name) =>
+    `$commands の "${name}" はメソッドではありません。値は $bindables に書きます。ランタイムはこの定義を拒み、タグはどのページでも定義されません`,
+  dccAttribute: (tag, name) =>
+    `<${tag}> の入力 "${name}" を属性で書いています。DCC の入力は $bindables に並べたプロパティで、属性は読まれません: 部品は既定のままです。束ねる（data-wcs="${name}: <パス>"）か、プロパティに書いてください`,
   secondRoot: () =>
     '同じ root に 2 つ目の <wcs-state> があります。state の木は root ごとに 1 つです（ランタイムは後から読み込んだ方を拒んで console.error で報告します）。部分木は <wcs-state mount="path"> で接ぎ木してください',
   bindComponentSource: (prop, sources) =>
@@ -1160,6 +1200,26 @@ const en: WcsMessageCatalog = {
     `${key} is not run in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state`,
   volumeDeclarationNotRun: (key, mountPath) =>
     `${key} is not run in a volume (mount="${mountPath}"): the runtime says so with console.warn and ignores this declaration — it belongs to the root state. Declare it there`,
+  dccBindComponent: (tag) =>
+    `The <wcs-state> in <${tag} data-wc-definition> has bind-component. A DCC's state belongs to the definition's template and is loaded per instance: the runtime refuses this definition (a <wcs-state bind-component> cannot define a component), and <${tag}> is defined on no page. Drop bind-component, or write the part as a class`,
+  dccSecondState: (tag) =>
+    `A second <wcs-state> in <${tag} data-wc-definition>. A definition has one state: each tries to define the tag, and the runtime refuses the second (<${tag}> is already defined) — and in an instance, as a second root. Put them in one`,
+  dccListNotArray: (key) =>
+    `${key} is a list of the state's member names (${key}: ["name", …]). The runtime refuses a definition where it is not a list, and the tag is defined on no page`,
+  dccEntryEmpty: (key) =>
+    `An entry of ${key} is a non-empty string. The runtime refuses a definition with an empty one, and the tag is defined on no page`,
+  dccEntryInternal: (key, name) =>
+    `"${name}" in ${key} starts with $: such members are internal and are never exposed. The runtime refuses this definition, and the tag is defined on no page`,
+  dccEntryDuplicated: (key, name) =>
+    `"${name}" is listed twice in ${key}. The runtime refuses this definition, and the tag is defined on no page`,
+  dccEntryMissing: (key, name) =>
+    `"${name}" in ${key} is not a member of this definition's state. The runtime refuses this definition, and the tag is defined on no page`,
+  dccBindableIsMethod: (name) =>
+    `"${name}" in $bindables is a method: list it in $commands. The runtime refuses this definition, and the tag is defined on no page`,
+  dccCommandIsValue: (name) =>
+    `"${name}" in $commands is not a method: list a value in $bindables. The runtime refuses this definition, and the tag is defined on no page`,
+  dccAttribute: (tag, name) =>
+    `<${tag}>'s input "${name}" is written as an attribute. A DCC's inputs are the properties its $bindables lists: the attribute is not read, and the part shows its default. Bind it (data-wcs="${name}: <path>") or set the property`,
   secondRoot: () =>
     'A second <wcs-state> on the same root: there is one state tree per root (the runtime refuses the one that loads second and reports it with console.error). Graft a subtree with <wcs-state mount="path">',
   bindComponentSource: (prop, sources) =>

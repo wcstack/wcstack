@@ -3045,6 +3045,8 @@ Since 4.28, [`@wcstack/autoloader`](../autoloader/README.md#declarative-custom-c
 - **The first value.** What the page writes before the instance's state is there is in the state before its bindings are built and `$connectedCallback` runs — since 4.28. Up to 4.27 it landed after `$connectedCallback` and before the watches started, so neither that callback nor a `$watch` on the member saw it — only a getter did. A later write is an ordinary one: `$watch` hears it.
 - **Whole values.** A DCC and the page each run a state of their own, and an object or an array handed over is the same object on both sides. A write of a field inside it (`this["tabs.0.label"] = …` in the DCC) changes the shared object and fires the member's change event, and the page's bindings on that exact path and its getters follow — a row of the page's `for: tabs` does not, and a write of the page's inside the object does not reach the DCC's rows. Write the member itself: `this.tabs = this.tabs.map(…)` in the DCC, a new array or object from the page.
 
+**The lint and a DCC.** Since 4.29 (not released yet) `@wcstack/lint` reads a definition: its markup is checked against its own state, `$bindables` / `$commands` the runtime would refuse are errors (`wcs/dcc-declaration`), what a page binds on an instance is checked against them (`wcs/tag-member-unknown`), and an input written as an attribute is a warning (`wcs/dcc-attribute`). A definition in a file of its own is read through the page's import map.
+
 ### Shadow Root Mode
 
 Both `open` and `closed` modes are supported:

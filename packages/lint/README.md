@@ -176,6 +176,18 @@ Since 4.26, from the lending-desk seam app — an equipment-lending desk written
 
 `--errors-only` prints the errors now found in TypeScript (`wcs/tag-member-unknown` on an element defined in a `.ts` module, `wcs/getter-untracked-read` on a typed getter, …); `--strict` also fails on the two new warnings and on the wider `wcs/filter-input-type`.
 
+## What a page assembled from parts is told
+
+Since 4.29 (not released yet), from the garden-plots seam app — a console assembled from a city's shared parts: designers' parts in HTML alone (Declarative Custom Components), developers' parts as classes mounted on the page's data. Up to 4.28 the lint knew nothing of a part: of the 45 mistakes its author made on purpose it caught 2.
+
+**A Declarative Custom Component** (`<my-pager data-wc-definition><template shadowrootmode="open"> … <wcs-state> … </wcs-state></template></my-pager>`):
+
+- **A definition is a scope of its own.** The markup in its template is checked against the definition's own `<wcs-state>`, and the page's markup against the page's. Up to 4.28 the two were one set of keys: a page's binding passed on a key only a part had, and a part's on a key only the page had. A part's file (`parts/my-pager.html`) is checked the same way when it is named on the command line.
+- **`wcs/dcc-declaration`** (error) — a definition the runtime refuses when it defines the tag, by the same conditions: `$bindables` / `$commands` that is not a list; an entry that is empty, starts with `$`, is written twice or is not a member of the state; a method in `$bindables`; a value in `$commands`; a `<wcs-state bind-component>` in a definition; a second `<wcs-state>` of the definition's own. The refused definition defines nothing, so every instance on every page stays an unknown element. Only what is certain is said: a list that is not a literal, a state that is not an `export default { … }` literal and a state file the lint cannot read are left alone.
+- **`wcs/tag-member-unknown`** (error) now covers a DCC: `<my-pager data-wcs="totl: n">` and `command.nxt:` are checked against the part's `$bindables` and `$commands`, with the near name. The definition is read where the page says it is — in the page, or in the file the import map names for the autoloader's `dcc` loader: an eager key whose file ends in `.html` or that says `|dcc`, a namespace that says `|dcc/`. A file the lint cannot read gives no contract, and the tag's bindings are not checked: a path from `/` is read only with `--root=<dir>`.
+- **`wcs/dcc-attribute`** (warning) — an instance that carries one of the part's `$bindables` as an attribute (`<my-pager total="120">`). A DCC's inputs are properties: the attribute is not read, and the part shows its default. The runtime warns with the same code since 4.28. Once per tag and name.
+
+
 ## Use in generate–validate–fix loops
 
 Stable diagnostic codes, `source:line:col` ranges, and the exit-code contract make this CLI a drop-in gate for CI and for AI code-generation flows: generate HTML → `npx @wcstack/lint --errors-only` → read the diagnostics, fix, and re-run until exit code `0`. The gate covers `data-wcs` pages: when the output ends with `not read:` or `nothing to check:`, those files were not checked.

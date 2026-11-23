@@ -1943,7 +1943,7 @@
     },
     {
       "id": "dcc-attribute-input",
-      "lint": [],
+      "lint": [{ "code": "wcs/dcc-attribute", "severity": "warning" }],
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Gives a DCC its input as an attribute: `<my-pager total=\"120\" per=\"20\">`, or `setAttribute` later.", "ja": "DCC の入力を属性で渡す: `<my-pager total=\"120\" per=\"20\">`、後からの `setAttribute`。" },
       "effect": { "en": "A DCC's inputs are the properties `$bindables` lists: the attribute is not read, and the part shows its default (page 1 of 1, 0 items). Since 4.28 the scopes add-on warns once per tag and name (`[wcs/dcc-attribute]`); up to 4.27 nothing was said.", "ja": "DCC の入力は `$bindables` に並べたプロパティ。属性は読まれず、部品は既定のまま（1 / 1 ページ、0 件）。4.28 から、scopes の後付けがタグと名前ごとに 1 度警告する（`[wcs/dcc-attribute]`）。4.27 までは何も言わなかった。" },
@@ -2029,6 +2029,15 @@
       "effect": { "en": "Bindings are applied in the order written, and `radio:` compares the element's `value` when it is applied — still the browser's `\"on\"`. No radio is checked at the first render, and nothing says so; a later write of the state checks the right one, which hides it in a page whose value arrives after the first render.", "ja": "束縛は書いた順に当たり、`radio:` は当たるときに要素の `value` を比べる — まだブラウザの既定の `\"on\"`。最初の描画ではどのラジオも選ばれず、何も言わない。後から state に書くと正しいものが選ばれるので、値が最初の描画の後に届くページでは隠れる。" },
       "disposition": "static-only",
       "note": { "en": "Found while landing the garden-plots seam app (docs/seam-apps.md): the saved theme reached the state before the page was drawn, and the settings page showed no choice. Since 4.29 the lint reports it at the `radio` / `checkbox` binding, with the order that works — the author's decision of 2026-11-24 (docs/v4-direction-2026-10.md §5.25); re-applying `radio:` when a later binding writes `value` was the other way, and would take core bytes.", "ja": "継ぎ目アプリ garden-plots の取り込みで見つけた（docs/seam-apps.ja.md）: 保存したテーマがページを描く前に state に届くようになり、設定のページがどれも選んでいなかった。 4.29 から、lint が `radio` / `checkbox` の束縛の上で、直した順とともに報告する — 2026-11-24 の著者の決定（docs/v4-direction-2026-10.md §5.25）。後ろの束縛が `value` を書いたときに `radio:` を当て直すのがもう 1 つの道で、core のバイトを使う。" }
+    },
+    {
+      "id": "dcc-declaration-refused",
+      "lint": [{ "code": "wcs/dcc-declaration", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Declares, in a DCC, `$bindables` / `$commands` the state does not back: a member it does not have (`$bindables: [\"totl\"]`), a method among the bindables, a value among the commands, an entry twice — or puts a `<wcs-state bind-component>` or a second `<wcs-state>` in the definition.", "ja": "DCC で、state が裏付けない `$bindables` / `$commands` を宣言する: 無いメンバー（`$bindables: [\"totl\"]`）、bindables のメソッド、commands の値、2 回書いた項目 — または、定義に `<wcs-state bind-component>` や 2 つ目の `<wcs-state>` を置く。" },
+      "effect": { "en": "The runtime refuses the definition when it defines the tag (`$bindables entry \"totl\" does not exist on the state.`, reported once through the definition's `<wcs-state>`): the tag is defined on no page, and every instance stays an unknown element. Since 4.29 the lint reports it at the entry (`wcs/dcc-declaration`), where the list and the state are literals.", "ja": "実行時は、タグを定義するときに定義を拒む（`$bindables entry \"totl\" does not exist on the state.`。定義の `<wcs-state>` から 1 度報告する）: タグはどのページでも定義されず、どのインスタンスも未知の要素のまま。4.29 から、リストと state がリテラルのとき、lint が項目の上で報告する（`wcs/dcc-declaration`）。" },
+      "evidence": [{ "file": "packages/state/src/scopes/dcc.ts", "text": "does not exist on the state." }],
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md): six such definitions made on purpose passed the lint under `--strict`.", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）: わざとした 6 つの定義が、`--strict` の lint を通った。" }
     }
   ],
   "uncounted": [

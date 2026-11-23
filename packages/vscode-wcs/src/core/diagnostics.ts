@@ -430,6 +430,16 @@ export const WcsDiagnosticCode = {
   // root ごとに 1 つで、ランタイムは後から読み込んだ方を拒んで console.error で報告する（v2 から。4.0 の #47 —
   // ランタイムの文面は番号だけでコードを持たないので lint の code）＝ error。2 つ目以降の開始タグに出す。
   SecondRoot: "wcs/second-root",
+  // --- Declarative Custom Component（`data-wc-definition`。service/dccDeclarationValidator.ts） ---
+  // ランタイムがタグを定義するときに拒む定義（4.0 の scopes/dcc.ts の `define` と同じ条件）: リストでない
+  // `$bindables` / `$commands`、空でない文字列でない項目、`$` で始まる項目、2 回書いた項目、state に無い項目、
+  // `$bindables` に書いたメソッド、`$commands` に書いた値、定義の中の `<wcs-state bind-component>`。拒まれた定義は
+  // 何も定義しないので、どのページのどのインスタンスも未知の要素のまま（継ぎ目アプリ garden-plots — わざとした 6 つに
+  // lint は何も言わなかった）。error。
+  DccDeclaration: "wcs/dcc-declaration",
+  // DCC のインスタンスに、`$bindables` のメンバーを属性で書いた（`<my-pager total="120">`）。DCC の入力はプロパティで、
+  // 属性は読まれない: 部品は既定のまま。ランタイムも 4.28 から同じ code で警告する。warning。
+  DccAttribute: "wcs/dcc-attribute",
   // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
   // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
   MountPathInvalid: "wcs/mount-path-invalid",

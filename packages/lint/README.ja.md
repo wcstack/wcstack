@@ -176,6 +176,18 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 `--errors-only` には TypeScript で新たに見つかる error（`.ts` のモジュールで定義した要素の `wcs/tag-member-unknown`・型付きの getter の `wcs/getter-untracked-read` …）が出ます。`--strict` は新しい 2 つの warning と、広がった `wcs/filter-input-type` でも失敗します。
 
+## 部品で組み立てたページに言うこと
+
+4.29（未リリース）から。継ぎ目アプリ garden-plots — 市の共通部品で組み立てた画面: デザイナーの部品は HTML だけ（宣言的カスタムコンポーネント）、開発者の部品はページのデータにマウントするクラス。4.28 までの lint は部品を何も知らず、作者がわざとした 45 通りの間違いのうち捕まえたのは 2 つでした。
+
+**宣言的カスタムコンポーネント（DCC）**（`<my-pager data-wc-definition><template shadowrootmode="open"> … <wcs-state> … </wcs-state></template></my-pager>`）:
+
+- **定義は、それ自身の範囲です。** テンプレートの中のマークアップは定義の `<wcs-state>` に対して、ページのマークアップはページの state に対して検査します。4.28 までは両方のキーが 1 つの集合で、部品だけが持つキーへのページの束縛も、ページだけが持つキーへの部品の束縛も通っていました。部品のファイル（`parts/my-pager.html`）も、コマンドラインで名指せば同じに検査します。
+- **`wcs/dcc-declaration`**（error） — 実行時がタグを定義するときに拒む定義。条件は実行時と同じです: リストでない `$bindables` / `$commands`、空・`$` で始まる・2 回書いた・state のメンバーでない項目、`$bindables` のメソッド、`$commands` の値、定義の中の `<wcs-state bind-component>`、定義自身の 2 つ目の `<wcs-state>`。拒まれた定義は何も定義しないので、どのページのどのインスタンスも未知の要素のままです。確かなときだけ言います: リテラルでないリスト、`export default { … }` のリテラルでない state、lint が読めない state のファイルには触れません。
+- **`wcs/tag-member-unknown`**（error）が DCC も見ます: `<my-pager data-wcs="totl: n">` や `command.nxt:` を、部品の `$bindables` と `$commands` に突き合わせ、近い名前を添えます。定義は、ページが言う場所から読みます — ページの中、または import map が autoloader の `dcc` ローダーに名指すファイル: `.html` で終わるか `|dcc` と書いた eager のキー、`|dcc/` と書いた名前空間。lint が読めないファイルからは契約が出ず、そのタグの束縛は検査しません: `/` から始まるパスは `--root=<dir>` を渡したときだけ読みます。
+- **`wcs/dcc-attribute`**（warning） — 部品の `$bindables` のメンバーを属性で書いたインスタンス（`<my-pager total="120">`）。DCC の入力はプロパティで、属性は読まれません: 部品は既定のままです。実行時も 4.28 から同じ code で警告します。タグと名前ごとに 1 回。
+
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。
