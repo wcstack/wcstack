@@ -6,7 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.27.0] — 2026-11-23
+
+A minor from the verification study ([docs/verification-practices-study.md](./docs/verification-practices-study.md)), after the Claude Code team's article on verification. The e2e suite retries a failed test, and in 8 of its last 15 runs a test passed only on a retry. Of the five specs behind them, one was a test bug. The other four hid two defects that said nothing: an outer binding heard a nested element's events, and a form was usable before state bound it — its password went into the URL. Decided by the author as recommended (v4-direction §5.22). `@wcstack/state`'s `core.min.js` is 20,476 B (+2).
+
+### Upgrading
+
+- `@wcstack/state`, `@wcstack/signals`: **a binding hears only its element's own event.** An `eventToken.<property>:`, an output-property binding or a `bindNode` signal no longer receives an event of the same name that bubbles up from a nested element, and its `#prevent` / `#stop` no longer act on that event. A page that relied on the outer element hearing the inner one listens to the event itself.
+- `@wcstack/state` (the `forms` add-on, in `/auto` and `.`): **before state has bound a form** — a route the router drew while the root state loads — a form whose submit is prevented (`onsubmit#prevent`) is never sent by the browser, and a submit made then is made again once the form is bound, with the button that was pressed. What the user typed there is given back and told to state: its two-way binding writes it, and a setter runs. If the page does not already disable the submit button while sending, a click before binding and another after it send twice.
+- **Workarounds this release makes unnecessary**:
+  - a submit button disabled in the markup until state binds it;
+  - an `event.target` check in the handler of an element that holds a nested element of the same kind.
 
 ### Fixed
 

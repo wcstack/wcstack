@@ -484,7 +484,16 @@ Workarounds became unnecessary: a `devicemotion` listener of the page's own and 
 
 Workarounds became unnecessary: a Vite plugin of the page's own and `vite-ignore` on inline state and guard scripts; methods written without `: void` for the lint; an inline state with no JSDoc, its shapes copied as literals; a schema kept out of manifest discovery and passed by hand; `$on` handlers forwarding through a hand-written interface, and `this.$command.x!`; a page's own unload listeners around `<wcs-sse>` and a `close()` on sign-out; a `typeof` guard against `undefined` in a `<wcs-debounce>` slot's `$watch`; a `<ul>` in a unit test where the page has a table; `response-type="text"` for a `204`.
 
-## Still needed on 4.26.0
+### 4.27.0
+
+2026-11-23 — [CHANGELOG](../CHANGELOG.md#4270--2026-11-23)
+
+- `@wcstack/state`, `@wcstack/signals`: a binding hears only its element's own event. A nested element's bubbling event of the same name no longer reaches an outer element's `eventToken.*`, output binding or `bindNode` signal; it did, with the inner element's `detail`.
+- `@wcstack/state` (the `forms` add-on): before state binds a form, the browser never sends one whose submit is prevented, and a submit made then is made again once the form is bound. What the user typed before binding is kept and told to state; the state's value erased it.
+
+Workarounds became unnecessary: a submit button disabled in the markup until state binds it; an `event.target` check in the handler of an element that holds a nested element of the same kind.
+
+## Still needed on 4.27.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
@@ -494,6 +503,7 @@ Workarounds became unnecessary: a Vite plugin of the page's own and `vite-ignore
 - A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element. Since 4.11 the diagnostics warn when the definition never comes (`[wcs/element-undefined]`), and the lint names a `wcs-*` tag whose package the page does not load (`wcs/tag-package-missing`).
 - Safari has no `moveBefore()`: there a row a reorder moves still loses its focus (state README, "Loop (`for`)"), and an I/O node in it its request or connection ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §25). A row the list leaves in place keeps both in every browser.
 - A `keydown` handler that acts on Enter checks for an IME composition itself (`e.isComposing || e.keyCode === 229`), and a form control of the page's own resets itself and declares `value` both ways ([forms.md](./forms.md)).
+- Before state binds a form, a form in a shadow root is not covered, and a server-rendered page's form works before any script has run: give the latter a `method` and an `action` of its own (state README, "Forms").
 - A list that changes its filter aborts the page on its way (`command.abort:`): a `manual` `<wcs-fetch>` does not abort on a new `url`, and the old filter's rows land in the new list ([long-lists.md](./long-lists.md)).
 - A node the page's own script inserts into a `for:` row moves the delegated handlers of the elements after it: bind those `on*#direct:` (state README, "Delegated events").
 - A link of the page's own back to a row of a list goes to the row's fragment (`navigateUrl = "/#photo-" + id`): a `scrollIntoView()` from a `$watch` is undone when the push navigation finishes (router README, "Where route content lives").
