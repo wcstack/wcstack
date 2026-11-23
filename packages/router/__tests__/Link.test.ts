@@ -528,6 +528,62 @@ describe('Link', () => {
       expect(navigateSpy).toHaveBeenCalledWith('/test');
     });
 
+    it('Navigation APIがない場合、遷移がリンクを取り外しても（離れるルートの中のリンク）クリックは例外にならないこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/plots/12');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      // 遷移は、リンクのあるルートの中身を取り外す（リンクはページの外に出て、router も見つからない）
+      const navigateSpy = vi.fn().mockImplementation(async () => { link.remove(); });
+      (router as any).navigate = navigateSpy;
+
+      const onClick = (link as any)._onClick as (e: MouseEvent) => Promise<void>;
+      await expect(onClick({
+        defaultPrevented: false,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault: vi.fn(),
+      } as any)).resolves.toBeUndefined();
+      expect(navigateSpy).toHaveBeenCalledWith('/plots/12');
+      expect(link.isConnected).toBe(false);
+    });
+
+    it('Navigation APIがない場合、ページに残るリンクは遷移の後に active 状態を更新すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/stays');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+      const originalHref = Object.getOwnPropertyDescriptor(window.location, 'href');
+      const at = (href: string) => Object.defineProperty(window.location, 'href', { writable: true, value: href });
+      // 遷移は URL を変える（popstate も wcs:navigate も出さない: クリックの後の更新だけが頼り）
+      (router as any).navigate = vi.fn().mockImplementation(async () => { at('http://localhost/stays'); });
+
+      const onClick = (link as any)._onClick as (e: MouseEvent) => Promise<void>;
+      try {
+        expect(link.anchorElement?.classList.contains('active')).toBe(false);
+        await onClick({
+          defaultPrevented: false,
+          button: 0,
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          preventDefault: vi.fn(),
+        } as any);
+        expect(link.anchorElement?.classList.contains('active')).toBe(true);
+      } finally {
+        if (originalHref) Object.defineProperty(window.location, 'href', originalHref);
+      }
+    });
+
     it('動的に外部URLに変わった場合はpreventDefaultを呼ばないこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);

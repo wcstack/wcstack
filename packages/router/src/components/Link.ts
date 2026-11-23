@@ -250,7 +250,10 @@ export class Link extends HTMLElement implements ILink {
         if (!this._isInternalTarget(this._path)) return;
         e.preventDefault();
         await this.router.navigate(this._path);
-        this._updateActiveState();
+        // 遷移がこのリンクを取り外したとき（離れるルートの中のリンク）は、もう更新する anchor が無い。
+        // 取り外されたリンクは router を見つけられず、ここで throw していた — クリックのたびに捕まえる者の
+        // いない例外になった（遷移そのものは済んでいる。docs/seam-apps.md、garden-plots）
+        if (this.isConnected) this._updateActiveState();
       };
       link.addEventListener('click', this._onClick);
     }
