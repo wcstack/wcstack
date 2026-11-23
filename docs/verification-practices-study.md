@@ -148,6 +148,8 @@ Later, by the same rule:
 
 ## 4. Progress
 
+#721–#729 were merged on 2026-11-23, in order. On the first e2e runs after the merges, the flaky summary reported one flaky test, lending-desk's pager. It was a race in the test, fixed in #730. `failOnFlakyTests` waits for 10 runs in a row with 0 flaky tests (§3.1).
+
 | Step | Section | State |
 |---|---|---|
 | 1 | §2.7 | done with this document (#721) |

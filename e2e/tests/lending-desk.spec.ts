@@ -368,7 +368,9 @@ test.describe("検索（search.spec.ts）", () => {
     await expect(page).toHaveURL(/page=2/);
     await expect(pager.getByRole("link", { name: "2", exact: true })).toHaveAttribute("aria-current", "page");
     await expect(page.locator(".item")).toHaveCount(20);
-    expect(await names(page)).not.toEqual(first);
+    // (the URL, the current page and the count of 20 are all true before page 2's answer arrives: wait for the
+    // items, as the step back below does — read at once, it saw page 1's now and then, 2 of 40 runs)
+    await expect.poll(() => names(page)).not.toEqual(first);
     await page.goBack();
     await expect(page).not.toHaveURL(/page=2/);
     await expect.poll(() => names(page)).toEqual(first);
