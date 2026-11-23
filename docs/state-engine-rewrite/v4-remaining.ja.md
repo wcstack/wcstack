@@ -2031,3 +2031,36 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - observe のゲート（`gate-changes`・base の size ゲート・チェックリスト）は、約 10 PR 後に判断する。skill の hook の enforce は D10 の後。
   - core の残りは 4 B。
   - 止める目安には当たっていない。次の継ぎ目アプリは著者と決める。
+
+### 4.28.0 の公開（2026-11-23）
+
+- **中身**: minor。継ぎ目アプリ 4 巡目の 1 本目 garden-plots（部品で組み立てるページ: DCC・`bind-component`・ボリューム。docs/seam-apps.ja.md）。
+  - 作者（初めての作者・4.27.0 固定）は 201 分・引っかかり 34 件・わざとする間違い 20 種 45 通り（lint が捕まえたのは 2、実行時が何か言ったのは 26、**何も言わずに間違ったのが 15**）。全件を再現して分類した: 実行時の欠陥 12、実行時の沈黙 9、lint と道具 8、文書 8、問い 6。
+  - state（#735。`scopes` と `diagnostics` だけ・core は触らない）: 後から届くボリュームの下への要素の書き込みを接ぎ木まで預かる（ルートごと落ちていた）。SSR で、サーバが定義していない行の部品を配線する。マウントの 1 つのキーの `#ro` が中の部品にも効く。DCC の `$connectedCallback` が最初の値を見る。マウントした部品のパスを、先頭のキーが無いときにホストで調べる（`[wcs/binding-path-missing]` / `[wcs/read-path-missing]`）。`[wcs/dcc-attribute]`。誤報 3 つを消した。
+  - router（#736）: Navigation API の無いブラウザで、離れるルートの中の `<wcs-link>` のクリックが投げない。
+  - autoloader（#737）: ファイルに置いた DCC を読む `dcc` ローダー（`.html`）。eager のキーのローダーをファイルの拡張子で選ぶ（README のとおりに）。
+  - testing・typescript（#738・#740）: `mount()` が DCC を定義して待つ。`installDom()` の restore。`wcs-schema` の `stateMounts`（ボリュームのある木でルートの `check` が通る）。
+  - 文書（#739）: seam-apps、v4-direction §5.24、4 パッケージの README、CHANGELOG。
+- **著者の決定**: 6 問すべて推奨のとおり（v4-direction §5.24、2026-11-23）。lint が部品を読むか（クラスのテンプレートとメソッド、公開 getter の誤報、DCC の宣言とメンバー）は、1 つの問いとして未決。ページを離れるときの「初期化に失敗」（core が要る）は見送り。
+- **公開前の通し**: main（203faf95）で `verify.mjs --heavy` と `--e2e`（645 passed）。
+  - typescript のビルドで、バンドラ（`rollup -c`）が出力を書き終えた後に終了しないことが 1 回あった。そのプロセスだけ PID で止め、ビルドとカバレッジを単独でやり直して通した（やり直しでは起きない。原因は未確認。同じ形で残っていたプロセスが朝からもう 1 つあった）。
+  - 素の Node で `installDom()` + `mount()` + `restore()` を確かめ、DCC のページで **`mount()` の欠陥をもう 1 つ**見つけた: 定義の中で `<wcs-state>` をマークアップより前に書くと、インスタンスがそのマークアップなしで現れる（happy-dom は shadow root に移すノードを 1 つずつ接続する。テストも README の例も作者の部品も `<wcs-state>` を最後に書いていた）。#740 で直してから出した（宣言的 shadow root のあるページは文書の外で組む）。README の例が定義の方を読んでいたのも直した。
+- **準備**: PR #741（merge commit 378a2f72）。CHANGELOG を `[4.28.0] — 2026-11-23` として締め、docs/upgrading-4x.md（日英）に 4.28.0 の節と「まだ要るもの」の 4 項目、誤りの目録に 10 項目（実行時が言う 5・設計で消えた 1・沈黙 4。240 件）、固定版 18 か所。
+- **main で `minor`（run 45194218511）**: 成功した。版を上げたコミット cecaddca、タグ `v4.28.0`、GitHub Release（`sri.json` 付き。本文の先頭に CHANGELOG の節を足した）。
+  - 検証: 公開直後の 1 回目は npm 46/49（レジストリの反映待ち）。2 回目で npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・固定 URL 8/8。
+- **公開後の作業**:
+  - PR #742（merge commit c2ab32ff）: サイズの基準値を 4.28.0 の dist で取り直した。`core.min.js` 20,476 B のまま（残り 4 B）、`scopes` 9,039 → 9,303 B、`diagnostics` 13,956 → 14,373 B、分割の core 24,783 B、`index.esm.js` 61,540 B、`auto.min.js` 58,134 B。slack は無い。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換えた。
+  - wcstack-skill: PR #76（merge commit 3455e42）と注釈付きタグ `v4.28.0`。state-binding（後から届くボリューム・ボリュームはルートを読まない・ファイルの DCC・DCC に渡すもの・中の部品への `#ro`・継ぎ目の名前の報告・lint は部品を読まない・`mount()` の DCC）、router-and-scaffold（拡張子で選ぶローダーと `dcc` ローダー）、versions（4.27 以下に固定したページの 5 行）、刻印 23 か所。刻印した URL 9 つが 200 を返し、hook が警告を返すのを確かめた。
+  - LP（wcstack.github.io 12901d0）: リリースの表示、v4.28.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-g7fgQm…`、gzip 87,521 B ＝約 85 KB）、llms。ローカル 7/7、本番 8/9（落ちる 1 つは前回と同じ /tutorial/16-publish/app/ の API の 404）。
+  - 例の取り込み: PR #743（merge commit 70e2fea7）。`examples/garden-plots`（shared のサーバに作者の API）。外した回避策: 自前のローダー、ルートに置いた `savedSettings`、接ぎ木を待つポーリング、router に頼む素のリンク、ページャーの行のキャッシュ、単体テストの `installDcc()`、マウントパスの誤報の許容。spec は作者のブラウザのテスト 44 件（Chromium。うち 7 件は Firefox でも。ポート 8700 + 10 × ワーカー番号）。WebKit でも 44 件通る（設定には足していない）。
+  - 取り込みで分かったこと（docs/seam-apps.ja.md）:
+    - **`radio:` を、値を与える束縛より前に書くと、最初の描画で何も選ばれない**（`radio: x; attr.value: .value`。`checkbox:` も。何も言わない）。保存した設定がページを描く前に届くようになって、作者の設定のテストが落ちて見つかった。例は値を先に書く。state の README とフォームの手引きに書き、目録に `radio-before-value`（沈黙・241 件）を足した。lint の規則にするか、値が来たら束縛を当て直すかは未決。
+    - アプリ自身の競合: 自分の保存の SSE の知らせが応答より先に着くと、他の職員の変更として知らせた（WebKit では毎回）。例の側で直した。wcstack の問題ではない。
+    - happy-dom: 後から定義された `id` のある要素が、ページから外れた後も `document.getElementById()` で返る（wcstack と無関係に再現。testing の README の「死角」に書いた。upstream には未報告）。
+  - 拡張は出さない（lint の規則は変わっていない）。
+- **残り**:
+  - 著者の決定待ち: lint が部品を読むか（§5.24 の 4）。`radio:` の順序をどこで知らせるか。
+  - `failOnFlakyTests`: CI の e2e は #735・#736・#737・#738・#740・#743 の 6 回とも flaky 0。#727・#730 と合わせて連続 8 回（10 回で入れる）。ローカルでは、#737 の通しで lending-desk の 1 件が 1 回落ちた（単独では 12/12、次の通しは 645/645。原因は分かっていない）。
+  - examples/README.ja.md の継ぎ目アプリの表は music-room で止まっている（以後の 6 本は英語の一覧にだけある）。
+  - core の残りは 4 B。
+  - 止める目安には当たっていない。次は 4 巡目の 2 本目（移植する作者）。作者への依頼文には「自分が始めたものが走っている間はターンを終えない・背景のエージェントを使わない」を最初から入れる。
