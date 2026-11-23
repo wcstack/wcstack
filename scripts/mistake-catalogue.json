@@ -1934,7 +1934,7 @@
     },
     {
       "id": "part-seam-name",
-      "lint": [],
+      "lint": [{ "code": "wcs/binding-path-missing", "severity": "warning" }],
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Hands a part its data under one name and reads it under another — `state.veiw: view` on the page, `veiw.x` in the part, `nmae` in the part's template or a getter — or reads a path of the page inside a mounted part (`pageTitle`; a `<wcs-storage>` in the part bound to `settings.theme`).", "ja": "部品にデータを渡す名前と、部品が読む名前が食い違う — ページの `state.veiw: view`、部品の `veiw.x`、部品のテンプレートや getter の `nmae` — または、マウントした部品の中でページのパスを読む（`pageTitle`、部品の中で `settings.theme` に束ねた `<wcs-storage>`）。" },
       "effect": { "en": "Inside a mounted part a read falls through to its host and fails nothing: the field is empty, the tile disabled, nothing stored. Up to 4.27 nothing was said — the lint does not read a class's template. Since 4.28 the diagnostics add-on checks a part's path on its host when its first key is what is missing, and warns once per key (`[wcs/binding-path-missing]`, `[wcs/read-path-missing]`) with the names the part has and those it was handed; in a row it needs a near name or a path of the host. Deeper than the first key it stays silent: the part may answer the path itself.", "ja": "マウントした部品の中の読みは、ホストへ落ちて何も失敗しない: フィールドは空、タイルは無効、何も保存されない。4.27 までは何も言わなかった — lint はクラスのテンプレートを読まない。4.28 から、診断の後付けが、部品のパスを先頭のキーが無いときにホストで調べ、キーごとに 1 度警告する（`[wcs/binding-path-missing]`・`[wcs/read-path-missing]`）。部品が持つ名前と渡された名前を挙げる。行の中では、近い名前かホストのパスが要る。先頭のキーより深い所は言わない: 部品が自分で答えることがある。" },
@@ -2014,12 +2014,12 @@
     },
     {
       "id": "class-part-method-mutation",
-      "lint": [],
+      "lint": [{ "code": "wcs/nested-assign", "severity": "error" }, { "code": "wcs/array-mutation", "severity": "error" }],
       "runtime": "silent", "harm": "stale",
       "mistake": { "en": "Writes `this.tenant.name = v` or `this.plots.push(p)` in a method of a class part (the state of a `bind-component` component).", "ja": "クラスの部品（`bind-component` のコンポーネントの状態）のメソッドで `this.tenant.name = v` や `this.plots.push(p)` と書く。" },
-      "effect": { "en": "As on a page, the write misses the state: the tile keeps the old name, no row is added. On a page the lint reports both as errors (`wcs/nested-assign`, `wcs/array-mutation`); it reads no class file, so in a part nothing says it — `push` passed every check the author had.", "ja": "ページと同じく、書き込みは状態を通らない: タイルは古い名前のまま、行は増えない。ページでは lint がどちらもエラーにする（`wcs/nested-assign`・`wcs/array-mutation`）が、クラスのファイルは読まないので、部品では何も言わない — `push` は作者のすべての検査を通った。" },
-      "disposition": "lint-rule",
-      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). Whether the lint reads a part — a class's template and methods, its exported getters, a DCC's declarations — is one question, to be decided (docs/v4-direction-2026-10.md §5.24).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 lint が部品を読むか — クラスのテンプレートとメソッド、公開 getter、DCC の宣言 — は 1 つの問いで、これから決める（docs/v4-direction-2026-10.md §5.24）。" }
+      "effect": { "en": "As on a page, the write misses the state: the tile keeps the old name, no row is added. On a page the lint reports both as errors (`wcs/nested-assign`, `wcs/array-mutation`); up to 4.28 it read no class file, so in a part nothing said it — `push` passed every check the author had. Since 4.29 the lint reads the part's `state = { … }` through the page's import map and reports both there.", "ja": "ページと同じく、書き込みは状態を通らない: タイルは古い名前のまま、行は増えない。ページでは lint がどちらもエラーにする（`wcs/nested-assign`・`wcs/array-mutation`）。4.28 まではクラスのファイルを読まなかったので、部品では何も言わなかった — `push` は作者のすべての検査を通った。4.29 から、lint はページの import map から部品の `state = { … }` を読み、そこで両方を報告する。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). The author decided on 2026-11-24 that the lint reads a part (docs/v4-direction-2026-10.md §5.25); the run time is as silent as it is for a page (the `nested-assign` entry).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 lint が部品を読むことは、2026-11-24 に著者が決めた（docs/v4-direction-2026-10.md §5.25）。実行時は、ページと同じく何も言わない（`nested-assign` の項目）。" }
     },
     {
       "id": "radio-before-value",

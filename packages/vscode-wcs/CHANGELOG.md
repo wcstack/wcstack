@@ -12,6 +12,10 @@
   - `wcs/dcc-declaration`（新規、error）: 実行時がタグを定義するときに拒む定義（リストでない `$bindables` / `$commands`、空・`$` で始まる・2 回書いた・state に無い項目、`$bindables` のメソッド、`$commands` の値、定義の中の `bind-component` と 2 つ目の `<wcs-state>`）。確かなときだけ言う。
   - `wcs/tag-member-unknown`: ページが DCC に束ねるメンバー（`<my-pager data-wcs="totl: n">`・`command.nxt:`）を、定義の `$bindables` / `$commands` と突き合わせる。定義は、ページの中か、import map が autoloader の `dcc` ローダーに名指すファイル（`.html` か `|dcc` の eager のキー、`|dcc/` の名前空間）から読む。読めないファイルは黙る。
   - `wcs/dcc-attribute`（新規、warning）: `$bindables` のメンバーを属性で書いたインスタンス（`<my-pager total="120">`）。実行時の 4.28 の警告と同じ code。
+- **クラスの部品（`bind-component`）を読む。** クラスは、import map が autoloader に名指すファイル（eager のキー・名前空間）と、ページが読み込むモジュールの `customElements.define` から見つける。部品のテンプレートの中の部品も辿る。`state = { … }` がオブジェクトリテラルのときだけ読む。
+  - 部品が公開する getter を、マウントした所のパスとして知る（`user.display`、行の `.display`）。それを読むページへの誤報 `wcs/binding-path-missing` が消え、ページの JSDoc の型に getter を手で宣言する回避策が要らなくなる（その宣言は、部品での改名を隠していた）。
+  - 部品のメソッドに `wcs/nested-assign` と `wcs/array-mutation` を当てる（ページと同じ誤りで、同じく error）。所見は部品のファイルの位置で、エディタではページの import map の値（無ければ要素のタグ名）の上に出る。
+  - 部品のテンプレートのパスを、先頭のキーで検査する（`wcs/binding-path-missing`、warning）: 部品自身のキーでも、ページが渡したキー（`state.view:`）でも、マウント先のオブジェクトのキーでもないとき。実行時の 4.28 の報告と同じ基準。マウント先の形が分からないとき（空で始まるリストの行）は黙る。ページの最上位のパスなら、渡し方を言う。
 
 ## 2.21.0 — 2026-11-19
 

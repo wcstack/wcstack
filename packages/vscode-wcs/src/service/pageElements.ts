@@ -50,7 +50,7 @@ const MAX_FILES = 32;
 const JS_TYPES = new Set(['', 'module', 'text/javascript', 'application/javascript', 'text/ecmascript']);
 
 /** The scripts of the page: inline sources, and the `src=` paths (relative to the HTML file). */
-function pageScripts(html: string): { inline: string[]; srcs: string[] } {
+export function pageScripts(html: string): { inline: string[]; srcs: string[] } {
   const inline: string[] = [];
   const srcs: string[] = [];
   const re = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
@@ -69,7 +69,7 @@ function pageScripts(html: string): { inline: string[]; srcs: string[] } {
 }
 
 /** `spec` from the module at `from` (both relative to the HTML file's directory), normalized; null when not relative. */
-function joinRelative(from: string, spec: string): string | null {
+export function joinRelative(from: string, spec: string): string | null {
   if (!spec.startsWith('./') && !spec.startsWith('../')) return null;
   const dir = from.includes('/') ? from.slice(0, from.lastIndexOf('/') + 1) : '';
   const out: string[] = [];
@@ -81,7 +81,7 @@ function joinRelative(from: string, spec: string): string | null {
   return `./${out.join('/')}`;
 }
 
-function parseScript(source: string): AnyNode | null {
+export function parseScript(source: string): AnyNode | null {
   for (const sourceType of ['module', 'script'] as const) {
     try {
       return parseErasingTypes(source, { ecmaVersion: 'latest', sourceType, allowHashBang: true });
@@ -93,7 +93,7 @@ function parseScript(source: string): AnyNode | null {
 }
 
 /** Every node under `node`, depth first. */
-function* nodes(node: AnyNode): Generator<AnyNode> {
+export function* nodes(node: AnyNode): Generator<AnyNode> {
   yield node;
   for (const value of Object.values(node as unknown as Record<string, unknown>)) {
     if (Array.isArray(value)) {
@@ -104,7 +104,7 @@ function* nodes(node: AnyNode): Generator<AnyNode> {
   }
 }
 
-const keyName = (key: AnyNode, computed: boolean): string | null =>
+export const keyName = (key: AnyNode, computed: boolean): string | null =>
   computed ? null : key.type === 'Identifier' ? key.name : key.type === 'Literal' && typeof key.value === 'string' ? key.value : null;
 
 /** The names of a literal list of `{ name: "…" }` under `key`: undefined when the key is absent, null when unreadable. */
@@ -154,7 +154,7 @@ function declaredBy(cls: AnyNode & { type: 'ClassDeclaration' | 'ClassExpression
 }
 
 /** `customElements.define` (also `window.` / `globalThis.` / `self.customElements.define`). */
-function isDefine(callee: AnyNode): boolean {
+export function isDefine(callee: AnyNode): boolean {
   if (callee.type !== 'MemberExpression' || keyName(callee.property as AnyNode, callee.computed) !== 'define') return false;
   const o = callee.object;
   return (o.type === 'Identifier' && o.name === 'customElements')

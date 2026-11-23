@@ -48,6 +48,7 @@ import { findIgnoredRanges } from "../language/htmlParse.js";
 import { inlineExternalStates, locateInlined } from "./externalState.js";
 import { blankRanges, findDccDefinitions, keepOnly, registerScopeSource } from "../service/dccDefinitions.js";
 import { validateDccAttributes, validateDccDeclarations } from "../service/dccDeclarationValidator.js";
+import { validateClassPartScripts, validateClassPartTemplates } from "../service/componentPartValidator.js";
 import type { JsonSchemaNode } from "./sidecar/types.js";
 
 export interface ValidateDocumentOptions {
@@ -232,9 +233,13 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
     out.push(...validateDocumentEnv(env, locale));
     // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
     out.push(...validatePackageLoads(env, locale, fileReader));
+    // the state of each class part the page mounts, under the script rules of a page's state (once for the page)
+    out.push(...validateClassPartScripts(env, locale, fileReader));
   }
   // an instance of a DCC that carries one of the part's inputs as an attribute
   out.push(...validateDccAttributes(text, stateTagName, locale, fileReader));
+  // the templates of the class parts this scope mounts: a path whose first key nothing gives
+  out.push(...validateClassPartTemplates(text, bindAttribute, stateTagName, locale, fileReader, applicationSchema));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
