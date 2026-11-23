@@ -26,6 +26,15 @@
  *   unless an input `nullIfEmpty` does and the fallback is not empty) and `defaults('')`. Where it speaks,
  *   `wcs/number-written-as-string` is not stacked on the binding.
  *
+ * And one that the garden-plots seam app's landing found, as silent as those:
+ *
+ * - `wcs/radio-before-value` (warning): `radio:` / `checkbox:` written before the binding that gives the control its
+ *   value (`<input type="radio" data-wcs="radio: theme; attr.value: .value">`). Bindings are applied in the order
+ *   written, and `radio:` compares the element's `value` when it is applied — still the browser's `"on"`: no radio is
+ *   checked at the first render. A later write of the state checks the right one, which hides it wherever the value
+ *   arrives after the page is drawn. Quiet when the value binding comes first, and when the value is only written in
+ *   the markup (`value="red"`).
+ *
  * Only native `<input>` / `<textarea>` / `<select>` are read: a custom element's write-back follows its wcBindable.
  * An input the user does not enter a value in (`checkbox`, `radio`, `hidden`, the buttons, `file`) is left out of the
  * two `value:` rules.
@@ -98,6 +107,19 @@ export function validateFormInputs(
     const bindings = splitBindingExpressions(attr.value);
     const parsed = bindings.map(parseBindingExpression);
     const type = (attr.inputType ?? 'text').toLowerCase();
+
+    if (attr.tagName === 'input') {
+      const early = groupBindingBeforeValue(bindings, parsed);
+      if (early !== null) {
+        out.push({
+          code: WcsDiagnosticCode.RadioBeforeValue,
+          start: attr.valueStart + early.start,
+          end: attr.valueStart + early.end,
+          message: msgs.radioBeforeValue(early.binding, early.value, early.checkbox, early.fix),
+          severity: 'warning',
+        });
+      }
+    }
 
     if (attr.tagName === 'input' && type === 'radio') {
       const shared = sharedRadioName(html, attr, parsed, bindAttribute);
@@ -174,6 +196,34 @@ export function validateFormInputs(
     }
   }
   return out;
+}
+
+/**
+ * A `radio:` / `checkbox:` binding written before the binding that gives the control its value (`attr.value:` /
+ * `value:`): where its left side is in the attribute's value, the two left sides as written, and the two bindings in
+ * the order that works. null when there is no such pair.
+ */
+function groupBindingBeforeValue(
+  bindings: readonly string[],
+  parsed: readonly ParsedBinding[],
+): { readonly start: number; readonly end: number; readonly binding: string; readonly value: string; readonly checkbox: boolean; readonly fix: string } | null {
+  const names = parsed.map((p) => propertyName(p.property));
+  const at = names.findIndex((name) => name === 'radio' || name === 'checkbox');
+  if (at === -1) return null;
+  const later = names.findIndex((name, i) => i > at && (name === 'attr.value' || name === 'value'));
+  if (later === -1) return null;
+  let start = 0;
+  for (let i = 0; i < at; i++) start += bindings[i].length + 1;
+  start += bindings[at].length - bindings[at].trimStart().length;
+  const left = parsed[at].property.trim();
+  return {
+    start,
+    end: start + left.length,
+    binding: left,
+    value: parsed[later].property.trim(),
+    checkbox: names[at] === 'checkbox',
+    fix: `${bindings[later].trim()}; ${bindings[at].trim()}`,
+  };
 }
 
 /** The property a binding's left side names: without modifiers, and without the dot of the explicit property form. */

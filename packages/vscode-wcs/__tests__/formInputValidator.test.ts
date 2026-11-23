@@ -4,6 +4,10 @@
  *   - L2 `wcs/radio-name-shared`: `for:` の行の中の、`name` をリテラルで書いたラジオ（全部の行が 1 つのグループになる）
  *   - L3 `wcs/number-written-as-string`: 変換の無い双方向の `value:` が、数値のパスに文字列を書く
  *   - L4 `wcs/two-way-output-filter`: 双方向の `value:` に付けた出力フィルタ（入力中の欄を書き換える）
+ *
+ * それに、継ぎ目アプリ garden-plots の取り込みで見つけた 1 つ（4.29）:
+ *
+ *   - L5 `wcs/radio-before-value`: `radio:` / `checkbox:` を、値を与える束縛より前に書いた（最初の描画で何も選ばれない）
  */
 import { describe, it, expect } from 'vitest';
 import { validateDocument } from '../src/core/validateDocument.js';
@@ -11,6 +15,7 @@ import { WcsDiagnosticCode, type WcsDiagnostic } from '../src/core/diagnostics.j
 
 const FORM_CODES: readonly string[] = [
   WcsDiagnosticCode.RadioNameShared, WcsDiagnosticCode.NumberWrittenAsString, WcsDiagnosticCode.TwoWayOutputFilter,
+  WcsDiagnosticCode.RadioBeforeValue,
 ];
 const STATE = `export default {
   count: 0, price: 1200, ratio: 0.5, name: "", code: "", note: null, lang: "ja", selectedId: 1, sex: "m",
@@ -336,5 +341,48 @@ describe('ekiden-entry の誤りの写し（mistakes/）で規則が言うこと
 
   it('02-trim-name: 入力フィルタ（value|trim: .name）は欄を書き換えないので黙る', () => {
     expect(said('<template data-wcs="for: rows"><input data-wcs="value|trim: .memo"></template>')).toEqual([]);
+  });
+});
+
+describe('L5 wcs/radio-before-value — radio: / checkbox: が、値を与える束縛より前にある', () => {
+  it('行の中の radio: を attr.value: より前に書くと、radio の上で報告する（warning。直した順を言う）', () => {
+    const html = page('<template data-wcs="for: rows"><input type="radio" data-wcs="radio: selectedId; attr.value: .id"></template>');
+    const found = find(html);
+    expect(found.map((d) => [d.code, html.slice(d.start, d.end), d.severity])).toEqual([
+      [WcsDiagnosticCode.RadioBeforeValue, 'radio', 'warning'],
+    ]);
+    expect(found[0].message).toContain('"radio:" is written before "attr.value:", which gives this radio its value');
+    expect(found[0].message).toContain('Write the value first: attr.value: .id; radio: selectedId');
+  });
+
+  it('value: が後ろにある形・修飾子の付いた radio#ro:・間に別の束縛がある形でも報告する', () => {
+    expect(said('<template data-wcs="for: options"><input type="radio" data-wcs="radio: lang; value: ."></template>'))
+      .toEqual([[WcsDiagnosticCode.RadioBeforeValue, 'radio']]);
+    expect(said('<template data-wcs="for: options"><input type="radio" data-wcs="  radio#ro: lang; attr.title: .; attr.value: ."></template>'))
+      .toEqual([[WcsDiagnosticCode.RadioBeforeValue, 'radio#ro']]);
+  });
+
+  it('checkbox: も同じ（文面はチェックボックスと言う）', () => {
+    const html = page('<template data-wcs="for: options"><input type="checkbox" data-wcs="checkbox: options; attr.value: ."></template>');
+    const found = find(html);
+    expect(found.map((d) => [d.code, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.RadioBeforeValue, 'checkbox']]);
+    expect(found[0].message).toContain('which gives this checkbox its value');
+    expect(found[0].message).toContain('Write the value first: attr.value: .; checkbox: options');
+  });
+
+  it('値の束縛が前にある・値がマークアップのリテラルだけ・checked: の束縛は黙る', () => {
+    expect(said('<template data-wcs="for: rows"><input type="radio" data-wcs="attr.value: .id; radio: selectedId"></template>')).toEqual([]);
+    expect(said('<template data-wcs="for: options"><input type="radio" data-wcs="value: .; radio: lang"></template>')).toEqual([]);
+    expect(said('<input type="radio" value="ja" data-wcs="radio: lang"><input type="radio" value="en" data-wcs="radio: lang">')).toEqual([]);
+    expect(said('<template data-wcs="for: rows"><input type="checkbox" data-wcs="checked: .picked; attr.value: .id"></template>')).toEqual([]);
+  });
+
+  it('入力でない要素（カスタム要素）は読まない。日本語の文面', () => {
+    expect(said('<template data-wcs="for: options"><my-radio data-wcs="radio: lang; attr.value: ."></my-radio></template>')).toEqual([]);
+    const html = page('<template data-wcs="for: options"><input type="radio" data-wcs="radio: lang; attr.value: ."></template>');
+    const ja = find(html, 'ja');
+    expect(ja).toHaveLength(1);
+    expect(ja[0].message).toContain('「radio:」が、このラジオに値を与える「attr.value:」より前に書かれています');
+    expect(ja[0].message).toContain('値を先に書いてください: attr.value: .; radio: lang');
   });
 });

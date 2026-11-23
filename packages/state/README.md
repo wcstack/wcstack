@@ -706,7 +706,7 @@ Bind a radio button group to a single state value with `radio`:
 
 The radio button whose `value` matches the state value is automatically checked. When the user selects a different radio button, the state is updated. Use `#ro` for read-only.
 
-**The value comes first.** Bindings are applied in the order they are written, and `radio:` compares the element's `value` when it is applied. Written before the binding that gives the radio its value — `radio: theme; attr.value: .value` in a row — it compares the browser's `"on"`, and no radio is checked at the first render; nothing says so, and a later write of the state checks the right one. Write `attr.value: .value; radio: theme` (or `value: .; radio: …`, as below). The same holds for `checkbox:`.
+**The value comes first.** Bindings are applied in the order they are written, and `radio:` compares the element's `value` when it is applied. Written before the binding that gives the radio its value — `radio: theme; attr.value: .value` in a row — it compares the browser's `"on"`, and no radio is checked at the first render; nothing says so, and a later write of the state checks the right one. Write `attr.value: .value; radio: theme` (or `value: .; radio: …`, as below). The same holds for `checkbox:`. Since 4.29 (not released yet) the lint reports the other order (`wcs/radio-before-value`).
 
 Inside a `for` loop:
 
