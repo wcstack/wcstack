@@ -323,8 +323,19 @@ export async function mount(html: string, options: MountOptions = {}): Promise<M
       root = shadow;
       container = host;
     } else {
-      setInnerHTML(document.body, html);
-      attachDeclarativeShadowRoots(document.body);
+      if (html.includes("shadowrootmode")) {
+        // built out of the page, so that a declarative shadow root is whole when its host connects —
+        // as a browser's parser leaves it before a module script runs. Filled in place, its nodes
+        // connected one by one: a `<wcs-state>` written before a DCC definition's markup took the
+        // content as it stood then, and the instances came up without that markup, without a word.
+        const holder = document.createElement("div");
+        setInnerHTML(holder, html);
+        attachDeclarativeShadowRoots(holder);
+        document.body.innerHTML = "";
+        while (holder.firstChild !== null) document.body.appendChild(holder.firstChild);
+      } else {
+        setInnerHTML(document.body, html);
+      }
       root = document;
       container = document.body;
     }

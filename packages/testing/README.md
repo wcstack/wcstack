@@ -55,8 +55,8 @@ Since 4.11, an option `mount()` does not have, or a value not of the option's ty
 const pager = readFileSync("parts/midori-pager.html", "utf8");
 const app = await mount(`${pager}
   <wcs-state json='{"total": 120, "page": 2}'></wcs-state>
-  <midori-pager data-wcs="total: total; page: page"></midori-pager>`);
-expect(app.root.querySelector("midori-pager")!.shadowRoot!.querySelector(".info")!.textContent).toBe("2 / 6");
+  <midori-pager id="pager" data-wcs="total: total; page: page"></midori-pager>`);
+expect(app.root.querySelector("#pager")!.shadowRoot!.querySelector(".info")!.textContent).toBe("2 / 6");
 ```
 
 The returned `MountedApp`:
@@ -142,7 +142,7 @@ Since 4.28 (not released yet) the returned function closes the window before it 
 
 Two things happy-dom cannot reproduce; keep one browser e2e (Playwright) for them:
 
-- `customElements.define` upgrades existing nodes by **replacing** them, so "a value reaches the same node after a late define" cannot be asserted headlessly.
+- `customElements.define` upgrades existing nodes by **replacing** them, so "a value reaches the same node after a late define" cannot be asserted headlessly. An element upgraded that way that has an `id` — a Declarative Custom Component's instance always is — stays in happy-dom's id index after it leaves the page: `document.getElementById("pager")` returns the removed element, in a later `mount()` of the same file too (happy-dom 21). Read through the mounted root: `app.root.querySelector("#pager")`.
 - Event timing differs from real browsers.
 
 A `<template>` in a table is handled since 4.26: `mount()` puts it where browsers do (above). HTML a test inserts with `innerHTML` itself is not — insert it with `setInnerHTML(element, html)` from `@wcstack/server`.
