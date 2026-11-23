@@ -2009,3 +2009,25 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - core の残りは 6 B。diagnostics は 13,958 B。
   - 記録だけ: ルートのガードを外部ファイルや TypeScript で書く形。添字のパスの型。
   - 止める目安には当たっていない。次は 3 巡目の予備の 2 本目（静的に書き出したサイト）か、4 巡目の候補を著者と決める。
+
+### 4.27.0 の公開（2026-11-23）
+
+- **中身**: minor。検証の手法の検討（docs/verification-practices-study.md。Claude Code チームの検証の記事から 8 提案を検討し、推奨の順に全部着手した）。
+  - e2e は失敗したテストをやり直し、直近 15 回のうち 8 回で、やり直してやっと通るテストがあった。原因の 5 つの spec のうち 1 つはテストの誤り（#722）、残り 4 つは何も言わない欠陥 2 つを隠していた:
+    - 入れ子にした I/O ノードのイベントが、外側の要素の束縛に届いた（#723。state の `dom/wc.ts` と signals の `bindNode` が `event.target` を見る。wc-bindable への提案 docs/spec-proposal-own-event-only.md）。
+    - state が束ねる前のフォームが使えた。GET でパスワードが URL に乗り、打った値は state の値で消えた（#724。forms 後付け。束ねる前の送信は、束ねた後にやり直す）。
+  - 検証の仕組み（どれも observe）: ゲートの入力の変更を見せる `gate-changes`（#725）、差分更新とゼロからの描画を比べる property テストとパーサの差分比較（#726）、router のパスの法則と input-attribute の有界全数（#729）、CI の選択を持つ `scripts/verify.mjs`（#727）、差分のチェックリスト（#728）、flaky のサマリ（#722）。lending-desk のページ送りの競合（#730）。プラグインの lint の hook（wcstack-skill#74）。
+  - core は 20,474 → 20,476 B（+2）。forms は +630 B で、リリースまで slack 640 B。
+- **著者の決定**: 2 つの欠陥はどちらも推奨の案（v4-direction §5.22）。検討の判断 4 つも推奨（検討文書 §3.1: 送信のやり直しを採る・Stop hook は今は入れない・slack はリリースで外す・`failOnFlakyTests` は flaky 0 が 10 回続いてから）。
+- **準備**: PR #731（merge commit 0a67d00b）。CHANGELOG を `[4.27.0] — 2026-11-23` として締め、docs/upgrading-4x.md（日英）に 4.27.0 の節と「まだ要るもの」の 1 項目（shadow root の中のフォームと、サーバー描画のフォーム）を書き、固定版 18 か所を動かした。
+- **main で `minor`（run 45090594418）**: 成功した。版を上げたコミット bb17ef59、タグ `v4.27.0`、GitHub Release（`sri.json` 付き。本文の先頭に CHANGELOG の節を足した）。
+  - 検証: 1 回目で npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・固定 URL 8/8。
+- **公開後の作業**:
+  - PR #732（merge commit 4cce36df）: サイズの基準値を 4.27.0 の dist で取り直し、forms の slack を外した（982 B ＋ 3 % ＋ 640 B ＝ 1,651 B → 1,610 B ＋ 3 % ＝ 1,658 B。slack はもう無い）。`core.min.js` 20,476 B（残り 4 B）、diagnostics 13,956 B、分割の core 24,792 B、`index.esm.js` 60,840 B、`auto.min.js` 57,461 B。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換え、チェックリストの size-slack の項目から外した slack の名を消した。道具が読むものは変わらないので、拡張は出さない。
+  - wcstack-skill: PR #75（merge commit 7703795）と注釈付きタグ `v4.27.0`。state-binding（その要素自身のイベントだけ）・forms（束ねる前のフォーム）・versions（4.26 以下に固定したページの 2 行）と、刻印 23 か所。この版上げで #74 の lint の hook が既存の利用者に届く。刻印した URL 9 つが 200 を返し、hook が npm の `@wcstack/lint@4.27.0` で警告を返すのを確かめた。
+  - LP（wcstack.github.io 70e4d72）: リリースの表示、v4.27.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-rWZCoy…`、gzip 86,304 B ＝約 84 KB）、llms。ローカル 7/7、本番 8/9（落ちる 1 つは前回と同じ /tutorial/16-publish/app/ の API の 404）。
+- **残り**:
+  - `failOnFlakyTests`: flaky 0 の連続は 2 回（#727・#730。#731・#732 は e2e の対象外）。10 回で入れる。
+  - observe のゲート（`gate-changes`・base の size ゲート・チェックリスト）は、約 10 PR 後に判断する。skill の hook の enforce は D10 の後。
+  - core の残りは 4 B。
+  - 止める目安には当たっていない。次の継ぎ目アプリは著者と決める。
