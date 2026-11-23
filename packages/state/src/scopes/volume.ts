@@ -5,7 +5,8 @@
  * of them — and in its `$connectedCallback` / `$disconnectedCallback` — `this` is chrooted at
  * `p` (`this.x` is the tree's `p.x`). Load order does not matter: a volume that loads before its
  * root grafts when the root engine is created, before the page is bound; if the root fails to
- * initialize, its volumes report it and settle. A root hydrated from a server snapshot (SSR)
+ * initialize, its volumes report it and settle. One that loads after the page is bound finds what the
+ * page's elements wrote under its path meanwhile (holdWrite): it lands when the volume grafts. A root hydrated from a server snapshot (SSR)
  * already holds the volume's data at `p`: the volume adopts it (3.x D14). A volume in a component
  * wired to its host (`data-wcs="state…"`) is refused, whenever it loads (3.x left it pending).
  *
@@ -15,6 +16,7 @@
  */
 import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
+import type { StateRow } from "../list";
 import type { Claimed } from "../hooks";
 import type { WcsState } from "../element";
 import { config } from "../config";
@@ -30,6 +32,8 @@ export interface Volume {
   chroot: object | null;
   /** Settles the element's connectedCallbackPromise. */
   settle: (() => void) | null;
+  /** What the page's elements wrote under its path before it grafted: [pattern, row, value]. */
+  held?: [Pattern, StateRow | null, unknown][];
 }
 
 /** Mount paths held on each root (reserved when a volume connects, kept once grafted). */
@@ -185,6 +189,7 @@ function graft(v: Volume, engine: Engine): void {
   let list = grafted.get(engine);
   if (list === undefined) grafted.set(engine, (list = []));
   list.push(v);
+  for (const [p, row, value] of v.held ?? []) engine.write(p, row, value, false, true);
   if (v.el.isConnected) callLifecycle(v, "$connectedCallback");
   v.settle?.();
   v.settle = null;
@@ -295,6 +300,25 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
       raiseError(`re-setting a volume is not supported: its data was copied into the root tree at "${path}" — write the paths under it on the root instead.`);
     },
   };
+}
+
+/**
+ * The `beforeWrite` hook: an element's write (a binding's write-back, or the value it held when it was
+ * bound) under the mount path of a volume that has not grafted yet — its file is still on its way — is
+ * kept, and lands when the volume grafts. It used to fail ("Path "settings" does not exist"), and at
+ * bind time that failed the root: the page stayed empty, by the order two files arrived in
+ * (docs/seam-apps.md, garden-plots). A volume that does not graft reports why; what was kept goes with it.
+ */
+export function holdWrite(engine: Engine, p: Pattern, row: StateRow | null, value: unknown, element: boolean): boolean {
+  if (element) {
+    for (const v of slots.get(engine.root!)?.values() ?? []) {
+      if (v.engine === null && `${p.path}.`.startsWith(`${v.path}.`)) {
+        (v.held ??= []).push([p, row, value]);
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** A root write that would replace an object a volume is grafted under. */

@@ -6,9 +6,9 @@
  */
 import { chain, first, handled, hooks, taken, type Feature } from "../hooks";
 import { raiseError } from "../parser/raiseError";
-import { claimVolume, grafted, guardAncestorWrite, rootEngineCreated, rootMoved } from "../scopes/volume";
+import { claimVolume, grafted, guardAncestorWrite, holdWrite, rootEngineCreated, rootMoved } from "../scopes/volume";
 import { claimDcc, dccEngineCreated, dccWritten } from "../scopes/dcc";
-import { claimComponent, componentScope, crossed, guardReadonlyMount, hasMounts, hostBinding } from "../scopes/component";
+import { claimComponent, componentScope, crossed, guardReadonlyMount, hasMounts, hostBinding, hostOf } from "../scopes/component";
 
 export const scopes: Feature = {
   name: "scopes",
@@ -20,6 +20,7 @@ export const scopes: Feature = {
     hooks.claim = first(taken, hooks.claim, claimComponent);
     hooks.hostBinding = hostBinding;
     hooks.componentScope = componentScope;
+    hooks.hostOf = hostOf;
     hooks.element = chain(hooks.element, (engine, phase) => {
       if (phase !== "mounting") return rootMoved(engine, phase);
       const root = (engine.element as Node).getRootNode();
@@ -31,9 +32,9 @@ export const scopes: Feature = {
       crossed(engine, p, row, old, value, direct, false);
     });
     hooks.getterReached = chain(hooks.getterReached, (engine, g, row) => crossed(engine, g, row, undefined, undefined, false, true));
-    hooks.beforeWrite = first(handled, hooks.beforeWrite, (engine, p, _row, _value, element) => {
+    hooks.beforeWrite = first(handled, hooks.beforeWrite, (engine, p, row, value, element) => {
       guardAncestorWrite(engine, p);
-      return guardReadonlyMount(engine, p, element);
+      return holdWrite(engine, p, row, value, element) || guardReadonlyMount(engine, p, element);
     });
     // first, before what is installed (in any order) replaces its runtime for the new state:
     // a refused re-set leaves the old state, its watches, streams and keys as they were

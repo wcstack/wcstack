@@ -36,6 +36,12 @@ const checked = new WeakMap<Engine, Set<Pattern>>();
 const due = new WeakSet<Engine>();
 /** Volumes (`<wcs-state mount>`) whose loading settled: the paths under them are checked from then on. */
 const settled = new WeakSet<Element>();
+/** A host's pattern a mounted part named: the part's tag, its own path, and the names it has for a key. */
+const parts = new WeakMap<Pattern, [string, string, string[]]>();
+/** Paths that waited once for the page's elements to be defined. */
+const waited = new WeakSet<Pattern>();
+/** The missing keys of mounted parts already told. */
+const told = new WeakSet<Pattern>();
 
 function findDescriptor(o: object, key: string): PropertyDescriptor | undefined {
   for (let x: object | null = o; x !== null && x !== Object.prototype; x = Object.getPrototypeOf(x)) {
@@ -73,12 +79,20 @@ let emptyList: Pattern | null = null;
 /** The lists whose rows the paths under them wait for, by engine. */
 const awaitingRows = new WeakMap<Engine, Set<Pattern>>();
 
+/** A segment that certainly does not exist: its pattern, the names that do at its level, whether it is a row's. */
+interface Missing {
+  seg: string;
+  names: string[];
+  row: boolean;
+  at: Pattern;
+}
+
 /**
  * The segment of `p` that certainly does not exist, with the names that do at its level; null
  * when the path exists or it cannot be told without evaluating a getter (a getter on the way, a
  * null or primitive on the way, a list with no row to look into — `emptyList` then names it).
  */
-function missing(engine: Engine, p: Pattern): { seg: string; names: string[]; row: boolean } | null {
+function missing(engine: Engine, p: Pattern): Missing | null {
   const chain: Pattern[] = [];
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
   const named = (q: Pattern | null): Pattern | null | undefined => (q === null ? null : wildcardForm(engine, q));
@@ -103,7 +117,7 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[]; ro
 }
 
 /** `missing` from `chain[k]` on, in `v`. */
-function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: Pattern | null) => Pattern | null | undefined): { seg: string; names: string[]; row: boolean } | null {
+function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: Pattern | null) => Pattern | null | undefined): Missing | null {
   for (; k < chain.length; k++) {
     const q = chain[k];
     if (v === null || typeof v !== "object") return null;
@@ -113,7 +127,7 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
       // a row field is declared when any row has it — an optional one (`pending` on the rows a page
       // added itself) is not missing because the first row lacks it (docs/seam-apps.md, ssr-news)
       // (missing in every row: the names any row has are the candidates)
-      let first: { seg: string; names: string[]; row: boolean } | null = null;
+      let first: Missing | null = null;
       for (const row of v) {
         const m = under(engine, chain, k + 1, row, named);
         if (m === null) return null;
@@ -140,7 +154,7 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
       // `this.fieldErrors = { date: "…" }`), as a `null` one is: nothing in it to be wrong about, and
       // the lint reads the assignments since 4.9 (docs/seam-apps.md, family-ledger)
       if (k > 0 && names.length === 0) return null;
-      return { seg: q.last, names, row: chain.slice(0, k).some((x) => x.last === "*") };
+      return { seg: q.last, names, row: chain.slice(0, k).some((x) => x.last === "*"), at: q };
     }
     if (d.get !== undefined || d.set !== undefined) return null;
     v = d.value;
@@ -148,10 +162,18 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
   return null;
 }
 
+/** `text` binds a property to a path `path` is under: a part wired there may export it. */
+function wires(text: string, path: string): boolean {
+  try {
+    return parseBindTextsForElement(text).some((b) => b.bindingType === "prop" && path.startsWith(`${b.statePathName}.`));
+  } catch {
+    return false;
+  }
+}
+
 function check(engine: Engine): void {
   due.delete(engine);
-  const map = named.get(engine);
-  if (map === undefined) return;
+  const map = named.get(engine) ?? new Map<Pattern, number>();
   let done = checked.get(engine);
   if (done === undefined) checked.set(engine, (done = new Set()));
   // The paths named, and those a getter read (`this["items.*.pirce"]`, `$getAll("items.*.pirce")`): such a read
@@ -160,12 +182,21 @@ function check(engine: Engine): void {
   // as named; the engine's own accessor of an index path (`items.0.x`) reads for the binding that named it
   const todo = new Map(map);
   const readers = new Map<Pattern, Pattern>();
+  const through: Pattern[] = [];
   for (const p of engine.patterns.all()) {
-    const g = p.parent === null || done.has(p) || map.has(p) ? undefined : p.dependents.find((d) => !d.markup);
+    const g = done.has(p) || map.has(p) ? undefined : p.dependents.find((d) => !d.markup);
     if (g === undefined) continue;
-    readers.set(p, g);
-    todo.set(p, READ);
+    // (a mounted part's read is its host's path: its top-level keys too, which fail no read there)
+    if (hooks.hostOf?.(engine, p)) {
+      done.add(p);
+      through.push(p);
+    } else if (p.parent !== null) {
+      readers.set(p, g);
+      todo.set(p, READ);
+    }
   }
+  // (a read under a mounted key reads the key on its way: the path named is the one to tell)
+  for (const p of through) if (!through.some((q) => q !== p && q.isUnder(p))) note(engine, p, READ);
   for (const [p, kind] of todo) {
     if (done.has(p)) continue;
     done.add(p);
@@ -205,18 +236,45 @@ function check(engine: Engine): void {
       const loops = w.lists.slice(1).map((l, k) => `for: ${k === 0 ? l!.path : l!.path.slice(w.lists[k]!.path.length + 2)}`);
       rowGetter = ` The getter "${w.path}" is declared for the rows of ${loops.join(" → ")}; a list named by an index has rows of its own.`;
     }
-    const near = didYouMean(m.seg, m.names);
+    // A part that is not defined yet may answer it (README "Exported getters": `g.freeCount` from the card
+    // the page wires to `g`): looked at again once that element is defined, or UNDEFINED_AFTER later — it
+    // said "updates will be dropped" while the part's file was on its way (docs/seam-apps.md, garden-plots).
+    // (Seen: an element of the page whose `data-wcs` binds a property to a path this one is under; not a row's)
+    const late = waited.has(p) ? [] : [...((engine.root as ParentNode | null)?.querySelectorAll(`[${config.bindAttributeName}]`) ?? [])]
+      .filter((e) => e.localName.includes("-") && customElements.get(e.localName) === undefined && wires(e.getAttribute(config.bindAttributeName)!, p.path));
+    if (late.length > 0) {
+      waited.add(p);
+      done.delete(p);
+      const again = (): void => schedule(engine);
+      void Promise.all(late.map((e) => customElements.whenDefined(e.localName))).then(again);
+      setTimeout(again, UNDEFINED_AFTER);
+      continue;
+    }
+    const part = parts.get(p);
+    // A part's path is told only when its first key is what is missing — the seam: what the part was handed.
+    // Deeper, the part may answer itself (a row getter it declares under a list it was handed, a getter a
+    // part mounted in it exports), and what it has is not the tree's to know
+    // (told once per missing key: a card's `view` and what its tiles read under it are one mistake)
+    if (part !== undefined && (m.seg !== part[1].split(".")[0] || told.has(m.at))) continue;
+    if (part) told.add(m.at);
+    const near = didYouMean(m.seg, part ? [...m.names, ...part[2].filter((n) => n !== m.seg)] : m.names);
+    // a part's path that is one of its host's own: in a part, a path starts at what the part was handed
+    const outside = part !== undefined && findDescriptor(engine.target, m.seg) !== undefined
+      ? ` "${m.seg}" is a path of the host: hand it over (${config.bindAttributeName}="state.${m.seg}: ${m.seg}").`
+      : "";
     // A row field no row has is not a sign of a mistake: rows are data, and an optional field (the
     // `pending` a page puts on its own rows) is absent from the server's (docs/seam-apps.md, ssr-news).
     // Reported only with a near name — a likely typo (`.nmae` beside `name`) — or a row getter of
     // another list form. So is a getter's read: `this["opts.flag"] ?? false` reads an optional key on purpose
-    if ((m.row || kind === READ) && near === "" && rowGetter === "") continue;
+    if ((m.row || kind === READ) && near === "" && rowGetter === "" && outside === "") continue;
     const [code, subject, source] = kind === WATCH ? ["watch-path-missing", "$watch path", "watch"]
       : kind === POST ? ["post-update-path-missing", "$postUpdate path", "postUpdate"]
       : kind === READ ? ["read-path-missing", "Path", "getter"]
       : ["binding-path-missing", "Bound path", "binding"];
     hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": source, "path": p.path, "missingSegment": m.seg });
-    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}"${kind === READ ? ` read by the getter "${readers.get(p)!.path}"` : ""} does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} ${kind === POST ? "The call updates nothing." : kind === READ ? "The getter reads undefined." : "Updates to this path will be silently dropped."}${LINT_HINT}`);
+    // (a part's path: named as the part wrote it, with the host's path it reads; the lint does not read a class's template)
+    const what = part ? `"${part[1]}" in <${part[0]}> — its host's "${p.path}" —` : `"${p.path}"${kind === READ ? ` read by the getter "${readers.get(p)!.path}"` : ""}`;
+    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} ${what} does not resolve on the state tree: "${m.seg}" is not declared.${near}${outside}${rowGetter} ${kind === POST ? "The call updates nothing." : kind === READ ? "The getter reads undefined." : "Updates to this path will be silently dropped."}${part ? "" : LINT_HINT}`);
   }
 }
 
@@ -236,13 +294,24 @@ function declared(engine: Engine, p: Pattern, watch = false): void {
   note(engine, p, watch ? WATCH : BINDING);
 }
 
-function note(engine: Engine, p: Pattern, kind: number): void {
+function note(engine: Engine, p: Pattern, kind: number, part?: [string, string, string[]]): void {
+  // A path a mounted part names (README "Web Component Binding") is its host's: checked there, where the
+  // tree is. Inside the part the read falls through to the host and fails nothing, so a wrong name at the
+  // seam — the page's `state.veiw:`, the part's `veiw.x`, `nmae` in its template, a path of the page read
+  // in it — showed nothing and said nothing (docs/seam-apps.md, garden-plots). The part's own getters'
+  // reads are looked at too (check)
+  const up = kind === BINDING || kind === READ ? hooks.hostOf?.(engine, p) : undefined;
+  // (looked at whatever it names: a part that binds only its own getters still has their reads to check)
+  schedule(engine);
+  if (up) return note(up[0], up[1], kind, part ?? [up[2], p.path, up[3]]);
   // a missing top-level key already fails the binding's read (the core's error)
   if (p.path[0] === "$" || p.path.includes("#") || (kind === BINDING && p.parent === null)) return;
   let map = named.get(engine);
   if (map === undefined) named.set(engine, (map = new Map()));
-  if (!map.has(p)) map.set(p, kind);
-  schedule(engine);
+  if (!map.has(p)) {
+    map.set(p, kind);
+    if (part) parts.set(p, part);
+  }
 }
 
 const wrapped = new WeakSet<Engine>();
@@ -292,11 +361,14 @@ function elementWrote(engine: Engine, p: Pattern, _row: unknown, _old: unknown, 
 function written(engine: Engine, p: Pattern): void {
   const keys = declaredKeys.get(engine);
   const key = p.last;
-  if (p.parent !== null || posting || keys === undefined || keys.has(key) || key[0] === "$" || engine.dropped.has(key)) return;
+  // (a key with an accessor is declared: the author's, or — in a mounted part — the tree it was handed, which
+  // its own state does not name: `this.name = v` there writes the host's `user.name`, and creates nothing)
+  if (p.parent !== null || posting || keys === undefined || keys.has(key) || key[0] === "$" || engine.dropped.has(key) || p.getter !== null) return;
   const near = didYouMean(key, [...keys]);
   keys.add(key);
-  // (a volume grafts its state at its mount path, and the keys on the way to it: those keys are the page's)
-  if (near !== "" && ![...((engine.root as ParentNode | undefined)?.querySelectorAll(`${config.tagNames.state}[mount]`) ?? [])]
+  // (a volume grafts its state at its mount path, and the keys on the way to it: those keys are the page's.
+  // One that loaded before its root grafts while the engine is made, before it holds its root: the element's)
+  if (near !== "" && ![...(((engine.root ?? (engine.element as Node | undefined)?.getRootNode()) as ParentNode | undefined)?.querySelectorAll(`${config.tagNames.state}[mount]`) ?? [])]
     .some((e) => `${e.getAttribute("mount")}.`.startsWith(`${key}.`))) {
     console.warn(`[@wcstack/state] [wcs/write-path-missing] "${key}" is not declared: writing it creates a new key.${near}${LINT_HINT}`);
   }
@@ -711,7 +783,7 @@ function lookLater(engine: Engine, phase: string): void {
     }
   }, UNDEFINED_AFTER);
   if (document.readyState === "complete") look();
-  else addEventListener("load", look, { once: true });
+  else document.defaultView?.addEventListener("load", look, { once: true });
 }
 
 // ---------------------------------------------------------------- a failure nothing reads

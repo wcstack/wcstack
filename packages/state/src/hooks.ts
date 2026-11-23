@@ -59,6 +59,11 @@ export interface Hooks {
    * component mount's wiring, `state.x: path`); true = an add-on took it over.
    */
   hostBinding?: ((binding: Binding, ro: boolean) => boolean) | null;
+  /**
+   * What a mounted component's pattern reads: its host's engine and pattern, with the component's tag and
+   * the names it has for a key (scopes fills it; diagnostics checks the path where the tree is).
+   */
+  hostOf?: ((engine: Engine, p: Pattern) => [Engine, Pattern, string, string[]] | undefined) | null;
   /** An element whose content an add-on binds (a Light DOM component): the walker leaves it. */
   componentScope?: ((el: Element) => boolean) | null;
   /**

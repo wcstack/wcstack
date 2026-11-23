@@ -3,7 +3,8 @@
  * `[data-wc-definition]` host is not a root: it defines the host's tag. Each instance gets a
  * copy of the definition's (untouched) shadow content, whose own `<wcs-state>` is an ordinary
  * root with a fresh state. The class's prototype reads and writes that state (writes before it
- * initializes wait for it; methods return Promises); `$bindables` / `$commands` become its
+ * is there land when its engine is made — before its bindings and `$connectedCallback`, which see
+ * what the page gave it; methods return Promises); `$bindables` / `$commands` become its
  * `static wcBindable`, and a write to a bindable (or under it, or a `$postUpdate`) dispatches
  * `<tag>:<prop>-changed` from the instance — a notification: `detail` carries the written value
  * only for a write of the member itself, and the declared getter reads the member off the element.
@@ -27,6 +28,8 @@ interface Definition {
 /** DCC instances by host element, and the definition of each instance's inner engine. */
 const instances = new WeakMap<Element, Definition>();
 const byEngine = new WeakMap<Engine, { host: Element; def: Definition }>();
+/** What was written to an instance before its state was there (dccEngineCreated lands it). */
+const pending = new WeakMap<Element, [string, unknown][]>();
 
 function names(state: Record<string, any>, key: string): string[] {
   const v = state[key];
@@ -73,9 +76,9 @@ function define(tag: string, content: DocumentFragment, mode: ShadowRootMode, st
     if (typeof d.value !== "function") raiseError(`$commands entry "${n}" is not a method: list it in $bindables.`);
   }
   const def: Definition = { tag, bindables };
+  const attrs = new Set<string>();
   /** Each instance's inner `<wcs-state>` (null: a definition host, or content without one). */
   const states = new WeakMap<Element, any>();
-  const pending = new WeakMap<Element, [string, unknown][]>();
   /** Builds the instance's shadow once; its inner `<wcs-state>`. */
   const ensure = (el: Element): any => {
     if (states.has(el)) return states.get(el);
@@ -92,13 +95,8 @@ function define(tag: string, content: DocumentFragment, mode: ShadowRootMode, st
   };
   /** The instance's inner engine once its state initialized, else null. */
   const inner = (el: Element): any => ensure(el)?.engine ?? null;
-  /** Resolves when the instance's state initialized, before its `$connectedCallback` (and lands the writes queued before). */
-  const ready = (el: Element): Promise<void> => Promise.resolve(ensure(el)?.initializePromise).then(() => {
-    const queued = pending.get(el);
-    pending.delete(el);
-    const engine = inner(el);
-    if (queued !== undefined && engine !== null) for (const [k, v] of queued) engine.proxy[k] = v;
-  });
+  /** Resolves when the instance's state initialized. */
+  const ready = (el: Element): Promise<void> => Promise.resolve(ensure(el)?.initializePromise);
 
   class Dcc extends HTMLElement {
     static wcBindable = bindables.length === 0 && commands.length === 0 ? null : {
@@ -109,7 +107,14 @@ function define(tag: string, content: DocumentFragment, mode: ShadowRootMode, st
     };
 
     connectedCallback(): void {
-      if (ensure(this) !== null) void ready(this);
+      ensure(this);
+      // an input written as an attribute is not read (a DCC's inputs are properties): said, once per tag and name
+      for (const n of bindables) {
+        if (this.hasAttribute(n) && !attrs.has(n)) {
+          attrs.add(n);
+          console.warn(`[@wcstack/state] [wcs/dcc-attribute] <${tag} ${n}="…">: a DCC does not read attributes. Bind it (${config.bindAttributeName}="${n}: path") or set the property.`);
+        }
+      }
     }
 
     /** The inner `<wcs-state>` (as in 3.3; builds the shadow if it is not built yet). */
@@ -172,7 +177,13 @@ export function claimDcc(el: HTMLElement, root: Node): Claimed | null {
 export function dccEngineCreated(engine: Engine, root: Node): void {
   const host = (root as ShadowRoot).host;
   const def = host === undefined ? undefined : instances.get(host);
-  if (def !== undefined) byEngine.set(engine, { host, def });
+  if (def === undefined) return;
+  byEngine.set(engine, { host, def });
+  // what the page gave the instance before its state was there: in it before its bindings are built and
+  // `$connectedCallback` runs. Landed after them, neither that callback nor a `$watch` (which starts
+  // after it) saw the first value (docs/seam-apps.md, garden-plots)
+  for (const [k, v] of pending.get(host) ?? []) engine.proxy[k] = v;
+  pending.delete(host);
 }
 
 /**
