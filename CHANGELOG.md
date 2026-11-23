@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.28.0] — 2026-11-23
 
 A minor from the `garden-plots` seam app, the first of the fourth round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a city's allotment-garden console assembled from parts — designers' parts in HTML alone (DCC), developers' parts as classes mounted on the page's data (`bind-component`), a vendor's element, a state split into volumes. None of the 18 apps before it had used a DCC; one had used `bind-component`, one a volume. Every claim was reproduced against 4.27.0 before it was classified ([docs/seam-apps.md](./docs/seam-apps.md)), and the author decided the six questions on 2026-11-23 (§5.24). The core is unchanged (`core.min.js` 20,476 B).
 

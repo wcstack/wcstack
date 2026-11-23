@@ -493,10 +493,28 @@ Workarounds became unnecessary: a Vite plugin of the page's own and `vite-ignore
 
 Workarounds became unnecessary: a submit button disabled in the markup until state binds it; an `event.target` check in the handler of an element that holds a nested element of the same kind.
 
-## Still needed on 4.27.0
+### 4.28.0
+
+2026-11-23 — [CHANGELOG](../CHANGELOG.md#4280--2026-11-23)
+
+- `@wcstack/state` (the `scopes` add-on): `#ro` on one key of a mount holds for a component mounted inside. Handed `state.view#ro: view` and handing `view` on, the inner component's write under `view` throws `[wcs/mount-readonly]` and its two-way bindings do not write back; it landed on the page's data. A page that relied on it drops `#ro`, or writes on the host.
+- `@wcstack/state` (`scopes`): a DCC's `$connectedCallback` sees the first value the page gave it (it saw the default; the value landed after the callback and before the watches started).
+- `@wcstack/state` (`scopes`): an element's write under the mount path of a volume that has not grafted yet is kept until the volume grafts. It threw `Path "…" does not exist`, and one made while the page was being bound failed the root.
+- Console: `[wcs/binding-path-missing]` / `[wcs/read-path-missing]` now also report a path a mounted component names when its first key is missing on the component and on its host (`… in <plot-tile> — its host's "…" — …`), once per key; `[wcs/dcc-attribute]` reports a DCC's input written as an attribute. Gone: `[wcs/write-path-missing]` for a volume's mount path when the volume loaded before its root and for a mounted component writing the tree it was handed, and `[wcs/binding-path-missing]` for a component's exported getter while the component's file is on its way.
+- `@wcstack/autoloader`: an eager key that names no loader gets the loader whose postfix matches the file it is mapped to (it was matched against the key, so it was always the default loader). A page that registered a loader with a postfix and relied on eager files of that extension going to the default loader names the loader in the key (`|vanilla`). An eager key mapped to an `.html` file goes to the new `dcc` loader.
+- `@wcstack/router`: on the fallback path (no Navigation API) a click on a `<wcs-link>` in the content of the route being left no longer throws.
+- `@wcstack/testing`: `mount()` turns `<template shadowrootmode>` into a shadow root and waits for the page's DCCs; `installDom()`'s restore closes the window first. `@wcstack/typescript`: `wcs-schema emit --mount` records the mount (`stateMounts`), and the root's `check` passes for a tree with volumes — emit each volume once more for a manifest merged by an earlier version.
+
+Workarounds became unnecessary: a loader of the page's own that fetches a DCC's file and parses it with `setHTMLUnsafe()`, and `|loader` in every eager key; an I/O element bound to a root key and copied to and from a volume by `$watch`; `[wcs/write-path-missing]` for a mount path allowed in browser tests, and a poll for "the volumes are there" (a volume's `connectedCallbackPromise` resolves once it has grafted); a DCC that derives its list in a getter with a cache because a `$watch` missed the first value; a plain link that asks the router in place of a `<wcs-link>` inside a route; a DCC's definition installed by hand before `mount()` in a unit test; `wcs-schema check` run for the volumes only.
+
+## Still needed on 4.28.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
+- The lint reads no component: not a class's template or methods, not what a DCC declares. A getter a mounted component exports and the page reads is reported as `wcs/binding-path-missing`; declaring it in the page's JSDoc silences the report and hides a later rename (state README, "Exported getters"). The run time reports a component's wrong first key (4.28) and refuses a DCC's wrong declarations; unit tests cover the rest.
+- A volume does not read the root, and the root's `$connectedCallback` and `$watch` run before a volume that arrives later has its keys and methods: hand a volume what it needs, and wait for its `connectedCallbackPromise` (state README, "Mounting Additional State").
+- A DCC is given whole values through properties: a write to a field inside an object or array it shares with the page does not reach the other side's rows, and a `$watch` on an input does not run for the first value — read it in `$connectedCallback` as well (state README, "What a DCC Is Given").
+- A browser test that leaves a page while an inline state is still being imported may see `<wcs-state> failed to initialize` in Firefox and WebKit: the import was cut off by the unload, and the page was not broken.
 
 - A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
 - A repeated query key (`?tag=a&tag=b`) is read two ways: `searchParams` keeps the last value, and a `<wcs-link>` compares every value. Where state reads a key through `searchParams`, give it one value in the links too (router README, "Active state").
