@@ -2,7 +2,7 @@
 
 - **提案先**: wc-bindable-protocol リポジトリ（SPEC.md と SPEC-extensions の Applier profile、protocol = `"wc-bindable"`）
 - **提案元の文脈**: wcstack（`@wcstack/state` の binder、`@wcstack/signals` の `bindNode`、bubble するイベントを出す I/O ノード群）
-- **状態**: wcstack 側は参照実装まで完了（2026-11-21、4.27 で出す。未リリース）。著者の決定は [v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.22
+- **状態**: wcstack 側は参照実装まで完了（2026-11-21、4.27.0 で公開）。著者の決定は [v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.22
 - **TL;DR**: 要素の `properties[].event` を聞く applier は、`event.target` がその要素でないイベント（入れ子にした要素から bubble してきた同じ名前のイベント）を、値の読み取りにも event-token の発火にも使ってはならない（MUST NOT）。要素は bubble するイベントを出し続けてよい
 
 ---

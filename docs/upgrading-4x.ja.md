@@ -484,7 +484,16 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: ページ自身の Vite のプラグインと、ページ内の state とガードのスクリプトの `vite-ignore`。lint のために `: void` を書かないメソッド。JSDoc を書かず、形をリテラルで写したページ内の state。manifest の発見の外に置いて手で渡すスキーマ。手書きのインターフェースを通して転送する `$on` のハンドラと、`this.$command.x!`。`<wcs-sse>` を囲むページ自身の unload のリスナーと、サインアウトでの `close()`。`<wcs-debounce>` のスロットの `$watch` での `undefined` への `typeof` の防御。ページに表があるときの、単体テストの `<ul>`。`204` のための `response-type="text"`。
 
-## 4.26.0 でもまだ要るもの
+### 4.27.0
+
+2026-11-23 — [CHANGELOG](../CHANGELOG.md#4270--2026-11-23)
+
+- `@wcstack/state`・`@wcstack/signals`: 束縛はその要素自身のイベントだけを聞く。入れ子にした要素から bubble してきた同じ名前のイベントは、外側の要素の `eventToken.*`・出力の束縛・`bindNode` のシグナルに届かない。それまでは、内側の要素の `detail` が届いていた。
+- `@wcstack/state`（`forms` 後付け）: state がフォームを束ねる前、送信を止めるフォームをブラウザが送ることはなく、その間の送信は束ねた後にやり直す。束ねる前に打った値は残り、state に伝わる。それまでは state の値で消えていた。
+
+要らなくなった回避策: state が束ねるまでマークアップで `disabled` にしておく送信ボタン。同じ種類の要素を入れ子に持つ要素のハンドラでの `event.target` の確認。
+
+## 4.27.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
@@ -494,6 +503,7 @@ README の例が 2 つ誤っていました: notification と speech の README 
 - まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。
 - Safari には `moveBefore()` が無い: そこでは並べ替えで動かした行は今もフォーカスを失い（state の README、「ループ (`for`)」）、行の中の I/O ノードは要求や接続を失う（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §25）。リストがその場に残した行は、どのブラウザでも両方を保つ。
 - Enter で動く `keydown` のハンドラは、IME の変換を自分で確かめる（`e.isComposing || e.keyCode === 229`）。ページの自作のフォーム部品は、自分で reset し、`value` を両方向に宣言する（[forms.ja.md](./forms.ja.md)）。
+- state がフォームを束ねる前の守りは、shadow root の中のフォームには効かない。サーバー描画のページのフォームは、スクリプトが走る前から使える: フォーム自身の `method` と `action` を持たせる（state の README の「フォーム」）。
 - 絞り込みを変える一覧は、取りに行っているページを中断する（`command.abort:`）: `manual` の `<wcs-fetch>` は `url` が変わっても中断せず、前の絞り込みの行が新しい一覧に入る（[long-lists.ja.md](./long-lists.ja.md)）。
 - ページ自身のスクリプトが `for:` の行に差し込んだノードは、その後ろの要素の委譲ハンドラをずらす: それらは `on*#direct:` で束ねる（state の README、「委譲されるイベント」）。
 - 一覧の行へ戻るページ自身のリンクは、行のフラグメントへ行く（`navigateUrl = "/#photo-" + id`）: `$watch` からの `scrollIntoView()` は、push のナビゲーションが終わるときに打ち消される（router の README）。
