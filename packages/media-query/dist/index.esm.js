@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/media-query","version":"4.26.0"};
+var pkg = {"name":"@wcstack/media-query","version":"4.27.0"};
 
 const UNSUPPORTED_SNAPSHOT = Object.freeze({
     matched: false,

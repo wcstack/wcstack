@@ -743,6 +743,9 @@ function bindNode(target, descriptor) {
         signals[prop.name] = cell;
         const read = prop.getter ?? DEFAULT_GETTER;
         const handler = (event) => {
+            // the node's own event only: a nested node's bubbling event of the same name is not its
+            if (event.target !== node)
+                return;
             cell.set(read(event));
         };
         node.addEventListener(prop.event, handler);
@@ -772,6 +775,8 @@ function bindNode(target, descriptor) {
             const cell = signal(options.initial, () => false);
             const read = propDesc.getter ?? DEFAULT_GETTER;
             const handler = (event) => {
+                if (event.target !== node)
+                    return; // (as above: the node's own event only)
                 const chunk = read(event);
                 cell.set(fold(cell.peek(), chunk));
             };
@@ -1177,4 +1182,4 @@ async function* readableToAsyncIterable(stream, signal) {
 }
 
 export { DisposedError as D, createRoot as a, bindNode as b, computed as c, signal as d, effect as e, flushSync as f, streamResource as g, innerEffect as h, isDisposedError as i, reportError as j, isDev as k, hasOwner as l, nodeSource as n, onCleanup as o, resource as r, selector as s, warnDev as w };
-//# sourceMappingURL=core-BreHgNBK.esm.js.map
+//# sourceMappingURL=core-kpchrA83.esm.js.map

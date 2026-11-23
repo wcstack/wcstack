@@ -684,7 +684,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.26.0";
+var version = "4.27.0";
 var pkg = {
 	version: version};
 

@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/ambient-light-sensor","version":"4.26.0"};
+var pkg = {"name":"@wcstack/ambient-light-sensor","version":"4.27.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

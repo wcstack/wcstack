@@ -40,6 +40,20 @@ interface Feature {
  *   then written from state again — what does not write back (a radio group with no default, `#ro`)
  *   shows state's value, so the two agree.
  *
+ * And two things happen before state has bound a form at all (docs/v4-direction-2026-10.md §5.22). The router
+ * draws a route as soon as its script runs; state binds it once the root state has loaded, which may take
+ * seconds (a `src=` file, an inline module). In between the form is usable:
+ *
+ * - What the user typed was written over with the state's value when the form was bound (the homeroom seam
+ *   app: then its `required` fields refused the submit). The user's value wins, as on a server's page (§5.1,
+ *   the ssr add-on): a control the user changes while state does not bind it is marked, and when an engine
+ *   starts to bind its root, each marked control there that state then binds gets back what it had, told to
+ *   state.
+ * - A submit went out as the browser's own: a GET to the page with the fields — the password too — in the URL
+ *   and the history (the family-ledger and router-auth seam apps). A form whose `onsubmit` the page prevents
+ *   (`onsubmit#prevent`) is never sent by the browser, bound or not: the document hears every submit first.
+ *   One submitted before its root was bound is submitted again right after, with the user's values back.
+ *
  * "Told to state" is an `input` event (and, where a binding may hear that one, a `change` event) that
  * does not bubble, dispatched on the control: its two-way binding hears it as it hears the user — through
  * its input filters, on its `#on<event>`, or not at all (`#ro`) — and a handler bound above it does not.
