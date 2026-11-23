@@ -113,7 +113,7 @@ HTMLでカスタム要素を使用するだけです。`@wcstack/autoloader`が�
 
 形式: `"@components/<タグ名>[|<ローダー>[,<extends>]]": "<パス>"`
 
-- **ローダー**（オプション）: 省略した場合、ファイル拡張子に基づいて自動解決されます（例: `.js` -> デフォルトローダー、`.lit.js` -> litローダー）。
+- **ローダー**（オプション）: 省略した場合、ファイル拡張子に基づいて自動解決されます（例: `.js` -> デフォルトローダー、`.lit.js` -> litローダー、`.html` -> `dcc` ローダー）。拡張子は、キーが指すファイルのものです。その後ろのクエリやフラグメントは数えません。4.28（未リリース）から: 4.27 までは postfix をキーと比べていて、キーには拡張子が無いので、ローダーを名指ししないキーは必ずデフォルトローダーになっていました — 下の例も含めて。
 - **extends**（オプション）: 省略した場合、コンポーネントクラスがビルトインHTML要素を継承しているかどうかを自動検出します（例: `HTMLButtonElement` -> `extends: 'button'`）。
 
 **例:**
@@ -173,6 +173,35 @@ export default customElements.get("wcs-fetch");
 autoloader はタグを 1 つずつ順に読み込み、すでに定義されたタグは飛ばすので、`<wcs-fetch-header>` に自分のファイルは要りません。ファイルの名前はパッケージでなくタグから付けます: `<wcs-ws>`（`@wcstack/websocket`）は `ws.js`、`<wcs-geo>`（`@wcstack/geolocation`）は `geo.js` です。
 
 クラスを 1 つだけ出し直す包み（`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`）では補助のタグが定義されず、autoloader は `fetch-header.js` を探しに行きます。`<wcs-fetch>` はそのヘッダーや本文なしで要求を送ります。4.6 から、`[wcs/fetch-helper-undefined]` で警告します。
+
+## 宣言的カスタムコンポーネント
+
+4.28（未リリース）から。`@wcstack/state` の[宣言的カスタムコンポーネント（DCC）](../state/README.ja.md#宣言的カスタムコンポーネント-dcc)は、HTML だけで書く部品です: `<my-part data-wc-definition><template shadowrootmode="open">…`。ブラウザがそのテンプレートを shadow root にするのは、ページを解析している間だけなので、`innerHTML` でページに書いたり `<template>` から複製したりした定義は、タグを定義しません。`dcc` ローダーは定義を別のファイルから持ってくるので、1 つのファイルを複数のページが使えます:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@components/midori-pager": "./parts/midori-pager.html",
+      "@components/midori-badge|dcc": "./parts/badge.part",
+      "@components/ui|dcc/": "./parts/ui/"
+    }
+  }
+</script>
+<script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+
+<wcs-autoloader></wcs-autoloader>
+<midori-pager data-wcs="page: page; total: total"></midori-pager>
+<ui-note data-wcs="msg: note"></ui-note>   <!-- 出会ったときに ./parts/ui/note.html から読む -->
+```
+
+- `.html` のファイルを指す即時読み込みのキーは、拡張子からローダーが決まります。キー（や名前空間）で `|dcc` と名指しすることもでき、そのときファイルの名前は問いません。
+- ローダーはファイルを取り、`setHTMLUnsafe()`（`<template shadowrootmode>` を保つ解析の API）で解析し、その中の `[data-wc-definition]` の要素をすべて、ページの終わりの隠した要素（`#wcs-autoloader-definitions`）に入れます。そこで `@wcstack/state` がタグを定義します。定義の外の文字・コメント・`<style>` は置いていきます: 部品のスタイルは、部品の shadow root の中に書きます。
+- 1 つのファイルに部品を 1 つ、タグの名前で置いてください。すでに定義されているタグはそのままにします（同じファイルを 2 つのキーで読んだ、ページに写しがある）。
+- 失敗は、ほかの読み込みと同じく報告します（`Failed to eager load component '…'` / `Failed to lazy load component '…'`）。ファイルの URL 付きで: `HTTP 404`、`data-wc-definition` の要素の無いファイル、`setHTMLUnsafe()` の無いブラウザ。10 秒たってもどこからも定義されないタグ — `@wcstack/state` を読み込んでいないページ — も失敗にして、ほかの読み込みを止めません。
+- Trusted Types（`require-trusted-types-for 'script'`）の下では、ファイルの文字は wcstack の枠のポリシー `globalThis[Symbol.for("wcstack.trustedTypes.policy")]` を通ります（[docs/csp.md](../../docs/csp.md)）。
+- 定義は document に入ります: スコープ付きレジストリには対応しません。
 
 ## カスタマイズドビルトイン要素（`is`属性）
 
@@ -234,6 +263,8 @@ interface IWritableConfig {
 
 `bootstrapAutoloader()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。効果のなかった `scanImportmap` は取り除かれ、渡すと例外を投げます。
 
+**ローダーに渡るものと、返すもの。** `loader(path)` に渡るのは import map の指定子です — 即時読み込みのキーなら `"@components/my-button|lit"`、名前空間のタグなら `"@components/ui|lit/button.lit.js"` — URL ではありません。`import(path)` は import map を通して解決し、ファイルを自分で取るローダーは、先に解決します: `fetch(import.meta.resolve(path))`。ローダーは要素のクラスで解決し、そのタグがまだ定義されていなければ autoloader が定義します。即時読み込みのキーでは、ファイルが自分でタグを定義したなら `null` で解決してかまいません。名前空間のタグでは、`null` は読み込みの失敗です。
+
 ### デフォルト設定
 
 ```javascript
@@ -241,6 +272,8 @@ interface IWritableConfig {
   loaders: {
     // 組み込みvanillaローダー: モジュールをインポートしdefaultエクスポートを返す
     vanilla: { postfix: ".js", loader: vanillaLoader },
+    // ファイルに置いた宣言的カスタムコンポーネントの組み込みローダー（上を参照）
+    dcc: { postfix: ".html", loader: dccLoader },
     // デフォルトキー: どのローダーにも一致しない場合のフォールバック
     "*": "vanilla"
   },
@@ -249,11 +282,12 @@ interface IWritableConfig {
 ```
 
 - **`vanilla`**: 組み込みローダー。モジュールを動的インポートし、`default`エクスポートをカスタム要素コンストラクタとして返します。
+- **`dcc`**: 4.28（未リリース）から。[ファイルに置いた宣言的カスタムコンポーネント](#宣言的カスタムコンポーネント)の組み込みローダー。
 - **`"*"`（デフォルトキー）**: フォールバックローダー。値は文字列エイリアス`"vanilla"`で、マッチしないコンポーネントはvanillaローダーを使用します。
 
 ### ローダー解決
 
-コンポーネントに明示的なローダーキーがない場合（例: `|loader`なしの遅延読み込み名前空間）、以下の順序でローダーを解決します：
+キーがローダーを名指ししない場合、以下の順序でローダーを解決します。即時読み込みのキーにはファイル（キーが指すもの）がありますが、名前空間には、タグに出会うまでファイルが無いので、2 つ目だけが当てはまります：
 
 1. **postfix一致**: ファイルパスを登録済みローダーの`postfix`値と照合（最長一致優先）。
 2. **デフォルトキーフォールバック**: postfixが一致しない場合、`"*"`キーで参照されるローダーを使用。

@@ -438,6 +438,19 @@ There is **one state tree per root**. To split state across modules, mount a vol
 
 A volume holds data, getters, setters and methods, and may declare `$connectedCallback` / `$disconnectedCallback`. Inside all of them `this` is rooted at the mount path: `this.items` is the tree's `cart.items`, and the `$` APIs that take a path (`$getAll`, `$setAll`, `$update`, `$resolve`, `$postUpdate`, `$dependOn`, `$eq`, `$eqPath`, `$eqIndex`) take it relative to the mount. Its getters and setters become accessors of the tree at `cart.<key>`, and its methods are reachable by path — `onclick: cart.checkout`, `this["cart.checkout"]()` from the root. Load order does not matter: a volume connected before the root is grafted when the root's engine is created, before the page is bound, and one connected while the root `<wcs-state>` is out of the page is grafted when it is put back.
 
+**A volume that arrives after the page is bound** — its `src=` file later than the root's. Bindings under its path read `undefined` until it grafts, and are not reported as missing meanwhile. Since 4.28 (not released yet), an element's write under its path — a binding's write-back, or the value an element holds when it is bound, as `<wcs-storage data-wcs="value#init=element: settings.stored">` does — is kept and lands when the volume grafts. Up to 4.27 it failed with `Path "settings" does not exist`, and one made while the page was being bound failed the root: nothing on the page was bound, by the order two files arrived in. A volume that does not graft reports why, and what was kept goes with it.
+
+Code is not kept. The root's `$connectedCallback` and `$watch` run without a volume that has not arrived: `this["settings.theme"]` reads `undefined`, `this.settings.theme` and a write throw `Path "settings" does not exist`, and its methods are not there (`this["map.load"] is not a function`). A volume's `connectedCallbackPromise` resolves once it has grafted — wait for it before calling into the volume:
+
+```js
+async $connectedCallback() {
+  await document.querySelector('wcs-state[mount="map"]').connectedCallbackPromise;
+  await this["map.load"]();
+}
+```
+
+**A volume does not read the root.** Inside a volume every path starts at the mount: `this["title"]` in the `cart` volume is `cart.title` — `undefined` when `title` is the root's — and a root method is not reachable from it. The root reads a volume (`this["cart.total"]`) and calls it (`this["cart.checkout"]()`); what a volume needs of the root, the root hands it: an argument of the method it calls, or a write to a key of the volume.
+
 A volume does not run the declarations that react to the whole tree. `$watch`, `$stream`, `$listKeys`, `$renderedCallback`, `$recursion`, `$behavior` and `$features` — and the removed `$scan`, `$streams` and `$updatedCallback` — refuse the volume: it is not grafted, and `console.error` names the element and says `$watch is not run in a volume — declare it on the root state.` Declare them on the root state with full paths — inside the root's handlers `this` is the root (`$watch: { "cart.total"(cur) { … } }`), and the root's `$renderedCallback(paths)` receives paths written from the root (`cart.items.*.name`), so filter them by the prefix. `$commandTokens`, `$eventTokens`, `$on` and `$errorCallback` are not run, with a `console.warn`. A volume takes no injections either: a `data-wcs` on the volume element (`state.taxRate: settings.taxRate`) refuses it — read the root path in a root getter (`get cartTotalWithTax() { return this["cart.subtotal"] * (1 + this["settings.taxRate"]); }`).
 
 A volume that is refused settles without grafting, reports why, and resolves its `connectedCallbackPromise`; so does one whose state fails to load. Other refusals: a mount path another volume already holds (`will not graft: another volume already holds "cart".`), a path the root state already has (`will not graft: the root state already has "cart".` — except under SSR, where the volume adopts the server's data there), and a volume in the shadow root of a component wired to its host (`will not graft: its component is wired to its host.` — that component reads the host's tree; put the data in the host's state). If the root `<wcs-state>` fails to initialize, the volumes waiting for it, and those that load later, report `will not graft: the root state failed to initialize.` and settle instead of waiting forever. That is the end of the line for them: connecting a corrected root afterwards does not bring them back — remove the broken root and the volumes and add new elements. A throw from a volume's `$connectedCallback` is reported with `console.error`, and the volume stays grafted.
@@ -2139,7 +2152,11 @@ customElements.define("user-card", UserCard);
 > lets the component read the entry but not write it — `element.state.title = …`, `this.title = …`
 > in a method and `$setAll` / `$update` / `$resolve` writes throw `[wcs/mount-readonly]`, and a two-way
 > binding inside the component (`value: title`) does not write back. The host can still write the
-> path. The mounted `<wcs-state>` needs no `name`
+> path. Since 4.28 (not released yet) it also holds for a component mounted inside that one: handed the
+> same data on (`state.view: view` in a component that was handed `state.view#ro: view`), the inner
+> component's write throws the same error, naming the component that was handed it read-only, and its
+> two-way bindings do not write back. Up to 4.27 only a whole mount's `#ro` reached it; a write under one
+> mapped key landed. The mounted `<wcs-state>` needs no `name`
 > in Light DOM, and `$getAll` / `$setAll` / `$update` / `$resolve` / `$postUpdate` on `element.state`
 > (and on `this` inside getters/methods) speak the component's own vocabulary — paths are
 > translated onto the mount and the host row's indexes are prepended automatically.
@@ -2156,7 +2173,8 @@ A mounted component's getters are **exported** at the mount point: **a read of a
 - Row mounts export per row: `$getAll("users.*.display")` and `text: .display` inside the same `for` read each row component's getter. Dependencies flow through: when `user.name` changes, everything that read `user.display` re-renders.
 - Accessors whose component-local path contains a wildcard, such as `get "children.*.label"()`, work inside the component but are **not exported**. Define `get label()` on a component mounted on each child row instead. Only accessors whose exported path has the mount point's wildcard count are exported.
 - The parent evaluates before the child component registers, so the first read may see `undefined`; the value converges as soon as the component mounts. Write derived expressions defensively (`(x ?? 0)`).
-- Missing-path warnings are deferred by one macrotask (`setTimeout(0)`), independently of `getBindingsReady`. With an autoloader or delayed custom-element definition, an initial warning may appear before the component registers, even when the binding eventually resolves.
+- Missing-path warnings are deferred by one macrotask (`setTimeout(0)`), independently of `getBindingsReady`. Since 4.28 (not released yet), a path under an element the page wires (`<garden-card data-wcs="state: g">` and `g.freeCount`) that is not defined yet waits for its definition, or for the look at the page's undefined elements 5 s after the page was ready. Up to 4.27 a part loaded by an autoloader was reported missing — "updates will be silently dropped" — before its file arrived, and the binding then resolved. A component in a row is not seen so: a row's field is reported only beside a near name
+- `@wcstack/lint` does not read a component's class, so it does not know the getters it exports: a page that reads one (`{{ .usage }}` in the rows a card is mounted on) is reported `wcs/binding-path-missing`. Until it does, declare them as optional keys in the JSDoc type of the data the component is mounted on — `/** @type {{ name: string, usage?: number }[]} */ gardens: []` — and keep that in step with the component by hand: a getter renamed in the component is then not reported
 - If the tree already has the key (including an inherited property), the tree wins and the runtime warns once (`wcs/mount-export-shadowed`). Two components exporting the same key on the same instance is a configuration error detected during candidate scans (`wcs/mount-export-ambiguous`). A validated cache hit does not rescan other candidates, so adding a conflicting component after the first resolution may escape detection.
 - Writing to an exported key from outside runs the accessor's setter, or throws if it only has a getter (the tree never grows a key that would hide the getter). `in` does not see exported keys.
 - **Self-recursive components** (trees of unbounded depth) become expressible: a component that renders `<template data-wcs="for: children"><tree-node data-wcs="state: ."></tree-node></template>` inside itself can define `get total() { return this.value + this.$getAll("children.*.total").reduce((a, b) => a + (b ?? 0), 0); }` — each level's formula closes over one level, and the dependency graph resolves the recursion. Paths cannot express recursion themselves (their wildcard count is fixed), so the recursion lives in the DOM and the paths are its unrolled form. Design: [docs/state-overlay-export-design.md](../../docs/state-overlay-export-design.md).
@@ -3000,6 +3018,31 @@ Other `<wcs-state>` instances can bind to DCC properties just like any Web Compo
 <div data-wcs="textContent: parentCount"></div>
 ```
 
+### A Definition in a File of Its Own
+
+A definition is markup, and the browser turns `<template shadowrootmode>` into a shadow root only while it parses a page. Written into a page with `innerHTML`, or cloned from a `<template>`, a definition has no shadow root and its tag is never defined — Chromium alone says so, for `innerHTML`. So a definition is either written in each page that uses it, or brought in by a script that parses it with `setHTMLUnsafe()`.
+
+Since 4.28 (not released yet), [`@wcstack/autoloader`](../autoloader/README.md#declarative-custom-components) is that script: keep each part in a file and name it in the page's import map, as a class's module.
+
+```html
+<script type="importmap">
+  { "imports": { "@components/my-counter": "./parts/my-counter.html" } }
+</script>
+<script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+
+<wcs-autoloader></wcs-autoloader>
+<my-counter data-wcs="count: parentCount"></my-counter>
+```
+
+`./parts/my-counter.html` holds the definition above (`<my-counter data-wc-definition>…`), and every page that names it uses the one file.
+
+### What a DCC Is Given
+
+- **Properties, not attributes.** `<my-counter count="3">` is not read: a DCC's inputs are the properties `$bindables` lists, written by a binding (`data-wcs="count: path"`) or by code (`element.count = 3`). Since 4.28 (not released yet) the `scopes` add-on says so once per tag and name — `[wcs/dcc-attribute] <my-counter count="…">: a DCC does not read attributes.` Up to 4.27 the attribute was ignored without a word.
+- **The first value.** What the page writes before the instance's state is there is in the state before its bindings are built and `$connectedCallback` runs — since 4.28 (not released yet). Up to 4.27 it landed after `$connectedCallback` and before the watches started, so neither that callback nor a `$watch` on the member saw it — only a getter did. A later write is an ordinary one: `$watch` hears it.
+- **Whole values.** A DCC and the page each run a state of their own, and an object or an array handed over is the same object on both sides. A write of a field inside it (`this["tabs.0.label"] = …` in the DCC) changes the shared object and fires the member's change event, and the page's bindings on that exact path and its getters follow — a row of the page's `for: tabs` does not, and a write of the page's inside the object does not reach the DCC's rows. Write the member itself: `this.tabs = this.tabs.map(…)` in the DCC, a new array or object from the page.
+
 ### Shadow Root Mode
 
 Both `open` and `closed` modes are supported:
@@ -3264,6 +3307,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | Typo in a `$postUpdate` path (`` `rows.${r}.cell.${c}.text` `` for `cells`) | Since 4.4: `console.warn` (`wcs/post-update-path-missing`), a single segment too — the call updates nothing |
 | A write of a top-level key the state does not declare, beside a near one (`this.selectedID` and `selectedId`) | Since 4.4: `console.warn` (`wcs/write-path-missing`), once per key — the write creates a new key, and nothing bound to the declared one changes. A new key with no near name is not reported: a state may add keys on purpose |
 | Typo in a path a getter reads (`this["items.*.pirce"]`, `this.$getAll("items.*.pirce", [])`) | Since 4.4: `console.warn` (`wcs/read-path-missing`), once per path, naming the getter, beside a near name only — the read gives `undefined`, and what the getter computes from it is wrong. Checked once a getter has read the path: a row added later is checked when it renders. A top-level key (`this.totl`) throws on read (`#301`). `@wcstack/lint` checks the same reads in getters and methods without running them |
+| A path a mounted component names, whose first key is missing — the page handed it `state.veiw:`, the component reads `veiw.x` or binds `nmae`, or it reads a path of its host (`pageTitle`) | Since 4.28 (not released yet): `console.warn` (`wcs/binding-path-missing`; `wcs/read-path-missing` for a getter's read), once per missing key, checked on the host where the tree is: `Bound path "veiw.selectable" in <plot-tile> — its host's "gardens.*.plots.*.veiw.selectable" — does not resolve on the state tree: "veiw" is not declared. Did you mean "view"?` The near names are the tree's, the component's own and the ones it was handed; a path of the host is named as one (`hand it over (data-wcs="state.pageTitle: pageTitle")`). In a row it needs a near name or a host path, as a row's field does. Up to 4.27 the field was empty and nothing was said: inside the component the read falls through to the host and fails nothing |
 
 The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
 
@@ -3273,6 +3317,8 @@ The check **under-approximates**: it stays silent for anything it cannot decide 
 - A row field no row has, unless a row has a near name (a likely typo, `.nmae` beside `name`) — rows are data, and an optional field (a `pending` the page puts on its own rows) is absent from the others. Since 4.4; the first row lacking a field another row has does not warn either (4.3)
 - Sub-properties of an intermediate getter's return value — except the rows of a getter that returns a list (`get rows()` with `for: rows`): since 4.21 a row field is checked against the rows the getter returns, as a data list's (a near name only). Up to 4.20 a typo there (`.amountLabl`) was silent
 - Paths under the mount path of a volume that is still loading — they are checked once it settles
+- Inside a mounted component, a path deeper than its first key (`address.cty`): the component may answer it itself — a row getter it declares under a list it was handed, a getter a component mounted in it exports
+- A path under an element the page wires that is not defined yet — checked when it is defined, or with the page's undefined elements — since 4.28 (not released yet)
 - Reserved `$` namespaces (`$command.*` and friends)
 - Keys under an object an element writes — the router's `searchParams: query` has the URL's keys, so `query.next` is there only when the URL has it. Since 4.10; up to 4.9 such a binding was reported as "silently dropped"
 

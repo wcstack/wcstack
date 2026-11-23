@@ -64,6 +64,17 @@ The recommended CI gate is
 npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 ```
 
+**A tree with volumes.** Since 4.28 (not released yet), `emit --mount=<path>` records the mount path in the manifest (`stateMounts` in the application namespace). The root's `check` then compares the tree without the recorded subtrees — each volume is checked with its own `--mount` — and a root `emit --merge` keeps them. So the gate for a root and two volumes is
+
+```bash
+npx wcs-schema check src/state/app.ts \
+  && npx wcs-schema check src/state/map.ts --mount=map \
+  && npx wcs-schema check src/state/cart.ts --mount=cart \
+  && npx wcs-validate --strict index.html
+```
+
+Up to 4.27, `check` on the root listed every key of every volume as drift and exited `1`, and the `emit --merge` it suggested replaced the whole tree, volumes included. A manifest whose volumes were merged by an earlier version has no `stateMounts`: emit each volume once more.
+
 ### `wcs-tsc [--url-imports=any|error] [--wcs-defaults] [tsc arguments...]`
 
 `tsc` over `.html`: every `<wcs-state>` inline `<script type="module">` is type-checked through the same language plugin the VS Code extension uses (typed `this`, automatic `defineState` wrap, `@wcstack/state` imports stripped whether bare or a CDN URL), and diagnostics point into the HTML:

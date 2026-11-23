@@ -6,6 +6,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+A minor from the `garden-plots` seam app, the first of the fourth round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a city's allotment-garden console assembled from parts — designers' parts in HTML alone (DCC), developers' parts as classes mounted on the page's data (`bind-component`), a vendor's element, a state split into volumes. None of the 18 apps before it had used a DCC; one had used `bind-component`, one a volume. Every claim was reproduced against 4.27.0 before it was classified ([docs/seam-apps.md](./docs/seam-apps.md)), and the author decided the six questions on 2026-11-23 (§5.24). The core is unchanged (`core.min.js` 20,476 B).
+
+### Upgrading
+
+- `@wcstack/state` (the `scopes` add-on, in `/auto` and `.`): **`#ro` on one key of a mount holds for a component mounted inside.** A component handed `state.view#ro: view` that hands `view` on to a component of its own: the inner one's write under `view` throws `[wcs/mount-readonly]`, and its two-way bindings do not write back — as under a whole `state#ro:` mount already. Up to 4.27 that write landed on the page's data. A page that relied on it: drop `#ro`, or write on the host.
+- `@wcstack/state` (`scopes`): **a DCC's `$connectedCallback` sees the first value the page gave it.** A write to a `$bindables` member made before the instance's state was there landed after `$connectedCallback` and before the watches started; it is now in the state before the bindings are built. A `$connectedCallback` that read the default there reads the page's value.
+- `@wcstack/state` (`scopes`): **an element's write under the mount path of a volume that has not grafted yet is kept**, and lands when the volume grafts. It threw `Path "…" does not exist`, and one made while the page was being bound failed the root: nothing on the page was bound.
+- `@wcstack/state`: console messages a page may now see —
+  - `[wcs/binding-path-missing]` / `[wcs/read-path-missing]` (the `diagnostics` add-on) for a path a mounted component names, when its first key is missing: `Bound path "veiw.selectable" in <plot-tile> — its host's "…" — does not resolve on the state tree: "veiw" is not declared. Did you mean "view"?` Once per missing key;
+  - `[wcs/dcc-attribute]` (`scopes`): an input of a DCC written as an attribute (`<my-pager total="120">`) is not read. Once per tag and name.
+- `@wcstack/state` (`diagnostics`): and messages it no longer sees — `[wcs/write-path-missing]` for a volume's mount path when the volume loaded before its root, or for a mounted component writing the tree it was handed; `[wcs/binding-path-missing]` for a component's exported getter read by the page while the component's file is on its way (the check waits for the element the page wires there to be defined).
+- `@wcstack/autoloader`: **an eager key that names no loader gets the loader whose postfix matches the file it is mapped to**, as the README says. It was matched against the key, which has no extension, so such a key always got the default loader. A page that registered a loader with a postfix and relied on eager files of that extension going to the default loader: name the loader in the key (`|vanilla`). An eager key mapped to an `.html` file now goes to the new `dcc` loader (it failed to import before).
+- `@wcstack/testing`: `mount()` waits for the Declarative Custom Components of the page — their definitions and their instances — and turns `<template shadowrootmode>` into a shadow root; `installDom()`'s restore closes the window before it puts the globals back.
+- `@wcstack/typescript`: `wcs-schema emit --mount` records the mount path (`stateMounts`). A manifest whose volumes were merged by an earlier version has no list, and `check` on the root reports the volumes' keys as before: emit each volume once more.
+- **Workarounds this release makes unnecessary**:
+  - a loader of the page's own that fetches a DCC's file and parses it with `setHTMLUnsafe()`, and `|loader` in every eager key;
+  - an I/O element bound to a root key and copied to and from a volume by `$watch`, because the volume may arrive later;
+  - `[wcs/write-path-missing]` for a mount path allowed in browser tests, and a poll for "the volumes are there" (a volume's `connectedCallbackPromise` resolves once it has grafted);
+  - a DCC that derives its list in a getter with a cache because a `$watch` missed the first value;
+  - a plain link that asks the router in place of a `<wcs-link>` inside a route, for a browser without the Navigation API;
+  - a DCC's definition installed by hand before `mount()` in a unit test;
+  - `wcs-schema check` run for the volumes only.
+
+### Added
+
+- `@wcstack/autoloader`: **a loader for a Declarative Custom Component kept in a file** — `dcc`, postfix `.html`. A DCC's definition is markup the browser turns into a shadow root only while it parses a page, so every sample wrote it in the page that used it. A page now names the part's file in its import map — an eager key mapped to an `.html` file, a key or a namespace that says `|dcc` — and the loader fetches it, parses it with `setHTMLUnsafe()` and puts the definitions in a hidden element of the page, where `@wcstack/state` defines the tags. The page's Trusted Types policy is used when wcstack's slot holds one; a file that cannot be fetched or holds no definition is reported with its URL; a tag nothing defines within 10 s fails instead of holding the other loads back.
+- `@wcstack/state` (the `diagnostics` add-on): **a path a mounted component names is checked on its host**, where the tree is, when its first key is what is missing — the page's `state.veiw:`, the component's `veiw.x`, `nmae` in its template or a getter, a path of the page read in the component. Inside a mounted component the read falls through to the host and fails nothing, so each of these showed an empty field and said nothing, and the lint does not read a class's template. The near names are the tree's, the component's own and those it was handed. Deeper than the first key it stays silent: the component may answer the path itself.
+- `@wcstack/state` (the `scopes` add-on): `[wcs/dcc-attribute]`.
+- `@wcstack/typescript`: `stateMounts` in the manifest — the root's `wcs-schema check` compares the tree without the recorded volumes, and a root `emit --merge` keeps them.
+
+### Fixed
+
+- `@wcstack/state` (`scopes`): **a volume that arrives after the page is bound no longer fails the page.** `<wcs-storage data-wcs="value#init=element: settings.stored">` with the `settings` volume's file behind the root's: the element writes its value while the page is bound, the write threw `Path "settings" does not exist`, and the root failed to initialize — nothing was bound, by the order two files arrived in. "Load order does not matter" described only a volume that connects before its root.
+- `@wcstack/state` (`scopes`): **server rendering — a row's `bind-component` component that the server did not define is wired on the client.** A row carries no `data-wcs`, and the server wrote the wiring mark only where the tag was defined (an autoloader does not run on a server). A component defined on the client before the page's state adopted the row started unwired — `binding "textContent: name" failed to apply` — and the wiring then could not reach it. It now waits for the page's state to bind.
+- `@wcstack/state` (`scopes`): `#ro` on one key of a mount, and a DCC's first value (see Upgrading); a second `<wcs-state bind-component>` in a component whose host is wired later is refused, as elsewhere — it waited for ever.
+- `@wcstack/state` (`diagnostics`): the three false reports under Upgrading; and **`mount()` no longer rejects under `@wcstack/testing`'s `installDom()` in bare Node** — the add-on called a bare `addEventListener` (since 4.12), a global `installDom()` does not install.
+- `@wcstack/router`: **on the fallback path — a browser without the Navigation API — a click on a `<wcs-link>` in the content of the route being left no longer throws** `wcs-link is not connected to a router`. The handler updated the link after the navigation had taken it out of the page; the navigation itself had happened. Chromium, Firefox and WebKit have the Navigation API and never took this path.
+- `@wcstack/autoloader`: an eager key's loader by the file's extension (see Upgrading).
+- `@wcstack/testing`: **`mount()` defines a Declarative Custom Component written in the mounted HTML.** happy-dom leaves `<template shadowrootmode>` a child, so the definition had no shadow root, its tag was never defined, and `mount()` resolved without a word. **`installDom()`'s restore no longer throws** `Cannot read properties of undefined (reading 'documentElement')` once a `<wcs-state>` was mounted.
+- `@wcstack/typescript`: **`wcs-schema check <root>` passes for a tree with volumes.** After `emit app.js` and `emit map.js --mount=map --merge` it listed every key of the volume as drift and exited 1, and the `emit --merge` it suggested dropped the volumes.
+
 ## [4.27.0] — 2026-11-23
 
 A minor from the verification study ([docs/verification-practices-study.md](./docs/verification-practices-study.md)), after the Claude Code team's article on verification. The e2e suite retries a failed test, and in 8 of its last 15 runs a test passed only on a retry. Of the five specs behind them, one was a test bug. The other four hid two defects that said nothing: an outer binding heard a nested element's events, and a form was usable before state bound it — its password went into the URL. Decided by the author as recommended (v4-direction §5.22). `@wcstack/state`'s `core.min.js` is 20,476 B (+2).
