@@ -208,6 +208,64 @@ describe("compareStateSchema — drift 検出（D9）", () => {
     expect(compareStateSchema(mounted, "i18n", volume, "src/i18n.ts")).toEqual({ kind: "same" });
   });
 
+  it("stateMounts: --mount で書いたパスを記録する（重複なし・並べ替え）。ルートの emit は、記録されたボリュームの部分木を残す", () => {
+    const volume = { type: "object", properties: { t: { type: "string" } } };
+    const other = { type: "object", properties: { open: { type: "boolean" } } };
+    const ns = (m: unknown): Record<string, any> => (m as any).manifestExtensions[APPLICATION_NAMESPACE];
+    let m: unknown = buildManifest(null, schema, undefined, "src/app.ts");
+    expect(ns(m).stateMounts).toBeUndefined();
+    m = buildManifest("map", volume, m);
+    m = buildManifest("faq", other, m);
+    m = buildManifest("map", volume, m);
+    expect(ns(m).stateMounts).toEqual(["faq", "map"]);
+    expect(ns(m).stateSource).toBe("src/app.ts");
+    // ルートの型が変わった: ルートのキーは置き換わり、ボリュームは残る
+    const next = { type: "object", properties: { total: { type: "number" } }, required: ["total"] };
+    const again = buildManifest(null, next, m, "src/app.ts");
+    expect(ns(again).stateSchema).toEqual({ ...next, properties: { total: { type: "number" }, faq: other, map: volume } });
+    expect(ns(again).stateMounts).toEqual(["faq", "map"]);
+    // 新規に書く（既存を渡さない）なら、ボリュームは無い
+    expect(ns(buildManifest(null, next)).stateMounts).toBeUndefined();
+    // 記録にあるが部分木が無いパス、文字列でない記録は読み飛ばす
+    const odd = { schemaVersion: 2, kind: "application", manifestExtensions: { [APPLICATION_NAMESPACE]: { version: 2, stateSchema: schema, stateMounts: ["gone", 3, ""] } } };
+    expect(ns(buildManifest(null, next, odd)).stateSchema).toEqual(next);
+    expect(ns(buildManifest("x", volume, { ...odd, manifestExtensions: { [APPLICATION_NAMESPACE]: { version: 2, stateSchema: schema, stateMounts: "map" } } })).stateMounts).toEqual(["x"]);
+  });
+
+  it("ルートの check は、stateMounts に記録されたボリュームの部分木を除いて比べる（深いパスの途中のノードも）", () => {
+    const volume = { type: "object", properties: { t: { type: "string" } } };
+    let m: unknown = buildManifest(null, schema, undefined, "src/app.ts");
+    m = buildManifest("map", volume, m);
+    m = buildManifest("shop.cart", volume, m);
+    const stored = JSON.stringify(m);
+    expect(compareStateSchema(stored, null, schema, "src/app.ts")).toEqual({ kind: "same" });
+    expect(compareStateSchema(stored, "map", volume)).toEqual({ kind: "same" });
+    expect(compareStateSchema(stored, "shop.cart", volume)).toEqual({ kind: "same" });
+    // ルートの本当の乖離は今までどおり言う — ボリュームのキーは挙げない
+    const drift = compareStateSchema(stored, null, { type: "object", properties: { count: { type: "string" } }, required: ["count"] }, "src/app.ts");
+    expect(drift).toEqual({ kind: "differs", changes: ["~ /properties/count/type"] });
+    // ルートが途中のノードを宣言している深いマウント: ルートの分は残して比べる
+    const withShop = { type: "object", properties: { shop: { type: "object", properties: { name: { type: "string" } } } } };
+    const deep = JSON.stringify(buildManifest("shop.cart", volume, buildManifest(null, withShop)));
+    expect(compareStateSchema(deep, null, withShop)).toEqual({ kind: "same" });
+    // 記録されたパスの部分木がもう無い manifest（手で消した）でも、比べられる
+    const gone = JSON.parse(stored);
+    delete gone.manifestExtensions[APPLICATION_NAMESPACE].stateSchema.properties.map;
+    delete gone.manifestExtensions[APPLICATION_NAMESPACE].stateSchema.properties.shop;
+    expect(compareStateSchema(JSON.stringify(gone), null, schema, "src/app.ts")).toEqual({ kind: "same" });
+    const flat = JSON.parse(stored);
+    flat.manifestExtensions[APPLICATION_NAMESPACE].stateSchema = { type: "object" };
+    expect(compareStateSchema(JSON.stringify(flat), null, { type: "object" })).toEqual({ kind: "same" });
+  });
+
+  it("stateMounts の無い manifest（4.28 より前に --mount で書いた）は、今までどおりボリュームのキーを乖離として挙げる", () => {
+    const volume = { type: "object", properties: { t: { type: "string" } } };
+    const old = JSON.parse(JSON.stringify(buildManifest("map", volume, buildManifest(null, schema))));
+    delete old.manifestExtensions[APPLICATION_NAMESPACE].stateMounts;
+    const result = compareStateSchema(JSON.stringify(old), null, schema);
+    expect(result).toEqual({ kind: "differs", changes: ["- /properties/map/properties/t/type", "- /properties/map/type"] });
+  });
+
   it("stateSchema が無い / v1 manifest / JSON が壊れている", () => {
     const empty = JSON.stringify({ schemaVersion: 2, kind: "application", manifestExtensions: { [APPLICATION_NAMESPACE]: { version: 2 } } });
     expect(compareStateSchema(empty, null, schema)).toEqual({ kind: "missing-state" });

@@ -19,6 +19,12 @@
  * schema only to a page whose root `<wcs-state src>` is that file (`.js` / `.ts`
  * of the same path count as the same), so one manifest at the root serves an app
  * whose other pages have states of their own.
+ *
+ * `stateMounts` (4.28) lists the mount paths written with `--mount`: the tree is the
+ * root's type plus those subtrees, each generated from a file of its own. The root's
+ * `check` compares the tree without them, and a root `emit` into an existing manifest
+ * keeps them — without the list, `check <root>` reported every volume's key as drift,
+ * and the `emit --merge` it suggested dropped the volumes (docs/seam-apps.md, garden-plots).
  */
 
 import type { JsonSchemaNode } from "./typeToSchema.js";
@@ -36,6 +42,8 @@ export interface ApplicationManifest {
       stateSchema?: JsonSchemaNode;
       /** The root state file the schema comes from, relative to the manifest's directory. */
       stateSource?: string;
+      /** The mount paths whose subtrees were written with `--mount` (each from a volume's own file). */
+      stateMounts?: string[];
       [key: string]: unknown;
     };
     [namespace: string]: unknown;
@@ -55,7 +63,8 @@ export interface ApplicationManifest {
  * `stateSource` is recorded with the root schema: given, it replaces the one in
  * `existing`; omitted, the root schema's source is unknown and an old
  * `stateSource` is dropped (it named the file of the schema being replaced).
- * A volume's schema (`mountPath` set) leaves `stateSource` as it is.
+ * A volume's schema (`mountPath` set) leaves `stateSource` as it is, and is recorded in
+ * `stateMounts`; a root schema written into `existing` keeps the recorded mounts' subtrees.
  */
 export function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown, stateSource?: string): ApplicationManifest {
   const base: Record<string, unknown> =
@@ -74,41 +83,78 @@ export function buildManifest(mountPath: string | null, schema: JsonSchemaNode, 
   ns.version = SCHEMA_VERSION;
   // v1 leftovers: the name dimension is gone; regeneration does not carry it
   delete ns.states;
+  const mounts = readStateMounts(ns);
   if (mountPath === null) {
-    ns.stateSchema = schema;
+    // the root's slot is the tree without the volumes: their subtrees are carried over
+    let tree: unknown = schema;
+    for (const path of mounts) {
+      const subtree = subtreeAt(ns.stateSchema, path);
+      if (subtree !== undefined) tree = graft(tree, path, subtree);
+    }
+    ns.stateSchema = tree as JsonSchemaNode;
     if (stateSource === undefined) delete ns.stateSource;
     else ns.stateSource = stateSource;
   } else {
-    const rootRaw = ns.stateSchema;
-    const root: Record<string, unknown> =
-      rootRaw !== null && typeof rootRaw === "object" && !Array.isArray(rootRaw)
-        ? { ...(rootRaw as Record<string, unknown>) }
-        : { type: "object" };
-    let node = root;
-    const segments = mountPath.split(".");
-    for (let i = 0; i < segments.length; i++) {
-      const properties =
-        node.properties !== null && typeof node.properties === "object" && !Array.isArray(node.properties)
-          ? { ...(node.properties as Record<string, unknown>) }
-          : {};
-      node.properties = properties;
-      if (i === segments.length - 1) {
-        properties[segments[i]] = schema;
-        break;
-      }
-      const childRaw = properties[segments[i]];
-      const child: Record<string, unknown> =
-        childRaw !== null && typeof childRaw === "object" && !Array.isArray(childRaw)
-          ? { ...(childRaw as Record<string, unknown>) }
-          : { type: "object" };
-      properties[segments[i]] = child;
-      node = child;
-    }
-    ns.stateSchema = root as unknown as JsonSchemaNode;
+    ns.stateSchema = graft(ns.stateSchema, mountPath, schema) as JsonSchemaNode;
+    ns.stateMounts = [...new Set([...mounts, mountPath])].sort();
   }
   extensions[APPLICATION_NAMESPACE] = ns;
   base.manifestExtensions = extensions;
   return base as unknown as ApplicationManifest;
+}
+
+/** `tree` with `subtree` at `mountPath` (the nodes on the way are copied, or created as objects). */
+function graft(tree: unknown, mountPath: string, subtree: unknown): Record<string, unknown> {
+  const root: Record<string, unknown> =
+    tree !== null && typeof tree === "object" && !Array.isArray(tree)
+      ? { ...(tree as Record<string, unknown>) }
+      : { type: "object" };
+  let node = root;
+  const segments = mountPath.split(".");
+  for (let i = 0; i < segments.length; i++) {
+    const properties =
+      node.properties !== null && typeof node.properties === "object" && !Array.isArray(node.properties)
+        ? { ...(node.properties as Record<string, unknown>) }
+        : {};
+    node.properties = properties;
+    if (i === segments.length - 1) {
+      properties[segments[i]] = subtree;
+      break;
+    }
+    const childRaw = properties[segments[i]];
+    const child: Record<string, unknown> =
+      childRaw !== null && typeof childRaw === "object" && !Array.isArray(childRaw)
+        ? { ...(childRaw as Record<string, unknown>) }
+        : { type: "object" };
+    properties[segments[i]] = child;
+    node = child;
+  }
+  return root;
+}
+
+/** The mount paths recorded in an application namespace (strings only). */
+function readStateMounts(ns: Record<string, unknown> | undefined): string[] {
+  const mounts = ns?.stateMounts;
+  return Array.isArray(mounts) ? mounts.filter((path): path is string => typeof path === "string" && path !== "") : [];
+}
+
+/**
+ * `tree` without the subtree at `mountPath`, and without the object nodes the graft created on
+ * the way to it (an object with no property left and nothing else said about it).
+ */
+function prune(tree: unknown, segments: readonly string[]): unknown {
+  if (tree === null || typeof tree !== "object" || Array.isArray(tree)) return tree;
+  const node = tree as Record<string, unknown>;
+  const properties = node.properties;
+  if (properties === null || typeof properties !== "object" || Array.isArray(properties) || !(segments[0] in properties)) return tree;
+  const rest: Record<string, unknown> = { ...(properties as Record<string, unknown>) };
+  if (segments.length === 1) delete rest[segments[0]];
+  else {
+    const child = prune(rest[segments[0]], segments.slice(1));
+    if (stableStringify(child) === '{"properties":{},"type":"object"}') delete rest[segments[0]];
+    else rest[segments[0]] = child;
+  }
+  return { ...node, properties: rest };
 }
 
 function applicationNamespace(manifest: unknown): Record<string, unknown> | undefined {
@@ -208,6 +254,8 @@ export type SchemaComparison =
  * compared too, for the root tree: a manifest that names another file is drift —
  * the validator would apply the schema to the pages of that file, not of this one.
  * A manifest without `stateSource` (written before 4.26) is not.
+ *
+ * The root tree is compared without the subtrees `stateMounts` records.
  */
 export function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode, stateSource?: string): SchemaComparison {
   let parsed: unknown;
@@ -220,6 +268,9 @@ export function compareStateSchema(manifestText: string, mountPath: string | nul
   let stored = readStateSchema(parsed);
   if (stored !== undefined && mountPath !== null) {
     stored = subtreeAt(stored, mountPath);
+  } else if (stored !== undefined) {
+    // the root's type does not have the volumes: each is checked with its own `--mount`
+    for (const path of readStateMounts(applicationNamespace(parsed))) stored = prune(stored, path.split("."));
   }
   if (stored === undefined) return { kind: "missing-state" };
   const storedSource = mountPath === null && stateSource !== undefined ? readStateSource(parsed) : undefined;
