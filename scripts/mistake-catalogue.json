@@ -2020,6 +2020,15 @@
       "effect": { "en": "As on a page, the write misses the state: the tile keeps the old name, no row is added. On a page the lint reports both as errors (`wcs/nested-assign`, `wcs/array-mutation`); it reads no class file, so in a part nothing says it — `push` passed every check the author had.", "ja": "ページと同じく、書き込みは状態を通らない: タイルは古い名前のまま、行は増えない。ページでは lint がどちらもエラーにする（`wcs/nested-assign`・`wcs/array-mutation`）が、クラスのファイルは読まないので、部品では何も言わない — `push` は作者のすべての検査を通った。" },
       "disposition": "lint-rule",
       "note": { "en": "Found by the garden-plots seam app (docs/seam-apps.md). Whether the lint reads a part — a class's template and methods, its exported getters, a DCC's declarations — is one question, to be decided (docs/v4-direction-2026-10.md §5.24).", "ja": "継ぎ目アプリ garden-plots が見つけた（docs/seam-apps.ja.md）。 lint が部品を読むか — クラスのテンプレートとメソッド、公開 getter、DCC の宣言 — は 1 つの問いで、これから決める（docs/v4-direction-2026-10.md §5.24）。" }
+    },
+    {
+      "id": "radio-before-value",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes `radio:` (or `checkbox:`) before the binding that gives the control its value: `data-wcs=\"radio: theme; attr.value: .value\"` in a `for:` row.", "ja": "`radio:`（または `checkbox:`）を、その要素に値を与える束縛より前に書く: `for:` の行の `data-wcs=\"radio: theme; attr.value: .value\"`。" },
+      "effect": { "en": "Bindings are applied in the order written, and `radio:` compares the element's `value` when it is applied — still the browser's `\"on\"`. No radio is checked at the first render, and nothing says so; a later write of the state checks the right one, which hides it in a page whose value arrives after the first render.", "ja": "束縛は書いた順に当たり、`radio:` は当たるときに要素の `value` を比べる — まだブラウザの既定の `\"on\"`。最初の描画ではどのラジオも選ばれず、何も言わない。後から state に書くと正しいものが選ばれるので、値が最初の描画の後に届くページでは隠れる。" },
+      "disposition": "lint-rule",
+      "note": { "en": "Found while landing the garden-plots seam app (docs/seam-apps.md): the saved theme reached the state before the page was drawn, and the settings page showed no choice. Statically visible on one element; re-applying `radio:` when a later binding writes `value` is the other way. Write the value first.", "ja": "継ぎ目アプリ garden-plots の取り込みで見つけた（docs/seam-apps.ja.md）: 保存したテーマがページを描く前に state に届くようになり、設定のページがどれも選んでいなかった。 1 つの要素の中で静的に見える。後ろの束縛が `value` を書いたときに `radio:` を当て直すのが、もう 1 つの道。値を先に書く。" }
     }
   ],
   "uncounted": [
