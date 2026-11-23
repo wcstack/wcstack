@@ -64,6 +64,17 @@ exit code: `0` 最新 · `1` 乖離あり（変更は JSON pointer で列挙: `+
 npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 ```
 
+**ボリュームのある木。** 4.28（未リリース）から、`emit --mount=<path>` はマウントパスを manifest に記録します（application 名前空間の `stateMounts`）。ルートの `check` は、記録された部分木を除いて木を比べ — ボリュームはそれぞれ自分の `--mount` で検査します — ルートの `emit --merge` はそれらを残します。ルートと 2 つのボリュームのゲートは
+
+```bash
+npx wcs-schema check src/state/app.ts \
+  && npx wcs-schema check src/state/map.ts --mount=map \
+  && npx wcs-schema check src/state/cart.ts --mount=cart \
+  && npx wcs-validate --strict index.html
+```
+
+4.27 までは、ルートの `check` がすべてのボリュームのすべてのキーを乖離として挙げて `1` で終わり、勧める `emit --merge` は、ボリュームごと木を置き換えていました。前の版でボリュームを merge した manifest には `stateMounts` がありません: ボリュームをそれぞれもう一度 emit してください。
+
 ### `wcs-tsc [--url-imports=any|error] [--wcs-defaults] [tsc の引数...]`
 
 `.html` に対する `tsc`: 各 `<wcs-state>` のインライン `<script type="module">` を VS Code 拡張と同じ言語プラグイン（型付き `this`・自動 `defineState` ラップ・bare でも CDN URL でも `@wcstack/state` import を除去）で型検査し、診断は HTML の位置を指します:

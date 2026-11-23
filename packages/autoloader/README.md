@@ -113,7 +113,7 @@ To load a specific component immediately, use a key that does NOT end with `/`.
 
 Format: `"@components/<tagName>[|<loader>[,<extends>]]": "<path>"`
 
-- **Loader** (Optional): If omitted, it is automatically resolved based on the file extension (e.g., `.js` -> default loader, `.lit.js` -> lit-loader).
+- **Loader** (Optional): If omitted, it is automatically resolved based on the file extension (e.g., `.js` -> default loader, `.lit.js` -> lit-loader, `.html` -> the `dcc` loader). The extension is that of the file the key is mapped to; a query or a fragment after it does not count. Since 4.28 (not released yet): up to 4.27 the postfix was matched against the key, which has no extension, so a key that named no loader always got the default loader — the example below included.
 - **Extends** (Optional): If omitted, it is automatically detected if the component class extends a built-in HTML element (e.g., `HTMLButtonElement` -> `extends: 'button'`).
 
 **Examples:**
@@ -173,6 +173,35 @@ export default customElements.get("wcs-fetch");
 The autoloader loads one tag after another and skips a tag that is already defined, so `<wcs-fetch-header>` needs no file of its own. The file is named after the tag, not the package: `<wcs-ws>` (`@wcstack/websocket`) is `ws.js`, `<wcs-geo>` (`@wcstack/geolocation`) is `geo.js`.
 
 A wrapper that re-exports one class (`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`) leaves the helper tags undefined, and the autoloader then looks for `fetch-header.js`. `<wcs-fetch>` sends its request without their header or body; since 4.6 it warns `[wcs/fetch-helper-undefined]`.
+
+## Declarative Custom Components
+
+Since 4.28 (not released yet). A [Declarative Custom Component](../state/README.md#declarative-custom-components-dcc) of `@wcstack/state` is a part in HTML alone: `<my-part data-wc-definition><template shadowrootmode="open">…`. The browser turns that template into a shadow root only while it parses a page, so a definition written into a page with `innerHTML`, or cloned from a `<template>`, never defines its tag. The `dcc` loader brings a definition in from a file of its own, so one file serves every page:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@components/midori-pager": "./parts/midori-pager.html",
+      "@components/midori-badge|dcc": "./parts/badge.part",
+      "@components/ui|dcc/": "./parts/ui/"
+    }
+  }
+</script>
+<script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+
+<wcs-autoloader></wcs-autoloader>
+<midori-pager data-wcs="page: page; total: total"></midori-pager>
+<ui-note data-wcs="msg: note"></ui-note>   <!-- fetched from ./parts/ui/note.html when it is met -->
+```
+
+- An eager key mapped to an `.html` file gets the loader from the extension; a key (or a namespace) may also name it, `|dcc`, whatever the file is called.
+- The loader fetches the file, parses it with `setHTMLUnsafe()` — the parser API that keeps `<template shadowrootmode>` — and puts every `[data-wc-definition]` element in it into one hidden element at the end of the page (`#wcs-autoloader-definitions`), where `@wcstack/state` defines the tags. Text, comments and `<style>` outside the definitions are left behind: a part styles itself in its shadow root.
+- Keep one part in a file, named after its tag. A tag already defined is left as it is (the same file under two keys, a copy written in the page).
+- What fails is reported as any load is (`Failed to eager load component '…'` / `Failed to lazy load component '…'`), with the file's URL: `HTTP 404`, a file with no `data-wc-definition` element, a browser without `setHTMLUnsafe()`. A tag that nothing defines within 10 s — a page that does not load `@wcstack/state` — fails too, instead of holding the other loads back.
+- Under Trusted Types (`require-trusted-types-for 'script'`) the file's text goes through the policy in wcstack's slot, `globalThis[Symbol.for("wcstack.trustedTypes.policy")]` ([docs/csp.md](../../docs/csp.md)).
+- The definitions go into the document: a scoped registry is not served.
 
 ## Customized Built-in Elements (`is` attribute)
 
@@ -234,6 +263,8 @@ interface IWritableConfig {
 
 `bootstrapAutoloader()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped. `scanImportmap`, which never had an effect, is removed: passing it throws.
 
+**What a loader is handed, and what it returns.** `loader(path)` gets the import-map specifier — `"@components/my-button|lit"` for an eager key, `"@components/ui|lit/button.lit.js"` for a tag of a namespace — not a URL. `import(path)` resolves it through the import map, and a loader that fetches the file itself resolves it first: `fetch(import.meta.resolve(path))`. It resolves with the element's class, which the autoloader defines unless the tag is defined already. For an eager key it may resolve with `null` when the file defined the tag itself; for a tag of a namespace `null` is a failed load.
+
 ### Default Configuration
 
 ```javascript
@@ -241,6 +272,8 @@ interface IWritableConfig {
   loaders: {
     // Built-in vanilla loader: imports module and returns default export
     vanilla: { postfix: ".js", loader: vanillaLoader },
+    // Built-in loader for a Declarative Custom Component kept in a file (see above)
+    dcc: { postfix: ".html", loader: dccLoader },
     // Default key: used as fallback when no loader matches
     "*": "vanilla"
   },
@@ -249,11 +282,12 @@ interface IWritableConfig {
 ```
 
 - **`vanilla`**: The built-in loader that dynamically imports a module and returns its `default` export as the custom element constructor.
+- **`dcc`**: Since 4.28 (not released yet). The built-in loader for [a Declarative Custom Component kept in a file](#declarative-custom-components).
 - **`"*"` (default key)**: Fallback loader. Its value is a string alias `"vanilla"`, meaning unmatched components use the vanilla loader.
 
 ### Loader Resolution
 
-When a component has no explicit loader key (e.g., lazy-loaded namespaces without `|loader`), the autoloader resolves the loader as follows:
+When a key names no loader, the autoloader resolves it as follows. An eager key has a file — the one it is mapped to — and a namespace has none until a tag is met, so only the second step applies to it:
 
 1. **Postfix matching**: Checks the file path against all registered loaders' `postfix` values (longest match first).
 2. **Default key fallback**: If no postfix matches, uses the loader referenced by the `"*"` key.

@@ -49,6 +49,16 @@ Registers the elements, inserts `html`, and resolves once everything under the r
 
 Since 4.11, an option `mount()` does not have, or a value not of the option's type, rejects at once — before the document is touched — naming the option and listing the options, as every package's `bootstrapXxx()` does; a misspelt `resolveModul` used to be ignored, and the test failed later with Node's `ERR_UNSUPPORTED_ESM_URL_SCHEME`. An option whose value is `undefined` is skipped. `fire()`'s `init` and `installDom()`'s options are checked the same way.
 
+**A Declarative Custom Component in the page.** Since 4.28 (not released yet), a `<template shadowrootmode>` in the mounted HTML becomes its parent's shadow root, as a browser's parser makes it — happy-dom leaves it a child — so a DCC's definition written in the HTML (or read from the part's file and put before the page's markup) defines its tag, and `mount()` waits for the definitions and for their instances: no `settle()` is needed before the first assertion. Up to 4.27 the definition had no shadow root, its tag was never defined, and `mount()` resolved without a word. A definition that fails is `@wcstack/state`'s to report (`console.error` under happy-dom); `mount()` still resolves.
+
+```ts
+const pager = readFileSync("parts/midori-pager.html", "utf8");
+const app = await mount(`${pager}
+  <wcs-state json='{"total": 120, "page": 2}'></wcs-state>
+  <midori-pager data-wcs="total: total; page: page"></midori-pager>`);
+expect(app.root.querySelector("midori-pager")!.shadowRoot!.querySelector(".info")!.textContent).toBe("2 / 6");
+```
+
 The returned `MountedApp`:
 
 | Member | Description |
@@ -125,6 +135,8 @@ try {
   await restore();
 }
 ```
+
+Since 4.28 (not released yet) the returned function closes the window before it puts the globals back: closing takes the page's elements out, and their callbacks still read `document`. Up to 4.27 it threw `Cannot read properties of undefined (reading 'documentElement')` once a `<wcs-state>` had been mounted — and `mount()` itself rejected in bare Node with `addEventListener is not defined`, from 4.12 on.
 
 ## Blind spots
 
