@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+The lint and the parts of a page — two decisions of the author's from the `garden-plots` seam app (2026-11-24, [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.25): the lint reads a component, and the order of `radio:` is the lint's to tell.
+
+### Added
+
+- `@wcstack/lint` (and the VS Code extension): **`wcs/radio-before-value`** (warning) — `radio:` / `checkbox:` written before the binding that gives the control its value (`<input type="radio" data-wcs="radio: theme; attr.value: .value">`). Bindings are applied in the order written, and `radio:` compares the element's `value` when it is applied, still the browser's `"on"`: no radio was checked at the first render, and nothing said so — a later write of the state checked the right one, which hid it wherever the value arrived after the page was drawn (found while landing `examples/garden-plots`). Silent when the value binding comes first, and when the value is only written in the markup.
+
 ## [4.28.0] — 2026-11-23
 
 A minor from the `garden-plots` seam app, the first of the fourth round in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §3.2: a city's allotment-garden console assembled from parts — designers' parts in HTML alone (DCC), developers' parts as classes mounted on the page's data (`bind-component`), a vendor's element, a state split into volumes. None of the 18 apps before it had used a DCC; one had used `bind-component`, one a volume. Every claim was reproduced against 4.27.0 before it was classified ([docs/seam-apps.md](./docs/seam-apps.md)), and the author decided the six questions on 2026-11-23 (§5.24). The core is unchanged (`core.min.js` 20,476 B).

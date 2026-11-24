@@ -307,6 +307,12 @@ export const WcsDiagnosticCode = {
   // ekiden-entry）。name を束ねてあるとき（`attr.name:`）・行のものでないパス（`radio: selectedId` — 行をまたぐ 1 つの
   // グループが意図）・行ごとに `<form>` があるときは黙る。warning。
   RadioNameShared: "wcs/radio-name-shared",
+  // `radio:` / `checkbox:` を、その要素に値を与える束縛（`attr.value:` / `value:`）より前に書いた
+  // （`<input type="radio" data-wcs="radio: theme; attr.value: .value">`）。束縛は書いた順に当たり、`radio:` は
+  // 当たるときに要素の `value` を比べるので、まだブラウザの既定の `"on"` と比べる: 最初の描画ではどれも選ばれない。
+  // ランタイムは何も言わず、後から state に書くと正しいものが選ばれる（継ぎ目アプリ garden-plots の取り込み — 保存した
+  // 設定がページを描く前に届くようになって見えた）。値の束縛が前にあるとき・リテラルの `value` だけのときは黙る。warning。
+  RadioBeforeValue: "wcs/radio-before-value",
   // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
   // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
   // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・

@@ -2023,12 +2023,12 @@
     },
     {
       "id": "radio-before-value",
-      "lint": [],
+      "lint": [{ "code": "wcs/radio-before-value", "severity": "warning" }],
       "runtime": "silent", "harm": "broken",
       "mistake": { "en": "Writes `radio:` (or `checkbox:`) before the binding that gives the control its value: `data-wcs=\"radio: theme; attr.value: .value\"` in a `for:` row.", "ja": "`radio:`（または `checkbox:`）を、その要素に値を与える束縛より前に書く: `for:` の行の `data-wcs=\"radio: theme; attr.value: .value\"`。" },
       "effect": { "en": "Bindings are applied in the order written, and `radio:` compares the element's `value` when it is applied — still the browser's `\"on\"`. No radio is checked at the first render, and nothing says so; a later write of the state checks the right one, which hides it in a page whose value arrives after the first render.", "ja": "束縛は書いた順に当たり、`radio:` は当たるときに要素の `value` を比べる — まだブラウザの既定の `\"on\"`。最初の描画ではどのラジオも選ばれず、何も言わない。後から state に書くと正しいものが選ばれるので、値が最初の描画の後に届くページでは隠れる。" },
-      "disposition": "lint-rule",
-      "note": { "en": "Found while landing the garden-plots seam app (docs/seam-apps.md): the saved theme reached the state before the page was drawn, and the settings page showed no choice. Statically visible on one element; re-applying `radio:` when a later binding writes `value` is the other way. Write the value first.", "ja": "継ぎ目アプリ garden-plots の取り込みで見つけた（docs/seam-apps.ja.md）: 保存したテーマがページを描く前に state に届くようになり、設定のページがどれも選んでいなかった。 1 つの要素の中で静的に見える。後ろの束縛が `value` を書いたときに `radio:` を当て直すのが、もう 1 つの道。値を先に書く。" }
+      "disposition": "static-only",
+      "note": { "en": "Found while landing the garden-plots seam app (docs/seam-apps.md): the saved theme reached the state before the page was drawn, and the settings page showed no choice. Since 4.29 the lint reports it at the `radio` / `checkbox` binding, with the order that works — the author's decision of 2026-11-24 (docs/v4-direction-2026-10.md §5.25); re-applying `radio:` when a later binding writes `value` was the other way, and would take core bytes.", "ja": "継ぎ目アプリ garden-plots の取り込みで見つけた（docs/seam-apps.ja.md）: 保存したテーマがページを描く前に state に届くようになり、設定のページがどれも選んでいなかった。 4.29 から、lint が `radio` / `checkbox` の束縛の上で、直した順とともに報告する — 2026-11-24 の著者の決定（docs/v4-direction-2026-10.md §5.25）。後ろの束縛が `value` を書いたときに `radio:` を当て直すのがもう 1 つの道で、core のバイトを使う。" }
     }
   ],
   "uncounted": [

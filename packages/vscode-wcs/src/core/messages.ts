@@ -201,6 +201,11 @@ export interface WcsMessageCatalog {
    */
   radioNameShared(name: string, binding: 'radio' | 'checked'): string;
   /**
+   * `radio:` / `checkbox:` written before the binding that gives the control its value. `binding` and `value` are
+   * the two left sides as written (`radio#ro`, `attr.value`); `fix` is the two bindings in the order that works.
+   */
+  radioBeforeValue(binding: string, value: string, checkbox: boolean, fix: string): string;
+  /**
    * A two-way `value:` with no conversion on the way in, into a path the state holds as a number. `path` and `left`
    * (the binding's left side, `value#onchange`) as written; `asNumber`: the element has `valueAsNumber`.
    */
@@ -652,6 +657,8 @@ const ja: WcsMessageCatalog = {
     `"attr.${a}" に boolean を束ねています。attr.* は String(value) を書くので、false のとき ${a}="false" になります。論理属性は値に関係なく、在るだけで効きます: ${a}="false" でも ${a} のままです（属性を外すのは null / undefined だけ）。プロパティを束ねてください: ${p}: ${rhs}`,
   attrBooleanText: (a, rhs) =>
     `"attr.${a}" に boolean を束ねています。attr.* は String(value) を書くので、属性は "true" か "false" になり、外れることはありません（外すのは null / undefined だけ）。属性の有無を見る側（CSS の [${a}]・hasAttribute()）には、どちらでも在ります。false の間は外すなら attr.${a}: ${rhs}|defaults(null)、文字の "true" / "false" が意図なら attr.${a}: ${rhs}|string と書いてください`,
+  radioBeforeValue: (binding, value, checkbox, fix) =>
+    `「${binding}:」が、この${checkbox ? 'チェックボックス' : 'ラジオ'}に値を与える「${value}:」より前に書かれています。束縛は書いた順に当たるので、値がまだブラウザの既定の "on" のうちに比べられ、最初の描画では何もチェックされません（何も知らせません。後から state に書くと正しいものがチェックされます）。値を先に書いてください: ${fix}`,
   radioNameShared: (name, binding) =>
     `行ごとのラジオがすべて name="${name}" になるので、ブラウザは全部の行のラジオを 1 つのグループにします。ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違います（何も知らせません）。${binding === 'radio'
       ? '行ごとに違う name を束ねる（attr.name: .<行ごとに違うフィールド>）か、name を外してください（radio: は name が無くても、同じパスに束ねたラジオを選択に合わせます）'
@@ -1059,6 +1066,8 @@ const en: WcsMessageCatalog = {
     `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" — and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
   attrBooleanText: (a, rhs) =>
     `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence — [${a}] in CSS, hasAttribute() — finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
+  radioBeforeValue: (binding, value, checkbox, fix) =>
+    `"${binding}:" is written before "${value}:", which gives this ${checkbox ? 'checkbox' : 'radio'} its value. Bindings are applied in the order written, so it is compared while its value is still the browser's default "on": nothing is checked at the first render — nothing says so, and a later write of the state checks the right one. Write the value first: ${fix}`,
   radioNameShared: (name, binding) =>
     `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render — nothing says so. ${binding === 'radio'
       ? 'Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it'
