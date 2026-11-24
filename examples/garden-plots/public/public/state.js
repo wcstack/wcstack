@@ -3,7 +3,7 @@
 import { countStatuses, STATUSES } from "../parts/lib/counts.js";
 
 export default {
-  /** @type {{ id: number, name: string, address: string, usage?: number, freeCount?: number, areas: { id: number, name: string, plots: { id: number, no: string, size: number, status: string, since: string | null }[] }[] }[]} */
+  /** @type {{ id: number, name: string, address: string, areas: { id: number, name: string, plots: { id: number, no: string, size: number, status: string, since: string | null }[] }[] }[]} */
   gardens: [],
   loaded: false,
   loadError: "",

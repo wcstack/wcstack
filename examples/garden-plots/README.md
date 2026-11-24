@@ -39,7 +39,7 @@ The app is as its author wrote it, without the workarounds 4.28.0 made unnecessa
 - **Toasts asked for before `<midori-toast>` is defined** wait in the state: a command emitted before its element is defined is not replayed.
 - **The saved theme before the first paint**: a classic script reads the key `<wcs-storage>` writes, since the state loads later.
 - **A part that has not arrived** has a look of its own (`:not(:defined)` in `parts/tokens.css`, each container for the parts it holds), and one that cannot be loaded is named in a banner (`<wcs-defined timeout="8000">`).
-- **The parts' exported getters are declared by hand** in the page's JSDoc (`usage?`, `freeCount?`, `matchCount?` in `app/state/map.js`): the lint reads no component, and reports a page that reads one. The declaration would hide a rename.
+- **The parts' exported getters are not declared on the page** (`usage`, `freeCount`, `matchCount`, which `<garden-card>` exports): since 4.29 the lint reads them from the part. The pages name their parts from `/`, so lint them with the directory the server serves — `npx @wcstack/lint --root=public public/*.html public/parts/*.html`. Without `--root` the lint does not find the parts and reports the console's reads of those getters (`wcs/binding-path-missing`, two warnings), as it did up to 4.28, when the JSDoc type of the page's data declared them by hand — which would have hidden a rename.
 - **The dialog's first focus** is set by the part: Firefox and WebKit do not look for `[autofocus]` in slotted content.
 
 Two things were found while landing the app, both in how it was written, and are fixed here:
