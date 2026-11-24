@@ -7,6 +7,11 @@
 継ぎ目アプリ garden-plots（部品で組み立てるページ）から、著者が決めた 2 点（docs/v4-direction-2026-10.md §5.25）: lint は部品を読む・`radio:` の順序は lint が知らせる。
 
 - `wcs/radio-before-value`（新規、warning）: `radio:` / `checkbox:` を、その要素に値を与える束縛（`attr.value:` / `value:`）より前に書いた（`<input type="radio" data-wcs="radio: theme; attr.value: .value">`）。束縛は書いた順に当たり、`radio:` は当たるときに要素の `value` を比べるので、まだブラウザの既定の `"on"` と比べる: 最初の描画ではどれも選ばれず、実行時は何も言わない（後から state に書くと正しいものが選ばれる）。`radio` / `checkbox` の上で報告し、直した順を言う。値の束縛が前にあるとき・値がマークアップのリテラルだけのときは黙る。
+- **宣言的カスタムコンポーネント（`data-wc-definition`）を読む。** 4.28 までは DCC を知らなかった（作者がわざとした 45 通りの間違いのうち、捕まえたのは 2 つ）。
+  - 定義は、それ自身の範囲: テンプレートの中のマークアップは定義の `<wcs-state>` に、ページのマークアップはページの state に対して検査する。両方のキーを 1 つの集合として見ていたので、部品だけが持つキーへのページの束縛も、その逆も通っていた。部品のファイル単体も同じに検査する。
+  - `wcs/dcc-declaration`（新規、error）: 実行時がタグを定義するときに拒む定義（リストでない `$bindables` / `$commands`、空・`$` で始まる・2 回書いた・state に無い項目、`$bindables` のメソッド、`$commands` の値、定義の中の `bind-component` と 2 つ目の `<wcs-state>`）。確かなときだけ言う。
+  - `wcs/tag-member-unknown`: ページが DCC に束ねるメンバー（`<my-pager data-wcs="totl: n">`・`command.nxt:`）を、定義の `$bindables` / `$commands` と突き合わせる。定義は、ページの中か、import map が autoloader の `dcc` ローダーに名指すファイル（`.html` か `|dcc` の eager のキー、`|dcc/` の名前空間）から読む。読めないファイルは黙る。
+  - `wcs/dcc-attribute`（新規、warning）: `$bindables` のメンバーを属性で書いたインスタンス（`<my-pager total="120">`）。実行時の 4.28 の警告と同じ code。
 
 ## 2.21.0 — 2026-11-19
 

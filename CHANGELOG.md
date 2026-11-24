@@ -10,8 +10,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 The lint and the parts of a page — two decisions of the author's from the `garden-plots` seam app (2026-11-24, [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.25): the lint reads a component, and the order of `radio:` is the lint's to tell.
 
+### Upgrading
+
+- `@wcstack/lint`: **a page that uses a Declarative Custom Component is checked more closely**, and may fail where it passed.
+  - A definition's markup is checked against the definition's own state, the page's against the page's. A binding that passed only because the other side had the key is now `wcs/binding-path-missing` (a warning; an error under `--strict` with a schema).
+  - `wcs/tag-member-unknown` (error) reports a member the part does not declare (`<my-pager data-wcs="totl: n">`), and `wcs/dcc-declaration` (error) a definition the runtime refuses. Both are errors the runtime already raised when the page loaded.
+
 ### Added
 
+- `@wcstack/lint` (and the VS Code extension): **the lint reads a Declarative Custom Component.** A definition is a scope of its own; `wcs/dcc-declaration` (error) reports `$bindables` / `$commands` the runtime refuses — a member the state does not have, a method among the bindables, a value among the commands, an entry written twice — and a `bind-component` or a second state in a definition; `wcs/tag-member-unknown` checks what a page binds on an instance against the part's declarations, read from the page or from the file the import map names for the autoloader's `dcc` loader; `wcs/dcc-attribute` (warning) reports an input written as an attribute, as the runtime does since 4.28. The `garden-plots` author made 45 mistakes on purpose and the lint caught 2: it knew nothing of a part.
 - `@wcstack/lint` (and the VS Code extension): **`wcs/radio-before-value`** (warning) — `radio:` / `checkbox:` written before the binding that gives the control its value (`<input type="radio" data-wcs="radio: theme; attr.value: .value">`). Bindings are applied in the order written, and `radio:` compares the element's `value` when it is applied, still the browser's `"on"`: no radio was checked at the first render, and nothing said so — a later write of the state checked the right one, which hid it wherever the value arrived after the page was drawn (found while landing `examples/garden-plots`). Silent when the value binding comes first, and when the value is only written in the markup.
 
 ## [4.28.0] — 2026-11-23
