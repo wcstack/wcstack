@@ -317,6 +317,12 @@ var WcsDiagnosticCode = {
   // ekiden-entry）。name を束ねてあるとき（`attr.name:`）・行のものでないパス（`radio: selectedId` — 行をまたぐ 1 つの
   // グループが意図）・行ごとに `<form>` があるときは黙る。warning。
   RadioNameShared: "wcs/radio-name-shared",
+  // `radio:` / `checkbox:` を、その要素に値を与える束縛（`attr.value:` / `value:`）より前に書いた
+  // （`<input type="radio" data-wcs="radio: theme; attr.value: .value">`）。束縛は書いた順に当たり、`radio:` は
+  // 当たるときに要素の `value` を比べるので、まだブラウザの既定の `"on"` と比べる: 最初の描画ではどれも選ばれない。
+  // ランタイムは何も言わず、後から state に書くと正しいものが選ばれる（継ぎ目アプリ garden-plots の取り込み — 保存した
+  // 設定がページを描く前に届くようになって見えた）。値の束縛が前にあるとき・リテラルの `value` だけのときは黙る。warning。
+  RadioBeforeValue: "wcs/radio-before-value",
   // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
   // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
   // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・
@@ -434,6 +440,16 @@ var WcsDiagnosticCode = {
   // root ごとに 1 つで、ランタイムは後から読み込んだ方を拒んで console.error で報告する（v2 から。4.0 の #47 —
   // ランタイムの文面は番号だけでコードを持たないので lint の code）＝ error。2 つ目以降の開始タグに出す。
   SecondRoot: "wcs/second-root",
+  // --- Declarative Custom Component（`data-wc-definition`。service/dccDeclarationValidator.ts） ---
+  // ランタイムがタグを定義するときに拒む定義（4.0 の scopes/dcc.ts の `define` と同じ条件）: リストでない
+  // `$bindables` / `$commands`、空でない文字列でない項目、`$` で始まる項目、2 回書いた項目、state に無い項目、
+  // `$bindables` に書いたメソッド、`$commands` に書いた値、定義の中の `<wcs-state bind-component>`。拒まれた定義は
+  // 何も定義しないので、どのページのどのインスタンスも未知の要素のまま（継ぎ目アプリ garden-plots — わざとした 6 つに
+  // lint は何も言わなかった）。error。
+  DccDeclaration: "wcs/dcc-declaration",
+  // DCC のインスタンスに、`$bindables` のメンバーを属性で書いた（`<my-pager total="120">`）。DCC の入力はプロパティで、
+  // 属性は読まれない: 部品は既定のまま。ランタイムも 4.28 から同じ code で警告する。warning。
+  DccAttribute: "wcs/dcc-attribute",
   // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
   // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
   MountPathInvalid: "wcs/mount-path-invalid"
@@ -2961,7 +2977,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.28.0";
+var version = "4.29.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -10705,8 +10721,8 @@ function applyResultShape(getter, shape, paths, openRows = false) {
   }
   for (const { from, to } of shape.mirrors) {
     if (from === getter || from.startsWith(`${getter}.`)) continue;
-    const sources = paths.filter((p) => p.path.startsWith(`${from}.`) && (p.kind === "data" || p.kind === "list"));
-    for (const source of sources) {
+    const sources2 = paths.filter((p) => p.path.startsWith(`${from}.`) && (p.kind === "data" || p.kind === "list"));
+    for (const source of sources2) {
       const target = `${getter}${to}${source.path.slice(from.length)}`;
       if (!hasPath(paths, target)) paths.push(withHint({ path: target, kind: source.kind }, source.typeHint));
     }
@@ -13615,6 +13631,1127 @@ var BUILTIN_TAGS = {
   }
 };
 
+// src/core/messages.ts
+function resolveLocale(locale2) {
+  if (locale2 === void 0 || locale2 === "" || /^ja\b|^ja[-_]/i.test(locale2) || locale2.toLowerCase() === "ja") return "ja";
+  return "en";
+}
+var TARGET_EFFECT_JA = {
+  "wcs-fullscreen": "requestFullscreen() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
+  "wcs-pip": "requestPictureInPicture() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
+  "wcs-pointer-lock": "requestPointerLock() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
+  "wcs-intersect": "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059",
+  "wcs-resize": "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059"
+};
+var TARGET_EFFECT_EN = {
+  "wcs-fullscreen": "requestFullscreen() fails, and only the error output says so",
+  "wcs-pip": "requestPictureInPicture() fails, and only the error output says so",
+  "wcs-pointer-lock": "requestPointerLock() fails, and only the error output says so",
+  "wcs-intersect": "the element observes nothing and observing stays false",
+  "wcs-resize": "the element observes nothing and observing stays false"
+};
+function isUnitlessZero(token) {
+  return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
+}
+function shortSeed(raw) {
+  const flat = raw.replace(/\s+/g, " ");
+  return flat.length <= 32 ? flat : `${flat.slice(0, 29)}\u2026`;
+}
+var MAX_LISTED_KEYS = 10;
+function listKeys(keys) {
+  return keys.length <= MAX_LISTED_KEYS ? keys.join(", ") : `${keys.slice(0, MAX_LISTED_KEYS).join(", ")} \u2026 (+${keys.length - MAX_LISTED_KEYS})`;
+}
+var JA_EXPECTED_LABEL = {
+  array: "\u914D\u5217\u578B\u306E\u30D1\u30B9",
+  boolean: "\u30D6\u30FC\u30EA\u30A2\u30F3\u578B",
+  string: "\u6587\u5B57\u5217\u578B"
+};
+var ja = {
+  spreadFilterNotAllowed: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306E\u30BF\u30FC\u30B2\u30C3\u30C8\u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
+  spreadTargetRequired: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306B\u306F\u30BF\u30FC\u30B2\u30C3\u30C8\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059`,
+  structuralMustBeSingle: (d) => `'${d}' \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306F\u5358\u72EC\u3067\u6307\u5B9A\u3059\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08';' \u3067\u4ED6\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3068\u4F75\u8A18\u3067\u304D\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  bindingSyntax: (detail) => `\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u69CB\u6587\u30A8\u30E9\u30FC\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09: ${detail}`,
+  eventTokenUndeclared: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
+  commandRhsFormat: () => `command \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u53F3\u8FBA\u306B\u306F $command.<name>\uFF08$commandTokens \u3067\u5BA3\u8A00\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044`,
+  commandTokenUndeclared: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $commandTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
+  commandTokensAbsent: (t, name) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u3053\u306E state \u306B\u306F $commandTokens \u304C\u3042\u308A\u307E\u305B\u3093\u3002state \u306B $commandTokens: ["${name}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`,
+  eventTokensAbsent: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u3053\u306E state \u306B\u306F $eventTokens \u304C\u3042\u308A\u307E\u305B\u3093\u3002state \u306B $eventTokens: ["${t}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`,
+  onEntryUndeclared: (t, absent) => `$on \u306E\u30A8\u30F3\u30C8\u30EA "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093${absent ? "\uFF08\u3053\u306E state \u306B\u306F $eventTokens \u304C\u3042\u308A\u307E\u305B\u3093\uFF09" : ""}\u3002state \u306F\u8AAD\u307F\u8FBC\u307F\u3067\u5931\u6557\u3057\u3001\u30DA\u30FC\u30B8\u306F\u521D\u671F\u5316\u3055\u308C\u307E\u305B\u3093\uFF08$on entry "${t}" is not declared in $eventTokens\uFF09\u3002${absent ? `$eventTokens: ["${t}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044` : `$eventTokens \u306B "${t}" \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`}`,
+  streamPathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F $stream \u5BA3\u8A00\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
+  pathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
+  pathNonexistent: (p) => `\u30D1\u30B9 "${p}" \u306F\u5BA3\u8A00\u3055\u308C\u305F stateSchema \u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
+  pathTypeMismatch: (p, label, expected, actual) => `\u30D1\u30B9 "${p}" \u306F stateSchema \u4E0A\u3067 ${actual} \u578B\u3067\u3059\u304C\u3001${label} \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059`,
+  expansionSuffix: (x) => `\uFF08\u5C55\u958B: ${x}\uFF09`,
+  patternPathOutsideFor: (p) => `\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\uFF084.0 \u306F\u521D\u671F\u5316\u3067 #1401 \u3092\u6295\u3052\u307E\u3059\uFF09`,
+  omittedPathOutsideFor: (p) => `\u7701\u7565\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\uFF084.0 \u306F\u521D\u671F\u5316\u3067 #1402 \u3092\u6295\u3052\u307E\u3059\uFF09`,
+  loopIndexOutsideFor: (p) => `\u30EB\u30FC\u30D7\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\uFF084.0 \u306F\u521D\u671F\u5316\u3067 #1401 \u3092\u6295\u3052\u307E\u3059\uFF09`,
+  indexArity: (api, p, req, wc, actual) => `${api}("${p}") \u306E\u6DFB\u5B57\u306F${req === "exact" ? `\u3061\u3087\u3046\u3069 ${wc} \u500B` : `${wc} \u500B\u4EE5\u4E0B`}\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30D1\u30B9\u4E2D\u306E "*" \u306F ${wc} \u500B\uFF09\u3002${actual} \u500B\u6307\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059`,
+  wildcardRank: (subject, needed, available) => `${subject} \u306F ${needed} \u6BB5\u306E\u30EB\u30FC\u30D7\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001\u73FE\u5728\u306E\u30B9\u30B3\u30FC\u30D7\u306F ${available} \u6BB5\u3067\u3059`,
+  wildcardOtherList: (p, over, loop) => `"${p}" \u306E "*" \u306F "${over}" \u306E\u884C\u3092\u6307\u3057\u307E\u3059\u304C\u3001\u305D\u306E\u6BB5\u3067\u56F2\u3080 for \u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u304C\u63CF\u304F\u306E\u306F "${loop}" \u3067\u3059\uFF084.0 \u306F\u30D0\u30A4\u30F3\u30C9\u78BA\u7ACB\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002\u675F\u7E1B\u306E "*" \u306F\u56F2\u3080\u30EB\u30FC\u30D7\u306E\u884C\u3067\u3059 \u2014 \u5225\u306E\u30EA\u30B9\u30C8\u306E\u884C\u306F getter \u306E\u4E2D\u3067 $resolve(path, indexes) \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  outerInTemplate: (prop) => `"${prop}:" \u306F\u8981\u7D20\u305D\u306E\u3082\u306E\u3092\u7F6E\u304D\u63DB\u3048\u308B\u306E\u3067\u3001for / if \u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u4E2D\u3067\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u884C\u3084\u679D\u306F\u30CE\u30FC\u30C9\u3092\u4F4D\u7F6E\u3067\u6301\u3064\u305F\u3081\u30024.0 \u306F\u521D\u671F\u5316\u3067 throw \u3057\u307E\u3059\uFF09\u3002\u5305\u3080\u8981\u7D20\u306B innerHTML: \u3092\u675F\u7E1B\u3057\u3066\u304F\u3060\u3055\u3044`,
+  directNotEvent: (prop) => `\u4FEE\u98FE\u5B50 #direct \u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\uFF08on*:\uFF09\u3060\u3051\u306B\u52B9\u304D\u307E\u3059\u3002"${prop}" \u3067\u306F\u7121\u8996\u3055\u308C\u307E\u3059`,
+  delegatedCurrentTarget: (suggested, eventName, handler) => `"${eventName}" \u30A4\u30D9\u30F3\u30C8\u306E\u675F\u7E1B\u306F root \u3078\u59D4\u8B72\u3055\u308C\u308B\u306E\u3067\u3001"${handler}" \u306E\u4E2D\u306E event.currentTarget \u306F\u3053\u306E\u8981\u7D20\u3067\u306F\u306A\u304F root \u306B\u306A\u308A\u307E\u3059\u3002\u8981\u7D20\u306B\u30EA\u30B9\u30CA\u30FC\u3092\u4ED8\u3051\u308B\u306B\u306F "${suggested}:" \u3068\u66F8\u304F\u304B\u3001event.target.closest(...) \u3067\u8981\u7D20\u3092\u63A2\u3057\u3066\u304F\u3060\u3055\u3044`,
+  getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
+  updatedCallbackUnbound: (p) => `$renderedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
+  onHandlerThis: (name) => `$on \u306E\u30CF\u30F3\u30C9\u30E9 "${name}" \u304C this \u3092\u4F7F\u3063\u3066\u3044\u307E\u3059\u3002$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F state \u3092\u7B2C 1 \u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\uFF08\`${name}(state, event) { state.x = \u2026 }\`\uFF09\u3001this \u306F undefined \u306A\u306E\u3067\u3001this.\u2026 \u306F\u547C\u3070\u308C\u305F\u3068\u304D\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002$watch \u3084\u30E1\u30BD\u30C3\u30C9\u3068\u9055\u3046\u70B9\u306B\u6CE8\u610F`,
+  getterReadsLocation: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001location \u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u3001\u6700\u521D\u306B\u8AAD\u3093\u3060 URL \u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u30CA\u30D3\u30B2\u30FC\u30B7\u30E7\u30F3\u3067\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002URL \u306F state \u3092\u901A\u3057\u3066\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044 \u2014 <wcs-router> \u306E path / searchParams \u3092\u675F\u306D\u308B`,
+  getterReadsClock: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001\u6642\u523B\u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u3067\u6BCE\u30D5\u30EC\u30FC\u30E0\u300C\u63CF\u304D\u76F4\u3057\u300D\u3066\u3082\u5909\u308F\u308A\u307E\u305B\u3093\uFF09\u3002\u6642\u523B\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-raf> \u3084 <wcs-timer> \u304C\u66F8\u304F\u5024\u3092\u675F\u306D\u308B`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059`;
+    switch (kind) {
+      case "size":
+        return `${head}\uFF08\u30EA\u30B5\u30A4\u30BA\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u5927\u304D\u3055\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-resize> \u304C\u66F8\u304F width / height \u3092\u675F\u306D\u308B\uFF08\u30D6\u30EC\u30FC\u30AF\u30DD\u30A4\u30F3\u30C8\u306E\u5224\u5B9A\u306A\u3089 <wcs-media-query> \u306E matched\uFF09`;
+      case "pixelRatio":
+        return `${head}\uFF08\u62E1\u5927\u3057\u3066\u3082\u3001\u5225\u306E\u753B\u9762\u3078\u79FB\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30DA\u30FC\u30B8\u304C\u4F7F\u3046\u89E3\u50CF\u5EA6\u306E\u3057\u304D\u3044\u5024\u3092 <wcs-media-query> \u306E matched \u3067\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08query="(min-resolution: 2dppx)"\uFF09`;
+      case "media":
+        return `${head}\uFF08\u30AF\u30A8\u30EA\u304C\u5408\u3046\u3088\u3046\u306B\u306A\u3063\u3066\u3082\u3001\u5408\u308F\u306A\u304F\u306A\u3063\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002<wcs-media-query> \u306E matched \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">\uFF09`;
+      case "online":
+        return `${head}\uFF08\u30AA\u30D5\u30E9\u30A4\u30F3\u306B\u306A\u3063\u3066\u3082\u3001\u623B\u3063\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002<wcs-network> \u306E offline \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`;
+      case "scroll":
+        return `${head}\uFF08\u30B9\u30AF\u30ED\u30FC\u30EB\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30B9\u30AF\u30ED\u30FC\u30EB\u4F4D\u7F6E\u3092\u51FA\u3059 wcstack \u306E\u8981\u7D20\u306F\u7121\u3044\u306E\u3067\u3001\u5024\u3092 state \u306B\u7F6E\u304D\u3001\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9\uFF08scroll \u306E\u30EA\u30B9\u30CA\u30FC\uFF09\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+      default:
+        return `${head}\uFF08\u30DA\u30FC\u30B8\u304C\u96A0\u308C\u3066\u3082\u3001\u8868\u793A\u3055\u308C\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30DA\u30FC\u30B8\u306E\u53EF\u8996\u6027\u3092\u51FA\u3059 wcstack \u306E\u8981\u7D20\u306F\u7121\u3044\u306E\u3067\u3001\u5024\u3092 state \u306B\u7F6E\u304D\u3001\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9\uFF08visibilitychange \u306E\u30EA\u30B9\u30CA\u30FC\uFF09\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+    }
+  },
+  updatedCallbackUnknownPath: (p) => `"${p}" \u306F state \u306E\u30D1\u30B9\u3067\u306F\u306A\u3044\u306E\u3067 $renderedCallback \u306E paths \u306B\u73FE\u308C\u305A\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093`,
+  commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u2014 <\u30E1\u30BD\u30C3\u30C9> \u306F\u305D\u306E\u8981\u7D20\u306E\u30E1\u30BD\u30C3\u30C9\u306E\u540D\u524D\uFF09`,
+  writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
+  pathReadonlyWrite: (p) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u306A\u306E\u3067\u3001\u3053\u306E\u66F8\u304D\u8FBC\u307F\u306F\u5B9F\u884C\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001\u305D\u306E\u5024\u3092\u76F4\u63A5\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  getterWrite: (p, g, via) => `getter "${g}" \u306E\u8A55\u4FA1\u4E2D\u306B "${p}" \u3092\u66F8\u3044\u3066\u3044\u307E\u3059${via === void 0 ? "" : `\uFF08\u547C\u3093\u3067\u3044\u308B\u30E1\u30BD\u30C3\u30C9 "${via}" \u306E\u4E2D\uFF09`}\u3002getter \u306F\u8AAD\u3080\u3060\u3051\u3067\u3001\u66F8\u304D\u8FBC\u307F\u306F\u8A55\u4FA1\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u30E1\u30BD\u30C3\u30C9\u30FBsetter\u30FB$watch \u306E\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u66F8\u304F\u304B\u3001\u5024\u3092\u5225\u306E getter \u3067\u8A08\u7B97\u3057\u3066\u304F\u3060\u3055\u3044`,
+  setterCycleSelf: (p) => `"${p}" \u306E setter \u304C\u81EA\u5206\u306E\u30D1\u30B9 "${p}" \u306B\u66F8\u3044\u3066\u3044\u307E\u3059\u3002setter \u306E\u30D1\u30B9\u306F\u30A2\u30AF\u30BB\u30B5\u305D\u306E\u3082\u306E\u306A\u306E\u3067\u3001\u66F8\u3051\u3070 setter \u304C\u307E\u305F\u547C\u3070\u308C\u3001\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u308B\u307E\u3067\u7D9A\u304D\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\uFF08_${p.split(".").pop()} \u306A\u3069\uFF09\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
+  setterCycle: (cycle) => `setter \u304C\u4E92\u3044\u306B\u66F8\u304D\u5408\u3063\u3066\u3044\u307E\u3059: ${cycle}\u3002\u6761\u4EF6\u3067\u6B62\u307E\u3089\u306A\u3051\u308C\u3070\u3001\u4E92\u3044\u3092\u547C\u3073\u7D9A\u3051\u3066\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
+  setterUnobserved: (p, w) => `"${p}" \u306E setter \u306F ${w} \u3092\u66F8\u304D\u307E\u3059\u304C\u3001getter "${p}" \u306F\u305D\u306E\u3069\u308C\u3082\u8AAD\u307F\u307E\u305B\u3093\u3002\u66F8\u3044\u305F\u5F8C\u3082 getter \u306F\u5143\u306E\u5024\u3092\u8FD4\u3057\u3001"${p}" \u306B\u675F\u306D\u305F\u53CC\u65B9\u5411\u306E\u5165\u529B\u306F\u305D\u3053\u3078\u623B\u308A\u307E\u3059\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F\u304B\u3001setter \u304C\u66F8\u304F\u5024\u3092 getter \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  relativePathOf: (r, a) => `\uFF08\u30A2\u30AF\u30BB\u30B5 "${a}" \u306E\u4E2D\u306E "${r}"\uFF09`,
+  relativeNoRow: (r, a) => `"${r}" \u306F\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u3059\u304C\u3001\u30A2\u30AF\u30BB\u30B5 "${a}" \u306F\u30EA\u30B9\u30C8\u306E\u884C\u306E\u3082\u306E\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u30AD\u30FC\u306B "*" \u304C\u3042\u308A\u307E\u305B\u3093\uFF09\u3002\u884C\u304C\u7121\u3044\u306E\u3067\u3001\u8A55\u4FA1\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#1402\uFF09\u3002\u30D5\u30EB\u30D1\u30B9\u3067\u66F8\u304F\u304B\u3001\u884C\u306E\u30A2\u30AF\u30BB\u30B5\uFF08get "<\u30EA\u30B9\u30C8>.*.<\u540D\u524D>"()\uFF09\u306B\u3057\u3066\u304F\u3060\u3055\u3044`,
+  relativeApiPath: (r, api) => `"${r}" \u306F\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u3059\u304C\u3001${api} \u306F\u884C\u3092\u6DFB\u5B57\u306E\u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\u3001\u547C\u3070\u308C\u305F\u884C\u304B\u3089\u306F\u53D6\u308A\u307E\u305B\u3093\u3002\u76F8\u5BFE\u30D1\u30B9\u306F\u3053\u3053\u3067\u306F\u5C55\u958B\u3055\u308C\u305A\u3001\u547C\u3073\u51FA\u3057\u306F\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u30D5\u30EB\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08"<\u30EA\u30B9\u30C8>.*${r === "." ? "" : r}"\uFF09`,
+  accessorListSyntax: (k, why) => `\u30A2\u30AF\u30BB\u30B5\u306E\u30AD\u30FC "${k}" \u306F\u8907\u6570\u306E\u30D1\u30B9\u306E\u4E26\u3073\u3067\u3059\u304C\u3001${why === "space" ? "\u30AB\u30F3\u30DE\u306E\u524D\u5F8C\u306B\u7A7A\u767D\u304C\u3042\u308A\u307E\u3059" : why === "empty" ? "\u7A7A\u306E\u9805\u76EE\u304C\u3042\u308A\u307E\u3059" : '\u518D\u5E30\u306E\u30D1\u30B9\uFF08"**"\uFF09\u306F\u4E26\u3079\u3089\u308C\u307E\u305B\u3093'}\u3002\u30D1\u30B9\u306F\u30AB\u30F3\u30DE\u3060\u3051\u3067\u533A\u5207\u308A\u307E\u3059\uFF08get "users.*.fullname,employees.*.fullname"()\uFF09${why === "recursive" ? "" : "\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30AB\u30F3\u30DE\u306E\u9593\u3092\u305D\u306E\u307E\u307E\u30D1\u30B9\u306B\u3059\u308B\u306E\u3067\u3001\u3053\u306E\u307E\u307E\u3067\u306F\u8AB0\u3082\u8AAD\u307E\u306A\u3044\u30D1\u30B9\u304C\u5BA3\u8A00\u3055\u308C\u307E\u3059"}`,
+  accessorListPath: (p, list, other, rel) => `"${p}" \u306F "${list}" \u306E\u884C\u306E\u30D1\u30B9\u3067\u3059\u304C\u3001\u3053\u306E\u30A2\u30AF\u30BB\u30B5\u306F "${other}" \u306B\u3082\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u305D\u3061\u3089\u306E\u884C\u3067\u306F\u3053\u306E\u30D1\u30B9\u306B\u884C\u304C\u7121\u304F\u3001\u8AAD\u307F\u306F undefined\u3001\u66F8\u304D\u306F\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: this["${rel}"]`,
+  nestedWritePathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u66F8\u304D\u8FBC\u307F\u306F\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30D1\u30B9\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
+  readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
+  stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
+  stateAbsent: (tag) => `\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306B\u306F\u675F\u7E1B\u304C\u3042\u308A\u307E\u3059\u304C <${tag}> \u304C\u7121\u3044\u306E\u3067\u3001\u675F\u7E1B\u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u30DA\u30FC\u30B8\u304C\u53D6\u308A\u8FBC\u3080\u65AD\u7247\u3084\u3001state \u3092\u30B9\u30AF\u30EA\u30D7\u30C8\u3067\u4F5C\u308B\u30DA\u30FC\u30B8\uFF09\u3002state \u306E\u3042\u308B\u30DA\u30FC\u30B8\u3092\u691C\u67FB\u3059\u308B\u304B\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u96A3\uFF08\u304B\u4E0A\uFF09\u306E wcstack.manifest.json \u306E stateSchema \u306B\u30D1\u30B9\u3092\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  pathDynamicUnknownType: (path, n, type) => `"${path}" \u306E JSDoc \u306E\u578B ${type} \u306F\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u8AAD\u3080\u306E\u306F\u3001\u8AAD\u3081\u308B\u30D5\u30A1\u30A4\u30EB\u306E export interface / export type\u3001.js \u306E @typedef\uFF09\u3002\u5F62\u3092\u305D\u306E\u5834\u3067\u66F8\u304F\u304B\u3001\u540C\u3058\u30B9\u30AF\u30EA\u30D7\u30C8\u306E @typedef \u306B\u3059\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  stateSchemaDrift: (inScript, inSchema) => `\u3053\u306E\u30DA\u30FC\u30B8\u306B\u5F53\u3066\u305F stateSchema \u304C state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3068\u98DF\u3044\u9055\u3063\u3066\u3044\u307E\u3059${inScript.length > 0 ? `\uFF08\u30B9\u30AF\u30EA\u30D7\u30C8\u306B\u3042\u3063\u3066 schema \u306B\u7121\u3044\u30AD\u30FC: ${listKeys(inScript)}\uFF09` : ""}${inSchema.length > 0 ? `\uFF08schema \u306B\u3042\u3063\u3066\u30B9\u30AF\u30EA\u30D7\u30C8\u306B\u7121\u3044\u30AD\u30FC: ${listKeys(inSchema)}\uFF09` : ""}\u3002schema \u306F\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089\u4F5C\u308B\u6D3E\u751F\u7269\u306A\u306E\u3067\u3001\u53E4\u3044\u304B\u3001\u5225\u306E state\uFF08\u5225\u306E\u30DA\u30FC\u30B8\uFF09\u306E\u3082\u306E\u3067\u3059 \u2014 \u305D\u306E\u307E\u307E\u691C\u67FB\u3059\u308B\u3068\u3001\u540D\u524D\u3092\u5909\u3048\u305F\u30AD\u30FC\u3078\u306E\u675F\u7E1B\u304C\u901A\u308A\u3001\u3042\u308B\u30AD\u30FC\u304C\u5B58\u5728\u3057\u306A\u3044\u3068\u8A00\u308F\u308C\u307E\u3059\u3002wcs-schema emit \u3067\u4F5C\u308A\u76F4\u3057\uFF08\u4F5C\u3063\u305F manifest \u306F\u5143\u306E state \u306E\u30D5\u30A1\u30A4\u30EB\u3092 stateSource \u306B\u8A18\u3057\u3001lint \u306F\u305D\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u3080\u30DA\u30FC\u30B8\u306B\u3060\u3051\u5F53\u3066\u307E\u3059\uFF09\u3001CI \u3067\u306F wcs-schema check \u3067\u98DF\u3044\u9055\u3044\u3092\u6B62\u3081\u3066\u304F\u3060\u3055\u3044`,
+  pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u304C\u66F8\u304F\u306E\u3067\u3001\u4E2D\u8EAB\u306F\u8981\u7D20\u304C\u6E21\u3059\u3082\u306E\u3067\u3059\u3002\u305D\u306E\u5F62\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
+  pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
+  pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
+  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${spread === void 0 ? "" : `"${spread}" \u304C\u675F\u306D\u308B `}"${member}" \u306F <${tag}> \u304C\u66F8\u304F\u30E1\u30F3\u30D0\u30FC\uFF08${twoWay ? "\u5165\u529B\u3067\u3082\u3042\u308B\u51FA\u529B" : "\u51FA\u529B"}\uFF09\u3067\u3059\u3002\u8981\u7D20\u306F\u305D\u306E\u5024\u3092 "${p}" \u306B\u66F8\u304F\u306E\u3067\u3001${atInit ? "\u675F\u306D\u305F\u6642\u70B9\u306E\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u3001state \u306E\u521D\u671F\u5316\u304C\u5931\u6557\u3057\u307E\u3059" : "\u8981\u7D20\u304C\u5024\u3092\u77E5\u3089\u305B\u308B\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059"}\uFF08"${p}" is a getter without a setter\uFF09\u3002${spread !== void 0 ? `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001spread \u306E\u5F8C\u308D\u3067 "${member}" \u3092\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08${spread}; ${member}: <\u30C7\u30FC\u30BF\u306E\u30AD\u30FC>\uFF09` : !twoWay ? `\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u3092\u675F\u306D\u3066\u305D\u308C\u3092 getter \u304B\u3089\u8AAD\u3080\uFF08${member}: <\u30C7\u30FC\u30BF\u306E\u30AD\u30FC>\uFF09\u304B\u3001setter \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044\uFF08set "${p}"(v) { \u2026 }\uFF09` : atInit ? `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001\u6700\u521D\u306E\u5024\u3092 state \u304B\u3089\u53D6\u3063\u3066\u304F\u3060\u3055\u3044\uFF08#init=element \u3092\u5916\u3059\uFF09` : `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${member}#ro: ${p} \u2014 state \u304B\u3089\u8981\u7D20\u3078\u306F\u4ECA\u307E\u3067\u3069\u304A\u308A\u66F8\u304B\u308C\u307E\u3059\uFF09`}`,
+  submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
+  guardReadsAtModuleTop: (r) => `\u30AC\u30FC\u30C9\u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u3001export \u3059\u308B\u95A2\u6570\u306E\u5916\uFF08\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\uFF09\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u3067 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001\u30AC\u30FC\u30C9\u306F\u305D\u306E\u3068\u304D\u8AAD\u3093\u3060\u5024\u3092\u6301\u3061\u7D9A\u3051\u3001\u9077\u79FB\u306E\u305F\u3073\u306B\u305D\u306E\u5024\u3067\u6C7A\u3081\u307E\u3059\uFF08\u30ED\u30B0\u30A4\u30F3\u3057\u305F\u5F8C\u3082\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u7121\u3044\u307E\u307E\uFF09\u3002\u9077\u79FB\u306E\u305F\u3073\u306B\u8D70\u308B\u3001export \u3057\u305F\u95A2\u6570\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  stateReadsAtModuleTop: (r) => `state \u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F <wcs-state> \u3054\u3068\u306B 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001state \u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u306E\u6642\u70B9\u306E\u5024\u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u5F8C\u3067\u5909\u308F\u308B\u30C8\u30FC\u30AF\u30F3\u3084\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u898B\u3048\u307E\u305B\u3093\uFF09\u3002\u5024\u3092 state \u306B\u7F6E\u304F\uFF08<wcs-storage> \u306B\u675F\u306D\u308B\uFF09\u304B\u3001\u4F7F\u3046\u30E1\u30BD\u30C3\u30C9\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  eventTokenUnbound: (t, handler) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 $eventTokens \u306B\u5BA3\u8A00\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u51FA\u3059 eventToken.<\u30E1\u30F3\u30D0\u30FC>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3069\u306E\u8981\u7D20\u3082\u767A\u706B\u3055\u305B\u306A\u3044\u306E\u3067\u3001${handler ? "$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F\u4E00\u5EA6\u3082\u8D70\u308A\u307E\u305B\u3093" : "\u3053\u306E\u30C8\u30FC\u30AF\u30F3\u306F\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093"}\u3002\u767A\u706B\u3055\u305B\u308B\u8981\u7D20\u306B\u675F\u306D\u308B\uFF08eventToken.<\u30E1\u30F3\u30D0\u30FC>: ${t} \u2014 <\u30E1\u30F3\u30D0\u30FC> \u306F\u305D\u306E\u8981\u7D20\u306E wcBindable \u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF09\u304B\u3001$eventTokens \u304B\u3089\u5916\u3057\u3066\u304F\u3060\u3055\u3044`,
+  objectKeyAssign: (t, acc, sp) => `"${t}" \u306E\u30AD\u30FC\u306B\u305D\u306E\u5834\u3067\u4EE3\u5165\u3057\u3066\u3044\u307E\u3059\u3002state \u306F\u3053\u306E\u66F8\u304D\u8FBC\u307F\u3092\u898B\u306A\u3044\u306E\u3067\u3001\u305D\u308C\u3092\u8AAD\u3080\u675F\u7E1B\u30FBgetter\u30FB$watch \u306F\u5909\u308F\u3089\u305A\u3001\u4F55\u3082\u63CF\u304D\u76F4\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4EE3\u5165\u3059\u308B\uFF08${acc} = { ...${acc}, [key]: value }\uFF09\u304B\u3001\u30C9\u30C3\u30C8\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08this["${sp}"] = \u2026\uFF09`,
+  getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  getterUntrackedReadBound: (root, sp, binding, tag, written) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u304C\u3001<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001getter \u306F\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
+  typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
+  attrBooleanPresence: (a, p, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001false \u306E\u3068\u304D ${a}="false" \u306B\u306A\u308A\u307E\u3059\u3002\u8AD6\u7406\u5C5E\u6027\u306F\u5024\u306B\u95A2\u4FC2\u306A\u304F\u3001\u5728\u308B\u3060\u3051\u3067\u52B9\u304D\u307E\u3059: ${a}="false" \u3067\u3082 ${a} \u306E\u307E\u307E\u3067\u3059\uFF08\u5C5E\u6027\u3092\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: ${p}: ${rhs}`,
+  attrBooleanText: (a, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001\u5C5E\u6027\u306F "true" \u304B "false" \u306B\u306A\u308A\u3001\u5916\u308C\u308B\u3053\u3068\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u5C5E\u6027\u306E\u6709\u7121\u3092\u898B\u308B\u5074\uFF08CSS \u306E [${a}]\u30FBhasAttribute()\uFF09\u306B\u306F\u3001\u3069\u3061\u3089\u3067\u3082\u5728\u308A\u307E\u3059\u3002false \u306E\u9593\u306F\u5916\u3059\u306A\u3089 attr.${a}: ${rhs}|defaults(null)\u3001\u6587\u5B57\u306E "true" / "false" \u304C\u610F\u56F3\u306A\u3089 attr.${a}: ${rhs}|string \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  radioBeforeValue: (binding, value, checkbox, fix) => `\u300C${binding}:\u300D\u304C\u3001\u3053\u306E${checkbox ? "\u30C1\u30A7\u30C3\u30AF\u30DC\u30C3\u30AF\u30B9" : "\u30E9\u30B8\u30AA"}\u306B\u5024\u3092\u4E0E\u3048\u308B\u300C${value}:\u300D\u3088\u308A\u524D\u306B\u66F8\u304B\u308C\u3066\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F\u66F8\u3044\u305F\u9806\u306B\u5F53\u305F\u308B\u306E\u3067\u3001\u5024\u304C\u307E\u3060\u30D6\u30E9\u30A6\u30B6\u306E\u65E2\u5B9A\u306E "on" \u306E\u3046\u3061\u306B\u6BD4\u3079\u3089\u308C\u3001\u6700\u521D\u306E\u63CF\u753B\u3067\u306F\u4F55\u3082\u30C1\u30A7\u30C3\u30AF\u3055\u308C\u307E\u305B\u3093\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\u3002\u5F8C\u304B\u3089 state \u306B\u66F8\u304F\u3068\u6B63\u3057\u3044\u3082\u306E\u304C\u30C1\u30A7\u30C3\u30AF\u3055\u308C\u307E\u3059\uFF09\u3002\u5024\u3092\u5148\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: ${fix}`,
+  radioNameShared: (name, binding) => `\u884C\u3054\u3068\u306E\u30E9\u30B8\u30AA\u304C\u3059\u3079\u3066 name="${name}" \u306B\u306A\u308B\u306E\u3067\u3001\u30D6\u30E9\u30A6\u30B6\u306F\u5168\u90E8\u306E\u884C\u306E\u30E9\u30B8\u30AA\u3092 1 \u3064\u306E\u30B0\u30EB\u30FC\u30D7\u306B\u3057\u307E\u3059\u3002\u30DA\u30FC\u30B8\u5168\u4F53\u3067 1 \u3064\u3057\u304B\u9078\u3070\u308C\u305F\u72B6\u614B\u306B\u306A\u3089\u305A\u3001\u8868\u793A\u306F\u6700\u521D\u306E\u63CF\u753B\u304B\u3089\u884C\u3054\u3068\u306E\u5024\u3068\u98DF\u3044\u9055\u3044\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${binding === "radio" ? "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u308B\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u304B\u3001name \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08radio: \u306F name \u304C\u7121\u304F\u3066\u3082\u3001\u540C\u3058\u30D1\u30B9\u306B\u675F\u306D\u305F\u30E9\u30B8\u30AA\u3092\u9078\u629E\u306B\u5408\u308F\u305B\u307E\u3059\uFF09" : "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u3002\u884C\u3092\u307E\u305F\u3044\u3067 1 \u3064\u3092\u9078\u3070\u305B\u308B\u306A\u3089\u3001\u5168\u90E8\u3092 1 \u3064\u306E\u30D1\u30B9\u306B\u675F\u306D\u307E\u3059\uFF08value: .<\u884C\u306E id>; radio: <\u30D1\u30B9>\uFF09"}`,
+  numberWrittenAsString: (path, left, asNumber) => `"${path}" \u306F state \u3067\u306F\u6570\u5024\u3067\u3059\u304C\u3001value: \u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8981\u7D20\u306E\u6301\u3064\u6587\u5B57\u5217\u3067\u3059\u30025 \u3068\u5165\u529B\u3057\u305F\u5F8C\u306E state \u306F "5" \u3067\u3001"5" + 1 \u306F "51" \u306B\u306A\u308A\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002\u66F8\u304D\u623B\u3059\u3068\u304D\u306B\u6570\u5024\u306B\u3057\u3066\u304F\u3060\u3055\u3044: ${asNumber ? `valueAsNumber: ${path}\u3001\u307E\u305F\u306F` : ""}\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF ${left}|number: ${path}\uFF08|int\u30FB|float \u3082\uFF09`,
+  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: \u306F\u53CC\u65B9\u5411\u3067 1 \u6253\u9375\u3054\u3068\u306B\u66F8\u304D\u623B\u3057\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u305D\u306E\u305F\u3073\u306B state \u306E\u5024\u3092\u6574\u5F62\u3057\u3066\u6B04\u3078\u66F8\u304D\u76F4\u3057\u307E\u3059\u3002\u5165\u529B\u4E2D\u306E\u6B04\u304C\u66F8\u304D\u63DB\u308F\u308A\uFF08\u30AD\u30E3\u30EC\u30C3\u30C8\u306F\u672B\u5C3E\u3078\u98DB\u3073\u3001IME \u306E\u5909\u63DB\u306F\u9014\u5207\u308C\u307E\u3059\uFF09\u3001state \u304C\u53D7\u3051\u53D6\u308B\u306E\u3082\u6B04\u306E\u6574\u5F62\u6E08\u307F\u306E\u6587\u5B57\u3067\u3059\uFF08\u51FA\u529B\u30D5\u30A3\u30EB\u30BF\u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\uFF09\u3002\u6574\u5F62\u3057\u305F\u6587\u5B57\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u6B04\u306E\u78BA\u5B9A\u3067\u66F8\u304D\u623B\u3057\u3066 setter \u3067\u6574\u5F62\u3059\u308B\uFF08${prop}#onchange:\uFF09\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09` : `${prop}: \u306F\u53CC\u65B9\u5411\u3067\u3059\u304C\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\u3002\u8981\u7D20\u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8868\u793A\u3057\u3066\u3044\u308B\u6574\u5F62\u6E08\u307F\u306E\u5024\u3067\u3001\u6B21\u306F\u305D\u306E\u5024\u306B\u30D5\u30A3\u30EB\u30BF\u304C\u639B\u304B\u308A\u307E\u3059\u3002\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF\u3067\u5143\u306B\u623B\u3059\uFF08${left}|<\u30D5\u30A3\u30EB\u30BF>: \u2026\uFF09\u3001\u6574\u5F62\u3057\u305F\u5024\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09`,
+  bodyBinding: (tag, attribute) => `<${tag}> \u306E ${attribute} \u306F\u675F\u7E1B\u3055\u308C\u307E\u305B\u3093\u3002<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u306E\u4E2D\u3067\u3001<body> \u3068 <html> \u305D\u306E\u3082\u306E\u306F\u675F\u306D\u306A\u3044\u306E\u3067\u3001\u3053\u3053\u306B\u66F8\u3044\u305F\u675F\u7E1B\u306F\u4F55\u3082\u3057\u307E\u305B\u3093\uFF08\u30A4\u30D9\u30F3\u30C8\u306E\u30CF\u30F3\u30C9\u30E9\u306F\u8D70\u3089\u305A\u3001class. / attr. \u306A\u3069\u306F\u66F8\u304B\u308C\u307E\u305B\u3093\uFF09\u3002\u675F\u7E1B\u3092 <body> \u306E\u4E2D\u306E\u8981\u7D20\uFF08\u5305\u3080\u8981\u7D20\u30FB<main>\uFF09\u3078\u79FB\u3059\u304B\u3001\u5024\u3092 $connectedCallback \u3084 $watch \u306E\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08document.documentElement.lang = \u2026\uFF09`,
+  linkHandler: (property, handler) => `<wcs-link> \u306E "${property}:" \u306F "${handler}" \u3092\u547C\u3073\u307E\u305B\u3093\u3002<wcs-link> \u81EA\u8EAB\u306F display: none \u3067\u3001\u5229\u7528\u8005\u304C\u30AF\u30EA\u30C3\u30AF\u3059\u308B\u306E\u306F\u30EA\u30F3\u30AF\u304C\u81EA\u5206\u306E\u96A3\u306B\u4F5C\u308B <a> \u306A\u306E\u3067\u3001\u30A4\u30D9\u30F3\u30C8\u306F\u30DB\u30B9\u30C8\u306B\u5C4A\u304D\u307E\u305B\u3093\u3002\u30CF\u30F3\u30C9\u30E9\u306F\u3001\u30EA\u30F3\u30AF\u306E\u4E2D\u306E\u8981\u7D20\uFF08\u5B50\u306F <a> \u306E\u4E2D\u3078\u79FB\u308A\u307E\u3059\uFF09\u304B\u3001\u30EA\u30F3\u30AF\u3092\u56F2\u3080\u8981\u7D20\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\u3002\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u9077\u79FB\u3059\u308B\u306A\u3089\u3001router \u306E navigateUrl \u306B\u66F8\u304D\u307E\u3059\uFF08<wcs-router> \u306E data-wcs="navigateUrl: \u2026"\uFF09`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0 ? "\u5024\u306F 1\u301C4 \u500B\u3067\u3059" : `${refused.map((t) => `"${t}"`).join("\u30FB")} \u306F px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093${refused.some(isUnitlessZero) ? "\uFF080 \u306B\u3082\u5358\u4F4D\u304C\u8981\u308A\u307E\u3059\uFF09" : ""}`;
+    const effect = tag === "wcs-intersect" ? "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059" : "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001\u6B21\u306E\u30DA\u30FC\u30B8\u306F\u8AAD\u307F\u8FBC\u307E\u308C\u307E\u305B\u3093";
+    return `\u30D6\u30E9\u30A6\u30B6\u306F root-margin="${value}" \u3092\u62D2\u307F\u307E\u3059\uFF08rootMargin must be specified in pixels or percent\uFF09: ${why}\u3002\u305D\u306E\u305F\u3081${effect}\u3002${suggested === null ? "1\u301C4 \u500B\u306E\u5024\u3092\u3001\u305D\u308C\u305E\u308C px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044" : `root-margin="${suggested}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`}`;
+  },
+  frequencyInvalid: (tag, value, suggested) => `frequency="${value}" \u306F\u6B63\u306E\u6570\u5024\u3067\u306F\u306A\u3044\u306E\u3067\u3001<${tag}> \u306F\u3053\u308C\u3092\u300C\u6307\u5B9A\u306A\u3057\u300D\u3068\u3057\u3066\u8AAD\u307F\u3001\u30BB\u30F3\u30B5\u30FC\u306F\u30D6\u30E9\u30A6\u30B6\u306E\u65E2\u5B9A\u306E\u983B\u5EA6\u3067\u52D5\u304D\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${suggested === null ? "\u6B63\u306E\u6570\u5024\uFF08Hz\uFF09\u3092\u66F8\u304F\u304B\u3001\u65E2\u5B9A\u306E\u983B\u5EA6\u3067\u3088\u3051\u308C\u3070\u5C5E\u6027\u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044" : `\u6570\u5024\u3060\u3051\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: frequency="${suggested}"`}`,
+  targetSelector: (tag, value) => `<${tag}> \u306E target \u306F CSS \u30BB\u30EC\u30AF\u30BF\u3067\u3059\u3002target="${value}" \u306F <${value}> \u8981\u7D20\u3092\u9078\u3073\u307E\u3059\u304C\u3001\u3053\u306E\u6587\u66F8\u306B\u305D\u306E\u8981\u7D20\u306F\u7121\u304F\u3001id="${value}" \u306E\u8981\u7D20\u304C\u3042\u308A\u307E\u3059\u3002\u5BFE\u8C61\u304C\u898B\u3064\u304B\u3089\u306A\u3044\u306E\u3067\u3001${TARGET_EFFECT_JA[tag] ?? "\u8981\u7D20\u306F\u4F55\u3082\u3057\u307E\u305B\u3093"}\u3002id \u3092\u6307\u3059\u306A\u3089 target="#${value}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  commandEventArgument: (property, token, tag, method, more) => `"${property}: ${token}" \u306F\u30C8\u30FC\u30AF\u30F3\u3092\u30A4\u30D9\u30F3\u30C8\u304B\u3089\u76F4\u63A5 emit \u3059\u308B\u306E\u3067\u3001\u53D7\u3051\u5074\u306E\u30B3\u30DE\u30F3\u30C9\u306F\u30A4\u30D9\u30F3\u30C8\u3092\u7B2C 1 \u5F15\u6570\u3068\u3057\u3066\u547C\u3070\u308C\u307E\u3059\u3002<${tag}> \u306E ${method}() \u306F\u5F15\u6570\u3092\u53D6\u308B\u30B3\u30DE\u30F3\u30C9\u3067\u3001${method}(event) \u306B\u306A\u308A\u307E\u3059${more > 0 ? `\uFF08\u307B\u304B\u306B ${more} \u4EF6\u306E\u53D7\u3051\u5074\u3082\u540C\u3058\u3067\u3059\uFF09` : ""}\u3002state \u306E\u30E1\u30BD\u30C3\u30C9\u304B\u3089 emit \u3057\u3066\u304F\u3060\u3055\u3044 \u2014 ${property}: <\u30E1\u30BD\u30C3\u30C9> \u3068\u66F8\u304D\u3001<\u30E1\u30BD\u30C3\u30C9>() { this.${token}.emit(\u2026) } \u3067 ${method}() \u304C\u53D7\u3051\u53D6\u308B\u5024\u3092\u6E21\u3057\u307E\u3059\uFF08\u6E21\u3059\u5024\u304C\u7121\u3051\u308C\u3070\u5F15\u6570\u306A\u3057\u3067 emit \u3057\u307E\u3059\uFF09`,
+  outputPathWritten: (path, tag, member, commands) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u306B\u675F\u306D\u3066\u3042\u308A\u307E\u3059\u3002\u51FA\u529B\u306F\u8981\u7D20\u304C\u66F8\u304F\u3082\u306E\u3067\u3001\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u66F8\u304D\u8FBC\u307F\u306F\u8981\u7D20\u306B\u5C4A\u304D\u307E\u305B\u3093\u3002true \u3092\u4EE3\u5165\u3057\u3066\u3082\u8981\u7D20\u306F\u4F55\u3082\u305B\u305A\u3001\u30DA\u30FC\u30B8\u3060\u3051\u304C\u305D\u3046\u306A\u3063\u305F\u3053\u3068\u306B\u3057\u307E\u3059\u3002${commands.length === 0 ? `<${tag}> \u306B\u30B3\u30DE\u30F3\u30C9\u306F\u7121\u304F\u3001\u3053\u306E\u5024\u306F\u8981\u7D20\u304C\u77E5\u3089\u305B\u308B\u3082\u306E\u3067\u3059\u3002\u4EE3\u5165\u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044` : `\u8981\u7D20\u306B\u306F\u30B3\u30DE\u30F3\u30C9\u3067\u983C\u3093\u3067\u304F\u3060\u3055\u3044\uFF08${commands.join("\u30FB")} \u2014 command.<\u30E1\u30BD\u30C3\u30C9>: $command.<\u540D\u524D> \u3092\u675F\u306D\u3001\u3053\u3053\u3067 this.$command.<\u540D\u524D>.emit() \u3092\u547C\u3076\uFF09\u3002"${path}" \u306F\u8981\u7D20\u304C\u66F8\u304D\u307E\u3059`}`,
+  filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
+  filterRemoved: (n, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${c}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002"${c}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  substrRemoved: (rewrite) => `\u30D5\u30A3\u30EB\u30BF "substr" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002slice(start, start + length) \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 slice \u306E\u7B2C 2 \u5F15\u6570\u306F\u9577\u3055\u3067\u306F\u306A\u304F\u7D42\u308F\u308A\u306E\u4F4D\u7F6E\u3067\u3059${rewrite === null ? "" : `\uFF08\u3053\u3053\u3067\u306F ${rewrite}\uFF09`}`,
+  filterMinArgs: (n, min, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306B\u306F\u6700\u4F4E ${min} \u500B\u306E\u5F15\u6570\u304C\u5FC5\u8981\u3067\u3059\uFF08${c} \u500B\u6307\u5B9A\uFF09`,
+  filterMaxArgs: (n, max, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u5F15\u6570\u306F\u6700\u5927 ${max} \u500B\u3067\u3059\uFF08${c} \u500B\u6307\u5B9A\uFF09`,
+  filterArgType: (n, i, exp, arg, act) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u7B2C${i}\u5F15\u6570\u306F ${exp} \u578B\u304C\u5FC5\u8981\u3067\u3059\uFF08"${arg}" \u306F ${act} \u578B\uFF09`,
+  filterInputType: (n, accepts, cur) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F ${accepts} \u578B\u306E\u5165\u529B\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${cur}\uFF09`,
+  filterArgEnum: (n, arg, members, suggestion2) => `"${n}(${arg})" \u306E ${arg} \u306F\u3001\u6BD4\u3079\u308B\u5024\u304C\u53D6\u308A\u3046\u308B\u5024\uFF08${members.join(" | ")}\uFF09\u306B\u3042\u308A\u307E\u305B\u3093 \u2014 ${n === "ne" ? "\u3044\u3064\u3082\u771F" : "\u6C7A\u3057\u3066\u771F\u306B\u306A\u308A\u307E\u305B\u3093"}${suggestion2}`,
+  moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  moustacheFoucTextParent: (e, tag) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<${tag}> \u306E\u4E2D\u306E\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306F\u675F\u7E1B\u306B\u306A\u308A\u307E\u305B\u3093 \u2014 \u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">\uFF09\u3002`,
+  textBindingInHead: (w) => `${w} \u306F\u6587\u66F8\u306E <head> \u306E\u4E2D\u306B\u3042\u308A\u307E\u3059\u304C\u3001<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u3068\u30B7\u30E3\u30C9\u30A6\u30EB\u30FC\u30C8\u3060\u3051\u306A\u306E\u3067\u3001\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059\u3002\u30BF\u30A4\u30C8\u30EB\u306F state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089 document.title \u306B\u66F8\u304F\uFF08$connectedCallback \u3068 $watch \u306E\u30CF\u30F3\u30C9\u30E9\uFF09\u304B\u3001\u30EB\u30FC\u30C8\u306E <wcs-head> \u306E <title> \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
+  nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  watchNotObject: () => `$watch \u306F\u300C\u30D1\u30B9 \u2192 \u30CF\u30F3\u30C9\u30E9\u95A2\u6570\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  watchKeyCrossState: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u4ED6\u306E state \u3092\u6307\u3057\u3066\u3044\u307E\u3059\u3002@ \u4ED8\u304D\u306E\u8D8A\u5883 watch \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u81EA state \u306E\u30D1\u30B9\u306E\u307F\uFF09`,
+  watchKeyReserved: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`,
+  watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
+  watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
+  scanRemoved: (mountPath) => mountPath === null ? `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08diagnostics \u306E\u5F8C\u4ED8\u3051\u3092\u5165\u308C\u305F\u5165\u53E3 \u2014 /auto \u306A\u3069 \u2014 \u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u3001/core \u3060\u3051\u3067\u306F\u9ED9\u3063\u3066\u7121\u8996\u3057\u307E\u3059\uFF09\u3002\u30D1\u30B9\u306E\u5909\u5316\u3092\u7573\u3080\u306A\u3089 $watch\u3001\u30A4\u30D9\u30F3\u30C8\u3092\u7573\u3080\u306A\u3089 $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u3001\u51FA\u529B\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044` : `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306E $watch \u304B $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u7573\u3093\u3067\u304F\u3060\u3055\u3044`,
+  typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
+  arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
+  arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  inPlaceAlias: (a, src, t) => `"${a}" \u306F ${src}\uFF08state \u306E\u5024\u305D\u306E\u3082\u306E\uFF09\u3067\u3059\u3002\u305D\u308C\u3092\u901A\u3057\u305F\u5909\u66F4\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u305B\u305A\u3001\u540C\u3058\u5024\u3092\u66F8\u304D\u623B\u3057\u3066\u3082\u4E00\u89A7\u306E\u884C\u306F\u8FFD\u52A0\u30FB\u524A\u9664\u30FB\u7F6E\u304D\u63DB\u3048\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${a}.with(i, item) / [...${a}, item] / { ...${a}, key: value }\uFF09`,
+  inPlaceChange: (src, t) => `${src} \u306F state \u306E\u5024\u3092\u305D\u306E\u5834\u3067\u5909\u3048\u308B\u306E\u3067\u3001\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044`,
+  tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5BA3\u8A00\u306B\u7121\u3044\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u675F\u7E1B\u3092 #38 \u3067\u62D2\u307F\u3001root \u3067\u306F state \u304C\u521D\u671F\u5316\u306B\u5931\u6557\u3057\u307E\u3059\uFF09`,
+  nameAlias: (written, canonical) => `"${written}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u3093\u3060\u6642\u70B9\u3067 throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  declarationAliasRead: (alias, canonical) => `"${alias}" \u306F 4.0 \u3067\u5916\u308C\u305F\u5BA3\u8A00\u30AD\u30FC\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u306A\u306E\u3067\u3001this["${alias}"] \u306F undefined \u306B\u306A\u308A\u307E\u3059\u3002\u5BA3\u8A00\u306F this \u3092\u901A\u3057\u3066\u8AAD\u3081\u307E\u305B\u3093 \u2014 "${canonical}" \u3092\u8AAD\u3093\u3067\u3082 undefined \u3067\u3059${canonical === "$stream" ? "\uFF08\u30B9\u30C8\u30EA\u30FC\u30E0\u306E\u72B6\u614B\u306F $streamStatus\u30FB$streamError \u3067\u8AAD\u307F\u307E\u3059\uFF09" : ""}`,
+  declarationAlias: (alias, canonical) => `\u5BA3\u8A00\u30AD\u30FC "${alias}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  declarationAliasInVolume: (alias, canonical, mountPath) => `\u5BA3\u8A00\u30AD\u30FC "${alias}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002"${canonical}" \u3082\u30DC\u30EA\u30E5\u30FC\u30E0\u3067\u306F\u5BA3\u8A00\u3067\u304D\u306A\u3044\u306E\u3067\u3001root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
+  behaviorNotObject: (keys) => `$behavior \u306F { ${keys.map((k) => `${k}?`).join(", ")} } \u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  behaviorKeyUnknown: (key, keys, suggestion2) => `"${key}" \u306F $behavior \u306E\u30AD\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${keys.join("\u30FB")} \u306E ${keys.length} \u3064\u3060\u3051\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09${suggestion2}`,
+  behaviorValueType: (key, type) => `$behavior \u306E "${key}" \u306F ${type === "boolean" ? "true \u304B false" : type} \u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  configInVolume: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5BA3\u8A00\u3067\u304D\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u307F\u3001console.error \u3067\u5831\u544A\u3057\u307E\u3059 \u2014 \u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044 \u2014 \u30DC\u30EA\u30E5\u30FC\u30E0\u306F root \u306E\u30A8\u30F3\u30B8\u30F3\u306B\u63A5\u304E\u6728\u3055\u308C\u307E\u3059`,
+  featuresNotArray: () => `$features \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u306E\u914D\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: ["temporal", "formats"]\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  featureUnknown: (name, names2, suggestion2) => `"${name}" \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${names2.join("\u30FB")}\uFF09${suggestion2}`,
+  volumeDeclarationRejected: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
+  volumeDeclarationNotRun: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F console.warn \u3067\u77E5\u3089\u305B\u3001\u3053\u306E\u5BA3\u8A00\u3092\u7121\u8996\u3057\u307E\u3059 \u2014 root \u306E state \u306E\u3082\u306E\u3067\u3059\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
+  partPathMissing: (path, tag, key, prop, object) => `<${tag}> \u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u30D1\u30B9 "${path}" \u306F\u89E3\u6C7A\u3057\u307E\u305B\u3093: "${key}" \u306F\u90E8\u54C1\u306E state \u306E\u30AD\u30FC\u3067\u306F\u306A\u304F\u3001\u6E21\u3055\u308C\u3066\u3082\u304A\u3089\u305A\uFF08${prop}.${key}: \u2026\uFF09\u3001${object === null ? `\u90E8\u54C1\u306F\u3069\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u3082\u30DE\u30A6\u30F3\u30C8\u3055\u308C\u3066\u3044\u307E\u305B\u3093\uFF08${prop}: \u2026\uFF09` : `\u30DE\u30A6\u30F3\u30C8\u5148\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\uFF08"${object}"\uFF09\u306B\u3082\u3042\u308A\u307E\u305B\u3093`}\u3002\u90E8\u54C1\u306E\u4E2D\u306E\u8AAD\u307F\u306F\u30DE\u30A6\u30F3\u30C8\u5148\u3078\u843D\u3061\u3066\u4F55\u3082\u5931\u6557\u3057\u306A\u3044\u306E\u3067\u3001\u8868\u793A\u306F\u7A7A\u306B\u306A\u308A\u307E\u3059\uFF08\u5B9F\u884C\u6642\u3082 [wcs/binding-path-missing] \u3067\u77E5\u3089\u305B\u307E\u3059\uFF09`,
+  partPathOfPage: (key, prop) => `\u3002"${key}" \u306F\u30DA\u30FC\u30B8\u306E state \u306E\u30D1\u30B9\u3067\u3059: \u90E8\u54C1\u304B\u3089\u306F\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u6E21\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}.${key}: ${key}\uFF09`,
+  dccBindComponent: (tag) => `<${tag} data-wc-definition> \u306E\u4E2D\u306E <wcs-state> \u306B bind-component \u304C\u3042\u308A\u307E\u3059\u3002DCC \u306E state \u306F\u5B9A\u7FA9\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u3082\u306E\u3067\u3001\u30A4\u30F3\u30B9\u30BF\u30F3\u30B9\u3054\u3068\u306B\u8AAD\u307F\u8FBC\u307E\u308C\u307E\u3059\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\uFF08a <wcs-state bind-component> cannot define a component\uFF09\u3001<${tag}> \u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093\u3002bind-component \u3092\u5916\u3059\u304B\u3001\u30AF\u30E9\u30B9\u306E\u90E8\u54C1\u3068\u3057\u3066\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  dccSecondState: (tag) => `<${tag} data-wc-definition> \u306B 2 \u3064\u76EE\u306E <wcs-state> \u304C\u3042\u308A\u307E\u3059\u3002\u5B9A\u7FA9\u306E state \u306F 1 \u3064\u3067\u3059: \u305D\u308C\u305E\u308C\u304C\u30BF\u30B0\u3092\u5B9A\u7FA9\u3057\u3088\u3046\u3068\u3057\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F 2 \u3064\u76EE\u3092\u62D2\u307F\u307E\u3059\uFF08<${tag}> is already defined\uFF09\u3002\u30A4\u30F3\u30B9\u30BF\u30F3\u30B9\u3067\u3082 2 \u3064\u76EE\u306E root \u3068\u3057\u3066\u62D2\u307E\u308C\u307E\u3059\u30021 \u3064\u306B\u307E\u3068\u3081\u3066\u304F\u3060\u3055\u3044`,
+  dccListNotArray: (key) => `${key} \u306F state \u306E\u30E1\u30F3\u30D0\u30FC\u540D\u306E\u30EA\u30B9\u30C8\u3067\u3059\uFF08${key}: ["name", \u2026]\uFF09\u3002\u30EA\u30B9\u30C8\u3067\u306A\u3044\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccEntryEmpty: (key) => `${key} \u306E\u9805\u76EE\u306F\u7A7A\u3067\u306A\u3044\u6587\u5B57\u5217\u3067\u3059\u3002\u7A7A\u306E\u9805\u76EE\u304C\u3042\u308B\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccEntryInternal: (key, name) => `${key} \u306E "${name}" \u306F $ \u3067\u59CB\u307E\u308A\u307E\u3059\u3002$ \u3067\u59CB\u307E\u308B\u30E1\u30F3\u30D0\u30FC\u306F\u5185\u90E8\u306E\u3082\u306E\u3067\u3001\u516C\u958B\u3067\u304D\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccEntryDuplicated: (key, name) => `${key} \u306B "${name}" \u304C 2 \u56DE\u3042\u308A\u307E\u3059\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccEntryMissing: (key, name) => `${key} \u306E "${name}" \u306F\u3001\u3053\u306E\u5B9A\u7FA9\u306E state \u306B\u3042\u308A\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccBindableIsMethod: (name) => `$bindables \u306E "${name}" \u306F\u30E1\u30BD\u30C3\u30C9\u3067\u3059\u3002\u30E1\u30BD\u30C3\u30C9\u306F $commands \u306B\u66F8\u304D\u307E\u3059\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccCommandIsValue: (name) => `$commands \u306E "${name}" \u306F\u30E1\u30BD\u30C3\u30C9\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u5024\u306F $bindables \u306B\u66F8\u304D\u307E\u3059\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u5B9A\u7FA9\u3092\u62D2\u307F\u3001\u30BF\u30B0\u306F\u3069\u306E\u30DA\u30FC\u30B8\u3067\u3082\u5B9A\u7FA9\u3055\u308C\u307E\u305B\u3093`,
+  dccAttribute: (tag, name) => `<${tag}> \u306E\u5165\u529B "${name}" \u3092\u5C5E\u6027\u3067\u66F8\u3044\u3066\u3044\u307E\u3059\u3002DCC \u306E\u5165\u529B\u306F $bindables \u306B\u4E26\u3079\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u3001\u5C5E\u6027\u306F\u8AAD\u307E\u308C\u307E\u305B\u3093: \u90E8\u54C1\u306F\u65E2\u5B9A\u306E\u307E\u307E\u3067\u3059\u3002\u675F\u306D\u308B\uFF08data-wcs="${name}: <\u30D1\u30B9>"\uFF09\u304B\u3001\u30D7\u30ED\u30D1\u30C6\u30A3\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  secondRoot: () => '\u540C\u3058 root \u306B 2 \u3064\u76EE\u306E <wcs-state> \u304C\u3042\u308A\u307E\u3059\u3002state \u306E\u6728\u306F root \u3054\u3068\u306B 1 \u3064\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5F8C\u304B\u3089\u8AAD\u307F\u8FBC\u3093\u3060\u65B9\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF09\u3002\u90E8\u5206\u6728\u306F <wcs-state mount="path"> \u3067\u63A5\u304E\u6728\u3057\u3066\u304F\u3060\u3055\u3044',
+  bindComponentSource: (prop, sources2) => `bind-component \u306E state \u306F\u30DB\u30B9\u30C8\u8981\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF08<\u30DB\u30B9\u30C8>.${prop || "\u2026"}\uFF09\u3060\u3051\u304B\u3089\u6765\u307E\u3059\u3002${sources2.join("\u30FB")} \u3068\u4F75\u8A18\u3059\u308B\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\u306F\u30DE\u30A6\u30F3\u30C8\u3055\u308C\u307E\u305B\u3093\uFF09\u3002state \u306F\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  indexParamRange: (key, max) => `"${key}" \u306F\u30EB\u30FC\u30D7\u306E\u6DFB\u5B57\u3067\u306F\u3042\u308A\u307E\u305B\u3093 \u2014 \u6DFB\u5B57\u306F $1 \u304B\u3089 $${max} \u307E\u3067\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u3093\u3060\u6642\u70B9\u3067 wcs/index-param-range \u3092\u6295\u3052\u307E\u3059\uFF09`,
+  indexParamNotPath: (key, max) => `"${key}" \u306F\u30EB\u30FC\u30D7\u306E\u6DFB\u5B57\u3067\u306F\u306A\u304F\uFF08\u6DFB\u5B57\u306F $1 \u304B\u3089 $${max} \u307E\u3067\uFF09\u3001"$" \u306E\u540D\u524D\u7A7A\u9593\u306B\u72B6\u614B\u306E\u30D1\u30B9\u3082\u3042\u308A\u307E\u305B\u3093 \u2014 \u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3092 wcs/binding-path-missing \u3067\u5931\u6557\u3055\u305B\u307E\u3059`,
+  featuresAttrNotRoot: () => `features \u5C5E\u6027\u3092\u8AAD\u3080\u306E\u306F\u6587\u66F8\u306E root \u306E <wcs-state>\uFF08mount \u3068 bind-component \u3092\u6301\u305F\u306A\u3044\u6700\u521D\u306E\u3082\u306E\uFF09\u3060\u3051\u3067\u3059\u3002\u3053\u306E\u8981\u7D20\u306E features \u306F\u7121\u8996\u3055\u308C\u307E\u3059 \u2014 root \u306E <wcs-state> \u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  onPrefixedMember: (member, tag, modifiers) => `"${member}" \u306F <${tag}> \u306E\u30E1\u30F3\u30D0\u30FC\u3067\u3059\u304C\u3001"on" \u3067\u59CB\u307E\u308B\u540D\u524D\u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\u306B\u306A\u308A\uFF08"${member.slice(2)}" \u30A4\u30D9\u30F3\u30C8\u3092\u5F85\u3064\uFF09\u3001\u5024\u306F\u5C4A\u304D\u307E\u305B\u3093\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3068\u3057\u3066\u675F\u7E1B\u3059\u308B\u306B\u306F ".${member}${modifiers ? `#${modifiers}` : ""}:" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08@wcstack/state 3.1\uFF09`,
+  tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  nativeCommandUnknown: (method, tag, allowed) => `"${method}" \u306F\u30CD\u30A4\u30C6\u30A3\u30D6\u306E <${tag}> \u306B command \u3067\u547C\u3079\u308B\u30E1\u30BD\u30C3\u30C9\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u547C\u3079\u308B\u306E\u306F ${allowed}\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u521D\u671F\u5316\u3067 wcs/token-misconfigured \u3092\u6295\u3052\u307E\u3059\uFF09`,
+  spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
+  tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  handleBoundAsValue: (name, tag) => `<${tag}> \u306E "${name}" \u306F\u751F\u304D\u305F\u30EA\u30BD\u30FC\u30B9\uFF08\u30CF\u30F3\u30C9\u30EB\uFF09\u3067\u3001\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002state \u306E\u30D1\u30B9\u306B\u675F\u306D\u308B\u3068\u3001\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3084 SSR \u306B\u8F09\u3089\u306A\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u304C state \u306B\u5165\u308A\u307E\u3059 \u2014 eventToken.${name}: \u3067\u53D7\u3051\u3001\u30B3\u30DE\u30F3\u30C9\u306E\u5F15\u6570\u3068\u3057\u3066\u6B21\u306E\u8981\u7D20\u3078\u76F4\u63A5\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
+  ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
+  liveRegionInserted: (attribute, by, condition) => `\u3053\u306E\u30E9\u30A4\u30D6\u30EA\u30FC\u30B8\u30E7\u30F3\uFF08${attribute}\uFF09\u306F\u3001${by === "route" ? "<wcs-route> \u306B\u5165\u3063\u305F\u3068\u304D" : by === "for" ? "for: \u306E\u884C\u304C\u8DB3\u3055\u308C\u305F\u3068\u304D" : "\u679D\u304C\u73FE\u308C\u305F\u3068\u304D"}\u306B\u6587\u3054\u3068\u633F\u5165\u3055\u308C\u307E\u3059\uFF08${condition === null ? "\u6587\u3092\u66F8\u3044\u3066\u6301\u3063\u3066\u3044\u307E\u3059" : `\u6587\u306F\u6761\u4EF6 "${condition}" \u304C\u8AAD\u3080\u3082\u306E\u306B\u675F\u306D\u3066\u3042\u308A\u3001\u679D\u306F\u305D\u306E\u6587\u3068\u4E00\u7DD2\u306B\u73FE\u308C\u307E\u3059`}\uFF09\u3002\u30B9\u30AF\u30EA\u30FC\u30F3\u30EA\u30FC\u30C0\u30FC\u304C\u8AAD\u307F\u4E0A\u3052\u308B\u306E\u306F\u30DA\u30FC\u30B8\u306B\u3042\u308B\u30EA\u30FC\u30B8\u30E7\u30F3\u306E\u6587\u304C\u5909\u308F\u3063\u305F\u3068\u304D\u306A\u306E\u3067\u3001\u3053\u306E\u6587\u306F\u8AAD\u307F\u4E0A\u3052\u3089\u308C\u307E\u305B\u3093\uFF08\u633F\u5165\u3057\u305F\u3068\u304D\u306B\u8AAD\u307F\u4E0A\u3052\u3089\u308C\u308B\u306E\u306F role="alert" \u3060\u3051\u3067\u3059\uFF09\u2014 \u805E\u304B\u305B\u305F\u3044\u77E5\u3089\u305B\u306F\u3001\u5E38\u306B\u30DA\u30FC\u30B8\u306B\u3042\u308B\u30EA\u30FC\u30B8\u30E7\u30F3\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044: \u30EA\u30FC\u30B8\u30E7\u30F3\u306F${by === "route" ? "\u30EB\u30FC\u30C8" : " template "}\u306E\u5916\u306B\u7F6E\u304D\u3001textContent: \u3092\u77E5\u3089\u305B\u308B\u6587\u306B\u675F\u306D\u3001\u77E5\u3089\u305B\u308B\u3053\u3068\u304C\u7121\u3044\u3068\u304D\u306F\u7A7A\u306B\u3059\u308B`,
+  didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
+  none: () => `\u306A\u3057`,
+  triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
+  storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
+  storageInitSeed: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u304C\u3001#init=element \u306F\u8981\u7D20\u306E\u5024\u3092\u3053\u306E\u30B9\u30ED\u30C3\u30C8\u3078\u5F15\u304D\u8FBC\u307F\u307E\u3059\u3002\u521D\u56DE\uFF08\u7A7A\u306E\u30AD\u30FC\uFF09\u306F null \u306A\u306E\u3067\u3001\u30B7\u30FC\u30C9\u306F null \u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059 \u2014 null \u3067\u30B7\u30FC\u30C9\u3057\u3066\u8AAD\u3080\u5074\u3067\u65E2\u5B9A\u5024\u3092\u88DC\u3046\uFF08\`this.${path} ?? \u2026\`\uFF09\u304B\u3001null \u3092\u7121\u8996\u3059\u308B setter \u3092\u6301\u3064\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
+  storagePairClobber: (path) => `<wcs-storage> \u306E value \u3092 #init=element \u306A\u3057\u3067\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2 "${path}" \u306B\u675F\u306D\u3066\u3044\u307E\u3059\u3002state \u306E\u5074\u304C\u5148\u306B\u66F8\u304F\u306E\u3067\u3001\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B getter \u306E\u6700\u521D\u306E\u5024\u304C\u4FDD\u5B58\u5024\u306E\u4E0A\u306B\u4FDD\u5B58\u3055\u308C\u3001setter \u306F\u4FDD\u5B58\u5024\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093 \u2014 #init=element \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\`value#init=element: ${path}\`\uFF09`,
+  inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: \u8981\u7D20\u306E\u5024\u3082\u53D7\u3051\u53D6\u308B\u306A\u3089\u3001setter \u3092\u6DFB\u3048\u305F\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092 ${input}#init=element: <getter> \u3067\u3002\u8981\u7D20\u306E\u5024\u3092\u53D7\u3051\u53D6\u3089\u306A\u3044\u306A\u3089\u3001\u4E00\u65B9\u5411\u306B ${input}#ro: <getter> \u3067\uFF08setter \u3082 #ro \u3082\u7121\u3044\u3068\u3001\u8981\u7D20\u304C\u77E5\u3089\u305B\u308B\u5024\u306E\u66F8\u304D\u623B\u3057\u304C getter \u306B\u62D2\u307E\u308C\u307E\u3059 \u2014 wcs/path-readonly\uFF09\u3002\u307E\u305F\u306F\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
+  inputNestedWriteOneShot: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u305A\u3001<${tag}> \u306F\u8981\u6C42\u306E\u305F\u3073\u306B "${input}" \u3092 null \u306B\u623B\u3059\u306E\u3067\u3001\u6B21\u306E\u8981\u6C42\u306F "${input}" \u306A\u3057\u3067\u9001\u3089\u308C\u307E\u3059 \u2014 \u8981\u6C42\u3092\u59CB\u3081\u308B\u30CF\u30F3\u30C9\u30E9\u3067\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4F5C\u3063\u3066\u4EE3\u5165\u3057\uFF08\`this.submitBody = { \u2026 }\`\uFF09\u3001\u305D\u308C\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
+  devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u304B\u3089\u3060\u3068\u3001DevTools \u306E\u30BF\u30A4\u30E0\u30E9\u30A4\u30F3\u306F\u4ED8\u3044\u305F\u6642\u70B9\u304B\u3089\u59CB\u307E\u308A\u307E\u3059\u3002\u65E2\u306B\u3042\u308B\u914D\u7DDA\u306F 4.0 \u304C\u9001\u308A\u76F4\u3057\u307E\u3059\uFF09`,
+  baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/">\uFF08\u307E\u305F\u306F\u305D\u308C\u3092\u4F5C\u308B <head> \u306E\u540C\u671F\u30B9\u30AF\u30EA\u30D7\u30C8 \u2014 basename \u306B\u30ED\u30B1\u30FC\u30EB\u3092\u7F6E\u304F\u5F62\uFF09\u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
+  routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
+  linkQueryKeyIgnored: (toKeys, named) => `\u3053\u306E <wcs-link> \u306E to \u304C\u4ED8\u3051\u308B\u30AD\u30FC\uFF08${toKeys}\uFF09\u306F\u3001\u3069\u308C\u3082 query-keys\uFF08${named}\uFF09\u306B\u3042\u308A\u307E\u305B\u3093\u3002query-keys \u306E\u3042\u308B\u30EA\u30F3\u30AF\u306F\u540D\u6307\u3057\u305F\u30AD\u30FC\u3060\u3051\u3092\u6BD4\u3079\u308B\u306E\u3067\u3001\u30EA\u30F3\u30AF\u81EA\u8EAB\u306E\u30AF\u30A8\u30EA\u306F\u5224\u5B9A\u306B\u52B9\u304B\u305A\u3001${named} \u304C\u5408\u3048\u3070 ${toKeys} \u304C\u4F55\u3067\u3082\u73FE\u5728\u306E\u30EA\u30F3\u30AF\u306B\u306A\u308A\u307E\u3059 \u2014 \u3053\u3046\u66F8\u3044\u305F\u30BF\u30D6\u306F\u540C\u6642\u306B\u3059\u3079\u3066\u73FE\u5728\u306B\u306A\u308A\u307E\u3059\u3002\u30EA\u30F3\u30AF\u304C\u8868\u3059\u30AD\u30FC\u3092\u540D\u6307\u3057\u3066\u304F\u3060\u3055\u3044\uFF08query-keys="${toKeys}"\uFF09`,
+  signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
+  signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
+  tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join("\u30FB")} \u306F ${pkg} \u306E\u30BF\u30B0\u3067\u3059\u304C\u3001\u3053\u306E\u30DA\u30FC\u30B8\u306F ${pkg} \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u3044\u307E\u305B\u3093\u3002\u8981\u7D20\u306F\u5B9A\u7FA9\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u675F\u7E1B\u306F\u5F85\u3061\u7D9A\u3051\u3066\u4F55\u3082\u8D77\u304D\u305A\u3001\u30B3\u30F3\u30BD\u30FC\u30EB\u306B\u3082\u4F55\u3082\u51FA\u307E\u305B\u3093 \u2014 <script type="module" src="${url}"></script> \u3067\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`,
+  linkRouterMissing: (to, n) => `\u3053\u306E\u30DA\u30FC\u30B8\u306B\u306F <wcs-router> \u304C\u7121\u3044\u306E\u3067\u3001\u3053\u306E <wcs-link to="${to}">${n > 1 ? `\uFF08\u3068\u30DA\u30FC\u30B8\u306E\u307B\u304B\u306E ${n - 1} \u500B\uFF09` : ""}\u306F\u63A5\u7D9A\u3057\u305F\u6642\u70B9\u3067 "[@wcstack/router] wcs-link is not connected to a router." \u3092\u6295\u3052\u3001\u30EA\u30F3\u30AF\u306F\u96A0\u308C\u307E\u3059\uFF08display: none\uFF09\u3002router \u306E\u7121\u3044\u30DA\u30FC\u30B8\u3067\u306F <a href="${to}"> \u3068\u66F8\u304F\u304B\u3001<wcs-router> \u3092\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
+  lintVersionBehind: (spec, version3, minor, lint) => `\u3053\u306E\u30DA\u30FC\u30B8\u306F ${spec} \u3092\u56FA\u5B9A\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E lint \u306E\u898F\u5247\uFF08@wcstack ${lint}\uFF09\u3088\u308A\u65B0\u3057\u3044 minor \u3067\u3059\u3002${minor} \u3067\u52A0\u308F\u3063\u305F\u898F\u5247\u306F\u691C\u67FB\u3055\u308C\u305A\u3001${minor} \u306E\u6B63\u3057\u3044\u66F8\u304D\u65B9\u304C error \u306B\u306A\u308B\u3053\u3068\u3082\u3042\u308A\u307E\u3059 \u2014 @wcstack/lint \u3092 ${version3} \u306B\u4E0A\u3052\u3066\u304F\u3060\u3055\u3044\uFF08npm i -D @wcstack/lint@${version3}\u3002VS Code \u306E\u62E1\u5F35\u306F ${minor} \u306B\u5BFE\u5FDC\u3059\u308B\u7248\u3078\uFF09`,
+  routeBareMustache: (inLayout) => inLayout ? `\u30EC\u30A4\u30A2\u30A6\u30C8\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u9077\u79FB\u3067\u306F\u675F\u306D\u3089\u308C\u307E\u305B\u3093 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<span>{{ \u2026 }}</span>\uFF09` : `<wcs-route> \u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u6700\u521D\u306B\u7740\u3044\u305F\u30EB\u30FC\u30C8\u3067\u3057\u304B\u675F\u306D\u3089\u308C\u307E\u305B\u3093\u3002\u9077\u79FB\u3067\u5165\u3063\u305F\u30EB\u30FC\u30C8\u3067\u306F\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<h1>{{ \u2026 }}</h1>\uFF09`,
+  layoutSlotMissing: (l) => `\u30EC\u30A4\u30A2\u30A6\u30C8 "${l}" \u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306B\u65E2\u5B9A\u306E <slot>\uFF08name \u306E\u7121\u3044\u3082\u306E\uFF09\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3053\u306E <wcs-layout> \u306E\u540D\u524D\u4ED8\u304D\u30B9\u30ED\u30C3\u30C8\u306E\u5916\u306E\u4E2D\u8EAB\uFF08\u5165\u308C\u5B50\u306E\u30EB\u30FC\u30C8\u3068\u305D\u306E\u30DA\u30FC\u30B8\uFF09\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093 \u2014 \u30DA\u30FC\u30B8\u3092\u7F6E\u304F\u5834\u6240\u306B <slot></slot> \u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
+  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case "empty":
+        return `"mount" \u306B\u306F\u7A7A\u3067\u306A\u3044\u9759\u7684\u306A\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
+      case "emptySegment":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u306E\u6BB5\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
+      case "wildcard":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306F\u9759\u7684\u3067\u306A\u3051\u308C\u3070\u306A\u308A\u307E\u305B\u3093 \u2014 "*" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
+      case "whitespace":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u767D\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
+      default:
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
+    }
+  },
+  recursionUnsupported: (p, where) => {
+    switch (where) {
+      case "binding":
+        return `"${p}" \u306E "**" \u306F data-wcs \u3067\u306F\u4F7F\u3048\u307E\u305B\u3093\u3002"**" \u306F $recursion \u5BA3\u8A00\u30FB\u518D\u5E30 getter \u306E\u30AD\u30FC\u30FB$getAll / $setAll \u306E\u30D1\u30B9\u5F15\u6570\u3060\u3051\u306E\u8A18\u53F7\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30D0\u30A4\u30F3\u30C9\u78BA\u7ACB\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002HTML \u3067\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+      case "watch":
+        return `$watch \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u76E3\u8996\u306F\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
+      case "resolve":
+        return `$resolve("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$resolve \u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\u3060\u3051\u3092\u53D7\u3051\u4ED8\u3051\u307E\u3059`;
+      case "update":
+        return `$update("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$update \u306F 1 \u3064\u306E\u30A2\u30C9\u30EC\u30B9\uFF08\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\uFF09\u3060\u3051\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059 \u2014 \u5168\u6DF1\u3055\u3078\u306F $setAll("${p}", [], value) \u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+      case "assignment":
+        return `this["${p}"] \u3078\u306E\u4EE3\u5165\u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u518D\u5E30 setter \u306F\u521D\u7248\u3067\u306F\u6301\u3066\u305A\u3001\u4EE3\u5165\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u306B\u3057\u304B\u6210\u7ACB\u3057\u307E\u305B\u3093\uFF09\u3002$setAll("${p}", [], value) \u3067\u5168\u6DF1\u3055\u3078\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u3059\u308B\u304B\u3001\u5177\u4F53\u30D1\u30B9\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+      case "postUpdate":
+        return `$postUpdate("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u901A\u77E5\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
+      case "dependOn":
+        return `$dependOn("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u4F9D\u5B58\u306E\u767B\u9332\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
+      case "trackDependency":
+        return `$trackDependency("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u4F9D\u5B58\u306E\u767B\u9332\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
+      case "listKeys":
+        return `$listKeys \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u30AD\u30FC\u4ED8\u304D\u30EA\u30B9\u30C8\u306F 1 \u672C\u306E\u5177\u4F53\u30EA\u30B9\u30C8\u30D1\u30B9\u3067\u3059 \u2014 \u6DF1\u3055\u3054\u3068\u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: "nodes.*.children"\uFF09`;
+      default:
+        return `"${p}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C\u3001\u3053\u306E state \u306B\u306F $recursion \u5BA3\u8A00\u304C\u3042\u308A\u307E\u305B\u3093\u3002$recursion = { "<anchor>": "<repeat>" }\uFF08\u4F8B: { "nodes.*": "children.*" }\uFF09\u3092\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u304C\u7121\u3044\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B #1101 \u3067 throw \u3057\u3001state \u306F\u521D\u671F\u5316\u306B\u5931\u6557\u3057\u307E\u3059\uFF09`;
+    }
+  },
+  recursionAnchorMismatch: (p, anchor) => `"${p}" \u306F\u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30A2\u30F3\u30AB\u30FC "${anchor}" \u3068\u5408\u81F4\u3057\u307E\u305B\u3093\uFF08\u521D\u7248\u306F state \u3054\u3068\u306B 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u3002"**" \u306E\u5F8C\u308D\u306F\u6574\u5F62\u3055\u308C\u305F\u63A5\u5C3E\u8F9E \u2014 2 \u3064\u76EE\u306E "**"\u30FB\u7A7A\u30BB\u30B0\u30E1\u30F3\u30C8\u30FB"**" \u76F4\u5F8C\u306E\u7D20\u306E "*" \u306F\u7F6E\u3051\u307E\u305B\u3093\uFF09`,
+  recursionGetAllForm: (p, problem) => problem === "notArray" ? `$getAll("${p}", indexes) \u306E "**" \u306E\u6DFB\u5B57\u306F\u3001\u7701\u7565\uFF08\u8A55\u4FA1\u4E2D\u306E\u518D\u5E30 getter \u306E\u6DF1\u3055\uFF09\u304B [] \uFF08\u5168\u6DF1\u3055\uFF09\u306E\u3069\u3061\u3089\u304B\u3067\u3059\u3002null \u3084\u914D\u5217\u3067\u306A\u3044\u5024\u306F\u6E21\u305B\u307E\u305B\u3093` : `$getAll("${p}", indexes) \u306E "**" \u306B\u975E\u7A7A\u306E\u63A5\u982D\u8F9E\u306F\u6E21\u305B\u307E\u305B\u3093\uFF08\u63A5\u982D\u8F9E\u306F\u3069\u306E\u6DF1\u3055\u306B\u9069\u7528\u3055\u308C\u308B\u304B\u3092\u8A00\u3048\u307E\u305B\u3093\uFF09\u3002\u6DFB\u5B57\u3092\u7701\u7565\u3059\u308B\u3068\u8A55\u4FA1\u4E2D\u306E\u518D\u5E30 getter \u306E\u6DF1\u3055\u3001[] \u3092\u6E21\u3059\u3068\u5168\u6DF1\u3055\u306B\u306A\u308A\u307E\u3059`,
+  recursionSetAllForm: (p, problem) => {
+    switch (problem) {
+      case "prefix":
+        return `$setAll("${p}", indexes, \u2026) \u306E "**" \u306B\u975E\u7A7A\u306E\u63A5\u982D\u8F9E\u306F\u6E21\u305B\u307E\u305B\u3093\uFF08\u63A5\u982D\u8F9E\u306F\u3069\u306E\u6DF1\u3055\u306B\u9069\u7528\u3055\u308C\u308B\u304B\u3092\u8A00\u3048\u307E\u305B\u3093\uFF09\u3002[] \u3092\u6E21\u3057\u3066\u5168\u6DF1\u3055\u3078\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u3057\u3066\u304F\u3060\u3055\u3044`;
+      case "noIndexes":
+        return `$setAll("${p}", \u2026) \u306E "**" \u306B\u306F\u660E\u793A\u7684\u306A\u7A7A\u306E\u6DFB\u5B57\u914D\u5217 [] \u304C\u5FC5\u8981\u3067\u3059\uFF08\u66F8\u304D\u8FBC\u307F API \u306F\u6587\u8108\u3092\u53D6\u308A\u307E\u305B\u3093\uFF09`;
+      case "mapper":
+        return `$setAll("${p}", \u2026) \u306E "**" \u306F mapper \u3092\u53D6\u308C\u307E\u305B\u3093\uFF08\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u672C\u6570\u304C\u6DF1\u3055\u3054\u3068\u306B\u5909\u308F\u308B\u305F\u3081\uFF09\u3002\u5B9A\u6570\u5024\u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`;
+      default:
+        return `$setAll("${p}", \u2026) \u306E "**" \u306F { spread: true } \u3092\u53D6\u308C\u307E\u305B\u3093\uFF08\u5E73\u5766\u306A\u914D\u5217\u3092\u6728\u306B\u914D\u308B\u306B\u306F\u4F5C\u8005\u304C\u8D70\u67FB\u9806\u3092\u77E5\u308B\u5FC5\u8981\u304C\u3042\u308A\u3001\u5951\u7D04\u306B\u306A\u308A\u307E\u305B\u3093\uFF09`;
+    }
+  },
+  recursionStructuralWrite: (p, target, repeatList) => {
+    switch (target) {
+      case "node":
+        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08\u30CE\u30FC\u30C9\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059 \u2014 \u30CE\u30FC\u30C9\u3092\u7F6E\u304D\u63DB\u3048\u308B\u3068\u3053\u306E\u66F8\u304D\u8FBC\u307F\u306E\u305F\u3081\u306B\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059`;
+      case "branch":
+        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\u3078\u81F3\u308B\u9014\u4E2D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059 \u2014 \u7F6E\u304D\u63DB\u3048\u308B\u3068\u305D\u306E\u4E0B\u306E\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059`;
+      case "length":
+        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\u306E length\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002length \u3078\u306E\u4EE3\u5165\u306F\u914D\u5217\u3092\u5207\u308A\u8A70\u3081\u308B\u306E\u3067\u3001\u30EA\u30B9\u30C8\u306E\u7F6E\u63DB\u3068\u540C\u3058\u304F\u305D\u306E\u4E0B\u306E\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059`;
+      default:
+        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059`;
+    }
+  },
+  recursionReadonly: (subject, getterPath) => `${subject} \u306F\u518D\u5E30 getter "${getterPath}" \u306B\u66F8\u304D\u8FBC\u307F\u307E\u3059\uFF08setter \u306F\u521D\u7248\u3067\u306F\u6301\u3066\u307E\u305B\u3093\u3002\u3053\u306E\u7DB4\u308A\u306F\u305D\u306E getter \u306E\u3042\u308B\u6DF1\u3055\u306E\u5C55\u958B\u5F62\u304B\u3001\u5C0E\u51FA\u5024\u306E\u5185\u5074\u3067\u3059\uFF09\u3002\u3053\u306E getter \u304C\u5C0E\u51FA\u5143\u306B\u3057\u3066\u3044\u308B\u5024\u306E\u5074\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  recursionInVolume: (subject, mountPath) => `${subject} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5BA3\u8A00\u3067\u304D\u307E\u305B\u3093\uFF08$recursion \u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u63A5\u304E\u6728\u3092\u62D2\u307F\u3001console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF09\u3002\u518D\u5E30\u306E\u5BA3\u8A00\u3068 "**" getter \u306F\u30EB\u30FC\u30C8\u306E state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 \u30A2\u30F3\u30AB\u30FC\u306E\u30D1\u30B9\u306F\u30EB\u30FC\u30C8\u306E\u6728\u306B\u5BFE\u3057\u3066\u89E3\u6C7A\u3055\u308C\u307E\u3059`,
+  recursionNotObject: () => `$recursion \u306F\u300C\u30A2\u30F3\u30AB\u30FC \u2192 \u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: { "nodes.*": "children.*" }\u3002\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  recursionAnchorCount: (count) => count === 0 ? `$recursion \u306B\u306F\u30A2\u30F3\u30AB\u30FC\u304C\u3061\u3087\u3046\u3069 1 \u3064\u5FC5\u8981\u3067\u3059\uFF08\u7A7A\u306E\u5BA3\u8A00\u3067\u3059\uFF09` : `$recursion \u304C ${count} \u500B\u306E\u30A2\u30F3\u30AB\u30FC\u3092\u5BA3\u8A00\u3057\u3066\u3044\u307E\u3059\u3002\u521D\u7248\u306F state \u3054\u3068\u306B\u3061\u3087\u3046\u3069 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u5BFE\u5FDC\u3057\u307E\u3059`,
+  recursionNodePathInvalid: (kind, path, problem) => {
+    const subject = kind === "anchor" ? "$recursion \u306E\u30A2\u30F3\u30AB\u30FC" : "$recursion \u306E\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9";
+    switch (problem) {
+      case "empty":
+        return `${subject}\u306F\u7A7A\u3067\u306A\u3044\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`;
+      case "emptySegment":
+        return `${subject} "${path}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`;
+      case "notElement":
+        return `${subject} "${path}" \u306F\u30EA\u30B9\u30C8\u306E\u8981\u7D20\u3092\u6307\u3059\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059 \u2014 \u672B\u5C3E\u304C ".*" \u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30D1\u30B9\uFF08\u4F8B: "nodes.*"\uFF09\u306B\u3057\u3066\u304F\u3060\u3055\u3044`;
+      case "reservedRoot":
+        return `${subject} "${path}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`;
+      case "reservedMount":
+        return `${subject} "${path}" \u306B "#" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30DE\u30A6\u30F3\u30C8\u7528\u306E\u4E88\u7D04\u30BB\u30B0\u30E1\u30F3\u30C8\uFF09`;
+      case "midWildcard":
+        return `${subject} "${path}" \u306E "*" \u306F\u672B\u5C3E\u306B\u3061\u3087\u3046\u3069 1 \u3064\u3060\u3051\u7F6E\u3051\u307E\u3059\uFF08\u9014\u4E2D\u306E\u30EF\u30A4\u30EB\u30C9\u30AB\u30FC\u30C9\u306F\u521D\u7248\u3067\u306F\u672A\u5BFE\u5FDC\uFF09`;
+      case "indexSegment":
+        return `${subject} "${path}" \u306B\u6DFB\u5B57\u30BB\u30B0\u30E1\u30F3\u30C8\u306F\u542B\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u518D\u5E30\u306F\u6728\u306E\u5F62\u306B\u5BFE\u3059\u308B\u5BA3\u8A00\u3067\u3042\u3063\u3066\u30011 \u884C\u306B\u5BFE\u3059\u308B\u5BA3\u8A00\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF09`;
+      default:
+        return `${subject} "${path}" \u306B "**" \u306F\u542B\u3081\u3089\u308C\u307E\u305B\u3093\uFF08"**" \u306B\u610F\u5473\u3092\u4E0E\u3048\u308B\u306E\u304C\u3053\u306E\u5BA3\u8A00\u305D\u306E\u3082\u306E\u3067\u3059\uFF09`;
+    }
+  },
+  recursionRepeatNotString: (anchor) => `$recursion \u306E\u30A8\u30F3\u30C8\u30EA "${anchor}" \u306E\u5024\u306F\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u306E\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: "children.*"\uFF09`,
+  recursionGetterInvalid: (key, problem, anchor) => {
+    switch (problem) {
+      case "setter":
+        return `\u518D\u5E30 setter \u306F\u521D\u7248\u3067\u306F\u672A\u5BFE\u5FDC\u3067\u3059: "${key}"\u3002\u901A\u5E38\u306E\u30D1\u30B9 setter \u3092\u5BA3\u8A00\u3059\u308B\u304B\u3001\u5177\u4F53\u30D1\u30B9\u7D4C\u7531\u3067\u66F8\u304D\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`;
+      case "notGetter":
+        return `"${key}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C getter \u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002"**" \u306F\u8A08\u7B97\u30D1\u30B9\u306E\u65CF\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3059`;
+      case "structural":
+        return `"${key}" \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08\u30CE\u30FC\u30C9\u30FB\u5B50\u30EA\u30B9\u30C8\u30FB\u305D\u306E length\u30FB\u5B50\u30EA\u30B9\u30C8\u3078\u81F3\u308B\u9014\u4E2D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\uFF09\u3092\u540D\u6307\u3057\u3066\u3044\u307E\u3059\u3002\u518D\u5E30 getter \u306F\u5168\u6DF1\u3055\u3067\u5B9F\u30C7\u30FC\u30BF\u306E\u5B50\u30EA\u30B9\u30C8\u3092\u5F71\u306B\u3057\u3066\u3057\u307E\u3044\u307E\u3059\u3002"**" \u306F\u30CE\u30FC\u30C9\u306E\u4E0B\u306E\u8A08\u7B97\u30D1\u30B9\uFF08\u4F8B: "${anchor}.total"\uFF09\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3059`;
+      default:
+        return `"${key}" \u306F\u518D\u5E30\u30CE\u30FC\u30C9\u81EA\u8EAB\u3092\u540D\u6307\u3057\u3066\u3044\u307E\u3059\u3002"**" \u306F\u30CE\u30FC\u30C9\u306E\u4E0B\u306E\u8A08\u7B97\u30D1\u30B9\uFF08\u4F8B: "${anchor}.total"\uFF09\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3001\u30CE\u30FC\u30C9\u305D\u306E\u3082\u306E\u3067\u306F\u3042\u308A\u307E\u305B\u3093`;
+    }
+  },
+  recursionGetterCollision: (a, b, repeat2) => `"${a}" \u3068 "${b}" \u306F\u7570\u306A\u308B\u6DF1\u3055\u3067\u540C\u3058\u5177\u4F53\u30D1\u30B9\u3078\u5C55\u958B\u3057\u307E\u3059\uFF08\u5DEE\u304C "${repeat2}" \u306E\u6574\u6570\u56DE\u3076\u3093\u3067\u3059\uFF09\u3002\u3069\u3061\u3089\u304B\u306E\u540D\u524D\u3092\u5909\u3048\u3066\u304F\u3060\u3055\u3044`,
+  recursionConcreteCollision: (concreteKey, recursiveKey) => `"${concreteKey}" \u306F state \u306B\u5B9A\u7FA9\u6E08\u307F\u306A\u306E\u3067\u3001\u518D\u5E30 getter "${recursiveKey}" \u306F\u305D\u3053\u3078\u5C55\u958B\u3067\u304D\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5BA3\u8A00\u3092\u8AAD\u3093\u3060\u6642\u70B9\u3067 throw \u3057\u307E\u3059\uFF09\u3002\u3069\u3061\u3089\u304B\u306E\u540D\u524D\u3092\u5909\u3048\u3066\u304F\u3060\u3055\u3044`
+};
+var EN_EXPECTED_LABEL = {
+  array: "an array-typed path",
+  boolean: "a boolean",
+  string: "a string"
+};
+var en = {
+  spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
+  spreadTargetRequired: () => `Spread requires a target path`,
+  structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
+  bindingSyntax: (detail) => `Binding syntax error (the runtime throws at load time): ${detail}`,
+  eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
+  commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
+  commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
+  commandTokensAbsent: (t, name) => `Command token "${t}" is not declared: this state has no $commandTokens. Add $commandTokens: ["${name}"] to the state`,
+  eventTokensAbsent: (t) => `Event token "${t}" is not declared: this state has no $eventTokens. Add $eventTokens: ["${t}"] to the state`,
+  onEntryUndeclared: (t, absent) => `The $on entry "${t}" is not declared in $eventTokens${absent ? " (this state has none)" : ""}, so the state fails to load and the page is not initialized ($on entry "${t}" is not declared in $eventTokens). ${absent ? `Add $eventTokens: ["${t}"]` : `Add "${t}" to $eventTokens`}`,
+  streamPathMissing: (p) => `Path "${p}" does not exist in the $stream declaration`,
+  pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
+  pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
+  pathTypeMismatch: (p, label, expected, actual) => `Path "${p}" is ${actual} in the stateSchema, but ${label} requires ${expected === "array" ? "an array" : expected === "boolean" ? "a boolean" : "a string"}`,
+  expansionSuffix: (x) => ` (expanded: ${x})`,
+  patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for> (4.0 throws #1401 at init)`,
+  omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for> (4.0 throws #1402 at init)`,
+  loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for> (4.0 throws #1401 at init)`,
+  indexArity: (api, p, req, wc, actual) => `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
+  wildcardRank: (subject, needed, available) => `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
+  wildcardOtherList: (p, over, loop) => `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}" (4.0 throws when the binding is established). A "*" in a binding is the row of the loop around it \u2014 read a row of another list in a getter, with $resolve(path, indexes)`,
+  outerInTemplate: (prop) => `"${prop}:" replaces its element, so it cannot be used inside a "for" / "if" template (a row or branch keeps its nodes by position; 4.0 throws at init). Bind innerHTML: on a wrapper element instead`,
+  directNotEvent: (prop) => `The #direct modifier applies only to event bindings (on*:); it is ignored on "${prop}"`,
+  delegatedCurrentTarget: (suggested, eventName, handler) => `"${eventName}" bindings are delegated to the root, so event.currentTarget in "${handler}" is the root, not this element. Write "${suggested}:" to keep the listener on the element, or find the element with event.target.closest(...)`,
+  getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
+  updatedCallbackUnbound: (p) => `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
+  onHandlerThis: (name) => `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = \u2026 }\`) and this is undefined, so this.\u2026 throws when it is called \u2014 unlike $watch handlers and methods`,
+  getterReadsLocation: (read) => `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state \u2014 bind <wcs-router>'s path / searchParams`,
+  getterReadsClock: (read) => `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state \u2014 bind the value <wcs-raf> or <wcs-timer> writes`,
+  getterReadsAmbient: (read, kind) => {
+    const head = `This getter reads ${read}, which is not state, so it is not a dependency: the getter is cached and keeps returning its first value`;
+    switch (kind) {
+      case "size":
+        return `${head} (a resize does not re-evaluate it). Keep the size in state \u2014 bind the width / height <wcs-resize> writes (for a breakpoint, <wcs-media-query>'s matched)`;
+      case "pixelRatio":
+        return `${head} (a zoom or a move to another screen does not re-evaluate it). Bind <wcs-media-query>'s matched for the resolution thresholds the page uses (query="(min-resolution: 2dppx)")`;
+      case "media":
+        return `${head} (the query starting or ceasing to match does not re-evaluate it). Bind <wcs-media-query>'s matched instead (<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">)`;
+      case "online":
+        return `${head} (going offline or coming back does not re-evaluate it). Bind <wcs-network>'s offline instead`;
+      case "scroll":
+        return `${head} (scrolling does not re-evaluate it). No wcstack element gives the scroll position: keep the value in state and write it from an event handler (a scroll listener)`;
+      default:
+        return `${head} (the page being hidden or shown does not re-evaluate it). No wcstack element gives the page's visibility: keep the value in state and write it from an event handler (a visibilitychange listener)`;
+    }
+  },
+  updatedCallbackUnknownPath: (p) => `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
+  commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.<method>: ${t}, with <method> the name of that element's method)`,
+  writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  pathReadonlyWrite: (p) => `"${p}" is a getter without a setter, so this write throws each time it runs ("${p}" is a getter without a setter). Add a setter that writes what the getter reads (set "${p}"(v) { \u2026 }), or write those values instead`,
+  getterWrite: (p, g, via) => `The getter "${g}" writes "${p}" while it is evaluated${via === void 0 ? "" : ` (in the method "${via}" it calls)`}. A getter only reads: the write throws each time the getter is evaluated. Write it from a method, a setter or a $watch handler, or compute the value in a getter of its own`,
+  setterCycleSelf: (p) => `The setter of "${p}" writes its own path "${p}". A setter's path is the accessor itself: writing it calls the setter again, until the stack overflows. Store the value under a data path the getter reads (such as _${p.split(".").pop()})`,
+  setterCycle: (cycle) => `Setters write each other: ${cycle}. Unless a condition stops them, they call each other until the stack overflows. Store the values under data paths the getters read`,
+  setterUnobserved: (p, w) => `The setter of "${p}" writes ${w}, none of which the getter "${p}" reads. After a write the getter returns its old value, and a two-way input bound to "${p}" goes back to it. Write what the getter reads, or read what the setter writes in the getter`,
+  relativePathOf: (r, a) => ` ("${r}" in the accessor "${a}")`,
+  relativeNoRow: (r, a) => `"${r}" is relative to a row, but the accessor "${a}" is not one of a list's rows (its key has no "*"). With no row it throws each time it is evaluated (#1402). Write the full path, or make it a row accessor (get "<list>.*.<name>"())`,
+  relativeApiPath: (r, api) => `"${r}" is relative to a row, but ${api} takes its rows from its indexes argument, not from the row it is called at. A relative path is not expanded there, and the call throws. Write the full path ("<list>.*${r === "." ? "" : r}")`,
+  accessorListSyntax: (k, why) => `The accessor key "${k}" lists several paths, but ${why === "space" ? "has a space beside a comma" : why === "empty" ? "has an empty entry" : 'a recursive path ("**") cannot be listed'}. Separate the paths with "," alone (get "users.*.fullname,employees.*.fullname"())${why === "recursive" ? "" : ": the runtime takes what is between the commas as it is, so this declares a path nothing reads"}`,
+  accessorListPath: (p, list, other, rel) => `"${p}" is a path of the rows of "${list}", and this accessor is also declared for "${other}": at its rows that path has no row, so a read gives undefined and a write throws. Write it relative to the row: this["${rel}"]`,
+  nestedWritePathMissing: (p) => `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
+  readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
+  stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
+  stateAbsent: (tag) => `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
+  pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathDynamicUnknownType: (path, n, type) => `The JSDoc type ${type} of "${path}" cannot be read, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked (read are an export interface / export type of a file it can read, and a @typedef in a .js). Write the shape in place, make it a @typedef in the same script, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  stateSchemaDrift: (inScript, inSchema) => `The stateSchema applied to this page disagrees with its state's script${inScript.length > 0 ? ` (in the script, not in the schema: ${listKeys(inScript)})` : ""}${inSchema.length > 0 ? ` (in the schema, not in the script: ${listKeys(inSchema)})` : ""}. The schema is derived from a script: it is stale, or another state's (another page's). Checked against it, a binding to a renamed key passes and a key is said not to exist. Regenerate it with wcs-schema emit (the manifest it writes names its state file in stateSource, and the lint applies it only to the pages that load that file), and run wcs-schema check in CI to stop the drift`,
+  pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" is written by "${member}" of <${tag}>, an output, so it holds whatever the element gives: its shape cannot be read statically, and the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
+  pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
+  pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
+  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) => `"${p}" is a getter without a setter, but "${member}"${spread === void 0 ? "" : `, which "${spread}" binds,`} is ${twoWay ? "a member <" + tag + "> writes too (an output as well as an input)" : "an output of <" + tag + ">"}: the element writes its value to "${p}", and ${atInit ? "the write made when it is bound fails, so the state fails to initialize" : "that write fails each time the element reports a value"} ("${p}" is a getter without a setter). ${spread !== void 0 ? `Add a setter (set "${p}"(v) { \u2026 }), or bind "${member}" to a data path after the spread (${spread}; ${member}: <a data key>)` : !twoWay ? `Bind a data path and read it in the getter (${member}: <a data key>), or add a setter (set "${p}"(v) { \u2026 })` : atInit ? `Add a setter (set "${p}"(v) { \u2026 }), or take the first value from the state (remove #init=element)` : `Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${member}#ro: ${p} \u2014 the state still writes the element)`}`,
+  submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
+  guardReadsAtModuleTop: (r) => `The guard's module reads ${r} at its top level, outside the function it exports. The module is evaluated once, when the page loads, so the guard keeps the value it read then and decides every navigation with it (after a login, the session is still not there). Read it inside the exported function, which runs on every navigation`,
+  stateReadsAtModuleTop: (r) => `The state's module reads ${r} at its top level. The module is evaluated once per <wcs-state>, so the state keeps the value it read when the page loaded (a token or a session that changes later is not seen). Keep the value in state (bind it with <wcs-storage>), or read it inside the method that uses it`,
+  eventTokenUnbound: (t, handler) => `The event token "${t}" is declared in $eventTokens, but no eventToken.<member>: ${t} binding in this document emits it: no element fires it, so ${handler ? "its $on handler never runs" : "it never fires"}. Bind it on the element whose event should fire it (eventToken.<member>: ${t}, with <member> a wcBindable property of that element), or remove it from $eventTokens`,
+  objectKeyAssign: (t, acc, sp) => `This assigns a key of "${t}" in place. The state does not see the write, so no binding, getter or $watch that reads it changes, and nothing is rendered again. Assign a new object (${acc} = { ...${acc}, [key]: value }), or write the dot path this["${sp}"] = \u2026`,
+  getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
+  getterUntrackedReadBound: (root, sp, binding, tag, written) => `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
+  handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
+  typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
+  attrBooleanPresence: (a, p, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" \u2014 and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
+  attrBooleanText: (a, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence \u2014 [${a}] in CSS, hasAttribute() \u2014 finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
+  radioBeforeValue: (binding, value, checkbox, fix) => `"${binding}:" is written before "${value}:", which gives this ${checkbox ? "checkbox" : "radio"} its value. Bindings are applied in the order written, so it is compared while its value is still the browser's default "on": nothing is checked at the first render \u2014 nothing says so, and a later write of the state checks the right one. Write the value first: ${fix}`,
+  radioNameShared: (name, binding) => `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render \u2014 nothing says so. ${binding === "radio" ? "Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it" : "Bind a name that differs per row (attr.name: .<a row field>) \u2014 or, for one choice over all the rows, bind them all to one path: value: .<the row's id>; radio: <path>"}`,
+  numberWrittenAsString: (path, left, asNumber) => `"${path}" is a number in the state, but value: writes back what the element holds, a string: after the user enters 5 the state has "5", and "5" + 1 is "51" \u2014 nothing says so. Convert it on the way in: ${asNumber ? `valueAsNumber: ${path}, or ` : ""}an input filter on the left side, ${left}|number: ${path} (also |int, |float)`,
+  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types \u2014 the caret jumps to the end, an IME composition is cut \u2014 and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}` : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: \u2026), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
+  bodyBinding: (tag, attribute) => `${attribute} on <${tag}> is never bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so the bindings written here do nothing (an event handler never runs; class., attr. and the rest are never written). Move the binding to an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch handler (document.documentElement.lang = \u2026)`,
+  linkHandler: (property, handler) => `"${property}:" on <wcs-link> never runs "${handler}": the <wcs-link> itself is display: none, and what the user clicks is the <a> it generates beside itself, so no event reaches the host. Put the handler on an element inside the link (its children move into the <a>) or on an element around it; to navigate from a handler, write the router's navigateUrl (data-wcs="navigateUrl: \u2026" on <wcs-router>)`,
+  rootMarginUnit: (tag, value, refused, suggested) => {
+    const why = refused.length === 0 ? "it takes one to four values" : `${refused.map((t) => `"${t}"`).join(", ")} ${refused.length === 1 ? "is not a number" : "are not numbers"} with px or %${refused.some(isUnitlessZero) ? " (a 0 needs its unit too)" : ""}`;
+    const effect = tag === "wcs-intersect" ? "the element observes nothing and observing stays false" : "the element observes nothing and no page is loaded";
+    return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? "Write one to four values, each a number with px or %" : `Write root-margin="${suggested}"`}`;
+  },
+  frequencyInvalid: (tag, value, suggested) => `frequency="${value}" is not a positive number, so <${tag}> reads it as "none" and the sensor runs at the browser's default rate, without a word. ${suggested === null ? "Write a positive number (Hz), or remove the attribute for the default rate" : `Write the number alone: frequency="${suggested}"`}`,
+  targetSelector: (tag, value) => `The target of <${tag}> is a CSS selector: target="${value}" selects <${value}> elements, and this document has none \u2014 it has an element with id="${value}". No target is found, so ${TARGET_EFFECT_EN[tag] ?? "the element does nothing"}. To name the id, write target="#${value}"`,
+  commandEventArgument: (property, token, tag, method, more) => `"${property}: ${token}" emits the token straight from the event, so the commands that receive it are called with the event as their first argument. ${method}() of <${tag}> takes an argument there, and gets the event: ${method}(event)${more > 0 ? ` (and ${more} more such ${more === 1 ? "receiver" : "receivers"})` : ""}. Emit from a state method instead \u2014 write ${property}: <method>, with <method>() { this.${token}.emit(\u2026) } passing what ${method}() takes (emit with no argument when there is nothing to pass)`,
+  outputPathWritten: (path, tag, member, commands) => `"${path}" is bound to "${member}" of <${tag}>, an output: the element writes it, and a write from a script does not reach the element. Assigning true makes the element do nothing \u2014 only the page now says so. ${commands.length === 0 ? `<${tag}> has no command: the value is the element's to report. Remove the assignment` : `Ask the element with a command (${commands.join(", ")} \u2014 bind command.<method>: $command.<name> and call this.$command.<name>.emit() here), and let the element write "${path}"`}`,
+  filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
+  filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") \u2014 write "${c}"`,
+  substrRemoved: (rewrite) => `Filter "substr" was removed in 4.0 \u2014 write slice(start, start + length): slice takes the end index, not a length${rewrite === null ? "" : ` (here: ${rewrite})`}`,
+  filterMinArgs: (n, min, c) => `Filter "${n}" requires at least ${min} argument(s) (${c} given)`,
+  filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
+  filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
+  filterInputType: (n, accepts, cur) => `Filter "${n}" requires input of type ${accepts} (current type: ${cur})`,
+  filterArgEnum: (n, arg, members, suggestion2) => `${arg} in "${n}(${arg})" is not a value the compared value takes (${members.join(" | ")}): it is ${n === "ne" ? "always true" : "never true"}${suggestion2}`,
+  moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
+  moustacheFoucTextParent: (e, tag) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). A comment binding is not bound inside <${tag}>: bind the element instead (<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">).`,
+  textBindingInHead: (w) => `${w} is in the document's <head>, and a <wcs-state> binds only the <body> and shadow roots, so it stays as written. Write document.title from the state's script ($connectedCallback and a $watch handler), or put the <title> in a route's <wcs-head>`,
+  nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
+  watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
+  watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
+  watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
+  watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
+  watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
+  scanRemoved: (mountPath) => mountPath === null ? `$scan was removed in 4.0 (the entries with the diagnostics add-on, such as /auto, throw at load; /core alone ignores it). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there` : `$scan was removed in 4.0. In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). Fold in a $watch or $on handler on the root state`,
+  typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
+  arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
+  arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
+  inPlaceAlias: (a, src, t) => `"${a}" is ${src} \u2014 the state's own value. A change through it does not trigger a reactive update, and writing the same value back does not add, remove or replace a list's rows. Build a new value and assign it to ${t} (${a}.with(i, item), [...${a}, item], { ...${a}, key: value })`,
+  inPlaceChange: (src, t) => `${src} changes the state's value in place, which does not trigger a reactive update. Build a new value and assign it to ${t}`,
+  tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (the runtime refuses a binding to an undeclared member with #38; at the root the state fails to initialize)`,
+  nameAlias: (written, canonical) => `"${written}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws when it is read) \u2014 write "${canonical}"`,
+  declarationAliasRead: (alias, canonical) => `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. A declaration cannot be read through this \u2014 reading "${canonical}" is undefined too${canonical === "$stream" ? " (read a stream's state from $streamStatus / $streamError)" : ""}`,
+  declarationAlias: (alias, canonical) => `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws at load time) \u2014 write "${canonical}"`,
+  declarationAliasInVolume: (alias, canonical, mountPath) => `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"). In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). "${canonical}" cannot be declared in a volume either \u2014 declare it on the root state`,
+  behaviorNotObject: (keys) => `$behavior must be an object { ${keys.map((k) => `${k}?`).join(", ")} } (the runtime throws at load time)`,
+  behaviorKeyUnknown: (key, keys, suggestion2) => `"${key}" is not a $behavior key (only ${keys.join(", ")}; the runtime throws at load time)${suggestion2}`,
+  behaviorValueType: (key, type) => `$behavior "${key}" must be ${type === "boolean" ? "true or false" : type} (the runtime throws at load time)`,
+  configInVolume: (key, mountPath) => `${key} cannot be declared in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state \u2014 a volume is grafted onto the root's engine`,
+  featuresNotArray: () => `$features must be an array of add-on names (for example ["temporal", "formats"]; the runtime throws at load time)`,
+  featureUnknown: (name, names2, suggestion2) => `"${name}" is not an add-on (${names2.join(", ")})${suggestion2}`,
+  volumeDeclarationRejected: (key, mountPath) => `${key} is not run in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state`,
+  volumeDeclarationNotRun: (key, mountPath) => `${key} is not run in a volume (mount="${mountPath}"): the runtime says so with console.warn and ignores this declaration \u2014 it belongs to the root state. Declare it there`,
+  partPathMissing: (path, tag, key, prop, object) => `Path "${path}" in <${tag}>'s template does not resolve: "${key}" is not a key of the part's state, it is not handed to it (${prop}.${key}: \u2026), and ${object === null ? `the part is mounted on no object (${prop}: \u2026)` : `the object it is mounted on ("${object}") has no such key`}. Inside a part a read falls through to that object and fails nothing, so the field is empty (the runtime says so with [wcs/binding-path-missing])`,
+  partPathOfPage: (key, prop) => `. "${key}" is a path of the page's state: a part does not read it there \u2014 hand it over (${prop}.${key}: ${key})`,
+  dccBindComponent: (tag) => `The <wcs-state> in <${tag} data-wc-definition> has bind-component. A DCC's state belongs to the definition's template and is loaded per instance: the runtime refuses this definition (a <wcs-state bind-component> cannot define a component), and <${tag}> is defined on no page. Drop bind-component, or write the part as a class`,
+  dccSecondState: (tag) => `A second <wcs-state> in <${tag} data-wc-definition>. A definition has one state: each tries to define the tag, and the runtime refuses the second (<${tag}> is already defined) \u2014 and in an instance, as a second root. Put them in one`,
+  dccListNotArray: (key) => `${key} is a list of the state's member names (${key}: ["name", \u2026]). The runtime refuses a definition where it is not a list, and the tag is defined on no page`,
+  dccEntryEmpty: (key) => `An entry of ${key} is a non-empty string. The runtime refuses a definition with an empty one, and the tag is defined on no page`,
+  dccEntryInternal: (key, name) => `"${name}" in ${key} starts with $: such members are internal and are never exposed. The runtime refuses this definition, and the tag is defined on no page`,
+  dccEntryDuplicated: (key, name) => `"${name}" is listed twice in ${key}. The runtime refuses this definition, and the tag is defined on no page`,
+  dccEntryMissing: (key, name) => `"${name}" in ${key} is not a member of this definition's state. The runtime refuses this definition, and the tag is defined on no page`,
+  dccBindableIsMethod: (name) => `"${name}" in $bindables is a method: list it in $commands. The runtime refuses this definition, and the tag is defined on no page`,
+  dccCommandIsValue: (name) => `"${name}" in $commands is not a method: list a value in $bindables. The runtime refuses this definition, and the tag is defined on no page`,
+  dccAttribute: (tag, name) => `<${tag}>'s input "${name}" is written as an attribute. A DCC's inputs are the properties its $bindables lists: the attribute is not read, and the part shows its default. Bind it (data-wcs="${name}: <path>") or set the property`,
+  secondRoot: () => 'A second <wcs-state> on the same root: there is one state tree per root (the runtime refuses the one that loads second and reports it with console.error). Graft a subtree with <wcs-state mount="path">',
+  bindComponentSource: (prop, sources2) => `A bind-component state comes only from the host element's property (<host>.${prop || "\u2026"}): combined with ${sources2.join(", ")}, the runtime refuses to load it and reports that with console.error (the component does not mount). Write the state on the component's property`,
+  indexParamRange: (key, max) => `"${key}" is not a loop index: list index parameters run from $1 to $${max} (the runtime throws wcs/index-param-range when it is read)`,
+  indexParamNotPath: (key, max) => `"${key}" is not a loop index (they run from $1 to $${max}) and the "$" namespace holds no state path: the runtime fails this binding with wcs/binding-path-missing`,
+  featuresAttrNotRoot: () => `The features attribute is read only on the document's root <wcs-state> (the first one without mount and bind-component); it is ignored here \u2014 put it on the root <wcs-state>`,
+  onPrefixedMember: (member, tag, modifiers) => `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}${modifiers ? `#${modifiers}` : ""}:" to bind the property (@wcstack/state 3.1)`,
+  tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  nativeCommandUnknown: (method, tag, allowed) => `"${method}" is not a command of a native <${tag}> (its commands: ${allowed}; the runtime throws wcs/token-misconfigured at initialization)`,
+  spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
+  tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
+  handleBoundAsValue: (name, tag) => `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state \u2014 receive it with eventToken.${name}: and hand it to the next element as a command argument`,
+  ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
+  liveRegionInserted: (attribute, by, condition) => `This live region (${attribute}) is inserted with its text when ${by === "route" ? "its <wcs-route> is entered" : by === "for" ? "its for: row is added" : "its branch appears"} (${condition === null ? "it holds text written in the markup" : `its text is bound to what the condition "${condition}" reads, so the branch appears with the text`}). A screen reader announces a region whose text changes while it is in the page, so this text is not announced (an inserted role="alert" is the one form announced on insertion) \u2014 a status message meant to be heard belongs in a region that is always in the page: keep the region outside the ${by === "route" ? "route" : "template"}, bind its textContent: to the message, and empty it when there is nothing to say`,
+  didYouMean: (c) => `. Did you mean "${c}"?`,
+  none: () => `none`,
+  triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
+  storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
+  storageInitSeed: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null \u2014 seed it with null and supply the default where you read it (\`this.${path} ?? \u2026\`), or bind an accessor pair whose setter ignores null`,
+  storagePairClobber: (path) => `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it \u2014 add #init=element (\`value#init=element: ${path}\`)`,
+  inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value: with a setter beside it to take the element's value in as well (the accessor pair, ${input}#init=element: <getter>), or one way when the element's value is not taken in (${input}#ro: <getter> \u2014 with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "${path}" instead of writing below it`,
+  inputNestedWriteOneShot: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it \u2014 build a new object in the handler that starts the request (\`this.submitBody = { \u2026 }\`) and bind that`,
+  devtoolsAfterState: () => `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
+  baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one \u2014 the form for a locale in the basename (without it, deep links misderive the basename)`,
+  routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
+  linkQueryKeyIgnored: (toKeys, named) => `None of the keys this <wcs-link>'s to sets (${toKeys}) is named in query-keys (${named}). A link with query-keys compares only the keys it names, so its own query plays no part: it is current wherever ${named} match, whatever ${toKeys} is \u2014 tabs written this way are all current at once. Name the keys the link is for (query-keys="${toKeys}")`,
+  signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
+  signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
+  tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join(", ")} ${tags.length === 1 ? "is a tag" : "are tags"} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
+  linkRouterMissing: (to, n) => `This page has no <wcs-router>, so this <wcs-link to="${to}">${n > 1 ? ` (and the ${n - 1} other${n > 2 ? "s" : ""} on the page)` : ""} throws "[@wcstack/router] wcs-link is not connected to a router." when it connects, and the link is hidden (display: none). On a page without the router write <a href="${to}">, or add the <wcs-router>`,
+  lintVersionBehind: (spec, version3, minor, lint) => `This page pins ${spec}, a newer minor than the rules of this lint (@wcstack ${lint}): what ${minor} added is not checked, and correct ${minor} syntax can be reported as an error. Upgrade @wcstack/lint to ${version3} (npm i -D @wcstack/lint@${version3}; the VS Code extension to its release for ${minor})`,
+  routeBareMustache: (inLayout) => inLayout ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ \u2026 }}</span>)` : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ \u2026 }}</h1>)`,
+  layoutSlotMissing: (l) => `The template of layout "${l}" has no default <slot> (one without a name), so what this <wcs-layout> holds outside the named slots \u2014 the nested routes and their pages \u2014 is not shown. Put a <slot></slot> where the page goes`,
+  namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
+  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case "empty":
+        return `"mount" needs a non-empty static path (the runtime refuses the volume: "has an invalid mount path").`;
+      case "emptySegment":
+        return `"mount" path "${mountPath}" has an empty segment (the runtime refuses the volume: "has an invalid mount path").`;
+      case "wildcard":
+        return `"mount" path "${mountPath}" must be static \u2014 no "*" (the runtime refuses the volume: "has an invalid mount path").`;
+      case "whitespace":
+        return `"mount" path "${mountPath}" must not contain whitespace (the runtime refuses the volume: "has an invalid mount path").`;
+      default:
+        return `"mount" path "${mountPath}" must not use the reserved characters $, #, @ (the runtime refuses the volume: "has an invalid mount path").`;
+    }
+  },
+  recursionUnsupported: (p, where) => {
+    switch (where) {
+      case "binding":
+        return `"**" in "${p}" cannot be used in data-wcs. "**" is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll (the runtime throws when the binding is established). Write the expanded concrete path in HTML instead`;
+      case "watch":
+        return `$watch key "${p}" cannot contain "**" \u2014 watching is defined against a concrete path (a fixed number of "*")`;
+      case "resolve":
+        return `$resolve("${p}") cannot take "**" \u2014 it accepts only an expanded concrete path with an exactly matching index tuple`;
+      case "update":
+        return `$update("${p}") cannot take "**" \u2014 it changes one address (an expanded concrete path with an exactly matching index tuple). Write every depth with $setAll("${p}", [], value)`;
+      case "assignment":
+        return `this["${p}"] = \u2026 cannot use "**" (there are no recursive setters in this version; an assignment only resolves against an expanded concrete path). Broadcast with $setAll("${p}", [], value), or write a concrete path`;
+      case "postUpdate":
+        return `$postUpdate("${p}") cannot take "**" \u2014 a notification is defined against a concrete path (a fixed number of "*")`;
+      case "dependOn":
+        return `$dependOn("${p}") cannot take "**" \u2014 a dependency is registered against a concrete path (a fixed number of "*")`;
+      case "trackDependency":
+        return `$trackDependency("${p}") cannot take "**" \u2014 a dependency is registered against a concrete path (a fixed number of "*")`;
+      case "listKeys":
+        return `$listKeys key "${p}" cannot contain "**" \u2014 a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
+      default:
+        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) \u2014 without it the runtime throws #1101 at load and the state fails to initialize`;
+    }
+  },
+  recursionAnchorMismatch: (p, anchor) => `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and "**" must be followed by a well-formed suffix: no second "**", no empty segment, no bare "*" right after "**")`,
+  recursionGetAllForm: (p, problem) => problem === "notArray" ? `$getAll("${p}", indexes) with "**" takes either no indexes (to read the depth of the recursive getter being evaluated) or [] (to walk every depth) \u2014 not null or a non-array value` : `$getAll("${p}", indexes) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the depth of the recursive getter being evaluated, or pass [] to walk every depth`,
+  recursionSetAllForm: (p, problem) => {
+    switch (problem) {
+      case "prefix":
+        return `$setAll("${p}", indexes, \u2026) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Pass [] to broadcast to every depth`;
+      case "noIndexes":
+        return `$setAll("${p}", \u2026) with "**" requires an explicit empty indexes array ([]) \u2014 the write API takes no context`;
+      case "mapper":
+        return `$setAll("${p}", \u2026) with "**" does not take a mapper \u2014 the index tuple has a different length at each depth. Pass a constant value`;
+      default:
+        return `$setAll("${p}", \u2026) with "**" does not take { spread: true } \u2014 handing a flat array to a tree needs the author to know the walk order, which is not a usable contract`;
+    }
+  },
+  recursionStructuralWrite: (p, target, repeatList) => {
+    switch (target) {
+      case "node":
+        return `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only \u2014 replacing a node would invalidate the child addresses already resolved for this write`;
+      case "branch":
+        return `$setAll("${p}") writes the recursion structure itself (an object on the way to the "${repeatList}" list). This version broadcasts to leaf properties only \u2014 replacing it would invalidate the child addresses already resolved below it`;
+      case "length":
+        return `$setAll("${p}") writes the recursion structure itself (the length of the "${repeatList}" list). Assigning length truncates the array, which invalidates the child addresses already resolved below it just like replacing the list`;
+      default:
+        return `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`;
+    }
+  },
+  recursionReadonly: (subject, getterPath) => `${subject} writes into the recursive getter "${getterPath}", which has no setter in this version (this spelling is that getter at one depth, or a path inside the value it derives). Write the values it derives from instead`,
+  recursionInVolume: (subject, mountPath) => `${subject} cannot be declared in a volume (mount="${mountPath}"); for $recursion the runtime refuses to graft the volume and reports that with console.error. Declare the recursion and its "**" getters on the root state \u2014 the anchor path is resolved against the root tree`,
+  recursionNotObject: () => `$recursion must be an object mapping one anchor path to its repeating sub-path (for example { "nodes.*": "children.*" }; the runtime throws at load time for this shape)`,
+  recursionAnchorCount: (count) => count === 0 ? `$recursion must declare exactly one anchor; it is empty` : `$recursion declares ${count} anchors. This version supports exactly one self-recursive anchor per state`,
+  recursionNodePathInvalid: (kind, path, problem) => {
+    const subject = kind === "anchor" ? "$recursion anchor" : "$recursion repeating sub-path";
+    switch (problem) {
+      case "empty":
+        return `${subject} must be a non-empty string`;
+      case "emptySegment":
+        return `${subject} "${path}" must not contain empty path segments`;
+      case "notElement":
+        return `${subject} "${path}" must name a list element: a property path ending with ".*" (for example "nodes.*")`;
+      case "reservedRoot":
+        return `${subject} "${path}" must not start with "$" \u2014 that namespace is reserved`;
+      case "reservedMount":
+        return `${subject} "${path}" must not contain "#" \u2014 that segment is reserved for mounts`;
+      case "midWildcard":
+        return `${subject} "${path}" must have exactly one "*", at the end (wildcards in the middle are not supported in this version)`;
+      case "indexSegment":
+        return `${subject} "${path}" must not contain an index segment \u2014 the recursion is declared over the shape of the tree, not over one row`;
+      default:
+        return `${subject} "${path}" must not contain "**" \u2014 the declaration is what gives "**" its meaning`;
+    }
+  },
+  recursionRepeatNotString: (anchor) => `$recursion entry "${anchor}" must map to the repeating sub-path as a string (for example "children.*")`,
+  recursionGetterInvalid: (key, problem, anchor) => {
+    switch (problem) {
+      case "setter":
+        return `Recursive setters are not supported in this version: "${key}". Declare a plain path setter, or write through the concrete path`;
+      case "notGetter":
+        return `"${key}" contains "**" but is not a getter. The recursion wildcard only names a family of computed paths`;
+      case "structural":
+        return `"${key}" names the recursion structure itself (a node, its child list, that list's length, or an object on the way to the list). A recursive getter would hide the real child list at every depth \u2014 "**" names a computed leaf under a node (for example "${anchor}.total")`;
+      default:
+        return `"${key}" names the recursive node itself. "**" names a computed path under a node (for example "${anchor}.total"), not the node`;
+    }
+  },
+  recursionGetterCollision: (a, b, repeat2) => `"${a}" and "${b}" expand to the same concrete path at different depths (they differ by whole repetitions of "${repeat2}"). Rename one of them`,
+  recursionConcreteCollision: (concreteKey, recursiveKey) => `"${concreteKey}" is already defined on the state, so the recursive getter "${recursiveKey}" cannot expand to it (the runtime throws when the declaration is read). Rename one of them`
+};
+var CATALOGS = { ja, en };
+function getMessages(locale2) {
+  return CATALOGS[resolveLocale(locale2)];
+}
+
+// src/service/scriptCallArgs.ts
+var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
+var TEMPLATE_NO_SUBST = /^\s*`((?:\\.|[^\\`$]|\$(?!\{))*)`\s*$/;
+function splitCallArgs(source, open) {
+  const args = [];
+  const starts = [];
+  let depth = 0;
+  let argStart = open;
+  let i = open;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === ")" && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      return { args, starts, end: i + 1 };
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (ch === "," && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      argStart = i + 1;
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return null;
+}
+function literalString(arg) {
+  const match = STRING_LITERAL.exec(arg);
+  if (match !== null) return match[2];
+  const template = TEMPLATE_NO_SUBST.exec(arg);
+  return template === null ? null : template[1];
+}
+function literalArrayLength(arg) {
+  const trimmed = arg.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const inner = trimmed.slice(1, -1);
+  if (inner.trim().length === 0) return 0;
+  if (/(^|[^.])\.\.\./.test(inner)) return null;
+  const parts = splitCallArgs(`${inner})`, 0);
+  if (parts === null) return null;
+  return parts.args.filter((part) => part.trim().length > 0).length;
+}
+function blankComments2(source) {
+  const out = source.split("");
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out[i] = " ";
+        i++;
+      }
+      if (i < source.length) {
+        out[i] = " ";
+        out[i + 1] = " ";
+        i += 2;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+function createApiCallRegex(apis) {
+  return new RegExp(`\\.\\s*\\$(${apis.join("|")})\\s*\\(`, "g");
+}
+
+// src/service/configDeclarationValidator.ts
+var manifest = getWcsManifest();
+var BEHAVIOR_OPTIONS = manifest.behaviorOptions;
+var BEHAVIOR_KEYS = Object.freeze(Object.keys(BEHAVIOR_OPTIONS));
+var FEATURE_NAMES2 = Object.freeze([...manifest.features]);
+var BEHAVIOR_KEY = "$behavior";
+var FEATURES_KEY = "$features";
+function validateConfigDeclarations(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
+    if (!block.content.includes(BEHAVIOR_KEY) && !block.content.includes(FEATURES_KEY)) continue;
+    validateBehavior(block, msgs, out);
+    validateFeatures(block, msgs, out);
+  }
+  validateFeaturesAttributes(html, stateTagName, msgs, out);
+  return out;
+}
+function push(out, code, start, end, message, severity = "error") {
+  out.push({ code, start, end, message, severity });
+}
+function validateBehavior(block, msgs, out) {
+  const decl = findTopLevelDeclaration(block.content, BEHAVIOR_KEY);
+  if (decl === null) return;
+  const base = block.contentStart;
+  if (block.mountPath !== null) {
+    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
+    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.configInVolume(BEHAVIOR_KEY, block.mountPath));
+    return;
+  }
+  if (decl.kind === "method") {
+    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
+    return;
+  }
+  if (decl.value === void 0) return;
+  const kind = literalKind(decl.value);
+  if (kind === "string" || kind === "number" || kind === "boolean" || kind === "function" || kind === "null" || kind === "array") {
+    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
+    return;
+  }
+  if (kind !== "object") return;
+  for (const entry of analyzeDeclarationEntries(block.content, BEHAVIOR_KEY)) {
+    if (!BEHAVIOR_KEYS.includes(entry.name)) {
+      push(
+        out,
+        WcsDiagnosticCode.BehaviorInvalid,
+        base + entry.start,
+        base + entry.end,
+        msgs.behaviorKeyUnknown(entry.name, BEHAVIOR_KEYS, suggestion(entry.name, BEHAVIOR_KEYS, msgs))
+      );
+      continue;
+    }
+    const type = BEHAVIOR_OPTIONS[entry.name].type;
+    if (entry.kind === "method") {
+      push(out, WcsDiagnosticCode.BehaviorInvalid, base + entry.start, base + entry.end, msgs.behaviorValueType(entry.name, type));
+      continue;
+    }
+    if (entry.value === void 0 || entry.valueStart === void 0) continue;
+    const valueKind = literalKind(entry.value);
+    if (valueKind !== type && valueKind !== "unknown") {
+      const blanked = blankComments2(entry.value);
+      const lead = blanked.length - blanked.trimStart().length;
+      const start = base + entry.valueStart + lead;
+      push(out, WcsDiagnosticCode.BehaviorInvalid, start, start + blanked.trim().length, msgs.behaviorValueType(entry.name, type));
+    }
+  }
+}
+function validateFeatures(block, msgs, out) {
+  const decl = findTopLevelDeclaration(block.content, FEATURES_KEY);
+  if (decl === null) return;
+  const base = block.contentStart;
+  if (block.mountPath !== null) {
+    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
+    push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.configInVolume(FEATURES_KEY, block.mountPath));
+    return;
+  }
+  if (decl.kind === "method") {
+    push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
+    return;
+  }
+  if (decl.value === void 0 || decl.valueStart === void 0) return;
+  const kind = literalKind(decl.value);
+  if (kind !== "array") {
+    if (kind !== "unknown" && kind !== "undefined") {
+      push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
+    }
+    return;
+  }
+  for (const element2 of arrayElements(blankComments2(decl.value))) {
+    const elementKind = literalKind(element2.text);
+    const start = base + decl.valueStart + element2.start;
+    if (elementKind === "string") {
+      const name = element2.text.slice(1, -1);
+      if (!FEATURE_NAMES2.includes(name)) {
+        push(
+          out,
+          WcsDiagnosticCode.FeatureUnknown,
+          start + 1,
+          start + 1 + name.length,
+          msgs.featureUnknown(name, FEATURE_NAMES2, suggestion(name, FEATURE_NAMES2, msgs))
+        );
+      }
+    } else if (elementKind !== "unknown") {
+      push(out, WcsDiagnosticCode.FeatureUnknown, start, start + element2.text.length, msgs.featureUnknown(element2.text, FEATURE_NAMES2, ""));
+    }
+  }
+}
+function validateFeaturesAttributes(html, stateTagName, msgs, out) {
+  if (!html.includes("features")) return;
+  let rootSeen = false;
+  const insideTemplate = createTemplateTester(html);
+  for (const element2 of parseWcsStateElements(html, stateTagName)) {
+    const candidate = element2.mountPath === null && !element2.bindComponent && !insideTemplate(element2.tagStart);
+    const isRoot = candidate && !rootSeen;
+    if (candidate) rootSeen = true;
+    const tagText = html.slice(element2.tagStart, element2.tagEnd);
+    const match = /(?:^|\s)(features)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?(?=[\s/>]|$)/id.exec(tagText);
+    if (match === null) continue;
+    const nameSpan = match.indices[1];
+    if (!isRoot) {
+      push(
+        out,
+        WcsDiagnosticCode.FeaturesInvalid,
+        element2.tagStart + nameSpan[0],
+        element2.tagStart + nameSpan[1],
+        msgs.featuresAttrNotRoot(),
+        "warning"
+      );
+      continue;
+    }
+    const group = match[2] !== void 0 ? 2 : match[3] !== void 0 ? 3 : match[4] !== void 0 ? 4 : 0;
+    if (group === 0) continue;
+    const valueStart = element2.tagStart + match.indices[group][0];
+    const value = match[group];
+    const token = /\S+/g;
+    let t;
+    while ((t = token.exec(value)) !== null) {
+      if (FEATURE_NAMES2.includes(t[0])) continue;
+      push(
+        out,
+        WcsDiagnosticCode.FeatureUnknown,
+        valueStart + t.index,
+        valueStart + t.index + t[0].length,
+        msgs.featureUnknown(t[0], FEATURE_NAMES2, suggestion(t[0], FEATURE_NAMES2, msgs))
+      );
+    }
+  }
+}
+function literalKind(value) {
+  const text3 = blankComments2(value).trim();
+  const scan = maskCommentsAndStrings(text3).trim();
+  if (/^(["'])[^"']*\1$/.test(scan)) return "string";
+  if (/^`[^`]*`$/.test(scan)) return text3.includes("${") ? "unknown" : "string";
+  if (/^-?(?:\d[\w.]*|\.\d[\w]*)$/.test(scan)) return "number";
+  if (/^(?:true|false)$/.test(scan)) return "boolean";
+  if (scan === "null") return "null";
+  if (scan === "undefined") return "undefined";
+  if (/^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(scan)) return "function";
+  if (isWholeBracket(scan, "[", "]")) return "array";
+  if (isWholeBracket(scan, "{", "}")) return "object";
+  return "unknown";
+}
+function isWholeBracket(scan, open, close) {
+  if (scan[0] !== open || scan[scan.length - 1] !== close) return false;
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      if (depth === 0) return i === scan.length - 1;
+    }
+  }
+  return false;
+}
+function arrayElements(value) {
+  const scan = maskCommentsAndStrings(value);
+  const open = scan.indexOf("[");
+  const close = scan.lastIndexOf("]");
+  const out = [];
+  let depth = 0;
+  let from = open + 1;
+  const take = (end) => {
+    const raw = value.slice(from, end);
+    const text3 = raw.trim();
+    if (text3.length > 0) out.push({ text: text3, start: from + (raw.length - raw.trimStart().length) });
+  };
+  for (let i = open + 1; i < close; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === "," && depth === 0) {
+      take(i);
+      from = i + 1;
+    }
+  }
+  take(close);
+  return out;
+}
+
+// src/service/dccDefinitions.ts
+function findDccDefinitions(html) {
+  if (!html.includes("data-wc-definition")) return [];
+  const regions = findStartTagRegions(html);
+  const templates = collectTemplateTags(html);
+  const inTemplate = createTemplateTester(html);
+  const lower2 = asciiLowerCase(html);
+  const out = [];
+  let skipUntil = 0;
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i];
+    const hostStart = region.start - region.tagName.length - 1;
+    if (hostStart < skipUntil || !region.tagName.includes("-")) continue;
+    if (!parseAttributeNames(html.slice(region.start, region.end)).has("data-wc-definition")) continue;
+    if (inTemplate(hostStart)) continue;
+    const closeAt = lower2.indexOf(`</${region.tagName}`, region.end);
+    const limit = closeAt === -1 ? html.length : closeAt;
+    const template = regions.slice(i + 1).find((r) => r.tagName === "template" && r.start < limit && parseAttributeNames(html.slice(r.start, r.end)).has("shadowrootmode"));
+    if (template === void 0) continue;
+    const templateAt = template.start - "template".length - 1;
+    const gt2 = html.indexOf(">", template.end);
+    const contentStart = gt2 === -1 ? html.length : gt2 + 1;
+    let depth = 0;
+    let contentEnd = html.length;
+    for (const tag of templates) {
+      if (tag.at <= templateAt) continue;
+      if (!tag.close) depth++;
+      else if (depth === 0) {
+        contentEnd = tag.at;
+        break;
+      } else depth--;
+    }
+    const templateGt = contentEnd === html.length ? -1 : html.indexOf(">", contentEnd);
+    const templateEnd = templateGt === -1 ? html.length : templateGt + 1;
+    const hostClose = lower2.indexOf(`</${region.tagName}`, contentEnd);
+    const hostGt = hostClose === -1 ? -1 : html.indexOf(">", hostClose);
+    const hostEnd = hostGt === -1 ? html.length : hostGt + 1;
+    out.push({
+      tag: region.tagName,
+      hostStart,
+      hostEnd,
+      nameStart: hostStart + 1,
+      nameEnd: region.start,
+      contentStart,
+      contentEnd,
+      templateStart: templateAt,
+      templateEnd
+    });
+    skipUntil = hostEnd;
+  }
+  return out;
+}
+function blankRanges(text3, ranges) {
+  let out = "";
+  let at2 = 0;
+  for (const [from, to] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    if (to <= at2) continue;
+    const start = Math.max(from, at2);
+    out += text3.slice(at2, start) + text3.slice(start, to).replace(/[^\r\n]/g, " ");
+    at2 = to;
+  }
+  return out + text3.slice(at2);
+}
+function keepOnly(text3, from, to) {
+  return blankRanges(text3, [[0, from], [to, text3.length]]);
+}
+function definitionStates(content, stateTagName) {
+  const inTemplate = createTemplateTester(content);
+  return parseWcsStateElements(content, stateTagName).filter((element2) => !inTemplate(element2.tagStart));
+}
+function listedNames(script, key) {
+  const declaration = findTopLevelDeclaration(script, key);
+  if (declaration === null) return [];
+  if (declaration.kind !== "data" || declaration.value === void 0 || declaration.valueStart === void 0) return null;
+  if (literalKind(declaration.value) !== "array") return null;
+  const out = [];
+  for (const element2 of arrayElements(blankComments2(declaration.value))) {
+    if (literalKind(element2.text) !== "string") return null;
+    const start = declaration.valueStart + element2.start;
+    out.push({ name: element2.text.slice(1, -1), start, end: start + element2.text.length });
+  }
+  return out;
+}
+function definitionScript(element2, fileReader) {
+  if (element2.stateAttr !== void 0 || element2.jsonAttr !== void 0) return null;
+  if (element2.srcAttr !== void 0) {
+    if (fileReader === void 0 || !/\.m?[jt]s$/.test(element2.srcAttr)) return null;
+    return readStateScript(element2.srcAttr, fileReader) ?? null;
+  }
+  return element2.scriptBlocks.length === 1 ? element2.scriptBlocks[0].content : null;
+}
+function contractOfContent(content, stateTagName, fileReader) {
+  const states = definitionStates(content, stateTagName);
+  if (states.length !== 1 || states[0].bindComponent) return null;
+  const script = definitionScript(states[0], fileReader);
+  if (script === null) return null;
+  const bindables = listedNames(script, "$bindables");
+  const commands = listedNames(script, "$commands");
+  if (bindables === null || commands === null) return null;
+  return {
+    properties: bindables.map((b) => b.name),
+    inputs: Object.fromEntries(bindables.map((b) => [b.name, null])),
+    commands: commands.map((c) => c.name)
+  };
+}
+var sources = /* @__PURE__ */ new Map();
+function registerScopeSource(scope, source) {
+  if (sources.size > 64) sources.clear();
+  sources.set(scope, source);
+}
+function scopeSource(text3) {
+  return sources.get(text3) ?? text3;
+}
+function dccEntries(imports) {
+  const out = [];
+  for (const [key, value] of imports) {
+    if (!key.startsWith("@components/") || /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//")) continue;
+    const body = key.slice("@components/".length);
+    const namespace = body.endsWith("/");
+    const bare = namespace ? body.slice(0, -1) : body;
+    const bar = bare.indexOf("|");
+    const name = (bar === -1 ? bare : bare.slice(0, bar)).toLowerCase();
+    const loader = bar === -1 ? null : bare.slice(bar + 1).split(",")[0].trim();
+    if (name === "") continue;
+    if (namespace) {
+      if (loader === "dcc") out.push({ tag: `${name.replace(/\//g, "-")}-`, namespace: true, path: value });
+    } else if (loader === "dcc" || loader === null && /\.html$/i.test(value.replace(/[?#].*$/, ""))) {
+      out.push({ tag: name, namespace: false, path: value });
+    }
+  }
+  return out;
+}
+var pagePath = (src) => src.startsWith("./") || src.startsWith("../") || src.startsWith("/") ? src : `./${src}`;
+function importMapOf(html) {
+  const out = /* @__PURE__ */ new Map();
+  if (!/importmap/i.test(html)) return out;
+  const text3 = html.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
+  const re = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  let m;
+  while ((m = re.exec(text3)) !== null) {
+    if (!/\btype\s*=\s*(["']?)importmap\1(?=[\s>]|$)/i.test(m[1])) continue;
+    try {
+      const map = JSON.parse(m[2]);
+      if (typeof map.imports !== "object" || map.imports === null) continue;
+      for (const [key, value] of Object.entries(map.imports)) if (typeof value === "string") out.set(key, value);
+    } catch {
+    }
+  }
+  return out;
+}
+function mayUseDcc(html) {
+  return /data-wc-definition|importmap/i.test(scopeSource(html));
+}
+var lastRead = null;
+function collectDccContracts(html, fileReader, stateTagName = "wcs-state") {
+  if (lastRead !== null && lastRead.html === html && lastRead.fileReader === fileReader && lastRead.stateTagName === stateTagName) return lastRead.contracts;
+  const source = scopeSource(html);
+  const imports = importMapOf(source);
+  const out = /* @__PURE__ */ new Map();
+  for (const definition of findDccDefinitions(source)) {
+    if (out.has(definition.tag)) continue;
+    const contract = contractOfContent(source.slice(definition.contentStart, definition.contentEnd), stateTagName, fileReader);
+    if (contract !== null) out.set(definition.tag, contract);
+  }
+  if (fileReader !== void 0 && imports.size > 0) {
+    const entries = dccEntries(imports);
+    if (entries.length > 0) {
+      const tags = /* @__PURE__ */ new Set();
+      for (const region of findStartTagRegions(source)) if (region.tagName.includes("-")) tags.add(region.tagName);
+      for (const tag of tags) {
+        if (out.has(tag) || tag.startsWith("wcs-")) continue;
+        const entry = entries.find((e) => e.namespace ? tag.startsWith(e.tag) && tag.length > e.tag.length : e.tag === tag);
+        if (entry === void 0) continue;
+        const file = entry.namespace ? `${entry.path}${tag.slice(entry.tag.length)}.html` : entry.path.replace(/[?#].*$/, "");
+        const text3 = fileReader(pagePath(file));
+        if (text3 === void 0) continue;
+        const definition = findDccDefinitions(text3).find((d) => d.tag === tag);
+        if (definition === void 0) continue;
+        const contract = contractOfContent(text3.slice(definition.contentStart, definition.contentEnd), stateTagName, fileReader);
+        if (contract !== null) out.set(tag, contract);
+      }
+    }
+  }
+  lastRead = { html, fileReader, stateTagName, contracts: out };
+  return out;
+}
+
 // src/service/pageElements.ts
 var MAX_FILES = 32;
 var JS_TYPES = /* @__PURE__ */ new Set(["", "module", "text/javascript", "application/javascript", "text/ecmascript"]);
@@ -13711,11 +14848,14 @@ function isDefine(callee) {
   const o = callee.object;
   return o.type === "Identifier" && o.name === "customElements" || o.type === "MemberExpression" && keyName(o.property, o.computed) === "customElements";
 }
-var lastRead = null;
+var lastRead2 = null;
 function collectPageElementContracts(html, fileReader) {
-  if (lastRead !== null && lastRead.fileReader === fileReader && lastRead.html === html) return lastRead.contracts;
-  const contracts = readPageElementContracts(html, fileReader);
-  lastRead = { html, fileReader, contracts };
+  if (lastRead2 !== null && lastRead2.fileReader === fileReader && lastRead2.html === html) return lastRead2.contracts;
+  const contracts = readPageElementContracts(scopeSource(html), fileReader);
+  if (mayUseDcc(html)) {
+    for (const [tag, contract] of collectDccContracts(html, fileReader)) if (!contracts.has(tag)) contracts.set(tag, contract);
+  }
+  lastRead2 = { html, fileReader, contracts };
   return contracts;
 }
 function readPageElementContracts(html, fileReader) {
@@ -13777,7 +14917,7 @@ function readPageElementContracts(html, fileReader) {
   return out;
 }
 function mayDefineElements(html) {
-  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(html);
+  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(scopeSource(html)) || mayUseDcc(html);
 }
 
 // src/service/elementMembers.ts
@@ -13848,13 +14988,13 @@ function collectMemberBindings(html, bindAttribute, lookup) {
   }
   return out;
 }
-var lastRead2 = null;
+var lastRead3 = null;
 function documentMemberBindings(html, bindAttribute, fileReader) {
-  if (lastRead2 !== null && lastRead2.fileReader === fileReader && lastRead2.bindAttribute === bindAttribute && lastRead2.html === html) {
-    return lastRead2.bindings;
+  if (lastRead3 !== null && lastRead3.fileReader === fileReader && lastRead3.bindAttribute === bindAttribute && lastRead3.html === html) {
+    return lastRead3.bindings;
   }
   const bindings = collectMemberBindings(html, bindAttribute, createContractLookup(html, fileReader));
-  lastRead2 = { html, bindAttribute, fileReader, bindings };
+  lastRead3 = { html, bindAttribute, fileReader, bindings };
   return bindings;
 }
 function collectOutputSlots(bindings) {
@@ -13864,6 +15004,445 @@ function collectOutputSlots(bindings) {
     slots.set(binding.path, { path: binding.path, tag: binding.tag, member: binding.member, start: binding.start, end: binding.end });
   }
   return [...slots.values()];
+}
+
+// src/service/templateSyntax.ts
+var MUSTACHE = /\{\{\s*((?:(?!<[A-Za-z/!?])[\s\S])+?)\s*\}\}/dg;
+var COMMENT_BINDING = /<!--\s*@@\s*(?:wcs-text)?\s*:\s*((?:(?!-->)[\s\S])+?)\s*-->/dg;
+var RAW_TEXT_TAGS = ["script", "style"];
+var TEXT_ONLY_COMMENT_PARENTS = ["textarea", "title"];
+function findAllMustacheSyntax(html) {
+  return collect(html, maskMarkup(html), MUSTACHE, "mustache", RAW_TEXT_TAGS);
+}
+function findAllCommentBindings(html) {
+  return collect(html, html, COMMENT_BINDING, "comment", [...RAW_TEXT_TAGS, ...TEXT_ONLY_COMMENT_PARENTS]);
+}
+function collect(html, scan, regex, kind, skipInside) {
+  const results = [];
+  const skip = rangeTester(html, skipInside);
+  const inTemplate = templateTester(html);
+  const inHead = documentHeadTester(html);
+  const textParent = kind === "mustache" ? rangeTester(html, TEXT_ONLY_COMMENT_PARENTS) : null;
+  regex.lastIndex = 0;
+  let match;
+  while ((match = regex.exec(scan)) !== null) {
+    if (skip(match.index) !== null) continue;
+    const expr = match[1];
+    const exprStart = match.indices[1][0];
+    const parent = textParent?.(match.index) ?? null;
+    results.push({
+      kind,
+      expression: expr,
+      exprStart,
+      exprEnd: exprStart + expr.length,
+      matchStart: match.index,
+      matchEnd: match.index + match[0].length,
+      insideTemplate: inTemplate(match.index),
+      inDocumentHead: inHead(match.index),
+      ...parent !== null ? { textParent: parent } : {}
+    });
+  }
+  return results;
+}
+function maskMarkup(html) {
+  if (!html.includes("{{")) return html;
+  const lower2 = asciiLowerCase(html);
+  const chunks = [];
+  let last = 0;
+  const mask = (from, to) => {
+    if (to <= from) return;
+    chunks.push(html.slice(last, from), "<", "x".repeat(to - from - 1));
+    last = to;
+  };
+  let i = 0;
+  while (i < html.length) {
+    const lt2 = html.indexOf("<", i);
+    if (lt2 === -1) break;
+    if (html.startsWith("<!--", lt2)) {
+      const close = html.indexOf("-->", lt2 + 4);
+      i = close === -1 ? html.length : close + 3;
+      mask(lt2, i);
+      continue;
+    }
+    const next = html[lt2 + 1];
+    if (next === "!" || next === "?" || next === "/") {
+      const close = html.indexOf(">", lt2 + 1);
+      i = close === -1 ? html.length : close + 1;
+      mask(lt2, i);
+      continue;
+    }
+    if (next === void 0 || !/[A-Za-z]/.test(next)) {
+      i = lt2 + 1;
+      continue;
+    }
+    let n = lt2 + 1;
+    while (n < html.length && /[^\s/>]/.test(html[n])) n++;
+    const tagName = lower2.slice(lt2 + 1, n);
+    let j = n;
+    let quote = null;
+    while (j < html.length) {
+      const c = html[j];
+      if (quote !== null) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === ">") {
+        break;
+      }
+      j++;
+    }
+    i = j < html.length ? j + 1 : html.length;
+    mask(lt2, i);
+    const raw = RAW_TEXT_TAGS.includes(tagName);
+    if (raw || TEXT_ONLY_COMMENT_PARENTS.includes(tagName)) {
+      const close = lower2.indexOf(`</${tagName}`, i);
+      const contentEnd = close === -1 ? html.length : close;
+      if (raw) mask(i, contentEnd);
+      i = contentEnd;
+    }
+  }
+  chunks.push(html.slice(last));
+  return chunks.join("");
+}
+function documentHeadTester(html) {
+  if (!/<head[\s>]/i.test(html)) return () => false;
+  const regions = findStartTagRegions(html);
+  const head = regions.find((r) => r.tagName === "head");
+  if (head === void 0) return () => false;
+  const close = asciiLowerCase(html).indexOf("</head", head.end);
+  const body = regions.find((r) => r.tagName === "body" && r.start > head.end);
+  const ends = [close, body === void 0 ? -1 : body.start].filter((at2) => at2 !== -1);
+  const end = ends.length === 0 ? html.length : Math.min(...ends);
+  return (offset2) => offset2 > head.end && offset2 < end;
+}
+function rangeTester(html, tags) {
+  const ranges = [];
+  const lower2 = asciiLowerCase(html);
+  const open = new RegExp(`<(${tags.join("|")})(?=[\\s/>])[^>]*>`, "gi");
+  let match;
+  while ((match = open.exec(html)) !== null) {
+    const start = match.index + match[0].length;
+    const tag = match[1].toLowerCase();
+    const close = lower2.indexOf(`</${tag}`, start);
+    const end = close === -1 ? html.length : close;
+    ranges.push({ start, end, tag });
+    open.lastIndex = end;
+  }
+  let i = 0;
+  return (offset2) => {
+    while (i < ranges.length && ranges[i].end <= offset2) i++;
+    return i < ranges.length && ranges[i].start <= offset2 ? ranges[i].tag : null;
+  };
+}
+function templateTester(html) {
+  const tagRegex = /<(\/?)template[\s>]/gi;
+  const tags = [];
+  let match;
+  while ((match = tagRegex.exec(html)) !== null) tags.push({ at: match.index, close: match[1] !== "" });
+  let i = 0;
+  let depth = 0;
+  return (offset2) => {
+    while (i < tags.length && tags[i].at <= offset2) {
+      depth = tags[i].close ? Math.max(0, depth - 1) : depth + 1;
+      i++;
+    }
+    return depth > 0;
+  };
+}
+
+// src/service/componentParts.ts
+var MAX_FILES2 = 48;
+function readModule(path, fileReader, cache2) {
+  if (cache2.has(path)) return cache2.get(path);
+  const text3 = fileReader(path);
+  const program = text3 === void 0 ? null : parseScript(text3);
+  const module2 = text3 === void 0 || program === null ? null : { path, text: text3, program };
+  cache2.set(path, module2);
+  return module2;
+}
+function classNamed(program, name) {
+  for (const n of nodes(program)) {
+    if (n.type === "ClassDeclaration" && n.id !== null && n.id.name === name) return n;
+    if (n.type === "VariableDeclarator" && n.id.type === "Identifier" && n.id.name === name && n.init?.type === "ClassExpression") return n.init;
+  }
+  return null;
+}
+function importedModule(module2, spec, fileReader, cache2) {
+  const joined = spec.startsWith("/") ? spec : joinRelative(module2.path, spec);
+  if (joined === null || !/\.m?[jt]s$/.test(joined)) return null;
+  return readModule(joined, fileReader, cache2) ?? (/\.m?js$/.test(joined) ? readModule(joined.replace(/js$/, "ts"), fileReader, cache2) : null);
+}
+function defaultClass(module2, fileReader, cache2, depth) {
+  for (const n of nodes(module2.program)) {
+    if (n.type !== "ExportDefaultDeclaration") continue;
+    const d = n.declaration;
+    if (d.type === "ClassDeclaration" || d.type === "ClassExpression") return { module: module2, cls: d };
+    if (d.type === "Identifier") return classOfName(module2, d.name, fileReader, cache2, depth);
+  }
+  return null;
+}
+function classOfName(module2, name, fileReader, cache2, depth) {
+  const local = classNamed(module2.program, name);
+  if (local !== null) return { module: module2, cls: local };
+  if (depth > 4) return null;
+  for (const n of nodes(module2.program)) {
+    if (n.type !== "ImportDeclaration" || n.source.type !== "Literal" || typeof n.source.value !== "string") continue;
+    for (const specifier of n.specifiers) {
+      if (specifier.local.name !== name) continue;
+      const from = importedModule(module2, n.source.value, fileReader, cache2);
+      if (from === null) return null;
+      if (specifier.type === "ImportDefaultSpecifier") return defaultClass(from, fileReader, cache2, depth + 1);
+      if (specifier.type === "ImportSpecifier") {
+        const imported = specifier.imported.type === "Identifier" ? specifier.imported.name : String(specifier.imported.value);
+        return imported === "default" ? defaultClass(from, fileReader, cache2, depth + 1) : classOfName(from, imported, fileReader, cache2, depth + 1);
+      }
+      return null;
+    }
+  }
+  return null;
+}
+function classFor(module2, tag, defaultExport, fileReader, cache2) {
+  for (const n of nodes(module2.program)) {
+    if (n.type !== "CallExpression" || !isDefine(n.callee) || n.arguments.length < 2) continue;
+    const [name, cls] = n.arguments;
+    if (name.type !== "Literal" || typeof name.value !== "string" || name.value.toLowerCase() !== tag) continue;
+    if (cls.type === "ClassExpression") return { module: module2, cls };
+    if (cls.type === "Identifier") return classOfName(module2, cls.name, fileReader, cache2, 0);
+  }
+  return defaultExport ? defaultClass(module2, fileReader, cache2, 0) : null;
+}
+function templatesOf(module2) {
+  const out = [];
+  for (const n of nodes(module2.program)) {
+    if (n.type === "TemplateLiteral" && n.expressions.length === 0 && n.quasis.length === 1) {
+      const html = n.quasis[0].value.raw;
+      if (html.includes("bind-component")) out.push({ html, start: n.quasis[0].start });
+    } else if (n.type === "Literal" && typeof n.value === "string" && n.value.includes("bind-component")) {
+      out.push({ html: module2.text.slice(n.start + 1, n.end - 1), start: n.start + 1 });
+    }
+  }
+  return out;
+}
+function stateNameOf(html) {
+  const m = /<wcs-state\b[^>]*\bbind-component\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(html);
+  const name = (m?.[1] ?? m?.[2] ?? m?.[3] ?? "").trim();
+  return name === "" ? "state" : name;
+}
+function stateObjectOf(cls, name) {
+  for (const member of cls.body.body) {
+    if (member.type === "PropertyDefinition" && !member.static && keyName(member.key, member.computed) === name) {
+      return member.value?.type === "ObjectExpression" ? member.value : null;
+    }
+  }
+  for (const member of cls.body.body) {
+    if (member.type !== "MethodDefinition" || member.kind !== "constructor") continue;
+    for (const n of nodes(member.value.body)) {
+      if (n.type !== "AssignmentExpression" || n.operator !== "=" || n.left.type !== "MemberExpression") continue;
+      if (n.left.object.type !== "ThisExpression" || keyName(n.left.property, n.left.computed) !== name) continue;
+      return n.right.type === "ObjectExpression" ? n.right : null;
+    }
+  }
+  return null;
+}
+function partOf(tag, module2, cls) {
+  const templates = templatesOf(module2);
+  const template = templates.length === 1 ? templates[0] : null;
+  const stateName = template === null ? "state" : stateNameOf(template.html);
+  const object = stateObjectOf(cls, stateName);
+  if (object === null) return null;
+  const getters = [];
+  const keys = [];
+  for (const property of object.properties) {
+    if (property.type !== "Property") return null;
+    const key = keyName(property.key, property.computed);
+    if (key === null) return null;
+    if (!key.includes(".") && !keys.includes(key)) keys.push(key);
+    if (property.kind === "get" && !key.includes(".") && !key.startsWith("$") && !getters.includes(key)) getters.push(key);
+  }
+  return { tag, path: module2.path, text: module2.text, stateName, stateStart: object.start, stateEnd: object.end, getters, keys, template };
+}
+var lastRead4 = null;
+function mayMountParts(html) {
+  const source = scopeSource(html);
+  return /importmap|<script\b[^>]*\bsrc\s*=/i.test(source);
+}
+function collectClassParts(html, fileReader) {
+  if (lastRead4 !== null && lastRead4.html === html && lastRead4.fileReader === fileReader) return lastRead4.parts;
+  const parts = /* @__PURE__ */ new Map();
+  lastRead4 = { html, fileReader, parts };
+  if (fileReader === void 0 || !mayMountParts(html)) return parts;
+  const source = scopeSource(html);
+  const cache2 = /* @__PURE__ */ new Map();
+  const defined = [];
+  const queue = pageScripts(source).srcs.map((spec) => ({ from: "", spec: spec.startsWith(".") || spec.startsWith("/") ? spec : `./${spec}` }));
+  const seen2 = /* @__PURE__ */ new Set();
+  while (queue.length > 0 && seen2.size < MAX_FILES2) {
+    const { from, spec } = queue.shift();
+    if (/^[a-z][a-z0-9+.-]*:/i.test(spec.startsWith("./") ? spec.slice(2) : spec) || spec.startsWith("//")) continue;
+    const joined = spec.startsWith("/") ? spec : joinRelative(from, spec);
+    if (joined === null || !/\.m?[jt]s$/.test(joined) || seen2.has(joined)) continue;
+    seen2.add(joined);
+    const module2 = readModule(joined, fileReader, cache2);
+    if (module2 === null) continue;
+    defined.push(module2);
+    for (const n of nodes(module2.program)) {
+      const src = n.type === "ImportDeclaration" || n.type === "ExportAllDeclaration" || n.type === "ExportNamedDeclaration" ? n.source : null;
+      if (src !== null && src !== void 0 && src.type === "Literal" && typeof src.value === "string") queue.push({ from: joined, spec: src.value });
+    }
+  }
+  const eager = /* @__PURE__ */ new Map();
+  const namespaces = [];
+  for (const [key, value] of importMapOf(source)) {
+    if (!key.startsWith("@components/") || /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//")) continue;
+    const body = key.slice("@components/".length);
+    const namespace = body.endsWith("/");
+    const bare = namespace ? body.slice(0, -1) : body;
+    const bar = bare.indexOf("|");
+    const name = (bar === -1 ? bare : bare.slice(0, bar)).toLowerCase();
+    const loader = bar === -1 ? null : bare.slice(bar + 1).split(",")[0].trim();
+    if (name === "" || loader !== null && loader !== "vanilla") continue;
+    if (namespace) namespaces.push({ prefix: `${name.replace(/\//g, "-")}-`, path: value });
+    else if (/\.m?[jt]s$/.test(value.replace(/[?#].*$/, ""))) eager.set(name, value.replace(/[?#].*$/, ""));
+  }
+  const find = (tag) => {
+    for (const module3 of defined) {
+      const found2 = classFor(module3, tag, false, fileReader, cache2);
+      if (found2 !== null) return partOf(tag, found2.module, found2.cls);
+    }
+    const namespace = namespaces.find((n) => tag.startsWith(n.prefix) && tag.length > n.prefix.length);
+    const file = eager.get(tag) ?? (namespace === void 0 ? void 0 : `${namespace.path}${tag.slice(namespace.prefix.length)}.js`);
+    if (file === void 0) return null;
+    const module2 = readModule(pagePath(file), fileReader, cache2);
+    const found = module2 === null ? null : classFor(module2, tag, true, fileReader, cache2);
+    return found === null ? null : partOf(tag, found.module, found.cls);
+  };
+  const pending = customTags(source);
+  const looked = /* @__PURE__ */ new Set();
+  while (pending.length > 0 && looked.size < 256) {
+    const tag = pending.shift();
+    if (looked.has(tag) || tag.startsWith("wcs-")) continue;
+    looked.add(tag);
+    const part = find(tag);
+    if (part === null) continue;
+    parts.set(tag, part);
+    if (part.template !== null) pending.push(...customTags(part.template.html));
+  }
+  return parts;
+}
+function customTags(html) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of html.matchAll(/<([a-z][a-z0-9]*-[a-z0-9-]*)(?=[\s/>])/gi)) out.add(m[1].toLowerCase());
+  return [...out];
+}
+function hostPathOf(path, text3, offset2, bindAttribute) {
+  const p = path.trim();
+  if (p === "" || p.startsWith("$") || p.includes("|")) return null;
+  if (!p.startsWith(".")) return p;
+  const list = getResolvedForListPath(text3, offset2, bindAttribute);
+  if (list === null || list.startsWith(".")) return null;
+  return p === "." ? `${list}.*` : `${list}.*.${p.slice(1)}`;
+}
+function findMountSites(text3, bindAttribute, parts) {
+  const out = [];
+  if (parts.size === 0) return out;
+  for (const attr of findAllBindAttributes(text3, bindAttribute)) {
+    const part = attr.tagName === void 0 ? void 0 : parts.get(attr.tagName);
+    if (part === void 0) continue;
+    let whole = null;
+    let mounted = false;
+    const handed = /* @__PURE__ */ new Map();
+    for (const binding of splitBindingExpressions(attr.value)) {
+      const parsed = parseBindingExpression(binding);
+      if (parsed.path === null) continue;
+      const property = parsed.property.replace(/#.*$/, "").trim();
+      if (property === part.stateName) {
+        mounted = true;
+        whole = hostPathOf(parsed.path, text3, attr.valueStart, bindAttribute);
+      } else if (property.startsWith(`${part.stateName}.`)) {
+        mounted = true;
+        const key = property.slice(part.stateName.length + 1).split(".")[0];
+        if (key !== "" && !property.slice(part.stateName.length + 1).includes(".")) handed.set(key, hostPathOf(parsed.path, text3, attr.valueStart, bindAttribute));
+      }
+    }
+    if (mounted) out.push({ part, whole, handed, valueStart: attr.valueStart, valueEnd: attr.valueStart + attr.value.length });
+  }
+  return out;
+}
+function walkMountSites(text3, bindAttribute, parts, visit2) {
+  const walk = (scope, outer, top, depth) => {
+    for (const site of findMountSites(scope, bindAttribute, parts)) {
+      const whole = site.whole === null ? { kind: "none" } : outer(site.whole);
+      const inside = (path) => {
+        const first = path.split(".")[0];
+        if (site.handed.has(first)) {
+          const to = site.handed.get(first);
+          if (to === null || to === void 0) return { kind: "own" };
+          const landed = outer(to);
+          return landed.kind === "page" ? { kind: "page", path: `${landed.path}${path.slice(first.length)}` } : landed;
+        }
+        if (site.part.keys.includes(first)) return { kind: "own" };
+        return whole.kind === "page" ? { kind: "page", path: `${whole.path}.${path}` } : whole;
+      };
+      const here = top ?? site;
+      visit2({ site, inside, at: whole.kind === "page" ? whole.path : null, top: here });
+      if (site.part.template !== null && depth < 6) walk(site.part.template.html, inside, here, depth + 1);
+    }
+  };
+  walk(text3, (path) => ({ kind: "page", path }), null, 0);
+}
+var lastExports = null;
+function mountedExports(html, bindAttribute, fileReader, has) {
+  if (lastExports !== null && lastExports.html === html && lastExports.fileReader === fileReader && lastExports.bindAttribute === bindAttribute) return lastExports.out;
+  const out = [];
+  lastExports = { html, fileReader, bindAttribute, out };
+  if (fileReader === void 0 || !mayMountParts(html) || !html.includes(bindAttribute)) return out;
+  const parts = collectClassParts(html, fileReader);
+  if (parts.size === 0) return out;
+  const added = /* @__PURE__ */ new Set();
+  walkMountSites(html, bindAttribute, parts, ({ site, at: at2 }) => {
+    if (at2 === null) return;
+    for (const getter of site.part.getters) {
+      const path = `${at2}.${getter}`;
+      if (added.has(path) || has(path)) continue;
+      added.add(path);
+      out.push({ path, kind: "computed" });
+    }
+  });
+  return out;
+}
+function templateUses(html, bindAttribute) {
+  const out = /* @__PURE__ */ new Map();
+  const use = (written, start) => {
+    const path = written.trim();
+    if (path === "" || path.startsWith("$")) return;
+    let full = path;
+    if (path.startsWith(".")) {
+      const list = getResolvedForListPath(html, start, bindAttribute);
+      if (list === null || list.startsWith(".")) return;
+      full = list;
+    }
+    const key = full.split(".")[0];
+    if (key === "" || key === "*" || /^\d+$/.test(key) || !/^[A-Za-z_][\w-]*$/.test(key)) return;
+    const at2 = start + (written.length - written.trimStart().length);
+    const known = out.get(key);
+    if (known === void 0 || at2 < known.start) out.set(key, { key, path, start: at2, end: at2 + path.length });
+  };
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    let pos = 0;
+    for (const binding of splitBindingExpressions(attr.value)) {
+      const parsed = parseBindingExpression(binding);
+      if (parsed.path !== null) {
+        const at2 = binding.indexOf(parsed.path, Math.max(0, binding.indexOf(":")));
+        if (at2 !== -1) use(parsed.path, attr.valueStart + pos + at2);
+      }
+      pos += binding.length + 1;
+    }
+  }
+  for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    const path = item.expression.split("|")[0];
+    use(path, item.exprStart);
+  }
+  return [...out.values()].sort((a, b) => a.start - b.start);
 }
 
 // src/service/statePathResolver.ts
@@ -13887,7 +15466,10 @@ function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
   return getStatePathIndex(html, stateTagName, fileReader).paths;
 }
 function getStatePathIndex(html, stateTagName = "wcs-state", fileReader, bindAttribute) {
-  const index = resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  const base = resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  let known = null;
+  const exported = mountedExports(html, bindAttribute ?? "data-wcs", fileReader, (path) => (known ??= new Set(base.paths.map((p) => p.path))).has(path));
+  const index = exported.length === 0 ? base : { ...base, paths: [...base.paths, ...exported] };
   if (bindAttribute === void 0) return index;
   const outputSlots = openOutputSlots(html, bindAttribute, fileReader, index.paths, index.scopes.opaquePaths);
   if (outputSlots.length === 0) return index;
@@ -14203,7 +15785,7 @@ function templateKey(node) {
   }
   return lists.length === 0 ? null : { path, lists };
 }
-function literalString(node) {
+function literalString2(node) {
   if (node.type === "Literal" && typeof node.value === "string") return node.value;
   if (node.type === "TemplateLiteral" && node.expressions.length === 0 && node.quasis.length === 1) {
     return node.quasis[0].value.cooked ?? null;
@@ -14218,7 +15800,7 @@ function segmentOf(member) {
   if (property.type === "Literal" && typeof property.value === "number") {
     return { text: String(property.value), dynamic: null };
   }
-  const text3 = literalString(property);
+  const text3 = literalString2(property);
   if (text3 !== null) return { text: text3, dynamic: null };
   if (collecting.templates && property.type === "TemplateLiteral") {
     const key = templateKey(property);
@@ -14341,7 +15923,7 @@ function visitCall(node, scope, out) {
       const writes = collecting.writes === true && (WRITE_APIS.has(api) || collecting.resolveWrites === true && api === "$resolve" && node.arguments.length >= 3);
       if (PATH_ARG_APIS.has(api) && !writes) {
         const first = node.arguments[0];
-        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString(first) : null;
+        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString2(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith("$")) {
           out.push({
             path,
@@ -14360,7 +15942,7 @@ function visitCall(node, scope, out) {
       }
       if (writes) {
         const first = node.arguments[0];
-        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString(first) : null;
+        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString2(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith("$")) {
           out.push({
             path,
@@ -14429,7 +16011,7 @@ function visitDestructure(pattern, prefix, scope, out) {
     if (property.type === "RestElement") continue;
     let key = null;
     if (!property.computed && property.key.type === "Identifier") key = property.key.name;
-    else key = literalString(property.key);
+    else key = literalString2(property.key);
     let value = property.value;
     if (value.type === "AssignmentPattern") {
       visit(value.right, scope, out);
@@ -14958,597 +16540,6 @@ function moduleBindingNames(script) {
   return names2;
 }
 
-// src/core/messages.ts
-function resolveLocale(locale2) {
-  if (locale2 === void 0 || locale2 === "" || /^ja\b|^ja[-_]/i.test(locale2) || locale2.toLowerCase() === "ja") return "ja";
-  return "en";
-}
-var TARGET_EFFECT_JA = {
-  "wcs-fullscreen": "requestFullscreen() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
-  "wcs-pip": "requestPictureInPicture() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
-  "wcs-pointer-lock": "requestPointerLock() \u306F\u5931\u6557\u3057\u3001\u305D\u308C\u3092\u77E5\u3089\u305B\u308B\u306E\u306F error \u306E\u51FA\u529B\u3060\u3051\u3067\u3059",
-  "wcs-intersect": "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059",
-  "wcs-resize": "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059"
-};
-var TARGET_EFFECT_EN = {
-  "wcs-fullscreen": "requestFullscreen() fails, and only the error output says so",
-  "wcs-pip": "requestPictureInPicture() fails, and only the error output says so",
-  "wcs-pointer-lock": "requestPointerLock() fails, and only the error output says so",
-  "wcs-intersect": "the element observes nothing and observing stays false",
-  "wcs-resize": "the element observes nothing and observing stays false"
-};
-function isUnitlessZero(token) {
-  return /^[+-]?(?:0+\.?0*|\.0+)$/.test(token);
-}
-function shortSeed(raw) {
-  const flat = raw.replace(/\s+/g, " ");
-  return flat.length <= 32 ? flat : `${flat.slice(0, 29)}\u2026`;
-}
-var MAX_LISTED_KEYS = 10;
-function listKeys(keys) {
-  return keys.length <= MAX_LISTED_KEYS ? keys.join(", ") : `${keys.slice(0, MAX_LISTED_KEYS).join(", ")} \u2026 (+${keys.length - MAX_LISTED_KEYS})`;
-}
-var JA_EXPECTED_LABEL = {
-  array: "\u914D\u5217\u578B\u306E\u30D1\u30B9",
-  boolean: "\u30D6\u30FC\u30EA\u30A2\u30F3\u578B",
-  string: "\u6587\u5B57\u5217\u578B"
-};
-var ja = {
-  spreadFilterNotAllowed: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306E\u30BF\u30FC\u30B2\u30C3\u30C8\u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
-  spreadTargetRequired: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306B\u306F\u30BF\u30FC\u30B2\u30C3\u30C8\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059`,
-  structuralMustBeSingle: (d) => `'${d}' \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306F\u5358\u72EC\u3067\u6307\u5B9A\u3059\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08';' \u3067\u4ED6\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3068\u4F75\u8A18\u3067\u304D\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  bindingSyntax: (detail) => `\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u69CB\u6587\u30A8\u30E9\u30FC\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09: ${detail}`,
-  eventTokenUndeclared: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
-  commandRhsFormat: () => `command \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u53F3\u8FBA\u306B\u306F $command.<name>\uFF08$commandTokens \u3067\u5BA3\u8A00\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044`,
-  commandTokenUndeclared: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $commandTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
-  commandTokensAbsent: (t, name) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u3053\u306E state \u306B\u306F $commandTokens \u304C\u3042\u308A\u307E\u305B\u3093\u3002state \u306B $commandTokens: ["${name}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`,
-  eventTokensAbsent: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u3053\u306E state \u306B\u306F $eventTokens \u304C\u3042\u308A\u307E\u305B\u3093\u3002state \u306B $eventTokens: ["${t}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`,
-  onEntryUndeclared: (t, absent) => `$on \u306E\u30A8\u30F3\u30C8\u30EA "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093${absent ? "\uFF08\u3053\u306E state \u306B\u306F $eventTokens \u304C\u3042\u308A\u307E\u305B\u3093\uFF09" : ""}\u3002state \u306F\u8AAD\u307F\u8FBC\u307F\u3067\u5931\u6557\u3057\u3001\u30DA\u30FC\u30B8\u306F\u521D\u671F\u5316\u3055\u308C\u307E\u305B\u3093\uFF08$on entry "${t}" is not declared in $eventTokens\uFF09\u3002${absent ? `$eventTokens: ["${t}"] \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044` : `$eventTokens \u306B "${t}" \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044`}`,
-  streamPathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F $stream \u5BA3\u8A00\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
-  pathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
-  pathNonexistent: (p) => `\u30D1\u30B9 "${p}" \u306F\u5BA3\u8A00\u3055\u308C\u305F stateSchema \u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
-  pathTypeMismatch: (p, label, expected, actual) => `\u30D1\u30B9 "${p}" \u306F stateSchema \u4E0A\u3067 ${actual} \u578B\u3067\u3059\u304C\u3001${label} \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059`,
-  expansionSuffix: (x) => `\uFF08\u5C55\u958B: ${x}\uFF09`,
-  patternPathOutsideFor: (p) => `\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\uFF084.0 \u306F\u521D\u671F\u5316\u3067 #1401 \u3092\u6295\u3052\u307E\u3059\uFF09`,
-  omittedPathOutsideFor: (p) => `\u7701\u7565\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\uFF084.0 \u306F\u521D\u671F\u5316\u3067 #1402 \u3092\u6295\u3052\u307E\u3059\uFF09`,
-  loopIndexOutsideFor: (p) => `\u30EB\u30FC\u30D7\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\uFF084.0 \u306F\u521D\u671F\u5316\u3067 #1401 \u3092\u6295\u3052\u307E\u3059\uFF09`,
-  indexArity: (api, p, req, wc, actual) => `${api}("${p}") \u306E\u6DFB\u5B57\u306F${req === "exact" ? `\u3061\u3087\u3046\u3069 ${wc} \u500B` : `${wc} \u500B\u4EE5\u4E0B`}\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30D1\u30B9\u4E2D\u306E "*" \u306F ${wc} \u500B\uFF09\u3002${actual} \u500B\u6307\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059`,
-  wildcardRank: (subject, needed, available) => `${subject} \u306F ${needed} \u6BB5\u306E\u30EB\u30FC\u30D7\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001\u73FE\u5728\u306E\u30B9\u30B3\u30FC\u30D7\u306F ${available} \u6BB5\u3067\u3059`,
-  wildcardOtherList: (p, over, loop) => `"${p}" \u306E "*" \u306F "${over}" \u306E\u884C\u3092\u6307\u3057\u307E\u3059\u304C\u3001\u305D\u306E\u6BB5\u3067\u56F2\u3080 for \u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u304C\u63CF\u304F\u306E\u306F "${loop}" \u3067\u3059\uFF084.0 \u306F\u30D0\u30A4\u30F3\u30C9\u78BA\u7ACB\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002\u675F\u7E1B\u306E "*" \u306F\u56F2\u3080\u30EB\u30FC\u30D7\u306E\u884C\u3067\u3059 \u2014 \u5225\u306E\u30EA\u30B9\u30C8\u306E\u884C\u306F getter \u306E\u4E2D\u3067 $resolve(path, indexes) \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
-  outerInTemplate: (prop) => `"${prop}:" \u306F\u8981\u7D20\u305D\u306E\u3082\u306E\u3092\u7F6E\u304D\u63DB\u3048\u308B\u306E\u3067\u3001for / if \u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u4E2D\u3067\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u884C\u3084\u679D\u306F\u30CE\u30FC\u30C9\u3092\u4F4D\u7F6E\u3067\u6301\u3064\u305F\u3081\u30024.0 \u306F\u521D\u671F\u5316\u3067 throw \u3057\u307E\u3059\uFF09\u3002\u5305\u3080\u8981\u7D20\u306B innerHTML: \u3092\u675F\u7E1B\u3057\u3066\u304F\u3060\u3055\u3044`,
-  directNotEvent: (prop) => `\u4FEE\u98FE\u5B50 #direct \u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\uFF08on*:\uFF09\u3060\u3051\u306B\u52B9\u304D\u307E\u3059\u3002"${prop}" \u3067\u306F\u7121\u8996\u3055\u308C\u307E\u3059`,
-  delegatedCurrentTarget: (suggested, eventName, handler) => `"${eventName}" \u30A4\u30D9\u30F3\u30C8\u306E\u675F\u7E1B\u306F root \u3078\u59D4\u8B72\u3055\u308C\u308B\u306E\u3067\u3001"${handler}" \u306E\u4E2D\u306E event.currentTarget \u306F\u3053\u306E\u8981\u7D20\u3067\u306F\u306A\u304F root \u306B\u306A\u308A\u307E\u3059\u3002\u8981\u7D20\u306B\u30EA\u30B9\u30CA\u30FC\u3092\u4ED8\u3051\u308B\u306B\u306F "${suggested}:" \u3068\u66F8\u304F\u304B\u3001event.target.closest(...) \u3067\u8981\u7D20\u3092\u63A2\u3057\u3066\u304F\u3060\u3055\u3044`,
-  getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
-  updatedCallbackUnbound: (p) => `$renderedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
-  onHandlerThis: (name) => `$on \u306E\u30CF\u30F3\u30C9\u30E9 "${name}" \u304C this \u3092\u4F7F\u3063\u3066\u3044\u307E\u3059\u3002$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F state \u3092\u7B2C 1 \u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\uFF08\`${name}(state, event) { state.x = \u2026 }\`\uFF09\u3001this \u306F undefined \u306A\u306E\u3067\u3001this.\u2026 \u306F\u547C\u3070\u308C\u305F\u3068\u304D\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002$watch \u3084\u30E1\u30BD\u30C3\u30C9\u3068\u9055\u3046\u70B9\u306B\u6CE8\u610F`,
-  getterReadsLocation: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001location \u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u3001\u6700\u521D\u306B\u8AAD\u3093\u3060 URL \u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u30CA\u30D3\u30B2\u30FC\u30B7\u30E7\u30F3\u3067\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002URL \u306F state \u3092\u901A\u3057\u3066\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044 \u2014 <wcs-router> \u306E path / searchParams \u3092\u675F\u306D\u308B`,
-  getterReadsClock: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001\u6642\u523B\u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u3067\u6BCE\u30D5\u30EC\u30FC\u30E0\u300C\u63CF\u304D\u76F4\u3057\u300D\u3066\u3082\u5909\u308F\u308A\u307E\u305B\u3093\uFF09\u3002\u6642\u523B\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-raf> \u3084 <wcs-timer> \u304C\u66F8\u304F\u5024\u3092\u675F\u306D\u308B`,
-  getterReadsAmbient: (read, kind) => {
-    const head = `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059`;
-    switch (kind) {
-      case "size":
-        return `${head}\uFF08\u30EA\u30B5\u30A4\u30BA\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u5927\u304D\u3055\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-resize> \u304C\u66F8\u304F width / height \u3092\u675F\u306D\u308B\uFF08\u30D6\u30EC\u30FC\u30AF\u30DD\u30A4\u30F3\u30C8\u306E\u5224\u5B9A\u306A\u3089 <wcs-media-query> \u306E matched\uFF09`;
-      case "pixelRatio":
-        return `${head}\uFF08\u62E1\u5927\u3057\u3066\u3082\u3001\u5225\u306E\u753B\u9762\u3078\u79FB\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30DA\u30FC\u30B8\u304C\u4F7F\u3046\u89E3\u50CF\u5EA6\u306E\u3057\u304D\u3044\u5024\u3092 <wcs-media-query> \u306E matched \u3067\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08query="(min-resolution: 2dppx)"\uFF09`;
-      case "media":
-        return `${head}\uFF08\u30AF\u30A8\u30EA\u304C\u5408\u3046\u3088\u3046\u306B\u306A\u3063\u3066\u3082\u3001\u5408\u308F\u306A\u304F\u306A\u3063\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002<wcs-media-query> \u306E matched \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">\uFF09`;
-      case "online":
-        return `${head}\uFF08\u30AA\u30D5\u30E9\u30A4\u30F3\u306B\u306A\u3063\u3066\u3082\u3001\u623B\u3063\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002<wcs-network> \u306E offline \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`;
-      case "scroll":
-        return `${head}\uFF08\u30B9\u30AF\u30ED\u30FC\u30EB\u3057\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30B9\u30AF\u30ED\u30FC\u30EB\u4F4D\u7F6E\u3092\u51FA\u3059 wcstack \u306E\u8981\u7D20\u306F\u7121\u3044\u306E\u3067\u3001\u5024\u3092 state \u306B\u7F6E\u304D\u3001\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9\uFF08scroll \u306E\u30EA\u30B9\u30CA\u30FC\uFF09\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
-      default:
-        return `${head}\uFF08\u30DA\u30FC\u30B8\u304C\u96A0\u308C\u3066\u3082\u3001\u8868\u793A\u3055\u308C\u3066\u3082\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u30DA\u30FC\u30B8\u306E\u53EF\u8996\u6027\u3092\u51FA\u3059 wcstack \u306E\u8981\u7D20\u306F\u7121\u3044\u306E\u3067\u3001\u5024\u3092 state \u306B\u7F6E\u304D\u3001\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9\uFF08visibilitychange \u306E\u30EA\u30B9\u30CA\u30FC\uFF09\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
-    }
-  },
-  updatedCallbackUnknownPath: (p) => `"${p}" \u306F state \u306E\u30D1\u30B9\u3067\u306F\u306A\u3044\u306E\u3067 $renderedCallback \u306E paths \u306B\u73FE\u308C\u305A\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093`,
-  commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u2014 <\u30E1\u30BD\u30C3\u30C9> \u306F\u305D\u306E\u8981\u7D20\u306E\u30E1\u30BD\u30C3\u30C9\u306E\u540D\u524D\uFF09`,
-  writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
-  pathReadonlyWrite: (p) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u306A\u306E\u3067\u3001\u3053\u306E\u66F8\u304D\u8FBC\u307F\u306F\u5B9F\u884C\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001\u305D\u306E\u5024\u3092\u76F4\u63A5\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  getterWrite: (p, g, via) => `getter "${g}" \u306E\u8A55\u4FA1\u4E2D\u306B "${p}" \u3092\u66F8\u3044\u3066\u3044\u307E\u3059${via === void 0 ? "" : `\uFF08\u547C\u3093\u3067\u3044\u308B\u30E1\u30BD\u30C3\u30C9 "${via}" \u306E\u4E2D\uFF09`}\u3002getter \u306F\u8AAD\u3080\u3060\u3051\u3067\u3001\u66F8\u304D\u8FBC\u307F\u306F\u8A55\u4FA1\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u30E1\u30BD\u30C3\u30C9\u30FBsetter\u30FB$watch \u306E\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u66F8\u304F\u304B\u3001\u5024\u3092\u5225\u306E getter \u3067\u8A08\u7B97\u3057\u3066\u304F\u3060\u3055\u3044`,
-  setterCycleSelf: (p) => `"${p}" \u306E setter \u304C\u81EA\u5206\u306E\u30D1\u30B9 "${p}" \u306B\u66F8\u3044\u3066\u3044\u307E\u3059\u3002setter \u306E\u30D1\u30B9\u306F\u30A2\u30AF\u30BB\u30B5\u305D\u306E\u3082\u306E\u306A\u306E\u3067\u3001\u66F8\u3051\u3070 setter \u304C\u307E\u305F\u547C\u3070\u308C\u3001\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u308B\u307E\u3067\u7D9A\u304D\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\uFF08_${p.split(".").pop()} \u306A\u3069\uFF09\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
-  setterCycle: (cycle) => `setter \u304C\u4E92\u3044\u306B\u66F8\u304D\u5408\u3063\u3066\u3044\u307E\u3059: ${cycle}\u3002\u6761\u4EF6\u3067\u6B62\u307E\u3089\u306A\u3051\u308C\u3070\u3001\u4E92\u3044\u3092\u547C\u3073\u7D9A\u3051\u3066\u30B9\u30BF\u30C3\u30AF\u304C\u6EA2\u308C\u307E\u3059\u3002\u5024\u306F getter \u304C\u8AAD\u3080\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
-  setterUnobserved: (p, w) => `"${p}" \u306E setter \u306F ${w} \u3092\u66F8\u304D\u307E\u3059\u304C\u3001getter "${p}" \u306F\u305D\u306E\u3069\u308C\u3082\u8AAD\u307F\u307E\u305B\u3093\u3002\u66F8\u3044\u305F\u5F8C\u3082 getter \u306F\u5143\u306E\u5024\u3092\u8FD4\u3057\u3001"${p}" \u306B\u675F\u306D\u305F\u53CC\u65B9\u5411\u306E\u5165\u529B\u306F\u305D\u3053\u3078\u623B\u308A\u307E\u3059\u3002getter \u304C\u8AAD\u3080\u5024\u3092\u66F8\u304F\u304B\u3001setter \u304C\u66F8\u304F\u5024\u3092 getter \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
-  relativePathOf: (r, a) => `\uFF08\u30A2\u30AF\u30BB\u30B5 "${a}" \u306E\u4E2D\u306E "${r}"\uFF09`,
-  relativeNoRow: (r, a) => `"${r}" \u306F\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u3059\u304C\u3001\u30A2\u30AF\u30BB\u30B5 "${a}" \u306F\u30EA\u30B9\u30C8\u306E\u884C\u306E\u3082\u306E\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u30AD\u30FC\u306B "*" \u304C\u3042\u308A\u307E\u305B\u3093\uFF09\u3002\u884C\u304C\u7121\u3044\u306E\u3067\u3001\u8A55\u4FA1\u306E\u305F\u3073\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#1402\uFF09\u3002\u30D5\u30EB\u30D1\u30B9\u3067\u66F8\u304F\u304B\u3001\u884C\u306E\u30A2\u30AF\u30BB\u30B5\uFF08get "<\u30EA\u30B9\u30C8>.*.<\u540D\u524D>"()\uFF09\u306B\u3057\u3066\u304F\u3060\u3055\u3044`,
-  relativeApiPath: (r, api) => `"${r}" \u306F\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u3059\u304C\u3001${api} \u306F\u884C\u3092\u6DFB\u5B57\u306E\u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\u3001\u547C\u3070\u308C\u305F\u884C\u304B\u3089\u306F\u53D6\u308A\u307E\u305B\u3093\u3002\u76F8\u5BFE\u30D1\u30B9\u306F\u3053\u3053\u3067\u306F\u5C55\u958B\u3055\u308C\u305A\u3001\u547C\u3073\u51FA\u3057\u306F\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u30D5\u30EB\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08"<\u30EA\u30B9\u30C8>.*${r === "." ? "" : r}"\uFF09`,
-  accessorListSyntax: (k, why) => `\u30A2\u30AF\u30BB\u30B5\u306E\u30AD\u30FC "${k}" \u306F\u8907\u6570\u306E\u30D1\u30B9\u306E\u4E26\u3073\u3067\u3059\u304C\u3001${why === "space" ? "\u30AB\u30F3\u30DE\u306E\u524D\u5F8C\u306B\u7A7A\u767D\u304C\u3042\u308A\u307E\u3059" : why === "empty" ? "\u7A7A\u306E\u9805\u76EE\u304C\u3042\u308A\u307E\u3059" : '\u518D\u5E30\u306E\u30D1\u30B9\uFF08"**"\uFF09\u306F\u4E26\u3079\u3089\u308C\u307E\u305B\u3093'}\u3002\u30D1\u30B9\u306F\u30AB\u30F3\u30DE\u3060\u3051\u3067\u533A\u5207\u308A\u307E\u3059\uFF08get "users.*.fullname,employees.*.fullname"()\uFF09${why === "recursive" ? "" : "\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30AB\u30F3\u30DE\u306E\u9593\u3092\u305D\u306E\u307E\u307E\u30D1\u30B9\u306B\u3059\u308B\u306E\u3067\u3001\u3053\u306E\u307E\u307E\u3067\u306F\u8AB0\u3082\u8AAD\u307E\u306A\u3044\u30D1\u30B9\u304C\u5BA3\u8A00\u3055\u308C\u307E\u3059"}`,
-  accessorListPath: (p, list, other, rel) => `"${p}" \u306F "${list}" \u306E\u884C\u306E\u30D1\u30B9\u3067\u3059\u304C\u3001\u3053\u306E\u30A2\u30AF\u30BB\u30B5\u306F "${other}" \u306B\u3082\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u305D\u3061\u3089\u306E\u884C\u3067\u306F\u3053\u306E\u30D1\u30B9\u306B\u884C\u304C\u7121\u304F\u3001\u8AAD\u307F\u306F undefined\u3001\u66F8\u304D\u306F\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002\u884C\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: this["${rel}"]`,
-  nestedWritePathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u66F8\u304D\u8FBC\u307F\u306F\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306B\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30D1\u30B9\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
-  readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
-  stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
-  stateAbsent: (tag) => `\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306B\u306F\u675F\u7E1B\u304C\u3042\u308A\u307E\u3059\u304C <${tag}> \u304C\u7121\u3044\u306E\u3067\u3001\u675F\u7E1B\u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u30DA\u30FC\u30B8\u304C\u53D6\u308A\u8FBC\u3080\u65AD\u7247\u3084\u3001state \u3092\u30B9\u30AF\u30EA\u30D7\u30C8\u3067\u4F5C\u308B\u30DA\u30FC\u30B8\uFF09\u3002state \u306E\u3042\u308B\u30DA\u30FC\u30B8\u3092\u691C\u67FB\u3059\u308B\u304B\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u96A3\uFF08\u304B\u4E0A\uFF09\u306E wcstack.manifest.json \u306E stateSchema \u306B\u30D1\u30B9\u3092\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
-  pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
-  pathDynamicUnknownType: (path, n, type) => `"${path}" \u306E JSDoc \u306E\u578B ${type} \u306F\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u8AAD\u3080\u306E\u306F\u3001\u8AAD\u3081\u308B\u30D5\u30A1\u30A4\u30EB\u306E export interface / export type\u3001.js \u306E @typedef\uFF09\u3002\u5F62\u3092\u305D\u306E\u5834\u3067\u66F8\u304F\u304B\u3001\u540C\u3058\u30B9\u30AF\u30EA\u30D7\u30C8\u306E @typedef \u306B\u3059\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
-  stateSchemaDrift: (inScript, inSchema) => `\u3053\u306E\u30DA\u30FC\u30B8\u306B\u5F53\u3066\u305F stateSchema \u304C state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3068\u98DF\u3044\u9055\u3063\u3066\u3044\u307E\u3059${inScript.length > 0 ? `\uFF08\u30B9\u30AF\u30EA\u30D7\u30C8\u306B\u3042\u3063\u3066 schema \u306B\u7121\u3044\u30AD\u30FC: ${listKeys(inScript)}\uFF09` : ""}${inSchema.length > 0 ? `\uFF08schema \u306B\u3042\u3063\u3066\u30B9\u30AF\u30EA\u30D7\u30C8\u306B\u7121\u3044\u30AD\u30FC: ${listKeys(inSchema)}\uFF09` : ""}\u3002schema \u306F\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089\u4F5C\u308B\u6D3E\u751F\u7269\u306A\u306E\u3067\u3001\u53E4\u3044\u304B\u3001\u5225\u306E state\uFF08\u5225\u306E\u30DA\u30FC\u30B8\uFF09\u306E\u3082\u306E\u3067\u3059 \u2014 \u305D\u306E\u307E\u307E\u691C\u67FB\u3059\u308B\u3068\u3001\u540D\u524D\u3092\u5909\u3048\u305F\u30AD\u30FC\u3078\u306E\u675F\u7E1B\u304C\u901A\u308A\u3001\u3042\u308B\u30AD\u30FC\u304C\u5B58\u5728\u3057\u306A\u3044\u3068\u8A00\u308F\u308C\u307E\u3059\u3002wcs-schema emit \u3067\u4F5C\u308A\u76F4\u3057\uFF08\u4F5C\u3063\u305F manifest \u306F\u5143\u306E state \u306E\u30D5\u30A1\u30A4\u30EB\u3092 stateSource \u306B\u8A18\u3057\u3001lint \u306F\u305D\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u3080\u30DA\u30FC\u30B8\u306B\u3060\u3051\u5F53\u3066\u307E\u3059\uFF09\u3001CI \u3067\u306F wcs-schema check \u3067\u98DF\u3044\u9055\u3044\u3092\u6B62\u3081\u3066\u304F\u3060\u3055\u3044`,
-  pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u304C\u66F8\u304F\u306E\u3067\u3001\u4E2D\u8EAB\u306F\u8981\u7D20\u304C\u6E21\u3059\u3082\u306E\u3067\u3059\u3002\u305D\u306E\u5F62\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
-  pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
-  pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
-  pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
-  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${spread === void 0 ? "" : `"${spread}" \u304C\u675F\u306D\u308B `}"${member}" \u306F <${tag}> \u304C\u66F8\u304F\u30E1\u30F3\u30D0\u30FC\uFF08${twoWay ? "\u5165\u529B\u3067\u3082\u3042\u308B\u51FA\u529B" : "\u51FA\u529B"}\uFF09\u3067\u3059\u3002\u8981\u7D20\u306F\u305D\u306E\u5024\u3092 "${p}" \u306B\u66F8\u304F\u306E\u3067\u3001${atInit ? "\u675F\u306D\u305F\u6642\u70B9\u306E\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u3001state \u306E\u521D\u671F\u5316\u304C\u5931\u6557\u3057\u307E\u3059" : "\u8981\u7D20\u304C\u5024\u3092\u77E5\u3089\u305B\u308B\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059"}\uFF08"${p}" is a getter without a setter\uFF09\u3002${spread !== void 0 ? `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001spread \u306E\u5F8C\u308D\u3067 "${member}" \u3092\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08${spread}; ${member}: <\u30C7\u30FC\u30BF\u306E\u30AD\u30FC>\uFF09` : !twoWay ? `\u30C7\u30FC\u30BF\u306E\u30D1\u30B9\u3092\u675F\u306D\u3066\u305D\u308C\u3092 getter \u304B\u3089\u8AAD\u3080\uFF08${member}: <\u30C7\u30FC\u30BF\u306E\u30AD\u30FC>\uFF09\u304B\u3001setter \u3092\u8DB3\u3057\u3066\u304F\u3060\u3055\u3044\uFF08set "${p}"(v) { \u2026 }\uFF09` : atInit ? `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001\u6700\u521D\u306E\u5024\u3092 state \u304B\u3089\u53D6\u3063\u3066\u304F\u3060\u3055\u3044\uFF08#init=element \u3092\u5916\u3059\uFF09` : `setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${member}#ro: ${p} \u2014 state \u304B\u3089\u8981\u7D20\u3078\u306F\u4ECA\u307E\u3067\u3069\u304A\u308A\u66F8\u304B\u308C\u307E\u3059\uFF09`}`,
-  submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
-  guardReadsAtModuleTop: (r) => `\u30AC\u30FC\u30C9\u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u3001export \u3059\u308B\u95A2\u6570\u306E\u5916\uFF08\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\uFF09\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u3067 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001\u30AC\u30FC\u30C9\u306F\u305D\u306E\u3068\u304D\u8AAD\u3093\u3060\u5024\u3092\u6301\u3061\u7D9A\u3051\u3001\u9077\u79FB\u306E\u305F\u3073\u306B\u305D\u306E\u5024\u3067\u6C7A\u3081\u307E\u3059\uFF08\u30ED\u30B0\u30A4\u30F3\u3057\u305F\u5F8C\u3082\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u7121\u3044\u307E\u307E\uFF09\u3002\u9077\u79FB\u306E\u305F\u3073\u306B\u8D70\u308B\u3001export \u3057\u305F\u95A2\u6570\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
-  stateReadsAtModuleTop: (r) => `state \u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u304C\u30C8\u30C3\u30D7\u30EC\u30D9\u30EB\u3067 ${r} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u30E2\u30B8\u30E5\u30FC\u30EB\u306F <wcs-state> \u3054\u3068\u306B 1 \u56DE\u3060\u3051\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001state \u306F\u30DA\u30FC\u30B8\u306E\u8AAD\u307F\u8FBC\u307F\u306E\u6642\u70B9\u306E\u5024\u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u5F8C\u3067\u5909\u308F\u308B\u30C8\u30FC\u30AF\u30F3\u3084\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u898B\u3048\u307E\u305B\u3093\uFF09\u3002\u5024\u3092 state \u306B\u7F6E\u304F\uFF08<wcs-storage> \u306B\u675F\u306D\u308B\uFF09\u304B\u3001\u4F7F\u3046\u30E1\u30BD\u30C3\u30C9\u306E\u4E2D\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
-  eventTokenUnbound: (t, handler) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 $eventTokens \u306B\u5BA3\u8A00\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u51FA\u3059 eventToken.<\u30E1\u30F3\u30D0\u30FC>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3069\u306E\u8981\u7D20\u3082\u767A\u706B\u3055\u305B\u306A\u3044\u306E\u3067\u3001${handler ? "$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F\u4E00\u5EA6\u3082\u8D70\u308A\u307E\u305B\u3093" : "\u3053\u306E\u30C8\u30FC\u30AF\u30F3\u306F\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093"}\u3002\u767A\u706B\u3055\u305B\u308B\u8981\u7D20\u306B\u675F\u306D\u308B\uFF08eventToken.<\u30E1\u30F3\u30D0\u30FC>: ${t} \u2014 <\u30E1\u30F3\u30D0\u30FC> \u306F\u305D\u306E\u8981\u7D20\u306E wcBindable \u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF09\u304B\u3001$eventTokens \u304B\u3089\u5916\u3057\u3066\u304F\u3060\u3055\u3044`,
-  objectKeyAssign: (t, acc, sp) => `"${t}" \u306E\u30AD\u30FC\u306B\u305D\u306E\u5834\u3067\u4EE3\u5165\u3057\u3066\u3044\u307E\u3059\u3002state \u306F\u3053\u306E\u66F8\u304D\u8FBC\u307F\u3092\u898B\u306A\u3044\u306E\u3067\u3001\u305D\u308C\u3092\u8AAD\u3080\u675F\u7E1B\u30FBgetter\u30FB$watch \u306F\u5909\u308F\u3089\u305A\u3001\u4F55\u3082\u63CF\u304D\u76F4\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4EE3\u5165\u3059\u308B\uFF08${acc} = { ...${acc}, [key]: value }\uFF09\u304B\u3001\u30C9\u30C3\u30C8\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08this["${sp}"] = \u2026\uFF09`,
-  getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
-  getterUntrackedReadBound: (root, sp, binding, tag, written) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u304C\u3001<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001getter \u306F\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
-  handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
-  typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
-  attrBooleanPresence: (a, p, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001false \u306E\u3068\u304D ${a}="false" \u306B\u306A\u308A\u307E\u3059\u3002\u8AD6\u7406\u5C5E\u6027\u306F\u5024\u306B\u95A2\u4FC2\u306A\u304F\u3001\u5728\u308B\u3060\u3051\u3067\u52B9\u304D\u307E\u3059: ${a}="false" \u3067\u3082 ${a} \u306E\u307E\u307E\u3067\u3059\uFF08\u5C5E\u6027\u3092\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: ${p}: ${rhs}`,
-  attrBooleanText: (a, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001\u5C5E\u6027\u306F "true" \u304B "false" \u306B\u306A\u308A\u3001\u5916\u308C\u308B\u3053\u3068\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u5C5E\u6027\u306E\u6709\u7121\u3092\u898B\u308B\u5074\uFF08CSS \u306E [${a}]\u30FBhasAttribute()\uFF09\u306B\u306F\u3001\u3069\u3061\u3089\u3067\u3082\u5728\u308A\u307E\u3059\u3002false \u306E\u9593\u306F\u5916\u3059\u306A\u3089 attr.${a}: ${rhs}|defaults(null)\u3001\u6587\u5B57\u306E "true" / "false" \u304C\u610F\u56F3\u306A\u3089 attr.${a}: ${rhs}|string \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  radioNameShared: (name, binding) => `\u884C\u3054\u3068\u306E\u30E9\u30B8\u30AA\u304C\u3059\u3079\u3066 name="${name}" \u306B\u306A\u308B\u306E\u3067\u3001\u30D6\u30E9\u30A6\u30B6\u306F\u5168\u90E8\u306E\u884C\u306E\u30E9\u30B8\u30AA\u3092 1 \u3064\u306E\u30B0\u30EB\u30FC\u30D7\u306B\u3057\u307E\u3059\u3002\u30DA\u30FC\u30B8\u5168\u4F53\u3067 1 \u3064\u3057\u304B\u9078\u3070\u308C\u305F\u72B6\u614B\u306B\u306A\u3089\u305A\u3001\u8868\u793A\u306F\u6700\u521D\u306E\u63CF\u753B\u304B\u3089\u884C\u3054\u3068\u306E\u5024\u3068\u98DF\u3044\u9055\u3044\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${binding === "radio" ? "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u308B\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u304B\u3001name \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08radio: \u306F name \u304C\u7121\u304F\u3066\u3082\u3001\u540C\u3058\u30D1\u30B9\u306B\u675F\u306D\u305F\u30E9\u30B8\u30AA\u3092\u9078\u629E\u306B\u5408\u308F\u305B\u307E\u3059\uFF09" : "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u3002\u884C\u3092\u307E\u305F\u3044\u3067 1 \u3064\u3092\u9078\u3070\u305B\u308B\u306A\u3089\u3001\u5168\u90E8\u3092 1 \u3064\u306E\u30D1\u30B9\u306B\u675F\u306D\u307E\u3059\uFF08value: .<\u884C\u306E id>; radio: <\u30D1\u30B9>\uFF09"}`,
-  numberWrittenAsString: (path, left, asNumber) => `"${path}" \u306F state \u3067\u306F\u6570\u5024\u3067\u3059\u304C\u3001value: \u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8981\u7D20\u306E\u6301\u3064\u6587\u5B57\u5217\u3067\u3059\u30025 \u3068\u5165\u529B\u3057\u305F\u5F8C\u306E state \u306F "5" \u3067\u3001"5" + 1 \u306F "51" \u306B\u306A\u308A\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002\u66F8\u304D\u623B\u3059\u3068\u304D\u306B\u6570\u5024\u306B\u3057\u3066\u304F\u3060\u3055\u3044: ${asNumber ? `valueAsNumber: ${path}\u3001\u307E\u305F\u306F` : ""}\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF ${left}|number: ${path}\uFF08|int\u30FB|float \u3082\uFF09`,
-  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: \u306F\u53CC\u65B9\u5411\u3067 1 \u6253\u9375\u3054\u3068\u306B\u66F8\u304D\u623B\u3057\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u305D\u306E\u305F\u3073\u306B state \u306E\u5024\u3092\u6574\u5F62\u3057\u3066\u6B04\u3078\u66F8\u304D\u76F4\u3057\u307E\u3059\u3002\u5165\u529B\u4E2D\u306E\u6B04\u304C\u66F8\u304D\u63DB\u308F\u308A\uFF08\u30AD\u30E3\u30EC\u30C3\u30C8\u306F\u672B\u5C3E\u3078\u98DB\u3073\u3001IME \u306E\u5909\u63DB\u306F\u9014\u5207\u308C\u307E\u3059\uFF09\u3001state \u304C\u53D7\u3051\u53D6\u308B\u306E\u3082\u6B04\u306E\u6574\u5F62\u6E08\u307F\u306E\u6587\u5B57\u3067\u3059\uFF08\u51FA\u529B\u30D5\u30A3\u30EB\u30BF\u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\uFF09\u3002\u6574\u5F62\u3057\u305F\u6587\u5B57\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u6B04\u306E\u78BA\u5B9A\u3067\u66F8\u304D\u623B\u3057\u3066 setter \u3067\u6574\u5F62\u3059\u308B\uFF08${prop}#onchange:\uFF09\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09` : `${prop}: \u306F\u53CC\u65B9\u5411\u3067\u3059\u304C\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\u3002\u8981\u7D20\u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8868\u793A\u3057\u3066\u3044\u308B\u6574\u5F62\u6E08\u307F\u306E\u5024\u3067\u3001\u6B21\u306F\u305D\u306E\u5024\u306B\u30D5\u30A3\u30EB\u30BF\u304C\u639B\u304B\u308A\u307E\u3059\u3002\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF\u3067\u5143\u306B\u623B\u3059\uFF08${left}|<\u30D5\u30A3\u30EB\u30BF>: \u2026\uFF09\u3001\u6574\u5F62\u3057\u305F\u5024\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09`,
-  bodyBinding: (tag, attribute) => `<${tag}> \u306E ${attribute} \u306F\u675F\u7E1B\u3055\u308C\u307E\u305B\u3093\u3002<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u306E\u4E2D\u3067\u3001<body> \u3068 <html> \u305D\u306E\u3082\u306E\u306F\u675F\u306D\u306A\u3044\u306E\u3067\u3001\u3053\u3053\u306B\u66F8\u3044\u305F\u675F\u7E1B\u306F\u4F55\u3082\u3057\u307E\u305B\u3093\uFF08\u30A4\u30D9\u30F3\u30C8\u306E\u30CF\u30F3\u30C9\u30E9\u306F\u8D70\u3089\u305A\u3001class. / attr. \u306A\u3069\u306F\u66F8\u304B\u308C\u307E\u305B\u3093\uFF09\u3002\u675F\u7E1B\u3092 <body> \u306E\u4E2D\u306E\u8981\u7D20\uFF08\u5305\u3080\u8981\u7D20\u30FB<main>\uFF09\u3078\u79FB\u3059\u304B\u3001\u5024\u3092 $connectedCallback \u3084 $watch \u306E\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08document.documentElement.lang = \u2026\uFF09`,
-  linkHandler: (property, handler) => `<wcs-link> \u306E "${property}:" \u306F "${handler}" \u3092\u547C\u3073\u307E\u305B\u3093\u3002<wcs-link> \u81EA\u8EAB\u306F display: none \u3067\u3001\u5229\u7528\u8005\u304C\u30AF\u30EA\u30C3\u30AF\u3059\u308B\u306E\u306F\u30EA\u30F3\u30AF\u304C\u81EA\u5206\u306E\u96A3\u306B\u4F5C\u308B <a> \u306A\u306E\u3067\u3001\u30A4\u30D9\u30F3\u30C8\u306F\u30DB\u30B9\u30C8\u306B\u5C4A\u304D\u307E\u305B\u3093\u3002\u30CF\u30F3\u30C9\u30E9\u306F\u3001\u30EA\u30F3\u30AF\u306E\u4E2D\u306E\u8981\u7D20\uFF08\u5B50\u306F <a> \u306E\u4E2D\u3078\u79FB\u308A\u307E\u3059\uFF09\u304B\u3001\u30EA\u30F3\u30AF\u3092\u56F2\u3080\u8981\u7D20\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\u3002\u30CF\u30F3\u30C9\u30E9\u304B\u3089\u9077\u79FB\u3059\u308B\u306A\u3089\u3001router \u306E navigateUrl \u306B\u66F8\u304D\u307E\u3059\uFF08<wcs-router> \u306E data-wcs="navigateUrl: \u2026"\uFF09`,
-  rootMarginUnit: (tag, value, refused, suggested) => {
-    const why = refused.length === 0 ? "\u5024\u306F 1\u301C4 \u500B\u3067\u3059" : `${refused.map((t) => `"${t}"`).join("\u30FB")} \u306F px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093${refused.some(isUnitlessZero) ? "\uFF080 \u306B\u3082\u5358\u4F4D\u304C\u8981\u308A\u307E\u3059\uFF09" : ""}`;
-    const effect = tag === "wcs-intersect" ? "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001observing \u306F false \u306E\u307E\u307E\u3067\u3059" : "\u8981\u7D20\u306F\u4F55\u3082\u76E3\u8996\u305B\u305A\u3001\u6B21\u306E\u30DA\u30FC\u30B8\u306F\u8AAD\u307F\u8FBC\u307E\u308C\u307E\u305B\u3093";
-    return `\u30D6\u30E9\u30A6\u30B6\u306F root-margin="${value}" \u3092\u62D2\u307F\u307E\u3059\uFF08rootMargin must be specified in pixels or percent\uFF09: ${why}\u3002\u305D\u306E\u305F\u3081${effect}\u3002${suggested === null ? "1\u301C4 \u500B\u306E\u5024\u3092\u3001\u305D\u308C\u305E\u308C px \u304B % \u306E\u4ED8\u3044\u305F\u6570\u5024\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044" : `root-margin="${suggested}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`}`;
-  },
-  frequencyInvalid: (tag, value, suggested) => `frequency="${value}" \u306F\u6B63\u306E\u6570\u5024\u3067\u306F\u306A\u3044\u306E\u3067\u3001<${tag}> \u306F\u3053\u308C\u3092\u300C\u6307\u5B9A\u306A\u3057\u300D\u3068\u3057\u3066\u8AAD\u307F\u3001\u30BB\u30F3\u30B5\u30FC\u306F\u30D6\u30E9\u30A6\u30B6\u306E\u65E2\u5B9A\u306E\u983B\u5EA6\u3067\u52D5\u304D\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${suggested === null ? "\u6B63\u306E\u6570\u5024\uFF08Hz\uFF09\u3092\u66F8\u304F\u304B\u3001\u65E2\u5B9A\u306E\u983B\u5EA6\u3067\u3088\u3051\u308C\u3070\u5C5E\u6027\u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044" : `\u6570\u5024\u3060\u3051\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: frequency="${suggested}"`}`,
-  targetSelector: (tag, value) => `<${tag}> \u306E target \u306F CSS \u30BB\u30EC\u30AF\u30BF\u3067\u3059\u3002target="${value}" \u306F <${value}> \u8981\u7D20\u3092\u9078\u3073\u307E\u3059\u304C\u3001\u3053\u306E\u6587\u66F8\u306B\u305D\u306E\u8981\u7D20\u306F\u7121\u304F\u3001id="${value}" \u306E\u8981\u7D20\u304C\u3042\u308A\u307E\u3059\u3002\u5BFE\u8C61\u304C\u898B\u3064\u304B\u3089\u306A\u3044\u306E\u3067\u3001${TARGET_EFFECT_JA[tag] ?? "\u8981\u7D20\u306F\u4F55\u3082\u3057\u307E\u305B\u3093"}\u3002id \u3092\u6307\u3059\u306A\u3089 target="#${value}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  commandEventArgument: (property, token, tag, method, more) => `"${property}: ${token}" \u306F\u30C8\u30FC\u30AF\u30F3\u3092\u30A4\u30D9\u30F3\u30C8\u304B\u3089\u76F4\u63A5 emit \u3059\u308B\u306E\u3067\u3001\u53D7\u3051\u5074\u306E\u30B3\u30DE\u30F3\u30C9\u306F\u30A4\u30D9\u30F3\u30C8\u3092\u7B2C 1 \u5F15\u6570\u3068\u3057\u3066\u547C\u3070\u308C\u307E\u3059\u3002<${tag}> \u306E ${method}() \u306F\u5F15\u6570\u3092\u53D6\u308B\u30B3\u30DE\u30F3\u30C9\u3067\u3001${method}(event) \u306B\u306A\u308A\u307E\u3059${more > 0 ? `\uFF08\u307B\u304B\u306B ${more} \u4EF6\u306E\u53D7\u3051\u5074\u3082\u540C\u3058\u3067\u3059\uFF09` : ""}\u3002state \u306E\u30E1\u30BD\u30C3\u30C9\u304B\u3089 emit \u3057\u3066\u304F\u3060\u3055\u3044 \u2014 ${property}: <\u30E1\u30BD\u30C3\u30C9> \u3068\u66F8\u304D\u3001<\u30E1\u30BD\u30C3\u30C9>() { this.${token}.emit(\u2026) } \u3067 ${method}() \u304C\u53D7\u3051\u53D6\u308B\u5024\u3092\u6E21\u3057\u307E\u3059\uFF08\u6E21\u3059\u5024\u304C\u7121\u3051\u308C\u3070\u5F15\u6570\u306A\u3057\u3067 emit \u3057\u307E\u3059\uFF09`,
-  outputPathWritten: (path, tag, member, commands) => `"${path}" \u306F <${tag}> \u306E\u51FA\u529B "${member}" \u306B\u675F\u306D\u3066\u3042\u308A\u307E\u3059\u3002\u51FA\u529B\u306F\u8981\u7D20\u304C\u66F8\u304F\u3082\u306E\u3067\u3001\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u66F8\u304D\u8FBC\u307F\u306F\u8981\u7D20\u306B\u5C4A\u304D\u307E\u305B\u3093\u3002true \u3092\u4EE3\u5165\u3057\u3066\u3082\u8981\u7D20\u306F\u4F55\u3082\u305B\u305A\u3001\u30DA\u30FC\u30B8\u3060\u3051\u304C\u305D\u3046\u306A\u3063\u305F\u3053\u3068\u306B\u3057\u307E\u3059\u3002${commands.length === 0 ? `<${tag}> \u306B\u30B3\u30DE\u30F3\u30C9\u306F\u7121\u304F\u3001\u3053\u306E\u5024\u306F\u8981\u7D20\u304C\u77E5\u3089\u305B\u308B\u3082\u306E\u3067\u3059\u3002\u4EE3\u5165\u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044` : `\u8981\u7D20\u306B\u306F\u30B3\u30DE\u30F3\u30C9\u3067\u983C\u3093\u3067\u304F\u3060\u3055\u3044\uFF08${commands.join("\u30FB")} \u2014 command.<\u30E1\u30BD\u30C3\u30C9>: $command.<\u540D\u524D> \u3092\u675F\u306D\u3001\u3053\u3053\u3067 this.$command.<\u540D\u524D>.emit() \u3092\u547C\u3076\uFF09\u3002"${path}" \u306F\u8981\u7D20\u304C\u66F8\u304D\u307E\u3059`}`,
-  filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
-  filterRemoved: (n, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${c}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002"${c}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  substrRemoved: (rewrite) => `\u30D5\u30A3\u30EB\u30BF "substr" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002slice(start, start + length) \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 slice \u306E\u7B2C 2 \u5F15\u6570\u306F\u9577\u3055\u3067\u306F\u306A\u304F\u7D42\u308F\u308A\u306E\u4F4D\u7F6E\u3067\u3059${rewrite === null ? "" : `\uFF08\u3053\u3053\u3067\u306F ${rewrite}\uFF09`}`,
-  filterMinArgs: (n, min, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306B\u306F\u6700\u4F4E ${min} \u500B\u306E\u5F15\u6570\u304C\u5FC5\u8981\u3067\u3059\uFF08${c} \u500B\u6307\u5B9A\uFF09`,
-  filterMaxArgs: (n, max, c) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u5F15\u6570\u306F\u6700\u5927 ${max} \u500B\u3067\u3059\uFF08${c} \u500B\u6307\u5B9A\uFF09`,
-  filterArgType: (n, i, exp, arg, act) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306E\u7B2C${i}\u5F15\u6570\u306F ${exp} \u578B\u304C\u5FC5\u8981\u3067\u3059\uFF08"${arg}" \u306F ${act} \u578B\uFF09`,
-  filterInputType: (n, accepts, cur) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F ${accepts} \u578B\u306E\u5165\u529B\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${cur}\uFF09`,
-  filterArgEnum: (n, arg, members, suggestion2) => `"${n}(${arg})" \u306E ${arg} \u306F\u3001\u6BD4\u3079\u308B\u5024\u304C\u53D6\u308A\u3046\u308B\u5024\uFF08${members.join(" | ")}\uFF09\u306B\u3042\u308A\u307E\u305B\u3093 \u2014 ${n === "ne" ? "\u3044\u3064\u3082\u771F" : "\u6C7A\u3057\u3066\u771F\u306B\u306A\u308A\u307E\u305B\u3093"}${suggestion2}`,
-  moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
-  moustacheFoucTextParent: (e, tag) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<${tag}> \u306E\u4E2D\u306E\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306F\u675F\u7E1B\u306B\u306A\u308A\u307E\u305B\u3093 \u2014 \u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">\uFF09\u3002`,
-  textBindingInHead: (w) => `${w} \u306F\u6587\u66F8\u306E <head> \u306E\u4E2D\u306B\u3042\u308A\u307E\u3059\u304C\u3001<wcs-state> \u304C\u675F\u306D\u308B\u306E\u306F <body> \u3068\u30B7\u30E3\u30C9\u30A6\u30EB\u30FC\u30C8\u3060\u3051\u306A\u306E\u3067\u3001\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059\u3002\u30BF\u30A4\u30C8\u30EB\u306F state \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089 document.title \u306B\u66F8\u304F\uFF08$connectedCallback \u3068 $watch \u306E\u30CF\u30F3\u30C9\u30E9\uFF09\u304B\u3001\u30EB\u30FC\u30C8\u306E <wcs-head> \u306E <title> \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
-  nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
-  watchNotObject: () => `$watch \u306F\u300C\u30D1\u30B9 \u2192 \u30CF\u30F3\u30C9\u30E9\u95A2\u6570\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  watchKeyCrossState: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u4ED6\u306E state \u3092\u6307\u3057\u3066\u3044\u307E\u3059\u3002@ \u4ED8\u304D\u306E\u8D8A\u5883 watch \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u81EA state \u306E\u30D1\u30B9\u306E\u307F\uFF09`,
-  watchKeyReserved: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`,
-  watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
-  watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
-  watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
-  scanRemoved: (mountPath) => mountPath === null ? `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08diagnostics \u306E\u5F8C\u4ED8\u3051\u3092\u5165\u308C\u305F\u5165\u53E3 \u2014 /auto \u306A\u3069 \u2014 \u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u3001/core \u3060\u3051\u3067\u306F\u9ED9\u3063\u3066\u7121\u8996\u3057\u307E\u3059\uFF09\u3002\u30D1\u30B9\u306E\u5909\u5316\u3092\u7573\u3080\u306A\u3089 $watch\u3001\u30A4\u30D9\u30F3\u30C8\u3092\u7573\u3080\u306A\u3089 $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u3001\u51FA\u529B\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044` : `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306E $watch \u304B $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u7573\u3093\u3067\u304F\u3060\u3055\u3044`,
-  typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
-  arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
-  arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
-  inPlaceAlias: (a, src, t) => `"${a}" \u306F ${src}\uFF08state \u306E\u5024\u305D\u306E\u3082\u306E\uFF09\u3067\u3059\u3002\u305D\u308C\u3092\u901A\u3057\u305F\u5909\u66F4\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u305B\u305A\u3001\u540C\u3058\u5024\u3092\u66F8\u304D\u623B\u3057\u3066\u3082\u4E00\u89A7\u306E\u884C\u306F\u8FFD\u52A0\u30FB\u524A\u9664\u30FB\u7F6E\u304D\u63DB\u3048\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${a}.with(i, item) / [...${a}, item] / { ...${a}, key: value }\uFF09`,
-  inPlaceChange: (src, t) => `${src} \u306F state \u306E\u5024\u3092\u305D\u306E\u5834\u3067\u5909\u3048\u308B\u306E\u3067\u3001\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044`,
-  tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5BA3\u8A00\u306B\u7121\u3044\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u675F\u7E1B\u3092 #38 \u3067\u62D2\u307F\u3001root \u3067\u306F state \u304C\u521D\u671F\u5316\u306B\u5931\u6557\u3057\u307E\u3059\uFF09`,
-  nameAlias: (written, canonical) => `"${written}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u3093\u3060\u6642\u70B9\u3067 throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  declarationAliasRead: (alias, canonical) => `"${alias}" \u306F 4.0 \u3067\u5916\u308C\u305F\u5BA3\u8A00\u30AD\u30FC\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u306A\u306E\u3067\u3001this["${alias}"] \u306F undefined \u306B\u306A\u308A\u307E\u3059\u3002\u5BA3\u8A00\u306F this \u3092\u901A\u3057\u3066\u8AAD\u3081\u307E\u305B\u3093 \u2014 "${canonical}" \u3092\u8AAD\u3093\u3067\u3082 undefined \u3067\u3059${canonical === "$stream" ? "\uFF08\u30B9\u30C8\u30EA\u30FC\u30E0\u306E\u72B6\u614B\u306F $streamStatus\u30FB$streamError \u3067\u8AAD\u307F\u307E\u3059\uFF09" : ""}`,
-  declarationAlias: (alias, canonical) => `\u5BA3\u8A00\u30AD\u30FC "${alias}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  declarationAliasInVolume: (alias, canonical, mountPath) => `\u5BA3\u8A00\u30AD\u30FC "${alias}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002"${canonical}" \u3082\u30DC\u30EA\u30E5\u30FC\u30E0\u3067\u306F\u5BA3\u8A00\u3067\u304D\u306A\u3044\u306E\u3067\u3001root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
-  behaviorNotObject: (keys) => `$behavior \u306F { ${keys.map((k) => `${k}?`).join(", ")} } \u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  behaviorKeyUnknown: (key, keys, suggestion2) => `"${key}" \u306F $behavior \u306E\u30AD\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${keys.join("\u30FB")} \u306E ${keys.length} \u3064\u3060\u3051\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09${suggestion2}`,
-  behaviorValueType: (key, type) => `$behavior \u306E "${key}" \u306F ${type === "boolean" ? "true \u304B false" : type} \u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  configInVolume: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5BA3\u8A00\u3067\u304D\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u307F\u3001console.error \u3067\u5831\u544A\u3057\u307E\u3059 \u2014 \u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044 \u2014 \u30DC\u30EA\u30E5\u30FC\u30E0\u306F root \u306E\u30A8\u30F3\u30B8\u30F3\u306B\u63A5\u304E\u6728\u3055\u308C\u307E\u3059`,
-  featuresNotArray: () => `$features \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u306E\u914D\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: ["temporal", "formats"]\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  featureUnknown: (name, names2, suggestion2) => `"${name}" \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${names2.join("\u30FB")}\uFF09${suggestion2}`,
-  volumeDeclarationRejected: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
-  volumeDeclarationNotRun: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F console.warn \u3067\u77E5\u3089\u305B\u3001\u3053\u306E\u5BA3\u8A00\u3092\u7121\u8996\u3057\u307E\u3059 \u2014 root \u306E state \u306E\u3082\u306E\u3067\u3059\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
-  secondRoot: () => '\u540C\u3058 root \u306B 2 \u3064\u76EE\u306E <wcs-state> \u304C\u3042\u308A\u307E\u3059\u3002state \u306E\u6728\u306F root \u3054\u3068\u306B 1 \u3064\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5F8C\u304B\u3089\u8AAD\u307F\u8FBC\u3093\u3060\u65B9\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF09\u3002\u90E8\u5206\u6728\u306F <wcs-state mount="path"> \u3067\u63A5\u304E\u6728\u3057\u3066\u304F\u3060\u3055\u3044',
-  bindComponentSource: (prop, sources) => `bind-component \u306E state \u306F\u30DB\u30B9\u30C8\u8981\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF08<\u30DB\u30B9\u30C8>.${prop || "\u2026"}\uFF09\u3060\u3051\u304B\u3089\u6765\u307E\u3059\u3002${sources.join("\u30FB")} \u3068\u4F75\u8A18\u3059\u308B\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\u306F\u30DE\u30A6\u30F3\u30C8\u3055\u308C\u307E\u305B\u3093\uFF09\u3002state \u306F\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  indexParamRange: (key, max) => `"${key}" \u306F\u30EB\u30FC\u30D7\u306E\u6DFB\u5B57\u3067\u306F\u3042\u308A\u307E\u305B\u3093 \u2014 \u6DFB\u5B57\u306F $1 \u304B\u3089 $${max} \u307E\u3067\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u3093\u3060\u6642\u70B9\u3067 wcs/index-param-range \u3092\u6295\u3052\u307E\u3059\uFF09`,
-  indexParamNotPath: (key, max) => `"${key}" \u306F\u30EB\u30FC\u30D7\u306E\u6DFB\u5B57\u3067\u306F\u306A\u304F\uFF08\u6DFB\u5B57\u306F $1 \u304B\u3089 $${max} \u307E\u3067\uFF09\u3001"$" \u306E\u540D\u524D\u7A7A\u9593\u306B\u72B6\u614B\u306E\u30D1\u30B9\u3082\u3042\u308A\u307E\u305B\u3093 \u2014 \u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u3053\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3092 wcs/binding-path-missing \u3067\u5931\u6557\u3055\u305B\u307E\u3059`,
-  featuresAttrNotRoot: () => `features \u5C5E\u6027\u3092\u8AAD\u3080\u306E\u306F\u6587\u66F8\u306E root \u306E <wcs-state>\uFF08mount \u3068 bind-component \u3092\u6301\u305F\u306A\u3044\u6700\u521D\u306E\u3082\u306E\uFF09\u3060\u3051\u3067\u3059\u3002\u3053\u306E\u8981\u7D20\u306E features \u306F\u7121\u8996\u3055\u308C\u307E\u3059 \u2014 root \u306E <wcs-state> \u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  onPrefixedMember: (member, tag, modifiers) => `"${member}" \u306F <${tag}> \u306E\u30E1\u30F3\u30D0\u30FC\u3067\u3059\u304C\u3001"on" \u3067\u59CB\u307E\u308B\u540D\u524D\u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\u306B\u306A\u308A\uFF08"${member.slice(2)}" \u30A4\u30D9\u30F3\u30C8\u3092\u5F85\u3064\uFF09\u3001\u5024\u306F\u5C4A\u304D\u307E\u305B\u3093\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3068\u3057\u3066\u675F\u7E1B\u3059\u308B\u306B\u306F ".${member}${modifiers ? `#${modifiers}` : ""}:" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08@wcstack/state 3.1\uFF09`,
-  tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
-  nativeCommandUnknown: (method, tag, allowed) => `"${method}" \u306F\u30CD\u30A4\u30C6\u30A3\u30D6\u306E <${tag}> \u306B command \u3067\u547C\u3079\u308B\u30E1\u30BD\u30C3\u30C9\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u547C\u3079\u308B\u306E\u306F ${allowed}\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u521D\u671F\u5316\u3067 wcs/token-misconfigured \u3092\u6295\u3052\u307E\u3059\uFF09`,
-  spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
-  tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
-  handleBoundAsValue: (name, tag) => `<${tag}> \u306E "${name}" \u306F\u751F\u304D\u305F\u30EA\u30BD\u30FC\u30B9\uFF08\u30CF\u30F3\u30C9\u30EB\uFF09\u3067\u3001\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002state \u306E\u30D1\u30B9\u306B\u675F\u306D\u308B\u3068\u3001\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3084 SSR \u306B\u8F09\u3089\u306A\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u304C state \u306B\u5165\u308A\u307E\u3059 \u2014 eventToken.${name}: \u3067\u53D7\u3051\u3001\u30B3\u30DE\u30F3\u30C9\u306E\u5F15\u6570\u3068\u3057\u3066\u6B21\u306E\u8981\u7D20\u3078\u76F4\u63A5\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
-  ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
-  liveRegionInserted: (attribute, by, condition) => `\u3053\u306E\u30E9\u30A4\u30D6\u30EA\u30FC\u30B8\u30E7\u30F3\uFF08${attribute}\uFF09\u306F\u3001${by === "route" ? "<wcs-route> \u306B\u5165\u3063\u305F\u3068\u304D" : by === "for" ? "for: \u306E\u884C\u304C\u8DB3\u3055\u308C\u305F\u3068\u304D" : "\u679D\u304C\u73FE\u308C\u305F\u3068\u304D"}\u306B\u6587\u3054\u3068\u633F\u5165\u3055\u308C\u307E\u3059\uFF08${condition === null ? "\u6587\u3092\u66F8\u3044\u3066\u6301\u3063\u3066\u3044\u307E\u3059" : `\u6587\u306F\u6761\u4EF6 "${condition}" \u304C\u8AAD\u3080\u3082\u306E\u306B\u675F\u306D\u3066\u3042\u308A\u3001\u679D\u306F\u305D\u306E\u6587\u3068\u4E00\u7DD2\u306B\u73FE\u308C\u307E\u3059`}\uFF09\u3002\u30B9\u30AF\u30EA\u30FC\u30F3\u30EA\u30FC\u30C0\u30FC\u304C\u8AAD\u307F\u4E0A\u3052\u308B\u306E\u306F\u30DA\u30FC\u30B8\u306B\u3042\u308B\u30EA\u30FC\u30B8\u30E7\u30F3\u306E\u6587\u304C\u5909\u308F\u3063\u305F\u3068\u304D\u306A\u306E\u3067\u3001\u3053\u306E\u6587\u306F\u8AAD\u307F\u4E0A\u3052\u3089\u308C\u307E\u305B\u3093\uFF08\u633F\u5165\u3057\u305F\u3068\u304D\u306B\u8AAD\u307F\u4E0A\u3052\u3089\u308C\u308B\u306E\u306F role="alert" \u3060\u3051\u3067\u3059\uFF09\u2014 \u805E\u304B\u305B\u305F\u3044\u77E5\u3089\u305B\u306F\u3001\u5E38\u306B\u30DA\u30FC\u30B8\u306B\u3042\u308B\u30EA\u30FC\u30B8\u30E7\u30F3\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044: \u30EA\u30FC\u30B8\u30E7\u30F3\u306F${by === "route" ? "\u30EB\u30FC\u30C8" : " template "}\u306E\u5916\u306B\u7F6E\u304D\u3001textContent: \u3092\u77E5\u3089\u305B\u308B\u6587\u306B\u675F\u306D\u3001\u77E5\u3089\u305B\u308B\u3053\u3068\u304C\u7121\u3044\u3068\u304D\u306F\u7A7A\u306B\u3059\u308B`,
-  didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
-  none: () => `\u306A\u3057`,
-  triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
-  storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
-  storageInitSeed: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u304C\u3001#init=element \u306F\u8981\u7D20\u306E\u5024\u3092\u3053\u306E\u30B9\u30ED\u30C3\u30C8\u3078\u5F15\u304D\u8FBC\u307F\u307E\u3059\u3002\u521D\u56DE\uFF08\u7A7A\u306E\u30AD\u30FC\uFF09\u306F null \u306A\u306E\u3067\u3001\u30B7\u30FC\u30C9\u306F null \u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059 \u2014 null \u3067\u30B7\u30FC\u30C9\u3057\u3066\u8AAD\u3080\u5074\u3067\u65E2\u5B9A\u5024\u3092\u88DC\u3046\uFF08\`this.${path} ?? \u2026\`\uFF09\u304B\u3001null \u3092\u7121\u8996\u3059\u308B setter \u3092\u6301\u3064\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
-  storagePairClobber: (path) => `<wcs-storage> \u306E value \u3092 #init=element \u306A\u3057\u3067\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2 "${path}" \u306B\u675F\u306D\u3066\u3044\u307E\u3059\u3002state \u306E\u5074\u304C\u5148\u306B\u66F8\u304F\u306E\u3067\u3001\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B getter \u306E\u6700\u521D\u306E\u5024\u304C\u4FDD\u5B58\u5024\u306E\u4E0A\u306B\u4FDD\u5B58\u3055\u308C\u3001setter \u306F\u4FDD\u5B58\u5024\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093 \u2014 #init=element \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\`value#init=element: ${path}\`\uFF09`,
-  inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: \u8981\u7D20\u306E\u5024\u3082\u53D7\u3051\u53D6\u308B\u306A\u3089\u3001setter \u3092\u6DFB\u3048\u305F\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092 ${input}#init=element: <getter> \u3067\u3002\u8981\u7D20\u306E\u5024\u3092\u53D7\u3051\u53D6\u3089\u306A\u3044\u306A\u3089\u3001\u4E00\u65B9\u5411\u306B ${input}#ro: <getter> \u3067\uFF08setter \u3082 #ro \u3082\u7121\u3044\u3068\u3001\u8981\u7D20\u304C\u77E5\u3089\u305B\u308B\u5024\u306E\u66F8\u304D\u623B\u3057\u304C getter \u306B\u62D2\u307E\u308C\u307E\u3059 \u2014 wcs/path-readonly\uFF09\u3002\u307E\u305F\u306F\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
-  inputNestedWriteOneShot: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u305A\u3001<${tag}> \u306F\u8981\u6C42\u306E\u305F\u3073\u306B "${input}" \u3092 null \u306B\u623B\u3059\u306E\u3067\u3001\u6B21\u306E\u8981\u6C42\u306F "${input}" \u306A\u3057\u3067\u9001\u3089\u308C\u307E\u3059 \u2014 \u8981\u6C42\u3092\u59CB\u3081\u308B\u30CF\u30F3\u30C9\u30E9\u3067\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4F5C\u3063\u3066\u4EE3\u5165\u3057\uFF08\`this.submitBody = { \u2026 }\`\uFF09\u3001\u305D\u308C\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
-  devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u304B\u3089\u3060\u3068\u3001DevTools \u306E\u30BF\u30A4\u30E0\u30E9\u30A4\u30F3\u306F\u4ED8\u3044\u305F\u6642\u70B9\u304B\u3089\u59CB\u307E\u308A\u307E\u3059\u3002\u65E2\u306B\u3042\u308B\u914D\u7DDA\u306F 4.0 \u304C\u9001\u308A\u76F4\u3057\u307E\u3059\uFF09`,
-  baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/">\uFF08\u307E\u305F\u306F\u305D\u308C\u3092\u4F5C\u308B <head> \u306E\u540C\u671F\u30B9\u30AF\u30EA\u30D7\u30C8 \u2014 basename \u306B\u30ED\u30B1\u30FC\u30EB\u3092\u7F6E\u304F\u5F62\uFF09\u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
-  routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
-  linkQueryKeyIgnored: (toKeys, named) => `\u3053\u306E <wcs-link> \u306E to \u304C\u4ED8\u3051\u308B\u30AD\u30FC\uFF08${toKeys}\uFF09\u306F\u3001\u3069\u308C\u3082 query-keys\uFF08${named}\uFF09\u306B\u3042\u308A\u307E\u305B\u3093\u3002query-keys \u306E\u3042\u308B\u30EA\u30F3\u30AF\u306F\u540D\u6307\u3057\u305F\u30AD\u30FC\u3060\u3051\u3092\u6BD4\u3079\u308B\u306E\u3067\u3001\u30EA\u30F3\u30AF\u81EA\u8EAB\u306E\u30AF\u30A8\u30EA\u306F\u5224\u5B9A\u306B\u52B9\u304B\u305A\u3001${named} \u304C\u5408\u3048\u3070 ${toKeys} \u304C\u4F55\u3067\u3082\u73FE\u5728\u306E\u30EA\u30F3\u30AF\u306B\u306A\u308A\u307E\u3059 \u2014 \u3053\u3046\u66F8\u3044\u305F\u30BF\u30D6\u306F\u540C\u6642\u306B\u3059\u3079\u3066\u73FE\u5728\u306B\u306A\u308A\u307E\u3059\u3002\u30EA\u30F3\u30AF\u304C\u8868\u3059\u30AD\u30FC\u3092\u540D\u6307\u3057\u3066\u304F\u3060\u3055\u3044\uFF08query-keys="${toKeys}"\uFF09`,
-  signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
-  signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
-  tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join("\u30FB")} \u306F ${pkg} \u306E\u30BF\u30B0\u3067\u3059\u304C\u3001\u3053\u306E\u30DA\u30FC\u30B8\u306F ${pkg} \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u3044\u307E\u305B\u3093\u3002\u8981\u7D20\u306F\u5B9A\u7FA9\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u675F\u7E1B\u306F\u5F85\u3061\u7D9A\u3051\u3066\u4F55\u3082\u8D77\u304D\u305A\u3001\u30B3\u30F3\u30BD\u30FC\u30EB\u306B\u3082\u4F55\u3082\u51FA\u307E\u305B\u3093 \u2014 <script type="module" src="${url}"></script> \u3067\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`,
-  linkRouterMissing: (to, n) => `\u3053\u306E\u30DA\u30FC\u30B8\u306B\u306F <wcs-router> \u304C\u7121\u3044\u306E\u3067\u3001\u3053\u306E <wcs-link to="${to}">${n > 1 ? `\uFF08\u3068\u30DA\u30FC\u30B8\u306E\u307B\u304B\u306E ${n - 1} \u500B\uFF09` : ""}\u306F\u63A5\u7D9A\u3057\u305F\u6642\u70B9\u3067 "[@wcstack/router] wcs-link is not connected to a router." \u3092\u6295\u3052\u3001\u30EA\u30F3\u30AF\u306F\u96A0\u308C\u307E\u3059\uFF08display: none\uFF09\u3002router \u306E\u7121\u3044\u30DA\u30FC\u30B8\u3067\u306F <a href="${to}"> \u3068\u66F8\u304F\u304B\u3001<wcs-router> \u3092\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044`,
-  lintVersionBehind: (spec, version3, minor, lint) => `\u3053\u306E\u30DA\u30FC\u30B8\u306F ${spec} \u3092\u56FA\u5B9A\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E lint \u306E\u898F\u5247\uFF08@wcstack ${lint}\uFF09\u3088\u308A\u65B0\u3057\u3044 minor \u3067\u3059\u3002${minor} \u3067\u52A0\u308F\u3063\u305F\u898F\u5247\u306F\u691C\u67FB\u3055\u308C\u305A\u3001${minor} \u306E\u6B63\u3057\u3044\u66F8\u304D\u65B9\u304C error \u306B\u306A\u308B\u3053\u3068\u3082\u3042\u308A\u307E\u3059 \u2014 @wcstack/lint \u3092 ${version3} \u306B\u4E0A\u3052\u3066\u304F\u3060\u3055\u3044\uFF08npm i -D @wcstack/lint@${version3}\u3002VS Code \u306E\u62E1\u5F35\u306F ${minor} \u306B\u5BFE\u5FDC\u3059\u308B\u7248\u3078\uFF09`,
-  routeBareMustache: (inLayout) => inLayout ? `\u30EC\u30A4\u30A2\u30A6\u30C8\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u9077\u79FB\u3067\u306F\u675F\u306D\u3089\u308C\u307E\u305B\u3093 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<span>{{ \u2026 }}</span>\uFF09` : `<wcs-route> \u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u6700\u521D\u306B\u7740\u3044\u305F\u30EB\u30FC\u30C8\u3067\u3057\u304B\u675F\u306D\u3089\u308C\u307E\u305B\u3093\u3002\u9077\u79FB\u3067\u5165\u3063\u305F\u30EB\u30FC\u30C8\u3067\u306F\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<h1>{{ \u2026 }}</h1>\uFF09`,
-  layoutSlotMissing: (l) => `\u30EC\u30A4\u30A2\u30A6\u30C8 "${l}" \u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306B\u65E2\u5B9A\u306E <slot>\uFF08name \u306E\u7121\u3044\u3082\u306E\uFF09\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3053\u306E <wcs-layout> \u306E\u540D\u524D\u4ED8\u304D\u30B9\u30ED\u30C3\u30C8\u306E\u5916\u306E\u4E2D\u8EAB\uFF08\u5165\u308C\u5B50\u306E\u30EB\u30FC\u30C8\u3068\u305D\u306E\u30DA\u30FC\u30B8\uFF09\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093 \u2014 \u30DA\u30FC\u30B8\u3092\u7F6E\u304F\u5834\u6240\u306B <slot></slot> \u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
-  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
-  mountPathInvalid: (problem, mountPath) => {
-    switch (problem) {
-      case "empty":
-        return `"mount" \u306B\u306F\u7A7A\u3067\u306A\u3044\u9759\u7684\u306A\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
-      case "emptySegment":
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u306E\u6BB5\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
-      case "wildcard":
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306F\u9759\u7684\u3067\u306A\u3051\u308C\u3070\u306A\u308A\u307E\u305B\u3093 \u2014 "*" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
-      case "whitespace":
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u767D\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
-      default:
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
-    }
-  },
-  recursionUnsupported: (p, where) => {
-    switch (where) {
-      case "binding":
-        return `"${p}" \u306E "**" \u306F data-wcs \u3067\u306F\u4F7F\u3048\u307E\u305B\u3093\u3002"**" \u306F $recursion \u5BA3\u8A00\u30FB\u518D\u5E30 getter \u306E\u30AD\u30FC\u30FB$getAll / $setAll \u306E\u30D1\u30B9\u5F15\u6570\u3060\u3051\u306E\u8A18\u53F7\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30D0\u30A4\u30F3\u30C9\u78BA\u7ACB\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002HTML \u3067\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
-      case "watch":
-        return `$watch \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u76E3\u8996\u306F\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
-      case "resolve":
-        return `$resolve("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$resolve \u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\u3060\u3051\u3092\u53D7\u3051\u4ED8\u3051\u307E\u3059`;
-      case "update":
-        return `$update("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$update \u306F 1 \u3064\u306E\u30A2\u30C9\u30EC\u30B9\uFF08\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\uFF09\u3060\u3051\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059 \u2014 \u5168\u6DF1\u3055\u3078\u306F $setAll("${p}", [], value) \u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
-      case "assignment":
-        return `this["${p}"] \u3078\u306E\u4EE3\u5165\u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u518D\u5E30 setter \u306F\u521D\u7248\u3067\u306F\u6301\u3066\u305A\u3001\u4EE3\u5165\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u306B\u3057\u304B\u6210\u7ACB\u3057\u307E\u305B\u3093\uFF09\u3002$setAll("${p}", [], value) \u3067\u5168\u6DF1\u3055\u3078\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u3059\u308B\u304B\u3001\u5177\u4F53\u30D1\u30B9\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
-      case "postUpdate":
-        return `$postUpdate("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u901A\u77E5\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
-      case "dependOn":
-        return `$dependOn("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u4F9D\u5B58\u306E\u767B\u9332\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
-      case "trackDependency":
-        return `$trackDependency("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u4F9D\u5B58\u306E\u767B\u9332\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
-      case "listKeys":
-        return `$listKeys \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u30AD\u30FC\u4ED8\u304D\u30EA\u30B9\u30C8\u306F 1 \u672C\u306E\u5177\u4F53\u30EA\u30B9\u30C8\u30D1\u30B9\u3067\u3059 \u2014 \u6DF1\u3055\u3054\u3068\u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: "nodes.*.children"\uFF09`;
-      default:
-        return `"${p}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C\u3001\u3053\u306E state \u306B\u306F $recursion \u5BA3\u8A00\u304C\u3042\u308A\u307E\u305B\u3093\u3002$recursion = { "<anchor>": "<repeat>" }\uFF08\u4F8B: { "nodes.*": "children.*" }\uFF09\u3092\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u304C\u7121\u3044\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B #1101 \u3067 throw \u3057\u3001state \u306F\u521D\u671F\u5316\u306B\u5931\u6557\u3057\u307E\u3059\uFF09`;
-    }
-  },
-  recursionAnchorMismatch: (p, anchor) => `"${p}" \u306F\u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30A2\u30F3\u30AB\u30FC "${anchor}" \u3068\u5408\u81F4\u3057\u307E\u305B\u3093\uFF08\u521D\u7248\u306F state \u3054\u3068\u306B 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u3002"**" \u306E\u5F8C\u308D\u306F\u6574\u5F62\u3055\u308C\u305F\u63A5\u5C3E\u8F9E \u2014 2 \u3064\u76EE\u306E "**"\u30FB\u7A7A\u30BB\u30B0\u30E1\u30F3\u30C8\u30FB"**" \u76F4\u5F8C\u306E\u7D20\u306E "*" \u306F\u7F6E\u3051\u307E\u305B\u3093\uFF09`,
-  recursionGetAllForm: (p, problem) => problem === "notArray" ? `$getAll("${p}", indexes) \u306E "**" \u306E\u6DFB\u5B57\u306F\u3001\u7701\u7565\uFF08\u8A55\u4FA1\u4E2D\u306E\u518D\u5E30 getter \u306E\u6DF1\u3055\uFF09\u304B [] \uFF08\u5168\u6DF1\u3055\uFF09\u306E\u3069\u3061\u3089\u304B\u3067\u3059\u3002null \u3084\u914D\u5217\u3067\u306A\u3044\u5024\u306F\u6E21\u305B\u307E\u305B\u3093` : `$getAll("${p}", indexes) \u306E "**" \u306B\u975E\u7A7A\u306E\u63A5\u982D\u8F9E\u306F\u6E21\u305B\u307E\u305B\u3093\uFF08\u63A5\u982D\u8F9E\u306F\u3069\u306E\u6DF1\u3055\u306B\u9069\u7528\u3055\u308C\u308B\u304B\u3092\u8A00\u3048\u307E\u305B\u3093\uFF09\u3002\u6DFB\u5B57\u3092\u7701\u7565\u3059\u308B\u3068\u8A55\u4FA1\u4E2D\u306E\u518D\u5E30 getter \u306E\u6DF1\u3055\u3001[] \u3092\u6E21\u3059\u3068\u5168\u6DF1\u3055\u306B\u306A\u308A\u307E\u3059`,
-  recursionSetAllForm: (p, problem) => {
-    switch (problem) {
-      case "prefix":
-        return `$setAll("${p}", indexes, \u2026) \u306E "**" \u306B\u975E\u7A7A\u306E\u63A5\u982D\u8F9E\u306F\u6E21\u305B\u307E\u305B\u3093\uFF08\u63A5\u982D\u8F9E\u306F\u3069\u306E\u6DF1\u3055\u306B\u9069\u7528\u3055\u308C\u308B\u304B\u3092\u8A00\u3048\u307E\u305B\u3093\uFF09\u3002[] \u3092\u6E21\u3057\u3066\u5168\u6DF1\u3055\u3078\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u3057\u3066\u304F\u3060\u3055\u3044`;
-      case "noIndexes":
-        return `$setAll("${p}", \u2026) \u306E "**" \u306B\u306F\u660E\u793A\u7684\u306A\u7A7A\u306E\u6DFB\u5B57\u914D\u5217 [] \u304C\u5FC5\u8981\u3067\u3059\uFF08\u66F8\u304D\u8FBC\u307F API \u306F\u6587\u8108\u3092\u53D6\u308A\u307E\u305B\u3093\uFF09`;
-      case "mapper":
-        return `$setAll("${p}", \u2026) \u306E "**" \u306F mapper \u3092\u53D6\u308C\u307E\u305B\u3093\uFF08\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u672C\u6570\u304C\u6DF1\u3055\u3054\u3068\u306B\u5909\u308F\u308B\u305F\u3081\uFF09\u3002\u5B9A\u6570\u5024\u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`;
-      default:
-        return `$setAll("${p}", \u2026) \u306E "**" \u306F { spread: true } \u3092\u53D6\u308C\u307E\u305B\u3093\uFF08\u5E73\u5766\u306A\u914D\u5217\u3092\u6728\u306B\u914D\u308B\u306B\u306F\u4F5C\u8005\u304C\u8D70\u67FB\u9806\u3092\u77E5\u308B\u5FC5\u8981\u304C\u3042\u308A\u3001\u5951\u7D04\u306B\u306A\u308A\u307E\u305B\u3093\uFF09`;
-    }
-  },
-  recursionStructuralWrite: (p, target, repeatList) => {
-    switch (target) {
-      case "node":
-        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08\u30CE\u30FC\u30C9\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059 \u2014 \u30CE\u30FC\u30C9\u3092\u7F6E\u304D\u63DB\u3048\u308B\u3068\u3053\u306E\u66F8\u304D\u8FBC\u307F\u306E\u305F\u3081\u306B\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059`;
-      case "branch":
-        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\u3078\u81F3\u308B\u9014\u4E2D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059 \u2014 \u7F6E\u304D\u63DB\u3048\u308B\u3068\u305D\u306E\u4E0B\u306E\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059`;
-      case "length":
-        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\u306E length\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002length \u3078\u306E\u4EE3\u5165\u306F\u914D\u5217\u3092\u5207\u308A\u8A70\u3081\u308B\u306E\u3067\u3001\u30EA\u30B9\u30C8\u306E\u7F6E\u63DB\u3068\u540C\u3058\u304F\u305D\u306E\u4E0B\u306E\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059`;
-      default:
-        return `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059`;
-    }
-  },
-  recursionReadonly: (subject, getterPath) => `${subject} \u306F\u518D\u5E30 getter "${getterPath}" \u306B\u66F8\u304D\u8FBC\u307F\u307E\u3059\uFF08setter \u306F\u521D\u7248\u3067\u306F\u6301\u3066\u307E\u305B\u3093\u3002\u3053\u306E\u7DB4\u308A\u306F\u305D\u306E getter \u306E\u3042\u308B\u6DF1\u3055\u306E\u5C55\u958B\u5F62\u304B\u3001\u5C0E\u51FA\u5024\u306E\u5185\u5074\u3067\u3059\uFF09\u3002\u3053\u306E getter \u304C\u5C0E\u51FA\u5143\u306B\u3057\u3066\u3044\u308B\u5024\u306E\u5074\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  recursionInVolume: (subject, mountPath) => `${subject} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5BA3\u8A00\u3067\u304D\u307E\u305B\u3093\uFF08$recursion \u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u63A5\u304E\u6728\u3092\u62D2\u307F\u3001console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF09\u3002\u518D\u5E30\u306E\u5BA3\u8A00\u3068 "**" getter \u306F\u30EB\u30FC\u30C8\u306E state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 \u30A2\u30F3\u30AB\u30FC\u306E\u30D1\u30B9\u306F\u30EB\u30FC\u30C8\u306E\u6728\u306B\u5BFE\u3057\u3066\u89E3\u6C7A\u3055\u308C\u307E\u3059`,
-  recursionNotObject: () => `$recursion \u306F\u300C\u30A2\u30F3\u30AB\u30FC \u2192 \u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: { "nodes.*": "children.*" }\u3002\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  recursionAnchorCount: (count) => count === 0 ? `$recursion \u306B\u306F\u30A2\u30F3\u30AB\u30FC\u304C\u3061\u3087\u3046\u3069 1 \u3064\u5FC5\u8981\u3067\u3059\uFF08\u7A7A\u306E\u5BA3\u8A00\u3067\u3059\uFF09` : `$recursion \u304C ${count} \u500B\u306E\u30A2\u30F3\u30AB\u30FC\u3092\u5BA3\u8A00\u3057\u3066\u3044\u307E\u3059\u3002\u521D\u7248\u306F state \u3054\u3068\u306B\u3061\u3087\u3046\u3069 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u5BFE\u5FDC\u3057\u307E\u3059`,
-  recursionNodePathInvalid: (kind, path, problem) => {
-    const subject = kind === "anchor" ? "$recursion \u306E\u30A2\u30F3\u30AB\u30FC" : "$recursion \u306E\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9";
-    switch (problem) {
-      case "empty":
-        return `${subject}\u306F\u7A7A\u3067\u306A\u3044\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`;
-      case "emptySegment":
-        return `${subject} "${path}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`;
-      case "notElement":
-        return `${subject} "${path}" \u306F\u30EA\u30B9\u30C8\u306E\u8981\u7D20\u3092\u6307\u3059\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059 \u2014 \u672B\u5C3E\u304C ".*" \u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30D1\u30B9\uFF08\u4F8B: "nodes.*"\uFF09\u306B\u3057\u3066\u304F\u3060\u3055\u3044`;
-      case "reservedRoot":
-        return `${subject} "${path}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`;
-      case "reservedMount":
-        return `${subject} "${path}" \u306B "#" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30DE\u30A6\u30F3\u30C8\u7528\u306E\u4E88\u7D04\u30BB\u30B0\u30E1\u30F3\u30C8\uFF09`;
-      case "midWildcard":
-        return `${subject} "${path}" \u306E "*" \u306F\u672B\u5C3E\u306B\u3061\u3087\u3046\u3069 1 \u3064\u3060\u3051\u7F6E\u3051\u307E\u3059\uFF08\u9014\u4E2D\u306E\u30EF\u30A4\u30EB\u30C9\u30AB\u30FC\u30C9\u306F\u521D\u7248\u3067\u306F\u672A\u5BFE\u5FDC\uFF09`;
-      case "indexSegment":
-        return `${subject} "${path}" \u306B\u6DFB\u5B57\u30BB\u30B0\u30E1\u30F3\u30C8\u306F\u542B\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u518D\u5E30\u306F\u6728\u306E\u5F62\u306B\u5BFE\u3059\u308B\u5BA3\u8A00\u3067\u3042\u3063\u3066\u30011 \u884C\u306B\u5BFE\u3059\u308B\u5BA3\u8A00\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF09`;
-      default:
-        return `${subject} "${path}" \u306B "**" \u306F\u542B\u3081\u3089\u308C\u307E\u305B\u3093\uFF08"**" \u306B\u610F\u5473\u3092\u4E0E\u3048\u308B\u306E\u304C\u3053\u306E\u5BA3\u8A00\u305D\u306E\u3082\u306E\u3067\u3059\uFF09`;
-    }
-  },
-  recursionRepeatNotString: (anchor) => `$recursion \u306E\u30A8\u30F3\u30C8\u30EA "${anchor}" \u306E\u5024\u306F\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u306E\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: "children.*"\uFF09`,
-  recursionGetterInvalid: (key, problem, anchor) => {
-    switch (problem) {
-      case "setter":
-        return `\u518D\u5E30 setter \u306F\u521D\u7248\u3067\u306F\u672A\u5BFE\u5FDC\u3067\u3059: "${key}"\u3002\u901A\u5E38\u306E\u30D1\u30B9 setter \u3092\u5BA3\u8A00\u3059\u308B\u304B\u3001\u5177\u4F53\u30D1\u30B9\u7D4C\u7531\u3067\u66F8\u304D\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`;
-      case "notGetter":
-        return `"${key}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C getter \u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002"**" \u306F\u8A08\u7B97\u30D1\u30B9\u306E\u65CF\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3059`;
-      case "structural":
-        return `"${key}" \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08\u30CE\u30FC\u30C9\u30FB\u5B50\u30EA\u30B9\u30C8\u30FB\u305D\u306E length\u30FB\u5B50\u30EA\u30B9\u30C8\u3078\u81F3\u308B\u9014\u4E2D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\uFF09\u3092\u540D\u6307\u3057\u3066\u3044\u307E\u3059\u3002\u518D\u5E30 getter \u306F\u5168\u6DF1\u3055\u3067\u5B9F\u30C7\u30FC\u30BF\u306E\u5B50\u30EA\u30B9\u30C8\u3092\u5F71\u306B\u3057\u3066\u3057\u307E\u3044\u307E\u3059\u3002"**" \u306F\u30CE\u30FC\u30C9\u306E\u4E0B\u306E\u8A08\u7B97\u30D1\u30B9\uFF08\u4F8B: "${anchor}.total"\uFF09\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3059`;
-      default:
-        return `"${key}" \u306F\u518D\u5E30\u30CE\u30FC\u30C9\u81EA\u8EAB\u3092\u540D\u6307\u3057\u3066\u3044\u307E\u3059\u3002"**" \u306F\u30CE\u30FC\u30C9\u306E\u4E0B\u306E\u8A08\u7B97\u30D1\u30B9\uFF08\u4F8B: "${anchor}.total"\uFF09\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3001\u30CE\u30FC\u30C9\u305D\u306E\u3082\u306E\u3067\u306F\u3042\u308A\u307E\u305B\u3093`;
-    }
-  },
-  recursionGetterCollision: (a, b, repeat2) => `"${a}" \u3068 "${b}" \u306F\u7570\u306A\u308B\u6DF1\u3055\u3067\u540C\u3058\u5177\u4F53\u30D1\u30B9\u3078\u5C55\u958B\u3057\u307E\u3059\uFF08\u5DEE\u304C "${repeat2}" \u306E\u6574\u6570\u56DE\u3076\u3093\u3067\u3059\uFF09\u3002\u3069\u3061\u3089\u304B\u306E\u540D\u524D\u3092\u5909\u3048\u3066\u304F\u3060\u3055\u3044`,
-  recursionConcreteCollision: (concreteKey, recursiveKey) => `"${concreteKey}" \u306F state \u306B\u5B9A\u7FA9\u6E08\u307F\u306A\u306E\u3067\u3001\u518D\u5E30 getter "${recursiveKey}" \u306F\u305D\u3053\u3078\u5C55\u958B\u3067\u304D\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5BA3\u8A00\u3092\u8AAD\u3093\u3060\u6642\u70B9\u3067 throw \u3057\u307E\u3059\uFF09\u3002\u3069\u3061\u3089\u304B\u306E\u540D\u524D\u3092\u5909\u3048\u3066\u304F\u3060\u3055\u3044`
-};
-var EN_EXPECTED_LABEL = {
-  array: "an array-typed path",
-  boolean: "a boolean",
-  string: "a string"
-};
-var en = {
-  spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
-  spreadTargetRequired: () => `Spread requires a target path`,
-  structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
-  bindingSyntax: (detail) => `Binding syntax error (the runtime throws at load time): ${detail}`,
-  eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
-  commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
-  commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
-  commandTokensAbsent: (t, name) => `Command token "${t}" is not declared: this state has no $commandTokens. Add $commandTokens: ["${name}"] to the state`,
-  eventTokensAbsent: (t) => `Event token "${t}" is not declared: this state has no $eventTokens. Add $eventTokens: ["${t}"] to the state`,
-  onEntryUndeclared: (t, absent) => `The $on entry "${t}" is not declared in $eventTokens${absent ? " (this state has none)" : ""}, so the state fails to load and the page is not initialized ($on entry "${t}" is not declared in $eventTokens). ${absent ? `Add $eventTokens: ["${t}"]` : `Add "${t}" to $eventTokens`}`,
-  streamPathMissing: (p) => `Path "${p}" does not exist in the $stream declaration`,
-  pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
-  pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
-  pathTypeMismatch: (p, label, expected, actual) => `Path "${p}" is ${actual} in the stateSchema, but ${label} requires ${expected === "array" ? "an array" : expected === "boolean" ? "a boolean" : "a string"}`,
-  expansionSuffix: (x) => ` (expanded: ${x})`,
-  patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for> (4.0 throws #1401 at init)`,
-  omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for> (4.0 throws #1402 at init)`,
-  loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for> (4.0 throws #1401 at init)`,
-  indexArity: (api, p, req, wc, actual) => `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
-  wildcardRank: (subject, needed, available) => `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
-  wildcardOtherList: (p, over, loop) => `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}" (4.0 throws when the binding is established). A "*" in a binding is the row of the loop around it \u2014 read a row of another list in a getter, with $resolve(path, indexes)`,
-  outerInTemplate: (prop) => `"${prop}:" replaces its element, so it cannot be used inside a "for" / "if" template (a row or branch keeps its nodes by position; 4.0 throws at init). Bind innerHTML: on a wrapper element instead`,
-  directNotEvent: (prop) => `The #direct modifier applies only to event bindings (on*:); it is ignored on "${prop}"`,
-  delegatedCurrentTarget: (suggested, eventName, handler) => `"${eventName}" bindings are delegated to the root, so event.currentTarget in "${handler}" is the root, not this element. Write "${suggested}:" to keep the listener on the element, or find the element with event.target.closest(...)`,
-  getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
-  updatedCallbackUnbound: (p) => `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
-  onHandlerThis: (name) => `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = \u2026 }\`) and this is undefined, so this.\u2026 throws when it is called \u2014 unlike $watch handlers and methods`,
-  getterReadsLocation: (read) => `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state \u2014 bind <wcs-router>'s path / searchParams`,
-  getterReadsClock: (read) => `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state \u2014 bind the value <wcs-raf> or <wcs-timer> writes`,
-  getterReadsAmbient: (read, kind) => {
-    const head = `This getter reads ${read}, which is not state, so it is not a dependency: the getter is cached and keeps returning its first value`;
-    switch (kind) {
-      case "size":
-        return `${head} (a resize does not re-evaluate it). Keep the size in state \u2014 bind the width / height <wcs-resize> writes (for a breakpoint, <wcs-media-query>'s matched)`;
-      case "pixelRatio":
-        return `${head} (a zoom or a move to another screen does not re-evaluate it). Bind <wcs-media-query>'s matched for the resolution thresholds the page uses (query="(min-resolution: 2dppx)")`;
-      case "media":
-        return `${head} (the query starting or ceasing to match does not re-evaluate it). Bind <wcs-media-query>'s matched instead (<wcs-media-query query="(max-width: 600px)" data-wcs="matched: narrow">)`;
-      case "online":
-        return `${head} (going offline or coming back does not re-evaluate it). Bind <wcs-network>'s offline instead`;
-      case "scroll":
-        return `${head} (scrolling does not re-evaluate it). No wcstack element gives the scroll position: keep the value in state and write it from an event handler (a scroll listener)`;
-      default:
-        return `${head} (the page being hidden or shown does not re-evaluate it). No wcstack element gives the page's visibility: keep the value in state and write it from an event handler (a visibilitychange listener)`;
-    }
-  },
-  updatedCallbackUnknownPath: (p) => `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
-  commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.<method>: ${t}, with <method> the name of that element's method)`,
-  writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
-  pathReadonlyWrite: (p) => `"${p}" is a getter without a setter, so this write throws each time it runs ("${p}" is a getter without a setter). Add a setter that writes what the getter reads (set "${p}"(v) { \u2026 }), or write those values instead`,
-  getterWrite: (p, g, via) => `The getter "${g}" writes "${p}" while it is evaluated${via === void 0 ? "" : ` (in the method "${via}" it calls)`}. A getter only reads: the write throws each time the getter is evaluated. Write it from a method, a setter or a $watch handler, or compute the value in a getter of its own`,
-  setterCycleSelf: (p) => `The setter of "${p}" writes its own path "${p}". A setter's path is the accessor itself: writing it calls the setter again, until the stack overflows. Store the value under a data path the getter reads (such as _${p.split(".").pop()})`,
-  setterCycle: (cycle) => `Setters write each other: ${cycle}. Unless a condition stops them, they call each other until the stack overflows. Store the values under data paths the getters read`,
-  setterUnobserved: (p, w) => `The setter of "${p}" writes ${w}, none of which the getter "${p}" reads. After a write the getter returns its old value, and a two-way input bound to "${p}" goes back to it. Write what the getter reads, or read what the setter writes in the getter`,
-  relativePathOf: (r, a) => ` ("${r}" in the accessor "${a}")`,
-  relativeNoRow: (r, a) => `"${r}" is relative to a row, but the accessor "${a}" is not one of a list's rows (its key has no "*"). With no row it throws each time it is evaluated (#1402). Write the full path, or make it a row accessor (get "<list>.*.<name>"())`,
-  relativeApiPath: (r, api) => `"${r}" is relative to a row, but ${api} takes its rows from its indexes argument, not from the row it is called at. A relative path is not expanded there, and the call throws. Write the full path ("<list>.*${r === "." ? "" : r}")`,
-  accessorListSyntax: (k, why) => `The accessor key "${k}" lists several paths, but ${why === "space" ? "has a space beside a comma" : why === "empty" ? "has an empty entry" : 'a recursive path ("**") cannot be listed'}. Separate the paths with "," alone (get "users.*.fullname,employees.*.fullname"())${why === "recursive" ? "" : ": the runtime takes what is between the commas as it is, so this declares a path nothing reads"}`,
-  accessorListPath: (p, list, other, rel) => `"${p}" is a path of the rows of "${list}", and this accessor is also declared for "${other}": at its rows that path has no row, so a read gives undefined and a write throws. Write it relative to the row: this["${rel}"]`,
-  nestedWritePathMissing: (p) => `Path "${p}" does not exist in the state definition. The write creates a new key in the object and reaches no binding of a declared path`,
-  readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
-  stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
-  stateAbsent: (tag) => `This file has bindings but no <${tag}>, so the paths they bind are not checked (a fragment a page includes, or a page whose state is made by script). Check the page that holds the state, or declare the paths in the stateSchema of a wcstack.manifest.json next to (or above) this file to have them checked`,
-  pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
-  pathDynamicUnknownType: (path, n, type) => `The JSDoc type ${type} of "${path}" cannot be read, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked (read are an export interface / export type of a file it can read, and a @typedef in a .js). Write the shape in place, make it a @typedef in the same script, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
-  stateSchemaDrift: (inScript, inSchema) => `The stateSchema applied to this page disagrees with its state's script${inScript.length > 0 ? ` (in the script, not in the schema: ${listKeys(inScript)})` : ""}${inSchema.length > 0 ? ` (in the schema, not in the script: ${listKeys(inSchema)})` : ""}. The schema is derived from a script: it is stale, or another state's (another page's). Checked against it, a binding to a renamed key passes and a key is said not to exist. Regenerate it with wcs-schema emit (the manifest it writes names its state file in stateSource, and the lint applies it only to the pages that load that file), and run wcs-schema check in CI to stop the drift`,
-  pathDynamicUnknownOutput: (path, n, tag, member) => `"${path}" is written by "${member}" of <${tag}>, an output, so it holds whatever the element gives: its shape cannot be read statically, and the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
-  pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
-  pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
-  pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
-  pathReadonlyOutput: (p, tag, member, atInit, twoWay, spread) => `"${p}" is a getter without a setter, but "${member}"${spread === void 0 ? "" : `, which "${spread}" binds,`} is ${twoWay ? "a member <" + tag + "> writes too (an output as well as an input)" : "an output of <" + tag + ">"}: the element writes its value to "${p}", and ${atInit ? "the write made when it is bound fails, so the state fails to initialize" : "that write fails each time the element reports a value"} ("${p}" is a getter without a setter). ${spread !== void 0 ? `Add a setter (set "${p}"(v) { \u2026 }), or bind "${member}" to a data path after the spread (${spread}; ${member}: <a data key>)` : !twoWay ? `Bind a data path and read it in the getter (${member}: <a data key>), or add a setter (set "${p}"(v) { \u2026 })` : atInit ? `Add a setter (set "${p}"(v) { \u2026 }), or take the first value from the state (remove #init=element)` : `Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${member}#ro: ${p} \u2014 the state still writes the element)`}`,
-  submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
-  guardReadsAtModuleTop: (r) => `The guard's module reads ${r} at its top level, outside the function it exports. The module is evaluated once, when the page loads, so the guard keeps the value it read then and decides every navigation with it (after a login, the session is still not there). Read it inside the exported function, which runs on every navigation`,
-  stateReadsAtModuleTop: (r) => `The state's module reads ${r} at its top level. The module is evaluated once per <wcs-state>, so the state keeps the value it read when the page loaded (a token or a session that changes later is not seen). Keep the value in state (bind it with <wcs-storage>), or read it inside the method that uses it`,
-  eventTokenUnbound: (t, handler) => `The event token "${t}" is declared in $eventTokens, but no eventToken.<member>: ${t} binding in this document emits it: no element fires it, so ${handler ? "its $on handler never runs" : "it never fires"}. Bind it on the element whose event should fire it (eventToken.<member>: ${t}, with <member> a wcBindable property of that element), or remove it from $eventTokens`,
-  objectKeyAssign: (t, acc, sp) => `This assigns a key of "${t}" in place. The state does not see the write, so no binding, getter or $watch that reads it changes, and nothing is rendered again. Assign a new object (${acc} = { ...${acc}, [key]: value }), or write the dot path this["${sp}"] = \u2026`,
-  getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
-  getterUntrackedReadBound: (root, sp, binding, tag, written) => `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
-  handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
-  typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
-  attrBooleanPresence: (a, p, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" \u2014 and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
-  attrBooleanText: (a, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence \u2014 [${a}] in CSS, hasAttribute() \u2014 finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
-  radioNameShared: (name, binding) => `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render \u2014 nothing says so. ${binding === "radio" ? "Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it" : "Bind a name that differs per row (attr.name: .<a row field>) \u2014 or, for one choice over all the rows, bind them all to one path: value: .<the row's id>; radio: <path>"}`,
-  numberWrittenAsString: (path, left, asNumber) => `"${path}" is a number in the state, but value: writes back what the element holds, a string: after the user enters 5 the state has "5", and "5" + 1 is "51" \u2014 nothing says so. Convert it on the way in: ${asNumber ? `valueAsNumber: ${path}, or ` : ""}an input filter on the left side, ${left}|number: ${path} (also |int, |float)`,
-  twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types \u2014 the caret jumps to the end, an IME composition is cut \u2014 and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}` : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: \u2026), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
-  bodyBinding: (tag, attribute) => `${attribute} on <${tag}> is never bound: <wcs-state> binds what is inside <body>, not <body> or <html> themselves, so the bindings written here do nothing (an event handler never runs; class., attr. and the rest are never written). Move the binding to an element inside <body> (a wrapper, <main>), or write the value from $connectedCallback or a $watch handler (document.documentElement.lang = \u2026)`,
-  linkHandler: (property, handler) => `"${property}:" on <wcs-link> never runs "${handler}": the <wcs-link> itself is display: none, and what the user clicks is the <a> it generates beside itself, so no event reaches the host. Put the handler on an element inside the link (its children move into the <a>) or on an element around it; to navigate from a handler, write the router's navigateUrl (data-wcs="navigateUrl: \u2026" on <wcs-router>)`,
-  rootMarginUnit: (tag, value, refused, suggested) => {
-    const why = refused.length === 0 ? "it takes one to four values" : `${refused.map((t) => `"${t}"`).join(", ")} ${refused.length === 1 ? "is not a number" : "are not numbers"} with px or %${refused.some(isUnitlessZero) ? " (a 0 needs its unit too)" : ""}`;
-    const effect = tag === "wcs-intersect" ? "the element observes nothing and observing stays false" : "the element observes nothing and no page is loaded";
-    return `The browser refuses root-margin="${value}" (rootMargin must be specified in pixels or percent): ${why}. So ${effect}. ${suggested === null ? "Write one to four values, each a number with px or %" : `Write root-margin="${suggested}"`}`;
-  },
-  frequencyInvalid: (tag, value, suggested) => `frequency="${value}" is not a positive number, so <${tag}> reads it as "none" and the sensor runs at the browser's default rate, without a word. ${suggested === null ? "Write a positive number (Hz), or remove the attribute for the default rate" : `Write the number alone: frequency="${suggested}"`}`,
-  targetSelector: (tag, value) => `The target of <${tag}> is a CSS selector: target="${value}" selects <${value}> elements, and this document has none \u2014 it has an element with id="${value}". No target is found, so ${TARGET_EFFECT_EN[tag] ?? "the element does nothing"}. To name the id, write target="#${value}"`,
-  commandEventArgument: (property, token, tag, method, more) => `"${property}: ${token}" emits the token straight from the event, so the commands that receive it are called with the event as their first argument. ${method}() of <${tag}> takes an argument there, and gets the event: ${method}(event)${more > 0 ? ` (and ${more} more such ${more === 1 ? "receiver" : "receivers"})` : ""}. Emit from a state method instead \u2014 write ${property}: <method>, with <method>() { this.${token}.emit(\u2026) } passing what ${method}() takes (emit with no argument when there is nothing to pass)`,
-  outputPathWritten: (path, tag, member, commands) => `"${path}" is bound to "${member}" of <${tag}>, an output: the element writes it, and a write from a script does not reach the element. Assigning true makes the element do nothing \u2014 only the page now says so. ${commands.length === 0 ? `<${tag}> has no command: the value is the element's to report. Remove the assignment` : `Ask the element with a command (${commands.join(", ")} \u2014 bind command.<method>: $command.<name> and call this.$command.<name>.emit() here), and let the element write "${path}"`}`,
-  filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
-  filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") \u2014 write "${c}"`,
-  substrRemoved: (rewrite) => `Filter "substr" was removed in 4.0 \u2014 write slice(start, start + length): slice takes the end index, not a length${rewrite === null ? "" : ` (here: ${rewrite})`}`,
-  filterMinArgs: (n, min, c) => `Filter "${n}" requires at least ${min} argument(s) (${c} given)`,
-  filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
-  filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
-  filterInputType: (n, accepts, cur) => `Filter "${n}" requires input of type ${accepts} (current type: ${cur})`,
-  filterArgEnum: (n, arg, members, suggestion2) => `${arg} in "${n}(${arg})" is not a value the compared value takes (${members.join(" | ")}): it is ${n === "ne" ? "always true" : "never true"}${suggestion2}`,
-  moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
-  moustacheFoucTextParent: (e, tag) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). A comment binding is not bound inside <${tag}>: bind the element instead (<${tag} data-wcs="${tag === "textarea" ? "value" : "textContent"}: ${e}">).`,
-  textBindingInHead: (w) => `${w} is in the document's <head>, and a <wcs-state> binds only the <body> and shadow roots, so it stays as written. Write document.title from the state's script ($connectedCallback and a $watch handler), or put the <title> in a route's <wcs-head>`,
-  nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
-  watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
-  watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
-  watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
-  watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
-  watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
-  watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
-  scanRemoved: (mountPath) => mountPath === null ? `$scan was removed in 4.0 (the entries with the diagnostics add-on, such as /auto, throw at load; /core alone ignores it). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there` : `$scan was removed in 4.0. In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). Fold in a $watch or $on handler on the root state`,
-  typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
-  arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
-  arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
-  inPlaceAlias: (a, src, t) => `"${a}" is ${src} \u2014 the state's own value. A change through it does not trigger a reactive update, and writing the same value back does not add, remove or replace a list's rows. Build a new value and assign it to ${t} (${a}.with(i, item), [...${a}, item], { ...${a}, key: value })`,
-  inPlaceChange: (src, t) => `${src} changes the state's value in place, which does not trigger a reactive update. Build a new value and assign it to ${t}`,
-  tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (the runtime refuses a binding to an undeclared member with #38; at the root the state fails to initialize)`,
-  nameAlias: (written, canonical) => `"${written}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws when it is read) \u2014 write "${canonical}"`,
-  declarationAliasRead: (alias, canonical) => `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. A declaration cannot be read through this \u2014 reading "${canonical}" is undefined too${canonical === "$stream" ? " (read a stream's state from $streamStatus / $streamError)" : ""}`,
-  declarationAlias: (alias, canonical) => `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws at load time) \u2014 write "${canonical}"`,
-  declarationAliasInVolume: (alias, canonical, mountPath) => `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"). In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). "${canonical}" cannot be declared in a volume either \u2014 declare it on the root state`,
-  behaviorNotObject: (keys) => `$behavior must be an object { ${keys.map((k) => `${k}?`).join(", ")} } (the runtime throws at load time)`,
-  behaviorKeyUnknown: (key, keys, suggestion2) => `"${key}" is not a $behavior key (only ${keys.join(", ")}; the runtime throws at load time)${suggestion2}`,
-  behaviorValueType: (key, type) => `$behavior "${key}" must be ${type === "boolean" ? "true or false" : type} (the runtime throws at load time)`,
-  configInVolume: (key, mountPath) => `${key} cannot be declared in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state \u2014 a volume is grafted onto the root's engine`,
-  featuresNotArray: () => `$features must be an array of add-on names (for example ["temporal", "formats"]; the runtime throws at load time)`,
-  featureUnknown: (name, names2, suggestion2) => `"${name}" is not an add-on (${names2.join(", ")})${suggestion2}`,
-  volumeDeclarationRejected: (key, mountPath) => `${key} is not run in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state`,
-  volumeDeclarationNotRun: (key, mountPath) => `${key} is not run in a volume (mount="${mountPath}"): the runtime says so with console.warn and ignores this declaration \u2014 it belongs to the root state. Declare it there`,
-  secondRoot: () => 'A second <wcs-state> on the same root: there is one state tree per root (the runtime refuses the one that loads second and reports it with console.error). Graft a subtree with <wcs-state mount="path">',
-  bindComponentSource: (prop, sources) => `A bind-component state comes only from the host element's property (<host>.${prop || "\u2026"}): combined with ${sources.join(", ")}, the runtime refuses to load it and reports that with console.error (the component does not mount). Write the state on the component's property`,
-  indexParamRange: (key, max) => `"${key}" is not a loop index: list index parameters run from $1 to $${max} (the runtime throws wcs/index-param-range when it is read)`,
-  indexParamNotPath: (key, max) => `"${key}" is not a loop index (they run from $1 to $${max}) and the "$" namespace holds no state path: the runtime fails this binding with wcs/binding-path-missing`,
-  featuresAttrNotRoot: () => `The features attribute is read only on the document's root <wcs-state> (the first one without mount and bind-component); it is ignored here \u2014 put it on the root <wcs-state>`,
-  onPrefixedMember: (member, tag, modifiers) => `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}${modifiers ? `#${modifiers}` : ""}:" to bind the property (@wcstack/state 3.1)`,
-  tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
-  nativeCommandUnknown: (method, tag, allowed) => `"${method}" is not a command of a native <${tag}> (its commands: ${allowed}; the runtime throws wcs/token-misconfigured at initialization)`,
-  spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
-  tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
-  handleBoundAsValue: (name, tag) => `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state \u2014 receive it with eventToken.${name}: and hand it to the next element as a command argument`,
-  ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
-  liveRegionInserted: (attribute, by, condition) => `This live region (${attribute}) is inserted with its text when ${by === "route" ? "its <wcs-route> is entered" : by === "for" ? "its for: row is added" : "its branch appears"} (${condition === null ? "it holds text written in the markup" : `its text is bound to what the condition "${condition}" reads, so the branch appears with the text`}). A screen reader announces a region whose text changes while it is in the page, so this text is not announced (an inserted role="alert" is the one form announced on insertion) \u2014 a status message meant to be heard belongs in a region that is always in the page: keep the region outside the ${by === "route" ? "route" : "template"}, bind its textContent: to the message, and empty it when there is nothing to say`,
-  didYouMean: (c) => `. Did you mean "${c}"?`,
-  none: () => `none`,
-  triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
-  storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
-  storageInitSeed: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null \u2014 seed it with null and supply the default where you read it (\`this.${path} ?? \u2026\`), or bind an accessor pair whose setter ignores null`,
-  storagePairClobber: (path) => `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it \u2014 add #init=element (\`value#init=element: ${path}\`)`,
-  inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value: with a setter beside it to take the element's value in as well (the accessor pair, ${input}#init=element: <getter>), or one way when the element's value is not taken in (${input}#ro: <getter> \u2014 with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "${path}" instead of writing below it`,
-  inputNestedWriteOneShot: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it \u2014 build a new object in the handler that starts the request (\`this.submitBody = { \u2026 }\`) and bind that`,
-  devtoolsAfterState: () => `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
-  baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one \u2014 the form for a locale in the basename (without it, deep links misderive the basename)`,
-  routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
-  linkQueryKeyIgnored: (toKeys, named) => `None of the keys this <wcs-link>'s to sets (${toKeys}) is named in query-keys (${named}). A link with query-keys compares only the keys it names, so its own query plays no part: it is current wherever ${named} match, whatever ${toKeys} is \u2014 tabs written this way are all current at once. Name the keys the link is for (query-keys="${toKeys}")`,
-  signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
-  signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
-  tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join(", ")} ${tags.length === 1 ? "is a tag" : "are tags"} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
-  linkRouterMissing: (to, n) => `This page has no <wcs-router>, so this <wcs-link to="${to}">${n > 1 ? ` (and the ${n - 1} other${n > 2 ? "s" : ""} on the page)` : ""} throws "[@wcstack/router] wcs-link is not connected to a router." when it connects, and the link is hidden (display: none). On a page without the router write <a href="${to}">, or add the <wcs-router>`,
-  lintVersionBehind: (spec, version3, minor, lint) => `This page pins ${spec}, a newer minor than the rules of this lint (@wcstack ${lint}): what ${minor} added is not checked, and correct ${minor} syntax can be reported as an error. Upgrade @wcstack/lint to ${version3} (npm i -D @wcstack/lint@${version3}; the VS Code extension to its release for ${minor})`,
-  routeBareMustache: (inLayout) => inLayout ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ \u2026 }}</span>)` : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ \u2026 }}</h1>)`,
-  layoutSlotMissing: (l) => `The template of layout "${l}" has no default <slot> (one without a name), so what this <wcs-layout> holds outside the named slots \u2014 the nested routes and their pages \u2014 is not shown. Put a <slot></slot> where the page goes`,
-  namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
-  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
-  mountPathInvalid: (problem, mountPath) => {
-    switch (problem) {
-      case "empty":
-        return `"mount" needs a non-empty static path (the runtime refuses the volume: "has an invalid mount path").`;
-      case "emptySegment":
-        return `"mount" path "${mountPath}" has an empty segment (the runtime refuses the volume: "has an invalid mount path").`;
-      case "wildcard":
-        return `"mount" path "${mountPath}" must be static \u2014 no "*" (the runtime refuses the volume: "has an invalid mount path").`;
-      case "whitespace":
-        return `"mount" path "${mountPath}" must not contain whitespace (the runtime refuses the volume: "has an invalid mount path").`;
-      default:
-        return `"mount" path "${mountPath}" must not use the reserved characters $, #, @ (the runtime refuses the volume: "has an invalid mount path").`;
-    }
-  },
-  recursionUnsupported: (p, where) => {
-    switch (where) {
-      case "binding":
-        return `"**" in "${p}" cannot be used in data-wcs. "**" is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll (the runtime throws when the binding is established). Write the expanded concrete path in HTML instead`;
-      case "watch":
-        return `$watch key "${p}" cannot contain "**" \u2014 watching is defined against a concrete path (a fixed number of "*")`;
-      case "resolve":
-        return `$resolve("${p}") cannot take "**" \u2014 it accepts only an expanded concrete path with an exactly matching index tuple`;
-      case "update":
-        return `$update("${p}") cannot take "**" \u2014 it changes one address (an expanded concrete path with an exactly matching index tuple). Write every depth with $setAll("${p}", [], value)`;
-      case "assignment":
-        return `this["${p}"] = \u2026 cannot use "**" (there are no recursive setters in this version; an assignment only resolves against an expanded concrete path). Broadcast with $setAll("${p}", [], value), or write a concrete path`;
-      case "postUpdate":
-        return `$postUpdate("${p}") cannot take "**" \u2014 a notification is defined against a concrete path (a fixed number of "*")`;
-      case "dependOn":
-        return `$dependOn("${p}") cannot take "**" \u2014 a dependency is registered against a concrete path (a fixed number of "*")`;
-      case "trackDependency":
-        return `$trackDependency("${p}") cannot take "**" \u2014 a dependency is registered against a concrete path (a fixed number of "*")`;
-      case "listKeys":
-        return `$listKeys key "${p}" cannot contain "**" \u2014 a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
-      default:
-        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) \u2014 without it the runtime throws #1101 at load and the state fails to initialize`;
-    }
-  },
-  recursionAnchorMismatch: (p, anchor) => `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and "**" must be followed by a well-formed suffix: no second "**", no empty segment, no bare "*" right after "**")`,
-  recursionGetAllForm: (p, problem) => problem === "notArray" ? `$getAll("${p}", indexes) with "**" takes either no indexes (to read the depth of the recursive getter being evaluated) or [] (to walk every depth) \u2014 not null or a non-array value` : `$getAll("${p}", indexes) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the depth of the recursive getter being evaluated, or pass [] to walk every depth`,
-  recursionSetAllForm: (p, problem) => {
-    switch (problem) {
-      case "prefix":
-        return `$setAll("${p}", indexes, \u2026) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Pass [] to broadcast to every depth`;
-      case "noIndexes":
-        return `$setAll("${p}", \u2026) with "**" requires an explicit empty indexes array ([]) \u2014 the write API takes no context`;
-      case "mapper":
-        return `$setAll("${p}", \u2026) with "**" does not take a mapper \u2014 the index tuple has a different length at each depth. Pass a constant value`;
-      default:
-        return `$setAll("${p}", \u2026) with "**" does not take { spread: true } \u2014 handing a flat array to a tree needs the author to know the walk order, which is not a usable contract`;
-    }
-  },
-  recursionStructuralWrite: (p, target, repeatList) => {
-    switch (target) {
-      case "node":
-        return `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only \u2014 replacing a node would invalidate the child addresses already resolved for this write`;
-      case "branch":
-        return `$setAll("${p}") writes the recursion structure itself (an object on the way to the "${repeatList}" list). This version broadcasts to leaf properties only \u2014 replacing it would invalidate the child addresses already resolved below it`;
-      case "length":
-        return `$setAll("${p}") writes the recursion structure itself (the length of the "${repeatList}" list). Assigning length truncates the array, which invalidates the child addresses already resolved below it just like replacing the list`;
-      default:
-        return `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`;
-    }
-  },
-  recursionReadonly: (subject, getterPath) => `${subject} writes into the recursive getter "${getterPath}", which has no setter in this version (this spelling is that getter at one depth, or a path inside the value it derives). Write the values it derives from instead`,
-  recursionInVolume: (subject, mountPath) => `${subject} cannot be declared in a volume (mount="${mountPath}"); for $recursion the runtime refuses to graft the volume and reports that with console.error. Declare the recursion and its "**" getters on the root state \u2014 the anchor path is resolved against the root tree`,
-  recursionNotObject: () => `$recursion must be an object mapping one anchor path to its repeating sub-path (for example { "nodes.*": "children.*" }; the runtime throws at load time for this shape)`,
-  recursionAnchorCount: (count) => count === 0 ? `$recursion must declare exactly one anchor; it is empty` : `$recursion declares ${count} anchors. This version supports exactly one self-recursive anchor per state`,
-  recursionNodePathInvalid: (kind, path, problem) => {
-    const subject = kind === "anchor" ? "$recursion anchor" : "$recursion repeating sub-path";
-    switch (problem) {
-      case "empty":
-        return `${subject} must be a non-empty string`;
-      case "emptySegment":
-        return `${subject} "${path}" must not contain empty path segments`;
-      case "notElement":
-        return `${subject} "${path}" must name a list element: a property path ending with ".*" (for example "nodes.*")`;
-      case "reservedRoot":
-        return `${subject} "${path}" must not start with "$" \u2014 that namespace is reserved`;
-      case "reservedMount":
-        return `${subject} "${path}" must not contain "#" \u2014 that segment is reserved for mounts`;
-      case "midWildcard":
-        return `${subject} "${path}" must have exactly one "*", at the end (wildcards in the middle are not supported in this version)`;
-      case "indexSegment":
-        return `${subject} "${path}" must not contain an index segment \u2014 the recursion is declared over the shape of the tree, not over one row`;
-      default:
-        return `${subject} "${path}" must not contain "**" \u2014 the declaration is what gives "**" its meaning`;
-    }
-  },
-  recursionRepeatNotString: (anchor) => `$recursion entry "${anchor}" must map to the repeating sub-path as a string (for example "children.*")`,
-  recursionGetterInvalid: (key, problem, anchor) => {
-    switch (problem) {
-      case "setter":
-        return `Recursive setters are not supported in this version: "${key}". Declare a plain path setter, or write through the concrete path`;
-      case "notGetter":
-        return `"${key}" contains "**" but is not a getter. The recursion wildcard only names a family of computed paths`;
-      case "structural":
-        return `"${key}" names the recursion structure itself (a node, its child list, that list's length, or an object on the way to the list). A recursive getter would hide the real child list at every depth \u2014 "**" names a computed leaf under a node (for example "${anchor}.total")`;
-      default:
-        return `"${key}" names the recursive node itself. "**" names a computed path under a node (for example "${anchor}.total"), not the node`;
-    }
-  },
-  recursionGetterCollision: (a, b, repeat2) => `"${a}" and "${b}" expand to the same concrete path at different depths (they differ by whole repetitions of "${repeat2}"). Rename one of them`,
-  recursionConcreteCollision: (concreteKey, recursiveKey) => `"${concreteKey}" is already defined on the state, so the recursive getter "${recursiveKey}" cannot expand to it (the runtime throws when the declaration is read). Rename one of them`
-};
-var CATALOGS = { ja, en };
-function getMessages(locale2) {
-  return CATALOGS[resolveLocale(locale2)];
-}
-
 // src/service/removedNames.ts
 var REMOVED_FILTER_NAMES = Object.freeze({
   inc: "add",
@@ -15652,7 +16643,7 @@ function booleanAttributeText(name, tag) {
 }
 
 // src/service/stateBehavior.ts
-var BEHAVIOR_KEY = "$behavior";
+var BEHAVIOR_KEY2 = "$behavior";
 var MUSTACHE_KEY = "enableMustache";
 var DIRECTIONAL_KEY = "enableDirectionalInitialSync";
 function isMustacheDisabled(html, stateTagName = "wcs-state", fileReader) {
@@ -15688,7 +16679,7 @@ function isBehaviorDisabled(key, html, stateTagName, fileReader) {
 function jsonDisables(text3, key) {
   try {
     const data2 = JSON.parse(text3);
-    const behavior = data2?.[BEHAVIOR_KEY];
+    const behavior = data2?.[BEHAVIOR_KEY2];
     return typeof behavior === "object" && behavior !== null && behavior[key] === false;
   } catch {
     return false;
@@ -15696,329 +16687,12 @@ function jsonDisables(text3, key) {
 }
 function scriptDisables(script, key) {
   if (!script.includes(key)) return false;
-  const decl = findTopLevelDeclaration(script, BEHAVIOR_KEY);
+  const decl = findTopLevelDeclaration(script, BEHAVIOR_KEY2);
   if (decl === null || decl.kind !== "data") return false;
-  return analyzeDeclarationEntries(script, BEHAVIOR_KEY).some((entry) => entry.name === key && entry.kind === "data" && entry.value !== void 0 && stripComments(entry.value) === "false");
+  return analyzeDeclarationEntries(script, BEHAVIOR_KEY2).some((entry) => entry.name === key && entry.kind === "data" && entry.value !== void 0 && stripComments(entry.value) === "false");
 }
 function stripComments(value) {
   return value.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim();
-}
-
-// src/service/scriptCallArgs.ts
-var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
-var TEMPLATE_NO_SUBST = /^\s*`((?:\\.|[^\\`$]|\$(?!\{))*)`\s*$/;
-function splitCallArgs(source, open) {
-  const args = [];
-  const starts = [];
-  let depth = 0;
-  let argStart = open;
-  let i = open;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      i++;
-      continue;
-    }
-    if (ch === ")" && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      return { args, starts, end: i + 1 };
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      i++;
-      continue;
-    }
-    if (ch === "," && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      argStart = i + 1;
-      i++;
-      continue;
-    }
-    i++;
-  }
-  return null;
-}
-function literalString2(arg) {
-  const match = STRING_LITERAL.exec(arg);
-  if (match !== null) return match[2];
-  const template = TEMPLATE_NO_SUBST.exec(arg);
-  return template === null ? null : template[1];
-}
-function literalArrayLength(arg) {
-  const trimmed = arg.trim();
-  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
-  const inner = trimmed.slice(1, -1);
-  if (inner.trim().length === 0) return 0;
-  if (/(^|[^.])\.\.\./.test(inner)) return null;
-  const parts = splitCallArgs(`${inner})`, 0);
-  if (parts === null) return null;
-  return parts.args.filter((part) => part.trim().length > 0).length;
-}
-function blankComments2(source) {
-  const out = source.split("");
-  let i = 0;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "/") {
-      while (i < source.length && source[i] !== "\n") {
-        out[i] = " ";
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "*") {
-      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
-        out[i] = " ";
-        i++;
-      }
-      if (i < source.length) {
-        out[i] = " ";
-        out[i + 1] = " ";
-        i += 2;
-      }
-      continue;
-    }
-    i++;
-  }
-  return out.join("");
-}
-function createApiCallRegex(apis) {
-  return new RegExp(`\\.\\s*\\$(${apis.join("|")})\\s*\\(`, "g");
-}
-
-// src/service/configDeclarationValidator.ts
-var manifest = getWcsManifest();
-var BEHAVIOR_OPTIONS = manifest.behaviorOptions;
-var BEHAVIOR_KEYS = Object.freeze(Object.keys(BEHAVIOR_OPTIONS));
-var FEATURE_NAMES2 = Object.freeze([...manifest.features]);
-var BEHAVIOR_KEY2 = "$behavior";
-var FEATURES_KEY = "$features";
-function validateConfigDeclarations(html, stateTagName = "wcs-state", locale2) {
-  const msgs = getMessages(locale2);
-  const out = [];
-  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
-    if (!block.content.includes(BEHAVIOR_KEY2) && !block.content.includes(FEATURES_KEY)) continue;
-    validateBehavior(block, msgs, out);
-    validateFeatures(block, msgs, out);
-  }
-  validateFeaturesAttributes(html, stateTagName, msgs, out);
-  return out;
-}
-function push(out, code, start, end, message, severity = "error") {
-  out.push({ code, start, end, message, severity });
-}
-function validateBehavior(block, msgs, out) {
-  const decl = findTopLevelDeclaration(block.content, BEHAVIOR_KEY2);
-  if (decl === null) return;
-  const base = block.contentStart;
-  if (block.mountPath !== null) {
-    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
-    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.configInVolume(BEHAVIOR_KEY2, block.mountPath));
-    return;
-  }
-  if (decl.kind === "method") {
-    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
-    return;
-  }
-  if (decl.value === void 0) return;
-  const kind = literalKind(decl.value);
-  if (kind === "string" || kind === "number" || kind === "boolean" || kind === "function" || kind === "null" || kind === "array") {
-    push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
-    return;
-  }
-  if (kind !== "object") return;
-  for (const entry of analyzeDeclarationEntries(block.content, BEHAVIOR_KEY2)) {
-    if (!BEHAVIOR_KEYS.includes(entry.name)) {
-      push(
-        out,
-        WcsDiagnosticCode.BehaviorInvalid,
-        base + entry.start,
-        base + entry.end,
-        msgs.behaviorKeyUnknown(entry.name, BEHAVIOR_KEYS, suggestion(entry.name, BEHAVIOR_KEYS, msgs))
-      );
-      continue;
-    }
-    const type = BEHAVIOR_OPTIONS[entry.name].type;
-    if (entry.kind === "method") {
-      push(out, WcsDiagnosticCode.BehaviorInvalid, base + entry.start, base + entry.end, msgs.behaviorValueType(entry.name, type));
-      continue;
-    }
-    if (entry.value === void 0 || entry.valueStart === void 0) continue;
-    const valueKind = literalKind(entry.value);
-    if (valueKind !== type && valueKind !== "unknown") {
-      const blanked = blankComments2(entry.value);
-      const lead = blanked.length - blanked.trimStart().length;
-      const start = base + entry.valueStart + lead;
-      push(out, WcsDiagnosticCode.BehaviorInvalid, start, start + blanked.trim().length, msgs.behaviorValueType(entry.name, type));
-    }
-  }
-}
-function validateFeatures(block, msgs, out) {
-  const decl = findTopLevelDeclaration(block.content, FEATURES_KEY);
-  if (decl === null) return;
-  const base = block.contentStart;
-  if (block.mountPath !== null) {
-    if (decl.value !== void 0 && literalKind(decl.value) === "undefined") return;
-    push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.configInVolume(FEATURES_KEY, block.mountPath));
-    return;
-  }
-  if (decl.kind === "method") {
-    push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
-    return;
-  }
-  if (decl.value === void 0 || decl.valueStart === void 0) return;
-  const kind = literalKind(decl.value);
-  if (kind !== "array") {
-    if (kind !== "unknown" && kind !== "undefined") {
-      push(out, WcsDiagnosticCode.FeaturesInvalid, base + decl.start, base + decl.end, msgs.featuresNotArray());
-    }
-    return;
-  }
-  for (const element2 of arrayElements(blankComments2(decl.value))) {
-    const elementKind = literalKind(element2.text);
-    const start = base + decl.valueStart + element2.start;
-    if (elementKind === "string") {
-      const name = element2.text.slice(1, -1);
-      if (!FEATURE_NAMES2.includes(name)) {
-        push(
-          out,
-          WcsDiagnosticCode.FeatureUnknown,
-          start + 1,
-          start + 1 + name.length,
-          msgs.featureUnknown(name, FEATURE_NAMES2, suggestion(name, FEATURE_NAMES2, msgs))
-        );
-      }
-    } else if (elementKind !== "unknown") {
-      push(out, WcsDiagnosticCode.FeatureUnknown, start, start + element2.text.length, msgs.featureUnknown(element2.text, FEATURE_NAMES2, ""));
-    }
-  }
-}
-function validateFeaturesAttributes(html, stateTagName, msgs, out) {
-  if (!html.includes("features")) return;
-  let rootSeen = false;
-  const insideTemplate = createTemplateTester(html);
-  for (const element2 of parseWcsStateElements(html, stateTagName)) {
-    const candidate = element2.mountPath === null && !element2.bindComponent && !insideTemplate(element2.tagStart);
-    const isRoot = candidate && !rootSeen;
-    if (candidate) rootSeen = true;
-    const tagText = html.slice(element2.tagStart, element2.tagEnd);
-    const match = /(?:^|\s)(features)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?(?=[\s/>]|$)/id.exec(tagText);
-    if (match === null) continue;
-    const nameSpan = match.indices[1];
-    if (!isRoot) {
-      push(
-        out,
-        WcsDiagnosticCode.FeaturesInvalid,
-        element2.tagStart + nameSpan[0],
-        element2.tagStart + nameSpan[1],
-        msgs.featuresAttrNotRoot(),
-        "warning"
-      );
-      continue;
-    }
-    const group = match[2] !== void 0 ? 2 : match[3] !== void 0 ? 3 : match[4] !== void 0 ? 4 : 0;
-    if (group === 0) continue;
-    const valueStart = element2.tagStart + match.indices[group][0];
-    const value = match[group];
-    const token = /\S+/g;
-    let t;
-    while ((t = token.exec(value)) !== null) {
-      if (FEATURE_NAMES2.includes(t[0])) continue;
-      push(
-        out,
-        WcsDiagnosticCode.FeatureUnknown,
-        valueStart + t.index,
-        valueStart + t.index + t[0].length,
-        msgs.featureUnknown(t[0], FEATURE_NAMES2, suggestion(t[0], FEATURE_NAMES2, msgs))
-      );
-    }
-  }
-}
-function literalKind(value) {
-  const text3 = blankComments2(value).trim();
-  const scan = maskCommentsAndStrings(text3).trim();
-  if (/^(["'])[^"']*\1$/.test(scan)) return "string";
-  if (/^`[^`]*`$/.test(scan)) return text3.includes("${") ? "unknown" : "string";
-  if (/^-?(?:\d[\w.]*|\.\d[\w]*)$/.test(scan)) return "number";
-  if (/^(?:true|false)$/.test(scan)) return "boolean";
-  if (scan === "null") return "null";
-  if (scan === "undefined") return "undefined";
-  if (/^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(scan)) return "function";
-  if (isWholeBracket(scan, "[", "]")) return "array";
-  if (isWholeBracket(scan, "{", "}")) return "object";
-  return "unknown";
-}
-function isWholeBracket(scan, open, close) {
-  if (scan[0] !== open || scan[scan.length - 1] !== close) return false;
-  let depth = 0;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      if (depth === 0) return i === scan.length - 1;
-    }
-  }
-  return false;
-}
-function arrayElements(value) {
-  const scan = maskCommentsAndStrings(value);
-  const open = scan.indexOf("[");
-  const close = scan.lastIndexOf("]");
-  const out = [];
-  let depth = 0;
-  let from = open + 1;
-  const take = (end) => {
-    const raw = value.slice(from, end);
-    const text3 = raw.trim();
-    if (text3.length > 0) out.push({ text: text3, start: from + (raw.length - raw.trimStart().length) });
-  };
-  for (let i = open + 1; i < close; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (ch === "," && depth === 0) {
-      take(i);
-      from = i + 1;
-    }
-  }
-  take(close);
-  return out;
 }
 
 // src/service/tokenDeclarations.ts
@@ -17247,150 +17921,6 @@ function containerKind(target, paths) {
   return "unknown";
 }
 
-// src/service/templateSyntax.ts
-var MUSTACHE = /\{\{\s*((?:(?!<[A-Za-z/!?])[\s\S])+?)\s*\}\}/dg;
-var COMMENT_BINDING = /<!--\s*@@\s*(?:wcs-text)?\s*:\s*((?:(?!-->)[\s\S])+?)\s*-->/dg;
-var RAW_TEXT_TAGS = ["script", "style"];
-var TEXT_ONLY_COMMENT_PARENTS = ["textarea", "title"];
-function findAllMustacheSyntax(html) {
-  return collect(html, maskMarkup(html), MUSTACHE, "mustache", RAW_TEXT_TAGS);
-}
-function findAllCommentBindings(html) {
-  return collect(html, html, COMMENT_BINDING, "comment", [...RAW_TEXT_TAGS, ...TEXT_ONLY_COMMENT_PARENTS]);
-}
-function collect(html, scan, regex, kind, skipInside) {
-  const results = [];
-  const skip = rangeTester(html, skipInside);
-  const inTemplate = templateTester(html);
-  const inHead = documentHeadTester(html);
-  const textParent = kind === "mustache" ? rangeTester(html, TEXT_ONLY_COMMENT_PARENTS) : null;
-  regex.lastIndex = 0;
-  let match;
-  while ((match = regex.exec(scan)) !== null) {
-    if (skip(match.index) !== null) continue;
-    const expr = match[1];
-    const exprStart = match.indices[1][0];
-    const parent = textParent?.(match.index) ?? null;
-    results.push({
-      kind,
-      expression: expr,
-      exprStart,
-      exprEnd: exprStart + expr.length,
-      matchStart: match.index,
-      matchEnd: match.index + match[0].length,
-      insideTemplate: inTemplate(match.index),
-      inDocumentHead: inHead(match.index),
-      ...parent !== null ? { textParent: parent } : {}
-    });
-  }
-  return results;
-}
-function maskMarkup(html) {
-  if (!html.includes("{{")) return html;
-  const lower2 = asciiLowerCase(html);
-  const chunks = [];
-  let last = 0;
-  const mask = (from, to) => {
-    if (to <= from) return;
-    chunks.push(html.slice(last, from), "<", "x".repeat(to - from - 1));
-    last = to;
-  };
-  let i = 0;
-  while (i < html.length) {
-    const lt2 = html.indexOf("<", i);
-    if (lt2 === -1) break;
-    if (html.startsWith("<!--", lt2)) {
-      const close = html.indexOf("-->", lt2 + 4);
-      i = close === -1 ? html.length : close + 3;
-      mask(lt2, i);
-      continue;
-    }
-    const next = html[lt2 + 1];
-    if (next === "!" || next === "?" || next === "/") {
-      const close = html.indexOf(">", lt2 + 1);
-      i = close === -1 ? html.length : close + 1;
-      mask(lt2, i);
-      continue;
-    }
-    if (next === void 0 || !/[A-Za-z]/.test(next)) {
-      i = lt2 + 1;
-      continue;
-    }
-    let n = lt2 + 1;
-    while (n < html.length && /[^\s/>]/.test(html[n])) n++;
-    const tagName = lower2.slice(lt2 + 1, n);
-    let j = n;
-    let quote = null;
-    while (j < html.length) {
-      const c = html[j];
-      if (quote !== null) {
-        if (c === quote) quote = null;
-      } else if (c === '"' || c === "'") {
-        quote = c;
-      } else if (c === ">") {
-        break;
-      }
-      j++;
-    }
-    i = j < html.length ? j + 1 : html.length;
-    mask(lt2, i);
-    const raw = RAW_TEXT_TAGS.includes(tagName);
-    if (raw || TEXT_ONLY_COMMENT_PARENTS.includes(tagName)) {
-      const close = lower2.indexOf(`</${tagName}`, i);
-      const contentEnd = close === -1 ? html.length : close;
-      if (raw) mask(i, contentEnd);
-      i = contentEnd;
-    }
-  }
-  chunks.push(html.slice(last));
-  return chunks.join("");
-}
-function documentHeadTester(html) {
-  if (!/<head[\s>]/i.test(html)) return () => false;
-  const regions = findStartTagRegions(html);
-  const head = regions.find((r) => r.tagName === "head");
-  if (head === void 0) return () => false;
-  const close = asciiLowerCase(html).indexOf("</head", head.end);
-  const body = regions.find((r) => r.tagName === "body" && r.start > head.end);
-  const ends = [close, body === void 0 ? -1 : body.start].filter((at2) => at2 !== -1);
-  const end = ends.length === 0 ? html.length : Math.min(...ends);
-  return (offset2) => offset2 > head.end && offset2 < end;
-}
-function rangeTester(html, tags) {
-  const ranges = [];
-  const lower2 = asciiLowerCase(html);
-  const open = new RegExp(`<(${tags.join("|")})(?=[\\s/>])[^>]*>`, "gi");
-  let match;
-  while ((match = open.exec(html)) !== null) {
-    const start = match.index + match[0].length;
-    const tag = match[1].toLowerCase();
-    const close = lower2.indexOf(`</${tag}`, start);
-    const end = close === -1 ? html.length : close;
-    ranges.push({ start, end, tag });
-    open.lastIndex = end;
-  }
-  let i = 0;
-  return (offset2) => {
-    while (i < ranges.length && ranges[i].end <= offset2) i++;
-    return i < ranges.length && ranges[i].start <= offset2 ? ranges[i].tag : null;
-  };
-}
-function templateTester(html) {
-  const tagRegex = /<(\/?)template[\s>]/gi;
-  const tags = [];
-  let match;
-  while ((match = tagRegex.exec(html)) !== null) tags.push({ at: match.index, close: match[1] !== "" });
-  let i = 0;
-  let depth = 0;
-  return (offset2) => {
-    while (i < tags.length && tags[i].at <= offset2) {
-      depth = tags[i].close ? Math.max(0, depth - 1) : depth + 1;
-      i++;
-    }
-    return depth > 0;
-  };
-}
-
 // src/service/templateSyntaxValidator.ts
 function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale2, fileReader, applicationSchema) {
   const diagnostics = [];
@@ -18166,6 +18696,18 @@ function validateFormInputs(html, bindAttribute = "data-wcs", stateTagName = "wc
     const bindings = splitBindingExpressions(attr.value);
     const parsed = bindings.map(parseBindingExpression);
     const type = (attr.inputType ?? "text").toLowerCase();
+    if (attr.tagName === "input") {
+      const early = groupBindingBeforeValue(bindings, parsed);
+      if (early !== null) {
+        out.push({
+          code: WcsDiagnosticCode.RadioBeforeValue,
+          start: attr.valueStart + early.start,
+          end: attr.valueStart + early.end,
+          message: msgs.radioBeforeValue(early.binding, early.value, early.checkbox, early.fix),
+          severity: "warning"
+        });
+      }
+    }
     if (attr.tagName === "input" && type === "radio") {
       const shared = sharedRadioName(html, attr, parsed, bindAttribute);
       if (shared !== null && !saidRadio.has(shared.key)) {
@@ -18228,6 +18770,25 @@ function validateFormInputs(html, bindAttribute = "data-wcs", stateTagName = "wc
     }
   }
   return out;
+}
+function groupBindingBeforeValue(bindings, parsed) {
+  const names2 = parsed.map((p) => propertyName(p.property));
+  const at2 = names2.findIndex((name) => name === "radio" || name === "checkbox");
+  if (at2 === -1) return null;
+  const later = names2.findIndex((name, i) => i > at2 && (name === "attr.value" || name === "value"));
+  if (later === -1) return null;
+  let start = 0;
+  for (let i = 0; i < at2; i++) start += bindings[i].length + 1;
+  start += bindings[at2].length - bindings[at2].trimStart().length;
+  const left = parsed[at2].property.trim();
+  return {
+    start,
+    end: start + left.length,
+    binding: left,
+    value: parsed[later].property.trim(),
+    checkbox: names2[at2] === "checkbox",
+    fix: `${bindings[later].trim()}; ${bindings[at2].trim()}`
+  };
 }
 function propertyName(property) {
   const name = property.replace(/#.*$/, "").trim();
@@ -18765,7 +19326,7 @@ function validateIndexArity(script, scriptStart, locale2) {
     if (parsed === null) continue;
     API_CALL.lastIndex = parsed.end;
     if (parsed.args.length < 2) continue;
-    const path = literalString2(parsed.args[0]);
+    const path = literalString(parsed.args[0]);
     if (path === null) continue;
     if (path.startsWith(".")) continue;
     if (hasRecursionWildcard(path)) continue;
@@ -19148,7 +19709,7 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
       const parsed = splitCallArgs(block.content, call.index + call[0].length);
       if (parsed === null) continue;
       API_CALL.lastIndex = parsed.end;
-      const path = parsed.args.length > 0 ? literalString2(parsed.args[0]) : null;
+      const path = parsed.args.length > 0 ? literalString(parsed.args[0]) : null;
       if (path === null) continue;
       if (api === "setAll" || api === "update" || parsed.args.length >= 3) addPrefixes(path, false);
     }
@@ -19856,7 +20417,7 @@ function namedPackages(text3) {
   if (BUNDLE.test(text3)) out.push("wcstack");
   return out.flatMap((p) => p === "wcstack" ? [...BUNDLE_PACKAGES] : [p]);
 }
-var MAX_FILES2 = 32;
+var MAX_FILES3 = 32;
 var MAX_DEPTH2 = 4;
 function validatePackageLoads(html, locale2, fileReader) {
   const msgs = getMessages(locale2);
@@ -19986,12 +20547,12 @@ function autoloaderModules(scan, imports) {
     if (!key.startsWith("@components/") || isUrl(value)) continue;
     const body = key.slice("@components/".length);
     if (!body.endsWith("/")) {
-      if (!body.startsWith("wcs-")) out.push(pagePath(value));
+      if (!body.startsWith("wcs-")) out.push(pagePath2(value));
       continue;
     }
     const prefix = body.slice(0, -1).replace(/\|[^/]*$/, "").replace(/\//g, "-");
     for (const tag of tags) {
-      if (prefix !== "" && tag.startsWith(`${prefix}-`)) out.push(pagePath(`${value}${tag.slice(prefix.length + 1)}.js`));
+      if (prefix !== "" && tag.startsWith(`${prefix}-`)) out.push(pagePath2(`${value}${tag.slice(prefix.length + 1)}.js`));
     }
   }
   return out;
@@ -20025,7 +20586,7 @@ function collectPageLoads(scan, fileReader) {
       const start = match.index + src.offsetInTag;
       loads.references.push({ text: src.value, start });
       name(src.value, true);
-      if (namedPackages(src.value).length === 0 && !isUrl(src.value)) locals.push(pagePath(src.value));
+      if (namedPackages(src.value).length === 0 && !isUrl(src.value)) locals.push(pagePath2(src.value));
       continue;
     }
     if (type === "importmap") {
@@ -20051,7 +20612,7 @@ function collectPageLoads(scan, fileReader) {
     if (namedPackages(spec).length > 0) continue;
     const target = resolveSpecifier(spec, loads.imports);
     if (target === void 0 || namedPackages(target).length > 0 || isUrl(target)) continue;
-    if (isRelative(target)) locals.push(pagePath(target));
+    if (isRelative(target)) locals.push(pagePath2(target));
   }
   loads.autoloader = loads.pkgs.has("autoloader") || /<wcs-autoloader\b/i.test(scan);
   if (loads.autoloader) locals.push(...autoloaderModules(scan, loads.imports));
@@ -20091,7 +20652,7 @@ function isUrl(spec) {
 function isRelative(spec) {
   return spec.startsWith("./") || spec.startsWith("../") || spec.startsWith("/");
 }
-function pagePath(src) {
+function pagePath2(src) {
   return isRelative(src) ? src : `./${src}`;
 }
 function readLocalModules(entries, fileReader, loads) {
@@ -20105,7 +20666,7 @@ function readLocalModules(entries, fileReader, loads) {
     const { spec, from, depth } = queue.shift();
     const path = joinModulePath(from, spec);
     if (seen2.has(path)) continue;
-    if (seen2.size >= MAX_FILES2 || depth > MAX_DEPTH2) {
+    if (seen2.size >= MAX_FILES3 || depth > MAX_DEPTH2) {
       loads.unclear = true;
       return;
     }
@@ -20539,7 +21100,7 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
     regex.lastIndex = parsed.end;
     if (parsed.args.length === 0) continue;
     const pathArg = parsed.args[0];
-    const path = literalString2(pathArg);
+    const path = literalString(pathArg);
     if (path === null) continue;
     const leading = pathArg.length - pathArg.trimStart().length;
     const start = offset2 + parsed.starts[0] + leading;
@@ -20887,15 +21448,15 @@ function validateVolumeBlock2(block, mountPath, msgs, out) {
 function validateBindComponentSource(html, tagStart, tagEnd, hasInlineScript, msgs, out) {
   const tag = html.slice(tagStart, tagEnd);
   const names2 = parseAttributeNames(tag);
-  const sources = BIND_COMPONENT_SOURCE_ATTRIBUTES.filter((name) => names2.has(name));
-  if (hasInlineScript) sources.push('<script type="module">');
-  if (sources.length === 0) return;
+  const sources2 = BIND_COMPONENT_SOURCE_ATTRIBUTES.filter((name) => names2.has(name));
+  if (hasInlineScript) sources2.push('<script type="module">');
+  if (sources2.length === 0) return;
   const prop = /\sbind-component\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))/i.exec(tag);
   out.push({
     code: WcsDiagnosticCode.BindComponentSource,
     start: tagStart,
     end: tagEnd,
-    message: msgs.bindComponentSource(prop?.[1] ?? prop?.[2] ?? prop?.[3] ?? "", sources),
+    message: msgs.bindComponentSource(prop?.[1] ?? prop?.[2] ?? prop?.[3] ?? "", sources2),
     severity: "error"
   });
 }
@@ -21810,13 +22371,275 @@ function locateInlined(page, offset2) {
   return { offset: offset2 - shift };
 }
 
+// src/service/dccDeclarationValidator.ts
+var KEYS = ["$bindables", "$commands"];
+function validateDccDeclarations(text3, definition, stateTagName = "wcs-state", locale2, fileReader) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  const content = text3.slice(definition.contentStart, definition.contentEnd);
+  const states = definitionStates(content, stateTagName);
+  if (states.length === 0) return out;
+  const state = states[0];
+  if (state.bindComponent) {
+    out.push({
+      code: WcsDiagnosticCode.DccDeclaration,
+      start: definition.contentStart + state.tagStart,
+      end: definition.contentStart + state.tagEnd,
+      message: msgs.dccBindComponent(definition.tag),
+      severity: "error"
+    });
+    return out;
+  }
+  if (states.length > 1) {
+    const second = states[1];
+    out.push({
+      code: WcsDiagnosticCode.DccDeclaration,
+      start: definition.contentStart + second.tagStart,
+      end: definition.contentStart + second.tagEnd,
+      message: msgs.dccSecondState(definition.tag),
+      severity: "error"
+    });
+    return out;
+  }
+  const script = definitionScript(state, fileReader);
+  if (script === null) return out;
+  const inline = state.srcAttr === void 0 && state.scriptBlocks.length === 1 ? state.scriptBlocks[0] : null;
+  const at2 = (start, end) => {
+    if (inline !== null) return { start: definition.contentStart + inline.contentStart + start, end: definition.contentStart + inline.contentStart + end };
+    const span = state.srcSpan;
+    return span === void 0 ? { start: definition.contentStart + state.tagStart, end: definition.contentStart + state.tagEnd } : { start: definition.contentStart + span.valueStart, end: definition.contentStart + span.valueEnd };
+  };
+  const say = (start, end, message) => {
+    out.push({ code: WcsDiagnosticCode.DccDeclaration, ...at2(start, end), message, severity: "error" });
+  };
+  const members = isReadableStateScript(script) ? analyzeTopLevelStateKeys(script) : null;
+  const known = members !== null && !members.materializes;
+  const values = new Set(members?.keys ?? []);
+  const methods = new Set(members?.methods ?? []);
+  for (const key of KEYS) {
+    const declaration = findTopLevelDeclaration(script, key);
+    if (declaration === null) continue;
+    if (declaration.kind !== "data" || declaration.value === void 0 || declaration.valueStart === void 0) continue;
+    const kind = literalKind(declaration.value);
+    if (kind === "unknown" || kind === "undefined") continue;
+    if (kind !== "array") {
+      say(declaration.start, declaration.end, msgs.dccListNotArray(key));
+      continue;
+    }
+    const listed = listedNames(script, key);
+    if (listed === null) {
+      continue;
+    }
+    const seen2 = /* @__PURE__ */ new Set();
+    for (const entry of listed) {
+      if (entry.name === "") {
+        say(entry.start, entry.end, msgs.dccEntryEmpty(key));
+        continue;
+      }
+      if (entry.name.startsWith("$")) {
+        say(entry.start, entry.end, msgs.dccEntryInternal(key, entry.name));
+        continue;
+      }
+      if (seen2.has(entry.name)) {
+        say(entry.start, entry.end, msgs.dccEntryDuplicated(key, entry.name));
+        continue;
+      }
+      seen2.add(entry.name);
+      if (!known) continue;
+      const isValue = values.has(entry.name);
+      const isMethod = methods.has(entry.name);
+      if (!isValue && !isMethod) {
+        const candidates = key === "$bindables" ? [...values] : [...methods];
+        say(entry.start, entry.end, msgs.dccEntryMissing(key, entry.name) + suggestion(entry.name, candidates, msgs));
+      } else if (key === "$bindables" && isMethod && !isValue) {
+        say(entry.start, entry.end, msgs.dccBindableIsMethod(entry.name));
+      } else if (key === "$commands" && isValue && !isMethod) {
+        say(entry.start, entry.end, msgs.dccCommandIsValue(entry.name));
+      }
+    }
+  }
+  return out;
+}
+function validateDccAttributes(html, stateTagName = "wcs-state", locale2, fileReader) {
+  if (!mayUseDcc(html)) return [];
+  const contracts = collectDccContracts(html, fileReader, stateTagName);
+  if (contracts.size === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  const said = /* @__PURE__ */ new Set();
+  for (const region of findStartTagRegions(html)) {
+    const contract = contracts.get(region.tagName);
+    if (contract === void 0 || contract.properties.length === 0) continue;
+    const attrs = html.slice(region.start, region.end);
+    if (/(?:^|\s)data-wc-definition(?=[\s=]|$)/i.test(attrs)) continue;
+    const attribute = /([^\s"'<>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`=]+))?/g;
+    let match;
+    while ((match = attribute.exec(attrs)) !== null) {
+      const name = match[1].toLowerCase();
+      const member = contract.properties.find((p) => p.toLowerCase() === name);
+      if (member === void 0) continue;
+      const key = `${region.tagName}\0${member}`;
+      if (said.has(key)) continue;
+      said.add(key);
+      out.push({
+        code: WcsDiagnosticCode.DccAttribute,
+        start: region.start + match.index,
+        end: region.start + match.index + match[0].length,
+        message: msgs.dccAttribute(region.tagName, member),
+        severity: "warning"
+      });
+    }
+  }
+  return out;
+}
+
+// src/service/componentPartValidator.ts
+var PREFIX2 = '<wcs-state><script type="module">export default ';
+var SUFFIX2 = ";</script></wcs-state>";
+function anchorOf(source, tag) {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const entry = new RegExp(`"@components/${escaped}(?:\\|[^"]*)?"\\s*:\\s*"([^"]*)"`, "i").exec(source);
+  if (entry !== null) {
+    const start = entry.index + entry[0].length - 1 - entry[1].length;
+    return { start, end: start + entry[1].length };
+  }
+  const element2 = new RegExp(`<${escaped}(?=[\\s/>])`, "i").exec(source);
+  if (element2 !== null) return { start: element2.index + 1, end: element2.index + 1 + tag.length };
+  return { start: 0, end: Math.min(1, source.length) };
+}
+function partFindings(part, locale2) {
+  const virtual = PREFIX2 + part.text.slice(part.stateStart, part.stateEnd) + SUFFIX2;
+  const shift = part.stateStart - PREFIX2.length;
+  const out = [];
+  for (const d of validateNestedAssigns(virtual, "wcs-state", locale2)) {
+    out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start + shift, end: d.end + shift, message: d.message, severity: d.severity });
+  }
+  for (const d of validateArrayMutations(virtual, "wcs-state", locale2)) {
+    out.push({ code: d.code, start: d.start + shift, end: d.end + shift, message: d.message, severity: d.severity });
+  }
+  return out;
+}
+function validateClassPartScripts(source, locale2, fileReader) {
+  if (fileReader === void 0 || !mayMountParts(source)) return [];
+  const out = [];
+  const files = /* @__PURE__ */ new Set();
+  for (const part of collectClassParts(source, fileReader).values()) {
+    const key = `${part.path}\0${part.stateStart}`;
+    if (files.has(key)) continue;
+    files.add(key);
+    const found = partFindings(part, locale2);
+    if (found.length === 0) continue;
+    const anchor = anchorOf(source, part.tag);
+    const position = createPositionMapper(part.text);
+    for (const d of found) {
+      out.push({
+        code: d.code,
+        start: anchor.start,
+        end: anchor.end,
+        message: d.message,
+        severity: d.severity,
+        origin: { path: part.path, start: d.start, end: d.end, startPosition: position(d.start), endPosition: position(d.end) }
+      });
+    }
+  }
+  return out;
+}
+function keysUnder(object, tree) {
+  const prefix = `${object}.`;
+  const out = /* @__PURE__ */ new Set();
+  for (const candidate of tree.paths) {
+    if (!candidate.path.startsWith(prefix) || candidate.kind !== "data" && candidate.kind !== "list") continue;
+    const rest = candidate.path.slice(prefix.length);
+    const key = rest.split(".")[0];
+    if (key !== "" && key !== "*") out.add(key);
+  }
+  return [...out];
+}
+function validateClassPartTemplates(text3, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
+  if (fileReader === void 0 || !mayMountParts(text3) || !text3.includes(bindAttribute)) return [];
+  const parts = collectClassParts(text3, fileReader);
+  if (parts.size === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  let tree = null;
+  const page = () => {
+    if (tree === null) {
+      const index = getStatePathIndex(text3, stateTagName, fileReader, bindAttribute);
+      const paths = mergeSchemaCandidates(index.paths, applicationSchema);
+      tree = { paths, set: new Set(paths.map((p) => p.path)), scopes: index.scopes };
+    }
+    return tree;
+  };
+  const known = (path) => isUnresolvedPath(path, page().scopes) || pathExistsInCandidates(path, page().paths, page().set);
+  const uses = /* @__PURE__ */ new Map();
+  const positions = /* @__PURE__ */ new Map();
+  const said = /* @__PURE__ */ new Set();
+  walkMountSites(text3, bindAttribute, parts, ({ site, inside, at: at2, top }) => {
+    const part = site.part;
+    const template = part.template;
+    if (template === null) return;
+    if (at2 !== null && !known(at2)) return;
+    let list = uses.get(part);
+    if (list === void 0) uses.set(part, list = templateUses(template.html, bindAttribute));
+    for (const use of list) {
+      if (part.keys.includes(use.key) || site.handed.has(use.key)) continue;
+      const landing = inside(use.key);
+      if (landing.kind === "own") continue;
+      let object = null;
+      let near = [...part.keys, ...site.handed.keys()];
+      if (landing.kind === "page") {
+        if (known(landing.path)) continue;
+        object = landing.path.slice(0, landing.path.length - use.key.length - 1);
+        const keys = keysUnder(object, page());
+        if (keys.length === 0) continue;
+        near = [...near, ...keys];
+      }
+      const key = `${part.path}\0${use.key}\0${top.valueStart}`;
+      if (said.has(key)) continue;
+      said.add(key);
+      let position = positions.get(part);
+      if (position === void 0) positions.set(part, position = createPositionMapper(part.text));
+      const start = template.start + use.start;
+      const end = template.start + use.end;
+      out.push({
+        code: WcsDiagnosticCode.BindingPathMissing,
+        start: top.valueStart,
+        end: top.valueEnd,
+        // (a key the page's own tree has at its top: the part cannot read it there — it is handed over)
+        message: msgs.partPathMissing(use.path, part.tag, use.key, part.stateName, object) + (page().set.has(use.key) ? msgs.partPathOfPage(use.key, part.stateName) : suggestion(use.key, near.filter((n) => n !== use.key), msgs)),
+        severity: "warning",
+        origin: { path: part.path, start, end, startPosition: position(start), endPosition: position(end) }
+      });
+    }
+  });
+  return out;
+}
+
 // src/core/validateDocument.ts
 function validateDocument(text3, options = {}) {
+  return validateScopes(text3, options, text3);
+}
+function validateScopes(text3, options, env, inDefinition = false) {
+  const definitions2 = findDccDefinitions(text3);
+  if (definitions2.length === 0) return validateScope(text3, options, env, inDefinition);
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const page = blankRanges(text3, definitions2.map((d) => [d.hostStart, d.hostEnd]));
+  registerScopeSource(page, text3);
+  const out = [...validateScope(page, options, env, inDefinition)];
+  for (const definition of definitions2) {
+    const scope = keepOnly(text3, definition.templateStart, definition.templateEnd);
+    registerScopeSource(scope, text3);
+    out.push(...validateScopes(scope, options, null, true));
+    out.push(...validateDccDeclarations(text3, definition, stateTagName, options.locale, options.fileReader));
+  }
+  return sortDiagnostics(out);
+}
+function validateScope(text3, options, env, inDefinition) {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const fileReader = options.fileReader;
-  const applicationSchema = applicationSchemaFor(text3, stateTagName, options);
+  const applicationSchema = inDefinition ? void 0 : applicationSchemaFor(text3, stateTagName, options);
   const found = [
-    ...validateText(text3, options, applicationSchema),
+    ...validateText(text3, options, applicationSchema, env),
     ...validateStateSources(text3, stateTagName, options.locale, fileReader),
     ...validateStateAbsent(text3, options.bindAttribute ?? "data-wcs", stateTagName, options.locale, applicationSchema),
     // a stateSchema whose top-level keys are not the root state script's: stale (once, on the page's `<wcs-state>`)
@@ -21827,7 +22650,7 @@ function validateDocument(text3, options = {}) {
   const key = (d) => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\0");
   const seen2 = new Set(found.map(key));
   const out = [...found];
-  for (const d of validateText(page.text, options, applicationSchema)) {
+  for (const d of validateText(page.text, options, applicationSchema, env === text3 ? page.text : null)) {
     const start = locateInlined(page, d.start);
     const end = locateInlined(page, d.end);
     let mapped;
@@ -21867,7 +22690,7 @@ function applicationSchemaFor(text3, stateTagName, options) {
   if (schema === void 0 || stateSource === void 0) return schema;
   return schemaAppliesToPage(text3, stateTagName, stateSource, options.fileReader) ? schema : void 0;
 }
-function validateText(text3, options, applicationSchema) {
+function validateText(text3, options, applicationSchema, env) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale2 = options.locale;
@@ -21883,8 +22706,13 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateBindingHosts(text3, bindAttribute, stateTagName, locale2));
   out.push(...validateIoAttributes(text3, bindAttribute, locale2));
   out.push(...validateCommandArguments(text3, bindAttribute, locale2));
-  out.push(...validateDocumentEnv(text3, locale2));
-  out.push(...validatePackageLoads(text3, locale2, fileReader));
+  if (env !== null) {
+    out.push(...validateDocumentEnv(env, locale2));
+    out.push(...validatePackageLoads(env, locale2, fileReader));
+    out.push(...validateClassPartScripts(env, locale2, fileReader));
+  }
+  out.push(...validateDccAttributes(text3, stateTagName, locale2, fileReader));
+  out.push(...validateClassPartTemplates(text3, bindAttribute, stateTagName, locale2, fileReader, applicationSchema));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));

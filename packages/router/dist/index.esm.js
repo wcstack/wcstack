@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.28.0";
+var version = "4.29.0";
 var pkg = {
 	name: name,
 	version: version};

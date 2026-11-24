@@ -155,7 +155,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/autoloader","version":"4.28.0"};
+var pkg = {"name":"@wcstack/autoloader","version":"4.29.0"};
 
 const COMPONENT_KEYWORD = "@components/";
 function loadImportmap() {

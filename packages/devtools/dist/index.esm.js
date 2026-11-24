@@ -1,4 +1,4 @@
-var pkg = {"name":"@wcstack/devtools","version":"4.28.0"};
+var pkg = {"name":"@wcstack/devtools","version":"4.29.0"};
 
 /**
  * protocol/types.ts

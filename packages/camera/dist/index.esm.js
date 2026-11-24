@@ -62,7 +62,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/camera","version":"4.28.0"};
+var pkg = {"name":"@wcstack/camera","version":"4.29.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.
