@@ -188,6 +188,15 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 - **`wcs/dcc-attribute`**（warning） — 部品の `$bindables` のメンバーを属性で書いたインスタンス（`<my-pager total="120">`）。DCC の入力はプロパティで、属性は読まれません: 部品は既定のままです。実行時も 4.28 から同じ code で警告します。タグと名前ごとに 1 回。
 
 
+**クラスの部品**（テンプレートに `<wcs-state bind-component="state">`、インスタンスに `state = { … }` を持つ `class XCard extends HTMLElement`。`<x-card data-wcs="state: user">` でマウントする）:
+
+- **クラスは、ページが言う場所から読みます** — import map が autoloader に名指すファイル（`"@components/x-card": "./parts/x-card.js"`、または名前空間: `"@components/x/": "./parts/"` と `<x-card>` → `./parts/card.js`）、またはページが読み込むモジュールのうち `customElements.define("x-card", XCard)` を呼ぶもの。部品のテンプレートの中でマウントしている部品も、そこから辿って読みます。`.ts` のファイルは型を消して読みます。
+- **部品が公開する getter は、ページのパスです。** 部品の state の getter は、部品をマウントした所のパスで読めます — `user.display`、行にマウントしたなら行の中の `.display`。部品の中の部品も同じです。4.28 までは、それを読むページに「パスが存在しない」（`wcs/binding-path-missing`）と言い、回避策 — ページのデータの JSDoc の型に getter を手で宣言する — は、後の改名を隠していました。部品から無くなった getter は、ほかの無いパスと同じに報告します。
+- **部品のメソッドは、ページと同じに検査します**: `this.tenant.name = v`（`wcs/nested-assign`）と `this.plots.push(p)`（`wcs/array-mutation`）は、部品でもエラーです。所見は部品のファイルの、その行に出ます。
+- **部品のテンプレートのパスで、先頭のキーをどこも与えないもの**は `wcs/binding-path-missing`（warning）で、部品のファイルに出ます: そのキーが部品自身の state のものでなく、ページが渡してもおらず（`state.view:`）、マウント先のオブジェクトにも無いとき — テンプレートの `nmae`、ページが `state.veiw:` と書いた所の `view.x`、部品の中で読んだページのパス（`pageTitle`: 渡してください）。部品の中では、そういう読みはマウント先へ落ちて何も失敗しません。実行時は 4.28 から報告していて、これは同じ基準です。マウント先のオブジェクトは、形が分かるとき（種・JSDoc の型・スキーマ）だけ判定します: 空で始まるリストの行には何も言いません。先頭のキーより深い所は言いません。
+- 確かなときだけ読みます: オブジェクトリテラルの `state = { … }`（フィールドか、コンストラクタの `this.state = { … }`）で、スプレッドも計算されたキーも無いもの。テンプレートは、モジュールの中の 1 つの文字列。lint が読めないファイル（`--root` なしの `/` から始まるパス）、呼び出しで作る state、見つからないクラスには、これまでどおり何も言いません。
+
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。

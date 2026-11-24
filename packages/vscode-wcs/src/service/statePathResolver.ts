@@ -19,6 +19,7 @@ import {
 import type { ModuleLocation } from './moduleValues.js';
 import { hasIndexSegment, toWildcardForm } from './indexPath.js';
 import { collectOutputSlots, documentMemberBindings, type OutputSlot } from './elementMembers.js';
+import { mountedExports } from './componentParts.js';
 
 /**
  * 外部ファイルの内容を読み取るコールバック。
@@ -135,7 +136,12 @@ export function getStatePathIndex(
   fileReader?: FileReader,
   bindAttribute?: string,
 ): StatePathIndex {
-  const index = resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  const base = resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+  // The getters of the class parts the page mounts are readable at their mount points (`user.display` for a part
+  // mounted on `user` whose state declares `get display()`): the page's bindings and scripts may read them
+  let known: Set<string> | null = null;
+  const exported = mountedExports(html, bindAttribute ?? 'data-wcs', fileReader, (path) => (known ??= new Set(base.paths.map((p) => p.path))).has(path));
+  const index = exported.length === 0 ? base : { ...base, paths: [...base.paths, ...exported] };
   if (bindAttribute === undefined) return index;
   // The slots the document's elements write with an output (read from the bindings, so the attribute's name is needed):
   // what is under one is the element's to say. The checks that report a missing path are silent there, and

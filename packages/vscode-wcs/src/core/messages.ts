@@ -341,6 +341,14 @@ export interface WcsMessageCatalog {
   bindComponentSource(prop: string, sources: readonly string[]): string;
   /** 同じ root の 2 つ目の `<wcs-state>`（ランタイムの #47。後から読み込んだ方を拒んで console.error）。 */
   secondRoot(): string;
+  /**
+   * A path in the template of a mounted class part (`tag`) whose first key (`key`) is not the part's, not handed to
+   * it, and not on the object it is mounted on (`object`: that object's path in the page's tree; null when the part
+   * is mounted on no object). `prop` is the part's state property (`state`).
+   */
+  partPathMissing(path: string, tag: string, key: string, prop: string, object: string | null): string;
+  /** Appended to it when `key` is a top-level path of the page's own state. */
+  partPathOfPage(key: string, prop: string): string;
   /** A `<wcs-state bind-component>` in a DCC definition (`tag`): the runtime refuses the definition. */
   dccBindComponent(tag: string): string;
   /** A second `<wcs-state>` of the definition's own (not in a template of its content). */
@@ -771,6 +779,12 @@ const ja: WcsMessageCatalog = {
     `${key} はボリューム（mount="${mountPath}"）では実行されません。ランタイムは接ぎ木を拒んで console.error で報告します（この state は木に載りません）。root の state に宣言してください`,
   volumeDeclarationNotRun: (key, mountPath) =>
     `${key} はボリューム（mount="${mountPath}"）では実行されません（ランタイムは console.warn で知らせ、この宣言を無視します — root の state のものです）。root の state に宣言してください`,
+  partPathMissing: (path, tag, key, prop, object) =>
+    `<${tag}> のテンプレートのパス "${path}" は解決しません: "${key}" は部品の state のキーではなく、渡されてもおらず（${prop}.${key}: …）、${object === null
+      ? `部品はどのオブジェクトにもマウントされていません（${prop}: …）`
+      : `マウント先のオブジェクト（"${object}"）にもありません`}。部品の中の読みはマウント先へ落ちて何も失敗しないので、表示は空になります（実行時も [wcs/binding-path-missing] で知らせます）`,
+  partPathOfPage: (key, prop) =>
+    `。"${key}" はページの state のパスです: 部品からは読めないので、渡してください（${prop}.${key}: ${key}）`,
   dccBindComponent: (tag) =>
     `<${tag} data-wc-definition> の中の <wcs-state> に bind-component があります。DCC の state は定義のテンプレートのもので、インスタンスごとに読み込まれます。ランタイムはこの定義を拒み（a <wcs-state bind-component> cannot define a component）、<${tag}> はどのページでも定義されません。bind-component を外すか、クラスの部品として書いてください`,
   dccSecondState: (tag) =>
@@ -1200,6 +1214,12 @@ const en: WcsMessageCatalog = {
     `${key} is not run in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state`,
   volumeDeclarationNotRun: (key, mountPath) =>
     `${key} is not run in a volume (mount="${mountPath}"): the runtime says so with console.warn and ignores this declaration — it belongs to the root state. Declare it there`,
+  partPathMissing: (path, tag, key, prop, object) =>
+    `Path "${path}" in <${tag}>'s template does not resolve: "${key}" is not a key of the part's state, it is not handed to it (${prop}.${key}: …), and ${object === null
+      ? `the part is mounted on no object (${prop}: …)`
+      : `the object it is mounted on ("${object}") has no such key`}. Inside a part a read falls through to that object and fails nothing, so the field is empty (the runtime says so with [wcs/binding-path-missing])`,
+  partPathOfPage: (key, prop) =>
+    `. "${key}" is a path of the page's state: a part does not read it there — hand it over (${prop}.${key}: ${key})`,
   dccBindComponent: (tag) =>
     `The <wcs-state> in <${tag} data-wc-definition> has bind-component. A DCC's state belongs to the definition's template and is loaded per instance: the runtime refuses this definition (a <wcs-state bind-component> cannot define a component), and <${tag}> is defined on no page. Drop bind-component, or write the part as a class`,
   dccSecondState: (tag) =>
