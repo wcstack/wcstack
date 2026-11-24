@@ -458,6 +458,8 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 
 実装は検査器だけで、core も実行時も変えない。拡張 2.22.0 と、次の minor の `@wcstack/lint` / `@wcstack/typescript` になる。
 
+4.29.0（2026-11-25）で公開した（PR #746・#747・#748。拡張 2.22.0 は同じ検査器）。`examples/garden-plots` からは、部品が公開する getter の手書きの宣言を外した。残った限界: lint が部品を読むのはファイルを見つけられるときだけで、`/` から名指す部品には `--root` が要り、エディタには root が無い。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。
