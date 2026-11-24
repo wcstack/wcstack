@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.22.0 — 2026-11-25
 
-継ぎ目アプリ garden-plots（部品で組み立てるページ）から、著者が決めた 2 点（docs/v4-direction-2026-10.md §5.25）: lint は部品を読む・`radio:` の順序は lint が知らせる。
+`@wcstack/state` 4.29.0 から作った（npm の `@wcstack/lint` 4.29.0・`@wcstack/typescript` 4.29.0 と同じ判定）。継ぎ目アプリ garden-plots（部品で組み立てるページ）から、著者が決めた 2 点（docs/v4-direction-2026-10.md §5.25）: lint は部品を読む・`radio:` の順序は lint が知らせる。
 
 - `wcs/radio-before-value`（新規、warning）: `radio:` / `checkbox:` を、その要素に値を与える束縛（`attr.value:` / `value:`）より前に書いた（`<input type="radio" data-wcs="radio: theme; attr.value: .value">`）。束縛は書いた順に当たり、`radio:` は当たるときに要素の `value` を比べるので、まだブラウザの既定の `"on"` と比べる: 最初の描画ではどれも選ばれず、実行時は何も言わない（後から state に書くと正しいものが選ばれる）。`radio` / `checkbox` の上で報告し、直した順を言う。値の束縛が前にあるとき・値がマークアップのリテラルだけのときは黙る。
 - **宣言的カスタムコンポーネント（`data-wc-definition`）を読む。** 4.28 までは DCC を知らなかった（作者がわざとした 45 通りの間違いのうち、捕まえたのは 2 つ）。
