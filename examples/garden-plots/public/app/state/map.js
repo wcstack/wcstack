@@ -8,8 +8,8 @@ const FILTERS = ["all", ...STATUSES.map((s) => s.key)];
 
 export default {
   // usage / freeCount / matchCount are not in the API data: each <garden-card> mounted on a garden exports them
-  // (state README "Exported getters"). They are in the type so the lint knows the page may read them.
-  /** @type {{ id: number, name: string, address: string, usage?: number, freeCount?: number, matchCount?: number, areas: { id: number, name: string, plots: { id: number, no: string, size: number, status: string, tenant: { id: number, name: string, phone: string, postal: string, address: string } | null, since: string | null, version: number }[] }[] }[]} */
+  // (state README "Exported getters"). The lint reads them from the part (since 4.29), so the type does not name them.
+  /** @type {{ id: number, name: string, address: string, areas: { id: number, name: string, plots: { id: number, no: string, size: number, status: string, tenant: { id: number, name: string, phone: string, postal: string, address: string } | null, since: string | null, version: number }[] }[] }[]} */
   gardens: [],
   loaded: false,
   loading: false,
