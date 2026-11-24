@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.29.0] — 2026-11-25
 
 The lint and the parts of a page — two decisions of the author's from the `garden-plots` seam app (2026-11-24, [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.25): the lint reads a component, and the order of `radio:` is the lint's to tell.
 

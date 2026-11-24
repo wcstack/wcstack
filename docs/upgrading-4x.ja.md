@@ -507,11 +507,24 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: DCC のファイルを fetch して `setHTMLUnsafe()` で読むページ自身のローダーと、すべての eager のキーの `|loader`。ルートのキーに束ねて `$watch` でボリュームと写し合う I/O の要素。ブラウザのテストで許していたマウントパスの `[wcs/write-path-missing]` と、「ボリュームがそろった」を待つポーリング（ボリュームの `connectedCallbackPromise` は接ぎ木の後に解決する）。`$watch` が最初の値を逃すので、キャッシュつきの getter でリストを導く DCC。ルートの中で `<wcs-link>` の代わりにルーターに頼む素のリンク。単体テストで `mount()` の前に手で入れる DCC の定義。ボリュームだけに走らせる `wcs-schema check`。
 
-## 4.28.0 でもまだ要るもの
+### 4.29.0
+
+2026-11-25 — [CHANGELOG](../CHANGELOG.md#4290--2026-11-25)
+
+実行時は何も変わらない: このリリースは lint（`@wcstack/lint` と、VS Code の拡張 2.22.0）。
+
+- **部品を使うページは、部品を通して検査される**。通っていたページが落ちることがある。
+  - 宣言的カスタムコンポーネント: 定義のマークアップは定義の state に、ページのマークアップはページの state に対して検査する（これまではキーが 1 つの集合だった）。`wcs/tag-member-unknown`（error）は部品が宣言していないメンバー（`<my-pager data-wcs="totl: n">`）を、`wcs/dcc-declaration`（error）は実行時が拒む定義を、`wcs/dcc-attribute`（warning）は属性で書いた入力を報告する。定義は、ページの中か、import map が autoloader の `dcc` ローダーに名指すファイルから読む。
+  - クラスの部品（`bind-component`）: メソッドの `wcs/nested-assign` と `wcs/array-mutation`（error）を、部品のファイルの位置で報告する。テンプレートのパスで、先頭のキーが部品のものでも、渡されたものでも、マウント先のオブジェクトのものでもないときは `wcs/binding-path-missing`（warning）。部品が公開する getter をページが読んでも、報告しなくなった。
+- `wcs/radio-before-value`（warning）: `radio:` / `checkbox:` を、その要素に値を与える束縛より前に書いた。最初の描画でどのラジオも選ばれない。値を先に書く（`attr.value: .value; radio: theme`）。
+
+要らなくなった回避策: lint にページを通すために、ページのデータの JSDoc の型に、部品が公開する getter を省略できるキーとして手で宣言すること。
+
+## 4.29.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
-- lint はコンポーネントを読まない: クラスのテンプレートやメソッドも、DCC の宣言も。マウントしたコンポーネントが公開し、ページが読む getter は `wcs/binding-path-missing` と報告される。ページの JSDoc に宣言すると報告は消えるが、後の改名も隠れる（state の README、「公開 getter」）。実行時は、コンポーネントの先頭のキーの誤りを報告し（4.28）、DCC の誤った宣言を拒む。残りは単体テストで見る。
+- lint が部品を読むのは、そのファイルを見つけられるときだけ: 部品を `/` から名指すページ（`"@components/x-card": "/parts/x-card.js"`）は `--root=<サイトのディレクトリ>` を付けて lint する。root を持たないエディタは、そういう部品には何も言わない。state がオブジェクトリテラルでない部品は読まず、部品のメソッドが読むパスも検査しない（lint の README、「部品で組み立てたページに言うこと」）: 残りは単体テストで見る。
 - ボリュームはルートを読まない。ルートの `$connectedCallback` と `$watch` は、後から届くボリュームのキーやメソッドがそろう前に走る: ボリュームに要るものは渡し、その `connectedCallbackPromise` を待つ（state の README、「追加の状態をマウントする」）。
 - DCC は、プロパティで値を丸ごと受け取る: ページと共有するオブジェクトや配列の中の項目への書き込みは、相手側の行には届かない。入力の `$watch` は最初の値では走らない —— `$connectedCallback` でも読む（state の README、「DCC に渡すもの」）。
 - ページ内の state を import している最中にページを離れるブラウザのテストは、Firefox と WebKit で `<wcs-state> failed to initialize` を見ることがある: import が unload で打ち切られただけで、ページは壊れていない。

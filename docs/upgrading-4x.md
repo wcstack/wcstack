@@ -507,11 +507,24 @@ Workarounds became unnecessary: a submit button disabled in the markup until sta
 
 Workarounds became unnecessary: a loader of the page's own that fetches a DCC's file and parses it with `setHTMLUnsafe()`, and `|loader` in every eager key; an I/O element bound to a root key and copied to and from a volume by `$watch`; `[wcs/write-path-missing]` for a mount path allowed in browser tests, and a poll for "the volumes are there" (a volume's `connectedCallbackPromise` resolves once it has grafted); a DCC that derives its list in a getter with a cache because a `$watch` missed the first value; a plain link that asks the router in place of a `<wcs-link>` inside a route; a DCC's definition installed by hand before `mount()` in a unit test; `wcs-schema check` run for the volumes only.
 
-## Still needed on 4.28.0
+### 4.29.0
+
+2026-11-25 — [CHANGELOG](../CHANGELOG.md#4290--2026-11-25)
+
+Nothing changes at run time: this release is the lint (`@wcstack/lint`, and the VS Code extension 2.22.0).
+
+- **A page that uses a part is checked through the part**, and may fail where it passed.
+  - A Declarative Custom Component: its markup is checked against its own state and the page's against the page's (they were one set of keys). `wcs/tag-member-unknown` (error) reports a member the part does not declare (`<my-pager data-wcs="totl: n">`), `wcs/dcc-declaration` (error) a definition the runtime refuses, `wcs/dcc-attribute` (warning) an input written as an attribute. The definition is read from the page or from the file the import map names for the autoloader's `dcc` loader.
+  - A class part (`bind-component`): `wcs/nested-assign` and `wcs/array-mutation` (errors) in its methods, reported at the part's file; `wcs/binding-path-missing` (warning) for a path of its template whose first key is neither the part's, nor handed to it, nor on the object it is mounted on. A page's read of a getter the part exports is no longer reported.
+- `wcs/radio-before-value` (warning): `radio:` / `checkbox:` written before the binding that gives the control its value. No radio is checked at the first render; write the value first (`attr.value: .value; radio: theme`).
+
+Workarounds became unnecessary: the getters a part exports, declared by hand as optional keys in the JSDoc type of the page's data so that the lint accepted the page.
+
+## Still needed on 4.29.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
-- The lint reads no component: not a class's template or methods, not what a DCC declares. A getter a mounted component exports and the page reads is reported as `wcs/binding-path-missing`; declaring it in the page's JSDoc silences the report and hides a later rename (state README, "Exported getters"). The run time reports a component's wrong first key (4.28) and refuses a DCC's wrong declarations; unit tests cover the rest.
+- The lint reads a part only where it finds its file: a page that names its parts from `/` (`"@components/x-card": "/parts/x-card.js"`) is linted with `--root=<the site's directory>`, and the editor, which has no root, says nothing of those parts. A part whose state is not an object literal is not read, and neither is what a part's methods read (lint README, "What a page assembled from parts is told"): unit tests cover the rest.
 - A volume does not read the root, and the root's `$connectedCallback` and `$watch` run before a volume that arrives later has its keys and methods: hand a volume what it needs, and wait for its `connectedCallbackPromise` (state README, "Mounting Additional State").
 - A DCC is given whole values through properties: a write to a field inside an object or array it shares with the page does not reach the other side's rows, and a `$watch` on an input does not run for the first value — read it in `$connectedCallback` as well (state README, "What a DCC Is Given").
 - A browser test that leaves a page while an inline state is still being imported may see `<wcs-state> failed to initialize` in Firefox and WebKit: the import was cut off by the unload, and the page was not broken.
