@@ -258,14 +258,27 @@ test.describe("写真のページと、一覧へ戻る", () => {
       await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
       await page.waitForTimeout(200);
     }
+    // Each step says so when it fails. Waiting for the card below until the test's timeout read the same for a
+    // list that stopped loading, a card the walk never met and a card that left again.
+    expect(await heldCount(page), `the list holds card ${n}`).toBeGreaterThanOrEqual(n);
     // the list renders only the rows near the screen: walk down from the top until card n is there
     const id = (await (await request.get(`/api/photos?offset=${n - 1}&limit=1`)).json()).items[0].id;
     const card = page.locator(`.card[data-id="${id}"]`);
-    await page.evaluate(() => scrollTo(0, 0));
-    for (let i = 0; i < 400 && !(await card.count()); i++) {
-      await page.evaluate(() => scrollBy(0, Math.round(innerHeight * 0.8)));
+    // the walk stops at the end of what is loaded now: card n is above it (the list goes on loading below)
+    const end = await page.evaluate(() => { scrollTo(0, 0); return document.documentElement.scrollHeight; });
+    let steps = 0;
+    let atEnd = false;
+    for (; steps < 400 && !atEnd && !(await card.count()); steps++) {
+      atEnd = await page.evaluate((h) => { scrollBy(0, Math.round(innerHeight * 0.8)); return scrollY + innerHeight >= h; }, end);
       await page.waitForTimeout(40);
     }
+    // at the end: the walk never met the card. Before it: the card was there, and is not any more.
+    const where = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll(".card")];
+      const count = document.querySelector(".count").textContent.replace(/\s+/g, " ").trim();
+      return `scrollY ${Math.round(scrollY)} of ${document.documentElement.scrollHeight}, ${cards.length} cards ${cards[0]?.dataset.id}…${cards.at(-1)?.dataset.id}, "${count}"`;
+    });
+    await expect(card, `card ${id} (number ${n}) after ${steps} steps down${atEnd ? ", at the end" : ""}: ${where}`).toBeAttached({ timeout: 2000 });
     await card.evaluate((el) => el.scrollIntoView({ block: "center" }));
     await page.waitForTimeout(300);
     return card;
