@@ -357,7 +357,7 @@ npx @wcstack/lint [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--er
 | `--state-tag=<name>` | State element tag name (default `wcs-state`) |
 | `--lang=ja\|en` | Message language. Default: environment locale (`LC_ALL` / `LC_MESSAGES` / `LANG`, then the OS locale); codes and ranges do not depend on it |
 | `--errors-only` (alias `--quiet`) | Print only error-severity lines; warning / info counts and the exit code are unchanged |
-| `--strict` | Exit `1` on warnings too. Severities are unchanged — only the exit-code threshold moves. Use it to fail CI on a path typo (`wcs/binding-path-missing` is a warning). The two infos that say a state was not checked (`wcs/state-src-unread`, `wcs/path-dynamic-unknown`) count like warnings under it, and the output says how many |
+| `--strict` | Exit `1` on warnings too. Severities are unchanged — only the exit-code threshold moves. Use it to fail CI on a path typo (`wcs/binding-path-missing` is a warning). The infos that say a whole state was not read — `wcs/state-src-unread`, and `wcs/path-dynamic-unknown` for a `...spread` at the top of a state — count like warnings under it, and the output says how many |
 
 A `<file>` argument that names no existing file and holds `*`, `**`, `?`, `[…]` or `{a,b}` is expanded by the CLI itself — cmd.exe and PowerShell (and npm scripts on Windows) pass a pattern through as it is. `*` stays in one directory and skips names that start with `.`; `**` crosses directories but does not enter `node_modules` or a directory whose name starts with `.`.
 

@@ -14,7 +14,7 @@
 - `wcs/event-name-case`（新規、warning）: `onSubmit:` / `onClick:`（`on` の直後が大文字）。
 - `wcs/inline-import`（新規、error）: インラインの `<wcs-state>` / `<wcs-guard-handler>` のスクリプトの相対・ルート相対の静的 import（blob: URL から評価されるので解決しない）。完全な URL・裸の指定子・`src=` の state には言わない。
 - `wcs/key-binding`（新規、warning）: ネイティブ要素の `key:`（React の key）。カスタム要素には言わない（`<wcs-storage>` の `key` は入力）。
-- CLI の `--strict`: 検査できなかった state を言う info（`wcs/state-src-unread`・`wcs/path-dynamic-unknown`）を warning と同じく数え（exit 1）、summary 行（`(strict; N unchecked counted as warnings)`）と `strict:` の注記でそう言う。`--errors-only` でもその行を出す。`--strict` なしでは info のまま。これまでは `--strict` でも、そうした state を検査しないまま exit 0 だった。
+- CLI の `--strict`: state をまるごと読めなかったと言う info（`wcs/state-src-unread` と、state の先頭の `...spread` の `wcs/path-dynamic-unknown`）を warning と同じく数え（exit 1。値を読めないキーの `wcs/path-dynamic-unknown` は今までどおり通す）、summary 行（`(strict; N unchecked counted as warnings)`）と `strict:` の注記でそう言う。`--errors-only` でもその行を出す。`--strict` なしでは info のまま。これまでは `--strict` でも、そうした state を検査しないまま exit 0 だった。
 
 ## 2.22.0 — 2026-11-25
 

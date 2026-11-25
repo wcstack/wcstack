@@ -85,9 +85,10 @@ export interface RunValidationResult {
   readonly warningCount: number;
   readonly infoCount: number;
   /**
-   * The infos that say a state was not checked — `wcs/state-src-unread` (a `src` the lint cannot read) and
-   * `wcs/path-dynamic-unknown` (a value it cannot read statically: the paths under it are not checked). Counted in
-   * `infoCount` too. Under `strict` they count like warnings: a strict run does not pass on a state it did not check.
+   * The infos that say a whole state was not read (`WcsDiagnostic.wholeState`): `wcs/state-src-unread` (a `src` the
+   * lint cannot read) and the `wcs/path-dynamic-unknown` of a spread at the top of a state. Counted in `infoCount`
+   * too. Under `strict` they count like warnings: a strict run does not pass on a state it did not read. A key whose
+   * value cannot be read (the other `wcs/path-dynamic-unknown`s) leaves the rest checked and is not counted.
    */
   readonly uncheckedCount: number;
   /** exit code(error があれば 1。`strict` なら warning か uncheckedCount でも 1。それ以外 0)。 */
@@ -107,8 +108,6 @@ export interface RunValidationResult {
 
 const severityLabel: Record<WcsSeverity, string> = { error: "error", warning: "warning", info: "info" };
 
-/** The infos that say what the lint did not check (`uncheckedCount`): under `--strict` they count like warnings. */
-export const UNCHECKED_CODES: ReadonlySet<string> = new Set([WcsDiagnosticCode.StateSrcUnread, WcsDiagnosticCode.PathDynamicUnknown]);
 
 export function runValidation(inputs: readonly CliFileInput[], options: RunValidationOptions = {}): RunValidationResult {
   const diagnosticsBySource = new Map<string, readonly WcsDiagnostic[]>();
@@ -211,7 +210,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       if (d.severity === "error") errorCount++;
       else if (d.severity === "warning") warningCount++;
       else infoCount++;
-      const unchecked = d.severity === "info" && UNCHECKED_CODES.has(d.code);
+      const unchecked = d.severity === "info" && d.wholeState === true;
       if (unchecked) uncheckedCount++;
       // counts は全診断で数え、errorsOnly 時は表示行だけ error に絞る（strict では、warning と同じく数える未検査の info も載せる）。
       if (options.errorsOnly && d.severity !== "error" && !(options.strict === true && unchecked)) continue;
@@ -226,7 +225,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     notes.push(`not read: ${notRead.join(", ")} — wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files`);
   }
   if (options.strict === true && uncheckedCount > 0) {
-    notes.push(`strict: ${uncheckedCount} info about a state not checked (wcs/state-src-unread, wcs/path-dynamic-unknown) counted like warnings — give --root, a JSDoc @type or a stateSchema to have it checked`);
+    notes.push(`strict: ${uncheckedCount} info about a state that was not read at all (an unread src, a spread at the top of the state) counted like warnings — give --root, or a stateSchema, to have it checked`);
   }
   if (nothingToCheck.length > 0) {
     notes.push(`nothing to check: ${nothingToCheck.join(", ")} — no data-wcs binding, <wcs-*> tag or wcstack script in them`);

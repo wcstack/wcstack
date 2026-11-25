@@ -40,7 +40,7 @@ wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<d
 | `--lang=ja\|en` | 診断メッセージの言語。未指定時は環境ロケール（`LC_ALL` / `LC_MESSAGES` / `LANG` → OS ロケール）に従う。code / range は言語に依らず不変 |
 | `--root=<dir>`（`--root <dir>` も） | 4.10 から: サイトのルートのディレクトリ。/ から始まるパスをその下で読む — `<base href="/ja/">` の下の `<wcs-state src="/app.js">`（`docs/csp.md` と `examples/router-i18n` の形）や、state のファイルの `/…` からの import は `<dir>/app.js` として読む。ディレクトリの外へ出るもの（`/../x.js`）は読まない。無ければ / から始まるパスは読まない（`wcs/state-src-unread`、info）。そうしたファイルの指摘はディレクトリの下のパスで出す（`public/app.js:12:5 …`） |
 | `--errors-only`（別名 `--quiet`） | error severity の行だけ表示。warning / info の件数と exit code は不変 |
-| `--strict` | warning severity の診断でも exit `1` にする。severity 自体は不変（IDE の表示と同じ）で、exit code の閾値だけを error → warning に下げる。summary 行の末尾に `(strict)` が付く。パスの typo（`wcs/binding-path-missing` は warning）で CI を落としたいときに使う — ただし先に `<wcs-state src>` を全て解決可能にしておくこと（解決できない外部 state が残す warning でも落ちるようになる）。`--errors-only` と併用可: 表示は error のみのまま、exit code は warning を反映する。4.30（未リリース）から、state を検査できなかったと言う 2 つの info（`wcs/state-src-unread`・`wcs/path-dynamic-unknown`）も warning と同じく数え、`--errors-only` でも表示する |
+| `--strict` | warning severity の診断でも exit `1` にする。severity 自体は不変（IDE の表示と同じ）で、exit code の閾値だけを error → warning に下げる。summary 行の末尾に `(strict)` が付く。パスの typo（`wcs/binding-path-missing` は warning）で CI を落としたいときに使う — ただし先に `<wcs-state src>` を全て解決可能にしておくこと（解決できない外部 state が残す warning でも落ちるようになる）。`--errors-only` と併用可: 表示は error のみのまま、exit code は warning を反映する。4.30（未リリース）から、state をまるごと読めなかったと言う info（`wcs/state-src-unread` と、state の先頭の `...spread` の `wcs/path-dynamic-unknown`）も warning と同じく数え、`--errors-only` でも表示する |
 
 ## 出力と exit code
 
@@ -209,7 +209,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 - **`wcs/event-name-case`**（warning） — `onSubmit:`・`onClick:`・`onChange:`（JSX の綴り）: `Submit` という名前のイベントのリスナーが付き、それを送るものはありません。DOM のイベントなら `onsubmit:`。部品のコールバック（"prop"）は部品が送るイベントで、`eventToken.<メンバー>:` で束ねます。
 - **`wcs/inline-import`**（error） — インラインの `<wcs-state>` や `<wcs-guard-handler>` のスクリプトの静的な `import … from "./x.js"`（`../`・`/`）: `blob:` URL から評価されるので、import は解決しません。`src=` のファイル・完全な URL・import map の名前を使ってください。完全な URL・裸の指定子・`src=` の state には言いません。
 - **`wcs/key-binding`**（warning） — ネイティブ要素の `key:`（React の `key`）: `key` という名前のプロパティを書くだけで、何もしません。key は要りません — 行は行のオブジェクトで突き合わされ、取り直したデータで行を保つのは `$listKeys` です。カスタム要素の `key` は入力のことがある（`<wcs-storage>`）ので言いません。
-- **`--strict` は検査できなかったものを数えます。** `wcs/state-src-unread`（lint が読めない `<wcs-state src>`）と `wcs/path-dynamic-unknown`（静的に読めない値・state の `...spread`）は info のままですが、`--strict` では warning と同じく数え（exit `1`）、summary 行がその数を言い（`(strict; 2 unchecked counted as warnings)`）、その後に `strict:` の注記が続きます。4.29 までの `--strict` は、そうした state を検査しないまま exit `0` でした。
+- **`--strict` は読めなかった state を数えます。** `wcs/state-src-unread`（lint が読めない `<wcs-state src>`）と、state の先頭の `...spread` の `wcs/path-dynamic-unknown` —— どちらの後も、その state のパスは 1 つも検査されません —— は info のままですが、`--strict` では warning と同じく数えます（exit `1`）。lint が値を読めないキー（別のファイルから import した辞書、`team: init.team`）は、state の残りを検査したままにします: `--strict` が通す info のままです。そして、summary 行がその数を言い（`(strict; 2 unchecked counted as warnings)`）、その後に `strict:` の注記が続きます。4.29 までの `--strict` は、そうした state を検査しないまま exit `0` でした。
 
 新しい error は `--errors-only` にも出ます。新しい warning は `--strict` で失敗します。
 

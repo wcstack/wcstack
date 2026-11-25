@@ -332,7 +332,7 @@ describe('8. wcs/key-binding — key:（React の key）', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-describe('9. --strict — 検査できなかった state の info を warning と同じく数える', () => {
+describe('9. --strict — state をまるごと読めなかった info を warning と同じく数える', () => {
   const run = (text: string, strict: boolean, errorsOnly = false) =>
     runValidation([{ source: 'index.html', text, kind: 'html', fileReader: () => undefined }], { locale: 'en', strict, errorsOnly });
 
@@ -343,7 +343,7 @@ describe('9. --strict — 検査できなかった state の info を warning �
     expect(lax.notes.some((n) => n.startsWith('strict:'))).toBe(false);
     const strict = run(html, true);
     expect([strict.exitCode, strict.warningCount, strict.infoCount, strict.uncheckedCount]).toEqual([1, 0, 1, 1]);
-    expect(strict.notes[0]).toBe('strict: 1 info about a state not checked (wcs/state-src-unread, wcs/path-dynamic-unknown) counted like warnings — give --root, a JSDoc @type or a stateSchema to have it checked');
+    expect(strict.notes[0]).toBe('strict: 1 info about a state that was not read at all (an unread src, a spread at the top of the state) counted like warnings — give --root, or a stateSchema, to have it checked');
     // severity は変えない（info のまま）。--errors-only でも、strict が数えた行は表示する
     expect(strict.lines[0]).toMatch(/ info wcs\/state-src-unread /);
     expect(run(html, true, true).lines).toHaveLength(1);
@@ -354,6 +354,11 @@ describe('9. --strict — 検査できなかった state の info を warning �
     const spread = page('<p data-wcs="textContent: title"></p>', `  ...base,\n  title: "a",`).replace('export default', 'const base = make();\nexport default');
     const spreadResult = run(spread, true);
     expect([spreadResult.exitCode, spreadResult.warningCount, spreadResult.uncheckedCount]).toEqual([1, 0, 1]);
+    // a key whose value the lint cannot read: the rest of the state is checked, so --strict passes it (as before 4.30)
+    const opaque = page('<p data-wcs="textContent: team.name"></p>', `  team: init.team,`).replace('export default', 'const init = load();\nexport default');
+    const opaqueResult = run(opaque, true);
+    expect(opaqueResult.lines.some((l) => l.includes('wcs/path-dynamic-unknown'))).toBe(true);
+    expect([opaqueResult.exitCode, opaqueResult.warningCount, opaqueResult.uncheckedCount]).toEqual([0, 0, 0]);
     const fouc = page('<p>{{ title }}</p>');
     const result = run(fouc, true);
     expect([result.exitCode, result.infoCount, result.uncheckedCount]).toEqual([0, 1, 0]);

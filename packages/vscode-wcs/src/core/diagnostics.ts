@@ -486,6 +486,13 @@ export interface WcsDiagnostic {
   /** 関連する state path。 */
   readonly statePath?: string;
   /**
+   * The finding says the lint read **none** of a state — a `src` it cannot read (`wcs/state-src-unread`), a spread at
+   * the top of the state (`wcs/path-dynamic-unknown`) — so nothing bound to that state was checked. Such an info
+   * counts like a warning under `--strict` (core/cli/runValidation.ts). A key whose value cannot be read leaves the
+   * rest of the state checked, and is not one.
+   */
+  readonly wholeState?: true;
+  /**
    * A finding in a state file the page loads with `src=` (core/externalState.ts): `start` / `end` are the `src`
    * value in the page — where the IDE shows it — and this is where it is in the file, which the CLI reports.
    */

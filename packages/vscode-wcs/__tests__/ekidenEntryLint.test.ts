@@ -183,13 +183,13 @@ export default {
     expect(ofCode(found, WcsDiagnosticCode.NumberWrittenAsString)).toEqual([]);
   });
 
-  it('CLI: info だけのページは --strict なしで exit 0。--strict では、検査できなかった state の info（wcs/path-dynamic-unknown）を warning と同じく数えて exit 1（4.30 から）', () => {
+  it('CLI: info だけのページは --strict でも exit 0（値を読めないキーの info は、state の残りを検査している — 4.30 の --strict が数えるのは state をまるごと読めなかった info だけ）', () => {
     const html = page(`const init = load();
 export default { team: init.team };`, '<input data-wcs="value: team.name">');
     const lax = runValidation([{ source: 'index.html', text: html, kind: 'html' }], { locale: 'en' });
-    expect([lax.exitCode, lax.errorCount, lax.warningCount, lax.infoCount, lax.uncheckedCount]).toEqual([0, 0, 0, 1, 1]);
+    expect([lax.exitCode, lax.errorCount, lax.warningCount, lax.infoCount, lax.uncheckedCount]).toEqual([0, 0, 0, 1, 0]);
     const result = runValidation([{ source: 'index.html', text: html, kind: 'html' }], { strict: true, locale: 'en' });
-    expect([result.exitCode, result.errorCount, result.warningCount, result.infoCount, result.uncheckedCount]).toEqual([1, 0, 0, 1, 1]);
+    expect([result.exitCode, result.errorCount, result.warningCount, result.infoCount, result.uncheckedCount]).toEqual([0, 0, 0, 1, 0]);
   });
 });
 

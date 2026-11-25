@@ -59,6 +59,7 @@ export function validateStateSources(
       end: span.end,
       message: getMessages(locale).stateSrcUnread(src),
       severity: 'info',
+      wholeState: true,
     });
   }
   return out;
