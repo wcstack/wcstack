@@ -1,0 +1,109 @@
+<!--
+  components/CommentForm.jsx → <sr-comment-form>, a Declarative Custom Component with its own state.
+  React: <CommentForm onSubmit={addComment} /> where onSubmit(body) returns a promise.
+  Here a part cannot be handed a function, so the conversation is:
+    the part sets `request` = { body, seq }   → the page hears it:   eventToken.request: commentRequested
+    the page answers with a command          → command.done: $command.commentSent / command.failed: …
+    a new report id resets it                → command.reset: $command.commentReset   (React: key={id})
+  useId() is not needed: the ids live in the part's own shadow root.
+-->
+<sr-comment-form data-wc-definition>
+  <template shadowrootmode="open">
+    <link rel="stylesheet" href="/styles.css">
+    <style>:host { display: block; }</style>
+    <form class="comment-form" data-wcs="onsubmit#prevent: submit">
+      <label for="body">コメント</label>
+      <textarea id="body" rows="3"
+        data-wcs="value: body; onkeydown: keydown; attr.aria-invalid: invalidAttr; attr.aria-describedby: describedBy"></textarea>
+      <div class="comment-form-footer">
+        <span id="counter" data-wcs="className: counterClass; textContent: counterText"></span>
+        <button type="submit" data-wcs="disabled: cannotSubmit; textContent: submitLabel"></button>
+      </div>
+      <template data-wcs="if: error">
+        <p id="error" class="field-error" role="alert" data-wcs="textContent: error"></p>
+      </template>
+    </form>
+    <wcs-state>
+      <script type="module">
+        // workaround: inline, not src="…state.js": each instance of a part imports its state file again (as
+        // …state.js#1, #2 — a fresh module per instance), and a full navigation that cuts that import fails the
+        // element with an uncaught error in Firefox (friction-log F-19, F-21). An inline state cannot import lib/
+        // (blob: URL — F-01), so lib/validation.js's two comment rules are repeated here.
+        const COMMENT_MAX = 500;
+        const canSubmitComment = (body) => body.trim().length > 0 && body.length <= COMMENT_MAX;
+        let seq = 0;
+        export default {
+          body: '',
+          submitting: false,
+          error: null,
+          /** What the page hears: { body, seq } — a new object per submit, so the same text sent twice is heard twice. */
+          request: null,
+
+          get over() {
+            return this.body.length > COMMENT_MAX;
+          },
+          get canSubmit() {
+            return canSubmitComment(this.body) && !this.submitting;
+          },
+          get cannotSubmit() {
+            return !this.canSubmit;
+          },
+          get invalidAttr() {
+            return this.over ? 'true' : null;
+          },
+          get describedBy() {
+            return this.error ? 'counter error' : 'counter';
+          },
+          get counterClass() {
+            return this.over ? 'counter over' : 'counter';
+          },
+          get counterText() {
+            return `${this.body.length} / ${COMMENT_MAX}`;
+          },
+          get submitLabel() {
+            return this.submitting ? '送信中…' : '送信';
+          },
+
+          submit() {
+            if (!this.canSubmit) return;
+            this.submitting = true;
+            this.error = null;
+            seq += 1;
+            this.request = { body: this.body, seq };
+          },
+          keydown(event) {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault();
+              this.submit();
+            }
+          },
+          focusTextarea() {
+            // textareaRef.current?.focus(): the part's own shadow root holds the element.
+            /** @type {ShadowRoot} */ (this.$stateElement.getRootNode()).getElementById('body')?.focus();
+          },
+          /** The page's onSubmit promise resolved. */
+          done() {
+            this.body = '';
+            this.submitting = false;
+            this.focusTextarea();
+          },
+          /** …or rejected. */
+          failed() {
+            this.error = 'コメントを送信できませんでした。時間をおいて再度お試しください。';
+            this.submitting = false;
+            this.focusTextarea();
+          },
+          /** A new report: start from a clean slate (React remounted the form with key={id}). */
+          reset() {
+            this.body = '';
+            this.error = null;
+            this.submitting = false;
+          },
+
+          $bindables: ['request'],
+          $commands: ['done', 'failed', 'reset'],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</sr-comment-form>

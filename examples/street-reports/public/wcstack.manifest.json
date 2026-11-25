@@ -1,0 +1,1415 @@
+{
+  "schemaVersion": 2,
+  "kind": "application",
+  "manifestExtensions": {
+    "wcstack.application": {
+      "version": 2,
+      "stateSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "routeName": {
+            "type": "string"
+          },
+          "routeParams": {
+            "type": "object",
+            "properties": {}
+          },
+          "query": {
+            "type": "object",
+            "properties": {}
+          },
+          "navigateUrl": {
+            "type": "null"
+          },
+          "replaceUrl": {
+            "type": "null"
+          },
+          "pageError": {
+            "type": "boolean",
+            "const": false
+          },
+          "pageOk": {
+            "type": "boolean"
+          },
+          "themeStored": {
+            "type": "null"
+          },
+          "systemTheme": {
+            "type": "string"
+          },
+          "theme": {},
+          "themeLabel": {
+            "type": "string"
+          },
+          "staffFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "value",
+              "error"
+            ]
+          },
+          "staffIdStored": {
+            "type": "null"
+          },
+          "staff": {},
+          "currentStaff": {},
+          "currentStaffId": {},
+          "currentStaffIdInput": {
+            "type": "string"
+          },
+          "toasts": {
+            "type": "array",
+            "items": {}
+          },
+          "visibleToasts": {},
+          "summaryFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "value",
+              "error"
+            ]
+          },
+          "summary": {
+            "type": "null"
+          },
+          "badgeText": {
+            "type": "string"
+          },
+          "navItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "current": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "label"
+              ]
+            }
+          },
+          "statusOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {}
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          },
+          "categoryOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {}
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          },
+          "sortOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          },
+          "priorityOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "number"
+                },
+                "label": {}
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          },
+          "districtOptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "listFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "category": {
+                          "type": "string"
+                        },
+                        "subcategory": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "number"
+                        },
+                        "district": {
+                          "type": "string"
+                        },
+                        "address": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "reportedAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "assigneeId": {
+                          "type": "number"
+                        },
+                        "anonymous": {
+                          "type": "boolean"
+                        },
+                        "reporterName": {
+                          "type": "string"
+                        },
+                        "reporterPhone": {
+                          "type": "string"
+                        },
+                        "photos": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "number"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "alt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "url",
+                              "alt"
+                            ]
+                          }
+                        },
+                        "version": {
+                          "type": "number"
+                        },
+                        "prevId": {
+                          "type": "number"
+                        },
+                        "nextId": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "category",
+                        "subcategory",
+                        "status",
+                        "priority",
+                        "district",
+                        "address",
+                        "description",
+                        "reportedAt",
+                        "updatedAt",
+                        "assigneeId",
+                        "anonymous",
+                        "reporterName",
+                        "reporterPhone",
+                        "photos",
+                        "version",
+                        "prevId",
+                        "nextId"
+                      ]
+                    }
+                  },
+                  "total": {
+                    "type": "number"
+                  },
+                  "page": {
+                    "type": "number"
+                  },
+                  "per": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "items",
+                  "total",
+                  "page",
+                  "per"
+                ]
+              },
+              "loading": {
+                "type": "boolean"
+              },
+              "error": {},
+              "status": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "value",
+              "loading",
+              "error",
+              "status"
+            ]
+          },
+          "listShowLoading": {
+            "type": "boolean",
+            "const": false
+          },
+          "listText": {
+            "type": "string"
+          },
+          "listTextSettled": {
+            "type": "null"
+          },
+          "listLastSeen": {
+            "type": "null"
+          },
+          "listSelection": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "ids": {
+                "type": "array",
+                "items": {}
+              }
+            },
+            "required": [
+              "key",
+              "ids"
+            ]
+          },
+          "listBulkBusy": {
+            "type": "boolean",
+            "const": false
+          },
+          "listStatus": {},
+          "listCategory": {},
+          "listQ": {},
+          "listSort": {},
+          "listPage": {
+            "type": "number"
+          },
+          "listUrl": {
+            "type": "string"
+          },
+          "listData": {},
+          "listError": {
+            "type": "boolean"
+          },
+          "listBusyAttr": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "listItems": {},
+          "listTotalPages": {
+            "type": "number"
+          },
+          "listShowEmpty": {
+            "type": "boolean"
+          },
+          "listShowPagination": {
+            "type": "boolean"
+          },
+          "listHasFilters": {
+            "type": "boolean"
+          },
+          "listClearDisabled": {
+            "type": "boolean"
+          },
+          "listFilterKey": {
+            "type": "string"
+          },
+          "listSelectedIds": {},
+          "listSelectedOnPageCount": {},
+          "listAllSelected": {
+            "type": "boolean"
+          },
+          "listSomeSelected": {
+            "type": "boolean"
+          },
+          "listNoItems": {
+            "type": "boolean"
+          },
+          "listHasSelection": {
+            "type": "boolean"
+          },
+          "listSelectedCount": {},
+          "listAssignDisabled": {},
+          "detailFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "loading": {
+                "type": "boolean",
+                "const": false
+              },
+              "error": {
+                "type": "null"
+              },
+              "status": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "value",
+              "loading",
+              "error",
+              "status"
+            ]
+          },
+          "commentsFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              },
+              "status": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "value",
+              "error",
+              "status"
+            ]
+          },
+          "detailHttpStatus": {
+            "type": "number"
+          },
+          "report": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "title": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "subcategory": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "number"
+              },
+              "district": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "reportedAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "assigneeId": {
+                "type": "number"
+              },
+              "anonymous": {
+                "type": "boolean"
+              },
+              "reporterName": {
+                "type": "string"
+              },
+              "reporterPhone": {
+                "type": "string"
+              },
+              "photos": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "alt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "alt"
+                  ]
+                }
+              },
+              "version": {
+                "type": "number"
+              },
+              "prevId": {
+                "type": "number"
+              },
+              "nextId": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "category",
+              "subcategory",
+              "status",
+              "priority",
+              "district",
+              "address",
+              "description",
+              "reportedAt",
+              "updatedAt",
+              "assigneeId",
+              "anonymous",
+              "reporterName",
+              "reporterPhone",
+              "photos",
+              "version",
+              "prevId",
+              "nextId"
+            ]
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "reportId": {
+                  "type": "number"
+                },
+                "authorId": {
+                  "type": "number"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reportId",
+                "authorId",
+                "body",
+                "createdAt"
+              ]
+            }
+          },
+          "detailSaving": {
+            "type": "boolean",
+            "const": false
+          },
+          "detailConflict": {
+            "type": "boolean",
+            "const": false
+          },
+          "lightbox": {
+            "type": "null"
+          },
+          "now": {
+            "type": "number"
+          },
+          "detailId": {},
+          "detailValid": {
+            "type": "boolean"
+          },
+          "detailUrl": {
+            "type": "string"
+          },
+          "detailNotFound": {
+            "type": "boolean"
+          },
+          "detailError": {
+            "type": "boolean"
+          },
+          "detailLoading": {
+            "type": "boolean"
+          },
+          "detailTitle": {
+            "type": "string"
+          },
+          "detailNav": {
+            "type": "object",
+            "properties": {
+              "prevHref": {
+                "type": "string"
+              },
+              "nextHref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "prevHref",
+              "nextHref"
+            ]
+          },
+          "detailNumber": {
+            "type": "string"
+          },
+          "detailStatusValue": {},
+          "detailAssigneeValue": {
+            "type": "string"
+          },
+          "detailPriorityValue": {
+            "type": "string"
+          },
+          "detailCategoryText": {
+            "type": "string"
+          },
+          "detailReportedText": {
+            "type": "string"
+          },
+          "detailUpdatedText": {
+            "type": "string"
+          },
+          "detailReporterText": {
+            "type": "string"
+          },
+          "detailPhotos": {},
+          "detailHasPhotos": {
+            "type": "boolean"
+          },
+          "commentsUrl": {
+            "type": "string"
+          },
+          "commentList": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "reportId": {
+                  "type": "number"
+                },
+                "authorId": {
+                  "type": "number"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "authorName": {},
+                "createdText": {
+                  "type": "string"
+                },
+                "relative": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reportId",
+                "authorId",
+                "body",
+                "createdAt"
+              ]
+            }
+          },
+          "commentsEmpty": {
+            "type": "boolean"
+          },
+          "commentsAny": {
+            "type": "boolean"
+          },
+          "lightboxOpen": {
+            "type": "boolean"
+          },
+          "lightboxPhoto": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "url": {
+                "type": "string"
+              },
+              "alt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "url",
+              "alt"
+            ]
+          },
+          "lightboxTitle": {
+            "type": "string"
+          },
+          "boardFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "loading": {
+                "type": "boolean",
+                "const": false
+              },
+              "error": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "value",
+              "loading",
+              "error"
+            ]
+          },
+          "boardCards": {
+            "type": "null"
+          },
+          "boardMineOnly": {
+            "type": "boolean",
+            "const": false
+          },
+          "boardPendingFocus": {
+            "type": "null"
+          },
+          "boardColumns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string"
+                },
+                "label": {},
+                "headingId": {
+                  "type": "string"
+                },
+                "cards": {},
+                "countText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "status",
+                "label",
+                "headingId"
+              ]
+            }
+          },
+          "boardUrl": {
+            "type": "string"
+          },
+          "boardEventsUrl": {
+            "type": "string"
+          },
+          "boardShowLoading": {
+            "type": "boolean"
+          },
+          "statsReady": {
+            "type": "boolean",
+            "const": false
+          },
+          "statsFetch": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "loading": {
+                "type": "boolean",
+                "const": false
+              },
+              "error": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "value",
+              "loading",
+              "error"
+            ]
+          },
+          "statsToday": {
+            "type": "string"
+          },
+          "statsSort": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "null"
+              },
+              "direction": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "direction"
+            ]
+          },
+          "statsPresetDefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "type": "number"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "pressed": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "days"
+              ]
+            }
+          },
+          "statsColumns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {},
+                "ariaSort": {},
+                "arrow": {
+                  "type": "string",
+                  "enum": [
+                    "",
+                    " ▲",
+                    " ▼"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "label"
+              ]
+            }
+          },
+          "statsHeading": {
+            "type": "string"
+          },
+          "statsFallback": {},
+          "statsFrom": {},
+          "statsTo": {},
+          "statsInverted": {
+            "type": "boolean"
+          },
+          "statsValid": {
+            "type": "boolean"
+          },
+          "statsUrl": {
+            "type": "string"
+          },
+          "stats": {},
+          "statsShowLoading": {
+            "type": "boolean"
+          },
+          "statsBusyAttr": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "statsInvalidAttr": {
+            "type": "string"
+          },
+          "statsDescribedBy": {
+            "type": "string"
+          },
+          "statsTotalText": {
+            "type": "string"
+          },
+          "statsAverageText": {},
+          "statsByStatus": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {},
+                "countText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "countText"
+              ]
+            }
+          },
+          "statsBars": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {},
+                "countText": {
+                  "type": "string"
+                },
+                "widthPct": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "label",
+                "countText",
+                "widthPct"
+              ]
+            }
+          },
+          "statsPerDay": {},
+          "statsRows": {},
+          "form": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "subcategory": {
+                "type": "string"
+              },
+              "district": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "number"
+              },
+              "anonymous": {
+                "type": "boolean"
+              },
+              "reporterName": {
+                "type": "string"
+              },
+              "reporterPhone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "category",
+              "subcategory",
+              "district",
+              "address",
+              "description",
+              "priority",
+              "anonymous",
+              "reporterName",
+              "reporterPhone"
+            ]
+          },
+          "formTouched": {
+            "type": "object",
+            "properties": {}
+          },
+          "formSubmitAttempted": {
+            "type": "boolean",
+            "const": false
+          },
+          "formServerErrors": {
+            "type": "object",
+            "properties": {}
+          },
+          "formRestored": {
+            "type": "boolean",
+            "const": false
+          },
+          "formSubmitting": {
+            "type": "boolean",
+            "const": false
+          },
+          "formLeaving": {
+            "type": "boolean",
+            "const": false
+          },
+          "formSnapshotSettled": {
+            "type": "null"
+          },
+          "leaveDialogOpen": {
+            "type": "boolean",
+            "const": false
+          },
+          "formValues": {
+            "type": "object",
+            "properties": {
+              "title": {},
+              "category": {},
+              "subcategory": {},
+              "district": {},
+              "address": {},
+              "description": {},
+              "priority": {},
+              "anonymous": {},
+              "reporterName": {},
+              "reporterPhone": {}
+            },
+            "required": [
+              "title",
+              "category",
+              "subcategory",
+              "district",
+              "address",
+              "description",
+              "priority",
+              "anonymous",
+              "reporterName",
+              "reporterPhone"
+            ]
+          },
+          "formSnapshot": {},
+          "formValidation": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "subcategory": {
+                "type": "string"
+              },
+              "district": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "reporterName": {
+                "type": "string"
+              },
+              "reporterPhone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "category",
+              "subcategory",
+              "district",
+              "address",
+              "description",
+              "reporterName",
+              "reporterPhone"
+            ]
+          },
+          "formDirty": {
+            "type": "boolean"
+          },
+          "formErrors": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "subcategory": {
+                "type": "string"
+              },
+              "district": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "reporterName": {
+                "type": "string"
+              },
+              "reporterPhone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "category",
+              "subcategory",
+              "district",
+              "address",
+              "description",
+              "reporterName",
+              "reporterPhone"
+            ]
+          },
+          "formInvalid": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "subcategory": {
+                "type": "string"
+              },
+              "district": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "reporterName": {
+                "type": "string"
+              },
+              "reporterPhone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "category",
+              "subcategory",
+              "district",
+              "address",
+              "description",
+              "reporterName",
+              "reporterPhone"
+            ]
+          },
+          "formDescribedBy": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "subcategory": {
+                "type": "string"
+              },
+              "district": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "reporterName": {
+                "type": "string"
+              },
+              "reporterPhone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "category",
+              "subcategory",
+              "district",
+              "address",
+              "description",
+              "reporterName",
+              "reporterPhone"
+            ]
+          },
+          "formDescriptionCounter": {
+            "type": "string"
+          },
+          "formSubcategories": {},
+          "formNoCategory": {
+            "type": "boolean"
+          },
+          "formShowReporter": {
+            "type": "boolean"
+          },
+          "formSubmitLabel": {
+            "type": "string",
+            "enum": [
+              "送信中…",
+              "登録"
+            ]
+          },
+          "formCategoryInput": {},
+          "formBlocking": {
+            "type": "boolean"
+          },
+          "formBeforeUnloadActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "routeName",
+          "routeParams",
+          "query",
+          "navigateUrl",
+          "replaceUrl",
+          "pageError",
+          "pageOk",
+          "themeStored",
+          "systemTheme",
+          "theme",
+          "themeLabel",
+          "staffFetch",
+          "staffIdStored",
+          "staff",
+          "currentStaff",
+          "currentStaffId",
+          "currentStaffIdInput",
+          "toasts",
+          "visibleToasts",
+          "summaryFetch",
+          "summary",
+          "badgeText",
+          "navItems",
+          "statusOptions",
+          "categoryOptions",
+          "sortOptions",
+          "priorityOptions",
+          "districtOptions",
+          "listFetch",
+          "listShowLoading",
+          "listText",
+          "listTextSettled",
+          "listLastSeen",
+          "listSelection",
+          "listBulkBusy",
+          "listStatus",
+          "listCategory",
+          "listQ",
+          "listSort",
+          "listPage",
+          "listUrl",
+          "listData",
+          "listError",
+          "listBusyAttr",
+          "listItems",
+          "listTotalPages",
+          "listShowEmpty",
+          "listShowPagination",
+          "listHasFilters",
+          "listClearDisabled",
+          "listFilterKey",
+          "listSelectedIds",
+          "listSelectedOnPageCount",
+          "listAllSelected",
+          "listSomeSelected",
+          "listNoItems",
+          "listHasSelection",
+          "listSelectedCount",
+          "listAssignDisabled",
+          "detailFetch",
+          "commentsFetch",
+          "detailHttpStatus",
+          "report",
+          "comments",
+          "detailSaving",
+          "detailConflict",
+          "lightbox",
+          "now",
+          "detailId",
+          "detailValid",
+          "detailUrl",
+          "detailNotFound",
+          "detailError",
+          "detailLoading",
+          "detailTitle",
+          "detailNav",
+          "detailNumber",
+          "detailStatusValue",
+          "detailAssigneeValue",
+          "detailPriorityValue",
+          "detailCategoryText",
+          "detailReportedText",
+          "detailUpdatedText",
+          "detailReporterText",
+          "detailPhotos",
+          "detailHasPhotos",
+          "commentsUrl",
+          "commentList",
+          "commentsEmpty",
+          "commentsAny",
+          "lightboxOpen",
+          "lightboxPhoto",
+          "lightboxTitle",
+          "boardFetch",
+          "boardCards",
+          "boardMineOnly",
+          "boardPendingFocus",
+          "boardColumns",
+          "boardUrl",
+          "boardEventsUrl",
+          "boardShowLoading",
+          "statsReady",
+          "statsFetch",
+          "statsToday",
+          "statsSort",
+          "statsPresetDefs",
+          "statsColumns",
+          "statsHeading",
+          "statsFallback",
+          "statsFrom",
+          "statsTo",
+          "statsInverted",
+          "statsValid",
+          "statsUrl",
+          "stats",
+          "statsShowLoading",
+          "statsBusyAttr",
+          "statsInvalidAttr",
+          "statsDescribedBy",
+          "statsTotalText",
+          "statsAverageText",
+          "statsByStatus",
+          "statsBars",
+          "statsPerDay",
+          "statsRows",
+          "form",
+          "formTouched",
+          "formSubmitAttempted",
+          "formServerErrors",
+          "formRestored",
+          "formSubmitting",
+          "formLeaving",
+          "formSnapshotSettled",
+          "leaveDialogOpen",
+          "formValues",
+          "formSnapshot",
+          "formValidation",
+          "formDirty",
+          "formErrors",
+          "formInvalid",
+          "formDescribedBy",
+          "formDescriptionCounter",
+          "formSubcategories",
+          "formNoCategory",
+          "formShowReporter",
+          "formSubmitLabel",
+          "formCategoryInput",
+          "formBlocking",
+          "formBeforeUnloadActive"
+        ]
+      },
+      "stateSource": "state/app.js"
+    }
+  }
+}

@@ -53,9 +53,12 @@ export default defineConfig({
     // And the garden-plots seam app: parts that arrive late (a DCC from its file, a class), a dialog's focus, the
     // pager's focus kept by key, the settings saved straight into a volume and read by another tab, a row moved
     // with a part open in it, and the previous / next links between plots (garden-plots).
+    // And the street-reports seam app (a React team's app moved over): the board's move from a second context, the
+    // leave dialog on a link and on Back, the lightbox's focus, the debounced search, the event streams not
+    // leaking over three visits, and the theme in a second tab (street-reports).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk|garden-plots)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk|garden-plots|street-reports)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

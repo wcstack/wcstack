@@ -1,0 +1,44 @@
+{
+  "name": "street-reports",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build:react": "vite build --config react-app/vite.config.js",
+    "dev:react": "vite --config react-app/vite.config.js",
+    "start:react": "node server/server.js",
+    "e2e:react": "playwright test --config e2e/playwright.config.js",
+    "unit:react": "vitest run --config react-app/vite.config.js",
+    "start": "node scripts/with-env.mjs APP_DIR=wcstack-app -- node server/server.js",
+    "e2e": "node scripts/with-env.mjs APP_DIR=wcstack-app -- playwright test --config e2e/playwright.config.js",
+    "lint:wcstack": "wcs-validate --strict --root=wcstack-app wcstack-app/index.html wcstack-app/parts/pagination.html wcstack-app/parts/comment-form.html wcstack-app/parts/daily-chart.html",
+    "unit": "vitest run --config wcstack-app/vitest.config.js",
+    "check": "npm run lint:wcstack && npm run types:wcstack && npm run unit && npm run e2e",
+    "types:wcstack": "cd wcstack-app && wcs-schema check state/app.js --manifest=wcstack.manifest.json && wcs-tsc --noEmit -p tsconfig.json",
+    "schema:emit": "cd wcstack-app && wcs-schema emit state/app.js --out=wcstack.manifest.json"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.13",
+    "@vitejs/plugin-react": "^6.3.0",
+    "@volar/language-core": "2.4.31",
+    "@volar/typescript": "2.4.31",
+    "@wcstack/debounce": "4.29.0",
+    "@wcstack/lint": "4.29.0",
+    "@wcstack/storage": "4.29.0",
+    "@wcstack/testing": "4.29.0",
+    "@wcstack/typescript": "4.29.0",
+    "happy-dom": "21.0.4",
+    "jsdom": "^29.1.1",
+    "typescript": "6.0.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Required by @wcstack/router for deep links (/reports/27 would otherwise become the basename). -->
+  <base href="/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <title>みどり市 不具合受付</title>
+  <script>
+    // Apply the stored theme before first paint (react-app/index.html did the same; the state takes over later).
+    // <wcs-storage> saves a string as it is ("dark"), the React app saved JSON ("\"dark\"") — accept both.
+    try {
+      var raw = localStorage.getItem('street-reports:theme');
+      var t = raw;
+      try { t = JSON.parse(raw); } catch (e) { /* a plain string */ }
+      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    [data-wc-definition] { display: none; }
+  </style>
+  <!-- The parts (React components that became Declarative Custom Components) are loaded by the autoloader
+       from parts/<name>.html when their tag first appears: <sr-pagination> → /parts/pagination.html. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/sr|dcc/": "/parts/",
+        "@wcstack/state/define": "https://esm.run/@wcstack/state/define"
+      }
+    }
+  </script>
+  <!-- The root state and its imports are fetched only once <wcs-state> connects; preloading them lets them load
+       next to the CDN modules (first load: life-events §7). After the import map — Firefox ignores an import map that
+       comes after a module preload has started (friction-log F-20). (This was first added against F-19; it does not
+       help there — a part's src= state is imported per instance as …#1 — see F-21.) -->
+  <link rel="modulepreload" href="/state/app.js">
+  <link rel="modulepreload" href="/state/helpers.js">
+  <link rel="modulepreload" href="/lib/api.js">
+  <link rel="modulepreload" href="/lib/format.js">
+  <link rel="modulepreload" href="/lib/labels.js">
+  <link rel="modulepreload" href="/lib/validation.js">
+  <!-- I/O node packages first, state last. (A production page pins each line to a version.) -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<!-- One root state for the whole app: state/app.js (sections named after the React files). -->
+<wcs-state src="state/app.js"></wcs-state>
+<wcs-autoloader></wcs-autoloader>
+
+<!-- ===== Headless I/O nodes (what the providers and useFetch/useLocalStorage/useEventSource did) ===== -->
+<!-- ThemeContext / StaffContext: useLocalStorage → <wcs-storage> (cross-tab sync is the storage event) -->
+<wcs-storage key="street-reports:theme" data-wcs="value#init=element: themeStored"></wcs-storage>
+<wcs-storage key="street-reports:staffId" data-wcs="value#init=element: staffIdStored"></wcs-storage>
+<!-- StaffContext: useFetch('/api/staff') -->
+<wcs-fetch url="/api/staff" data-wcs="value: staffFetch.value; error: staffFetch.error"></wcs-fetch>
+<!-- ReportsStore: the summary behind the badge (its whole-session event stream is opened by the state: openEventSource) -->
+<wcs-fetch manual data-wcs="command.fetch: $command.loadSummary; value: summaryFetch.value; error: summaryFetch.error"></wcs-fetch>
+<!-- Page data (useFetch per page). manual + a command, emitted from $watch on the page's url getter. -->
+<wcs-fetch manual data-wcs="command.fetch: $command.loadList; command.abort: $command.abortList; value: listFetch.value; loading: listFetch.loading; error: listFetch.error; status: listFetch.status"></wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.loadDetail; command.abort: $command.abortDetail; value: detailFetch.value; loading: detailFetch.loading; error: detailFetch.error; status: detailFetch.status"></wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.loadComments; command.abort: $command.abortComments; value: commentsFetch.value; error: commentsFetch.error; status: commentsFetch.status"></wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.loadBoard; command.abort: $command.abortBoard; value: boardFetch.value; loading: boardFetch.loading; error: boardFetch.error"></wcs-fetch>
+<wcs-fetch manual data-wcs="command.fetch: $command.loadStats; command.abort: $command.abortStats; value: statsFetch.value; loading: statsFetch.loading; error: statsFetch.error"></wcs-fetch>
+<!-- useEventSource → <wcs-sse>: one stream for the whole session (the header's badge), and the board's own while
+     the board is shown (its url is null elsewhere, which closes it). -->
+<wcs-sse url="/api/events" events="report" data-wcs="eventToken.message: summaryEvent"></wcs-sse>
+<wcs-sse events="report" data-wcs="url: boardEventsUrl; eventToken.message: boardEvent"></wcs-sse>
+<!-- useDebouncedValue → <wcs-debounce> -->
+<wcs-debounce wait="300" data-wcs="source: listText; value: listTextSettled"></wcs-debounce>
+<wcs-debounce wait="400" data-wcs="source: formSnapshot; value: formSnapshotSettled"></wcs-debounce>
+
+<!-- ===== Layout.jsx ===== -->
+<header class="app-header">
+  <a class="brand" href="/reports" data-wcs="onclick: followNav">みどり市 道路・公園の不具合 受付台帳</a>
+  <nav aria-label="メインメニュー">
+    <ul>
+      <!-- workaround: plain <a> with our own click handler instead of <wcs-link>: <wcs-link> marks
+           aria-current="page" on an exact pathname match only (and "true" with match="prefix"), but the app marks
+           通報一覧 as the current page on /reports/12 too (NAV_ITEMS.isActive in Layout.jsx). -->
+      <template data-wcs="for: navItems">
+        <li><a data-wcs="attr.href: .to; attr.aria-current: .current; textContent: .label; onclick: followNav"></a></li>
+      </template>
+    </ul>
+  </nav>
+  <div class="header-tools">
+    <template data-wcs="if: summary">
+      <span class="badge" data-wcs="textContent: badgeText"></span>
+    </template>
+    <div class="header-field">
+      <label for="staff-select">担当者</label>
+      <select id="staff-select" data-wcs="value: currentStaffIdInput">
+        <template data-wcs="for: staff">
+          <option data-wcs="attr.value: .id; textContent: .name"></option>
+        </template>
+      </select>
+    </div>
+    <button type="button" class="theme-toggle" data-wcs="onclick: toggleTheme; textContent: themeLabel"></button>
+  </div>
+</header>
+
+<main class="app-main">
+  <!-- ErrorBoundary.jsx: $errorCallback sets pageError; every page body sits in if: pageOk -->
+  <template data-wcs="if: pageError">
+    <section class="error-fallback" role="alert">
+      <h1>問題が発生しました</h1>
+      <p>画面の表示中にエラーが起きました。もう一度お試しください。</p>
+      <button type="button" data-wcs="onclick: resetError">再読み込み</button>
+    </section>
+  </template>
+
+  <!-- ===== router.jsx ===== -->
+  <wcs-router data-wcs="path: path; routeName: routeName; params: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <!-- { index: true, element: <Navigate to="/reports" replace /> } -->
+      <wcs-route path="/" name="root">
+        <wcs-guard-handler>
+          <script type="module">
+            export default function () { return "/reports"; }
+          </script>
+        </wcs-guard-handler>
+      </wcs-route>
+
+      <!-- ===== pages/ReportListPage.jsx ===== -->
+      <wcs-route path="/reports" name="list">
+        <wcs-guard-handler>
+          <script type="module">
+            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
+            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>通報一覧 | みどり市 不具合受付</title></wcs-head>
+        <template data-wcs="if: pageOk">
+          <section class="page">
+            <div class="page-header">
+              <h1>通報一覧</h1>
+              <template data-wcs="if: listData">
+                <p class="total">全 <span data-wcs="textContent: listData.total"></span> 件</p>
+              </template>
+            </div>
+
+            <div class="filters" role="search">
+              <div class="field">
+                <label for="list-search">検索</label>
+                <input id="list-search" type="search" placeholder="件名・住所で検索" data-wcs="value: listText">
+              </div>
+              <div class="field">
+                <label for="list-status">状態</label>
+                <select id="list-status" data-wcs="value#ro: listStatus; onchange: changeStatusFilter">
+                  <option value="">すべて</option>
+                  <template data-wcs="for: statusOptions">
+                    <option data-wcs="attr.value: .value; textContent: .label"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="field">
+                <label for="list-category">カテゴリ</label>
+                <select id="list-category" data-wcs="value#ro: listCategory; onchange: changeCategoryFilter">
+                  <option value="">すべて</option>
+                  <template data-wcs="for: categoryOptions">
+                    <option data-wcs="attr.value: .value; textContent: .label"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="field">
+                <label for="list-sort">並び順</label>
+                <select id="list-sort" data-wcs="value#ro: listSort; onchange: changeSortFilter">
+                  <template data-wcs="for: sortOptions">
+                    <option data-wcs="attr.value: .value; textContent: .label"></option>
+                  </template>
+                </select>
+              </div>
+              <button type="button" class="secondary" data-wcs="disabled: listClearDisabled; onclick: clearFilters">条件をクリア</button>
+            </div>
+
+            <template data-wcs="if: listHasSelection">
+              <div class="bulk-bar" role="region" aria-label="一括操作">
+                <span>{{ listSelectedCount }} 件を選択中</span>
+                <button type="button" data-wcs="disabled: listAssignDisabled; onclick: bulkAssignToMe">自分に割り当て</button>
+                <button type="button" data-wcs="disabled: listBulkBusy; onclick: bulkComplete">完了にする</button>
+              </div>
+            </template>
+
+            <template data-wcs="if: listShowLoading">
+              <p class="loading">読み込み中…</p>
+            </template>
+
+            <template data-wcs="if: listError">
+              <div class="error-box" role="alert">
+                <p>読み込みに失敗しました</p>
+                <button type="button" data-wcs="onclick: reloadList">再試行</button>
+              </div>
+            </template>
+            <template data-wcs="else:">
+              <table class="report-table" aria-label="通報" data-wcs="attr.aria-busy: listBusyAttr">
+                <thead>
+                  <tr>
+                    <th scope="col" class="col-check">
+                      <input type="checkbox" aria-label="このページの通報をすべて選択"
+                        data-wcs="checked#ro: listAllSelected; indeterminate: listSomeSelected; disabled: listNoItems; onchange: toggleAll">
+                    </th>
+                    <th scope="col">件名</th>
+                    <th scope="col">カテゴリ</th>
+                    <th scope="col">状態</th>
+                    <th scope="col">優先度</th>
+                    <th scope="col">地区</th>
+                    <th scope="col">受付日</th>
+                    <th scope="col">担当</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template data-wcs="for: listItems">
+                    <tr data-wcs="class.selected: .selected">
+                      <td class="col-check">
+                        <input type="checkbox" data-wcs="attr.aria-label: .checkLabel; checked#ro: .selected; onchange: toggleRow">
+                      </td>
+                      <th scope="row" class="col-title">
+                        <wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link>
+                        <template data-wcs="if: .isNew">
+                          <span class="new-marker">新着</span>
+                        </template>
+                      </th>
+                      <td data-wcs="textContent: .categoryLabel"></td>
+                      <td><span data-wcs="className: .statusClass; textContent: .statusLabel"></span></td>
+                      <td data-wcs="textContent: .priorityLabel"></td>
+                      <td data-wcs="textContent: .district"></td>
+                      <td data-wcs="textContent: .dateText"></td>
+                      <td data-wcs="textContent: .assigneeName"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </template>
+
+            <template data-wcs="if: listShowEmpty">
+              <p class="empty">該当する通報はありません</p>
+            </template>
+
+            <template data-wcs="if: listShowPagination">
+              <sr-pagination data-wcs="page#ro: listPage; totalPages#ro: listTotalPages; eventToken.page: pageChosen"></sr-pagination>
+            </template>
+          </section>
+        </template>
+      </wcs-route>
+
+      <!-- ===== pages/NewReportPage.jsx ===== -->
+      <wcs-route path="/reports/new" name="new">
+        <wcs-head><title>新規登録 | みどり市 不具合受付</title></wcs-head>
+        <template data-wcs="if: pageOk">
+          <section class="page">
+            <h1>新規登録</h1>
+
+            <template data-wcs="if: formRestored">
+              <div class="notice" role="region" aria-label="下書き">
+                <span>下書きを復元しました</span>
+                <button type="button" class="secondary" data-wcs="onclick: discardDraft">破棄</button>
+              </div>
+            </template>
+
+            <form class="report-form" novalidate data-wcs="onsubmit#prevent: submitForm">
+              <div class="field">
+                <label for="f-title">件名</label>
+                <input id="f-title" name="title" type="text" autocomplete="off"
+                  data-wcs="value: form.title; onblur: blurField; attr.aria-invalid: formInvalid.title; attr.aria-describedby: formDescribedBy.title">
+                <p id="f-title-error" class="field-error reserved" data-wcs="textContent: formErrors.title"></p>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="f-category">カテゴリ</label>
+                  <select id="f-category" name="category"
+                    data-wcs="value: formCategoryInput; onblur: blurField; attr.aria-invalid: formInvalid.category; attr.aria-describedby: formDescribedBy.category">
+                    <option value="">選択してください</option>
+                    <template data-wcs="for: categoryOptions">
+                      <option data-wcs="attr.value: .value; textContent: .label"></option>
+                    </template>
+                  </select>
+                  <p id="f-category-error" class="field-error reserved" data-wcs="textContent: formErrors.category"></p>
+                </div>
+                <div class="field">
+                  <label for="f-subcategory">種別</label>
+                  <select id="f-subcategory" name="subcategory"
+                    data-wcs="value: form.subcategory; disabled: formNoCategory; onblur: blurField; attr.aria-invalid: formInvalid.subcategory; attr.aria-describedby: formDescribedBy.subcategory">
+                    <option value="">選択してください</option>
+                    <template data-wcs="for: formSubcategories">
+                      <option data-wcs="attr.value: .; textContent: ."></option>
+                    </template>
+                  </select>
+                  <p id="f-subcategory-error" class="field-error reserved" data-wcs="textContent: formErrors.subcategory"></p>
+                </div>
+                <div class="field">
+                  <label for="f-district">地区</label>
+                  <select id="f-district" name="district"
+                    data-wcs="value: form.district; onblur: blurField; attr.aria-invalid: formInvalid.district; attr.aria-describedby: formDescribedBy.district">
+                    <option value="">選択してください</option>
+                    <template data-wcs="for: districtOptions">
+                      <option data-wcs="attr.value: .; textContent: ."></option>
+                    </template>
+                  </select>
+                  <p id="f-district-error" class="field-error reserved" data-wcs="textContent: formErrors.district"></p>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="f-address">住所</label>
+                <input id="f-address" name="address" type="text" autocomplete="off"
+                  data-wcs="value: form.address; onblur: blurField; attr.aria-invalid: formInvalid.address; attr.aria-describedby: formDescribedBy.address">
+                <p id="f-address-error" class="field-error reserved" data-wcs="textContent: formErrors.address"></p>
+              </div>
+
+              <div class="field">
+                <label for="f-description">詳細</label>
+                <textarea id="f-description" name="description" rows="5"
+                  data-wcs="value: form.description; onblur: blurField; attr.aria-invalid: formInvalid.description; attr.aria-describedby: formDescribedBy.description"></textarea>
+                <span id="f-description-counter" class="counter" data-wcs="textContent: formDescriptionCounter"></span>
+                <p id="f-description-error" class="field-error reserved" data-wcs="textContent: formErrors.description"></p>
+              </div>
+
+              <fieldset class="field radio-group">
+                <legend>優先度</legend>
+                <template data-wcs="for: priorityOptions">
+                  <label class="inline">
+                    <input type="radio" name="priority" data-wcs="attr.value: .value; radio|number: form.priority">
+                    <span data-wcs="textContent: .label"></span>
+                  </label>
+                </template>
+              </fieldset>
+
+              <div class="field">
+                <label class="inline">
+                  <input type="checkbox" data-wcs="checked: form.anonymous">
+                  匿名の通報
+                </label>
+              </div>
+
+              <template data-wcs="if: formShowReporter">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="f-reporterName">通報者名</label>
+                    <input id="f-reporterName" name="reporterName" type="text" autocomplete="off"
+                      data-wcs="value: form.reporterName; onblur: blurField; attr.aria-invalid: formInvalid.reporterName; attr.aria-describedby: formDescribedBy.reporterName">
+                    <p id="f-reporterName-error" class="field-error reserved" data-wcs="textContent: formErrors.reporterName"></p>
+                  </div>
+                  <div class="field">
+                    <label for="f-reporterPhone">電話番号</label>
+                    <input id="f-reporterPhone" name="reporterPhone" type="tel" autocomplete="off"
+                      data-wcs="value: form.reporterPhone; onblur: blurField; attr.aria-invalid: formInvalid.reporterPhone; attr.aria-describedby: formDescribedBy.reporterPhone">
+                    <span id="f-phone-hint" class="hint">数字とハイフン（任意）</span>
+                    <p id="f-reporterPhone-error" class="field-error reserved" data-wcs="textContent: formErrors.reporterPhone"></p>
+                  </div>
+                </div>
+              </template>
+
+              <div class="form-actions">
+                <button type="submit" data-wcs="disabled: formSubmitting; textContent: formSubmitLabel"></button>
+              </div>
+            </form>
+          </section>
+        </template>
+      </wcs-route>
+
+      <!-- ===== pages/ReportDetailPage.jsx ===== -->
+      <wcs-route path="/reports/:id" name="detail">
+        <wcs-guard-handler>
+          <script type="module">
+            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
+            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title data-wcs="textContent: detailTitle"></title></wcs-head>
+        <template data-wcs="if: pageOk">
+          <div class="detail-page">
+            <!-- function NotFound() -->
+            <template data-wcs="if: detailNotFound">
+              <section class="page">
+                <h1>通報が見つかりません</h1>
+                <p>指定された通報は存在しないか、削除されました。</p>
+                <wcs-link to="/reports">通報一覧へ戻る</wcs-link>
+              </section>
+            </template>
+            <template data-wcs="elseif: detailError">
+              <section class="page">
+                <div class="error-box" role="alert">
+                  <p>読み込みに失敗しました</p>
+                  <button type="button" data-wcs="onclick: reloadDetail">再試行</button>
+                </div>
+              </section>
+            </template>
+            <template data-wcs="elseif: detailLoading">
+              <section class="page" aria-busy="true">
+                <!-- DetailNav with assumed neighbours -->
+                <nav class="detail-nav" aria-label="前後の通報">
+                  <wcs-link to="/reports">← 一覧へ</wcs-link>
+                  <span class="spacer"></span>
+                  <template data-wcs="if: detailNav.prevHref">
+                    <wcs-link data-wcs="attr.to: detailNav.prevHref">前の通報</wcs-link>
+                  </template>
+                  <template data-wcs="if: detailNav.nextHref">
+                    <wcs-link data-wcs="attr.to: detailNav.nextHref">次の通報</wcs-link>
+                  </template>
+                </nav>
+                <p class="loading">読み込み中…</p>
+              </section>
+            </template>
+            <template data-wcs="else:">
+              <!-- ReportView -->
+              <article class="page detail">
+                <nav class="detail-nav" aria-label="前後の通報">
+                  <wcs-link to="/reports">← 一覧へ</wcs-link>
+                  <span class="spacer"></span>
+                  <template data-wcs="if: detailNav.prevHref">
+                    <wcs-link data-wcs="attr.to: detailNav.prevHref">前の通報</wcs-link>
+                  </template>
+                  <template data-wcs="if: detailNav.nextHref">
+                    <wcs-link data-wcs="attr.to: detailNav.nextHref">次の通報</wcs-link>
+                  </template>
+                </nav>
+
+                <p class="report-number" data-wcs="textContent: detailNumber"></p>
+                <h1 data-wcs="textContent: report.title"></h1>
+
+                <template data-wcs="if: detailConflict">
+                  <p class="notice warning" role="alert">他の職員が更新しました。最新の内容を表示しています。</p>
+                </template>
+
+                <fieldset class="controls" data-wcs="disabled: detailSaving">
+                  <legend>対応状況</legend>
+                  <div class="field">
+                    <label for="d-status">状態</label>
+                    <select id="d-status" data-wcs="value#ro: detailStatusValue; onchange: changeStatus">
+                      <template data-wcs="for: statusOptions">
+                        <option data-wcs="attr.value: .value; textContent: .label"></option>
+                      </template>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="d-assignee">担当</label>
+                    <select id="d-assignee" data-wcs="value#ro: detailAssigneeValue; onchange: changeAssignee">
+                      <option value="">未割り当て</option>
+                      <template data-wcs="for: staff">
+                        <option data-wcs="attr.value: .id; textContent: .name"></option>
+                      </template>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="d-priority">優先度</label>
+                    <select id="d-priority" data-wcs="value#ro: detailPriorityValue; onchange: changePriority">
+                      <template data-wcs="for: priorityOptions">
+                        <option data-wcs="attr.value: .value; textContent: .label"></option>
+                      </template>
+                    </select>
+                  </div>
+                </fieldset>
+
+                <dl class="fields">
+                  <dt>カテゴリ</dt>
+                  <dd data-wcs="textContent: detailCategoryText"></dd>
+                  <dt>地区</dt>
+                  <dd data-wcs="textContent: report.district"></dd>
+                  <dt>住所</dt>
+                  <dd data-wcs="textContent: report.address"></dd>
+                  <dt>受付日時</dt>
+                  <dd data-wcs="textContent: detailReportedText"></dd>
+                  <dt>更新日時</dt>
+                  <dd data-wcs="textContent: detailUpdatedText"></dd>
+                  <dt>通報者</dt>
+                  <dd data-wcs="textContent: detailReporterText"></dd>
+                  <dt>詳細</dt>
+                  <dd class="description" data-wcs="textContent: report.description"></dd>
+                </dl>
+
+                <template data-wcs="if: detailHasPhotos">
+                  <section aria-labelledby="photos-heading">
+                    <h2 id="photos-heading">写真</h2>
+                    <ul class="thumbs">
+                      <template data-wcs="for: detailPhotos">
+                        <li>
+                          <button type="button" class="thumb" data-wcs="attr.aria-label: .openLabel; onclick: openLightbox">
+                            <img alt="" width="120" height="90" data-wcs="attr.src: .url">
+                          </button>
+                        </li>
+                      </template>
+                    </ul>
+                  </section>
+                </template>
+
+                <!-- function Comments -->
+                <section class="comments" aria-labelledby="comments-heading">
+                  <h2 id="comments-heading">コメント</h2>
+                  <template data-wcs="if: commentsFetch.error">
+                    <p role="alert">コメントを読み込めませんでした</p>
+                  </template>
+                  <template data-wcs="if: commentsEmpty">
+                    <p class="muted">コメントはまだありません</p>
+                  </template>
+                  <template data-wcs="if: commentsAny">
+                    <ol class="comment-list">
+                      <template data-wcs="for: commentList">
+                        <li>
+                          <div class="comment-meta">
+                            <span class="author" data-wcs="textContent: .authorName"></span>
+                            <time data-wcs="attr.datetime: .createdAt; attr.title: .createdText; textContent: .relative"></time>
+                          </div>
+                          <p data-wcs="textContent: .body"></p>
+                        </li>
+                      </template>
+                    </ol>
+                  </template>
+                  <!-- CommentForm.jsx → the <sr-comment-form> part; onSubmit(body) became an event + two commands -->
+                  <sr-comment-form data-wcs="eventToken.request: commentRequested; command.done: $command.commentSent; command.failed: $command.commentFailed"></sr-comment-form>
+                </section>
+              </article>
+            </template>
+          </div>
+        </template>
+      </wcs-route>
+
+      <!-- ===== pages/BoardPage.jsx ===== -->
+      <wcs-route path="/board" name="board">
+        <wcs-guard-handler>
+          <script type="module">
+            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
+            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>ボード | みどり市 不具合受付</title></wcs-head>
+        <template data-wcs="if: pageOk">
+          <section class="page">
+            <div class="page-header">
+              <h1>ボード</h1>
+              <label class="inline" for="board-mine">
+                <input id="board-mine" type="checkbox" data-wcs="checked: boardMineOnly">
+                自分の担当のみ
+              </label>
+            </div>
+
+            <template data-wcs="if: boardFetch.error">
+              <div class="error-box" role="alert">
+                <p>読み込みに失敗しました</p>
+                <button type="button" data-wcs="onclick: reloadBoard">再試行</button>
+              </div>
+            </template>
+            <template data-wcs="if: boardShowLoading">
+              <p class="loading">読み込み中…</p>
+            </template>
+
+            <template data-wcs="if: boardCards">
+              <div class="board">
+                <template data-wcs="for: boardColumns">
+                  <section class="column" data-wcs="attr.aria-labelledby: .headingId">
+                    <div class="column-header">
+                      <h2 data-wcs="attr.id: .headingId; textContent: .label"></h2><!-- no whitespace here: JSX had none (friction-log F-11) --><span class="count" data-wcs="textContent: .countText"></span>
+                    </div>
+                    <ul class="cards">
+                      <template data-wcs="for: .cards">
+                        <li>
+                          <article class="card" data-wcs="attr.aria-labelledby: .headingId">
+                            <h3 data-wcs="attr.id: .headingId">
+                              <wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link>
+                            </h3>
+                            <p class="card-meta">
+                              <span data-wcs="textContent: .district"></span>
+                              <span data-wcs="textContent: .assigneeText"></span>
+                              <span data-wcs="className: .priorityClass; textContent: .priorityText"></span>
+                            </p>
+                            <div class="card-actions">
+                              <button type="button" data-dir="-1" data-wcs="attr.data-card: .id; disabled: .atStart; onclick: moveCardBack">← 戻す</button>
+                              <button type="button" data-dir="1" data-wcs="attr.data-card: .id; disabled: .atEnd; onclick: moveCardForward">進める →</button>
+                            </div>
+                          </article>
+                        </li>
+                      </template>
+                    </ul>
+                  </section>
+                </template>
+              </div>
+            </template>
+          </section>
+        </template>
+      </wcs-route>
+
+      <!-- ===== pages/StatsPage.jsx (its code is loaded when the route is entered: see state/app.js) ===== -->
+      <wcs-route path="/stats" name="stats">
+        <wcs-guard-handler>
+          <script type="module">
+            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
+            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>統計 | みどり市 不具合受付</title></wcs-head>
+        <template data-wcs="if: pageOk">
+          <template data-wcs="if: statsReady">
+            <section class="page">
+              <h1 data-wcs="textContent: statsHeading"></h1>
+
+              <div class="filters">
+                <div class="presets" role="group" aria-label="期間のプリセット">
+                  <template data-wcs="for: statsPresetDefs">
+                    <button type="button" class="secondary" data-wcs="attr.aria-pressed: .pressed; textContent: .label; onclick: choosePreset"></button>
+                  </template>
+                </div>
+                <div class="field">
+                  <label for="stats-from">開始日</label>
+                  <input id="stats-from" type="date"
+                    data-wcs="value#ro: statsFrom; oninput: changeStatsFrom; attr.aria-invalid: statsInvalidAttr; attr.aria-describedby: statsDescribedBy">
+                </div>
+                <div class="field">
+                  <label for="stats-to">終了日</label>
+                  <input id="stats-to" type="date" data-wcs="value#ro: statsTo; oninput: changeStatsTo">
+                </div>
+              </div>
+
+              <template data-wcs="if: statsInverted">
+                <p id="stats-from-error" class="field-error" role="alert">開始日は終了日以前の日付を指定してください</p>
+              </template>
+              <template data-wcs="if: statsFetch.error">
+                <div class="error-box" role="alert">
+                  <p>読み込みに失敗しました</p>
+                  <button type="button" data-wcs="onclick: reloadStats">再試行</button>
+                </div>
+              </template>
+              <template data-wcs="if: statsShowLoading">
+                <p class="loading">読み込み中…</p>
+              </template>
+
+              <template data-wcs="if: stats">
+                <div class="stats" data-wcs="attr.aria-busy: statsBusyAttr">
+                  <section aria-labelledby="totals-heading">
+                    <h2 id="totals-heading">状態別</h2>
+                    <ul class="totals" aria-label="状態別件数">
+                      <li><span>合計</span> <strong data-wcs="textContent: statsTotalText"></strong></li>
+                      <template data-wcs="for: statsByStatus">
+                        <li><span data-wcs="textContent: .label"></span> <strong data-wcs="textContent: .countText"></strong></li>
+                      </template>
+                      <li><span>平均対応日数</span> <strong data-wcs="textContent: statsAverageText"></strong></li>
+                    </ul>
+                  </section>
+
+                  <section aria-labelledby="category-heading">
+                    <h2 id="category-heading">カテゴリ別</h2>
+                    <ul class="bars" aria-label="カテゴリ別件数">
+                      <template data-wcs="for: statsBars">
+                        <li>
+                          <span class="bar-label" data-wcs="textContent: .label"></span>
+                          <span class="bar-track" aria-hidden="true">
+                            <span class="bar-fill" data-wcs="style.width: .widthPct|unit(%)"></span>
+                          </span>
+                          <span class="bar-value" data-wcs="textContent: .countText"></span>
+                        </li>
+                      </template>
+                    </ul>
+                  </section>
+
+                  <section aria-labelledby="daily-heading">
+                    <h2 id="daily-heading">日別の通報数</h2>
+                    <!-- DailyChart → the <sr-daily-chart> part, fetched by the autoloader when it first appears -->
+                    <sr-daily-chart data-wcs="perDay#ro: statsPerDay"></sr-daily-chart>
+                  </section>
+
+                  <section aria-labelledby="matrix-heading">
+                    <h2 id="matrix-heading">カテゴリ × 状態</h2>
+                    <table class="matrix">
+                      <thead>
+                        <tr>
+                          <th scope="col">カテゴリ</th>
+                          <template data-wcs="for: statsColumns">
+                            <th scope="col" data-wcs="attr.aria-sort: .ariaSort">
+                              <button type="button" class="sort-button" data-wcs="onclick: toggleStatsSort"><span data-wcs="textContent: .label"></span><span aria-hidden="true" data-wcs="textContent: .arrow"></span></button>
+                            </th>
+                          </template>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template data-wcs="for: statsRows">
+                          <tr>
+                            <th scope="row" data-wcs="textContent: .label"></th>
+                            <template data-wcs="for: .cells">
+                              <td data-wcs="textContent: ."></td>
+                            </template>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </section>
+                </div>
+              </template>
+            </section>
+          </template>
+          <template data-wcs="else:">
+            <!-- <Suspense fallback={<p className="loading">読み込み中…</p>}> -->
+            <p class="loading">読み込み中…</p>
+          </template>
+        </template>
+      </wcs-route>
+
+      <!-- ===== pages/NotFoundPage.jsx ===== -->
+      <wcs-route fallback name="notfound">
+        <wcs-guard-handler>
+          <script type="module">
+            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
+            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>ページが見つかりません | みどり市 不具合受付</title></wcs-head>
+        <template data-wcs="if: pageOk">
+          <section class="page">
+            <h1>ページが見つかりません</h1>
+            <p>お探しのページは移動または削除された可能性があります。</p>
+            <wcs-link to="/">トップへ戻る</wcs-link>
+          </section>
+        </template>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</main>
+
+<!-- ===== ToastContext.jsx (the portal: a region outside the router, at the end of the page) ===== -->
+<div class="toasts" role="status" aria-live="polite">
+  <template data-wcs="for: visibleToasts">
+    <div class="toast">
+      <span data-wcs="textContent: .message"></span>
+      <button type="button" class="toast-close" aria-label="通知を閉じる" data-wcs="onclick: dismissToast">×</button>
+    </div>
+  </template>
+</div>
+
+<!-- ===== Lightbox.jsx + Modal.jsx (rendered outside the route, as the portal did) ===== -->
+<template data-wcs="if: lightboxOpen">
+  <div class="modal-backdrop" data-wcs="onmousedown: modalBackdropDown">
+    <div class="modal lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-title" tabindex="-1"
+      data-wcs="onkeydown: lightboxKeydown">
+      <h2 id="lightbox-title" class="modal-title" data-wcs="textContent: lightboxTitle"></h2>
+      <img class="lightbox-image" data-wcs="attr.src: lightboxPhoto.url; attr.alt: lightboxPhoto.alt">
+      <div class="modal-actions">
+        <button type="button" data-wcs="onclick: lightboxPrev">← 前の写真</button>
+        <button type="button" data-wcs="onclick: lightboxNext">次の写真 →</button>
+        <button type="button" class="lightbox-close" data-wcs="onclick: closeLightbox">閉じる</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ===== ConfirmDialog.jsx (the new-report form's leave dialog) ===== -->
+<template data-wcs="if: leaveDialogOpen">
+  <div class="modal-backdrop" data-wcs="onmousedown: modalBackdropDown">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="leave-title" tabindex="-1"
+      data-wcs="onkeydown: leaveDialogKeydown">
+      <h2 id="leave-title" class="modal-title">入力内容を破棄しますか？</h2>
+      <p>このページを離れると、入力中の内容は失われます。</p>
+      <div class="modal-actions">
+        <button type="button" class="leave-cancel" data-wcs="onclick: cancelLeave">編集に戻る</button>
+        <button type="button" class="danger" data-wcs="onclick: confirmLeave">破棄して移動</button>
+      </div>
+    </div>
+  </div>
+</template>
+</body>
+</html>
