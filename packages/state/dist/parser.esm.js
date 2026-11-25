@@ -27,6 +27,9 @@ function didYouMean(input, candidates) {
   if (input.length === 0) {
     return "";
   }
+  if (/[\s!?=<>+('"`&]/.test(input)) {
+    return " An expression is not a path: use a filter (|not, |eq(x), |gt(n)) or a getter.";
+  }
   const folded = input.toLowerCase();
   let best = null;
   let bestDistance = 3;

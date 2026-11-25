@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.29.0";
+var version = "4.30.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -4186,7 +4186,7 @@ class Router extends HTMLElement {
 const MIRRORED_ATTRIBUTES = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 class Link extends HTMLElement {
     static get observedAttributes() {
-        return ['to', 'match', 'query-keys', ...MIRRORED_ATTRIBUTES];
+        return ['to', 'match', 'query-keys', 'current', ...MIRRORED_ATTRIBUTES];
     }
     _childNodeArray = [];
     _uuid = getUUID();
@@ -4444,7 +4444,7 @@ class Link extends HTMLElement {
         this._router = null;
     }
     attributeChangedCallback(name, oldValue, newValue) {
-        if ((name === 'match' || name === 'query-keys') && oldValue !== newValue) {
+        if ((name === 'match' || name === 'query-keys' || name === 'current') && oldValue !== newValue) {
             // anchor 生成前（upgrade の属性の通知 — まだ router の下に居ないことがある）は接続時の判定に任せる
             if (this._anchorElement) {
                 this._updateActiveState();
@@ -4518,7 +4518,10 @@ class Link extends HTMLElement {
                 this._anchorElement.classList.add('active');
                 // 修理・既定オン（docs/a11y-design.md §3-3）: active class と同じ事実の ARIA 表現。
                 // 鮮度保証は active class と同一（同じ分岐・同じ呼び出し経路）。
-                this._anchorElement.setAttribute('aria-current', exact ? 'page' : 'true');
+                // `current`: active のときに付ける aria-current の値を名指す（"page" なら、下のパスでも「現在のページ」—
+                // 「一覧」のリンクを詳細のページでもそう読ませたいナビ。docs/seam-apps.md、street-reports）。無ければ
+                // 今までどおり: そのページそのものは "page"、下のパスや query-keys の一致は "true"
+                this._anchorElement.setAttribute('aria-current', this.getAttribute('current') || (exact ? 'page' : 'true'));
             }
             else {
                 this._anchorElement.classList.remove('active');

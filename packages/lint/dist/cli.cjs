@@ -464,6 +464,28 @@ var WcsDiagnosticCode = {
   // ランタイムは何も言わず、後から state に書くと正しいものが選ばれる（継ぎ目アプリ garden-plots の取り込み — 保存した
   // 設定がページを描く前に届くようになって見えた）。値の束縛が前にあるとき・リテラルの `value` だけのときは黙る。warning。
   RadioBeforeValue: "wcs/radio-before-value",
+  // --- another framework's habits (service/frameworkHabitsValidator.ts・collectionMutationValidator.ts — 継ぎ目アプリ
+  // street-reports: React から移した作者。ランタイムが拒むか黙って落とすものは error、ほかは warning） ---
+  // 束縛の右辺（最初の `|` より前）が式（`hidden: !loading`・`textContent: count + 1`・`{{ a ? b : c }}`・
+  // `onclick: remove(.id)`）。パスとして引かれ、何も出ない。同じ文字列のパスの検査（binding-path-missing 等）は重ねない。error。
+  BindingExpression: "wcs/binding-expression",
+  // 束縛属性以外の属性の値の `{{ }}`（`href="/r/{{ id }}"`）。`{{ }}` はテキストでしか読まれず、属性には書いたまま残る。
+  // サーバーのテンプレートが埋めるなら正しいので warning。`<wcs-state>` の無いファイルでは言わない。
+  AttributeMustache: "wcs/attribute-mustache",
+  // `<template>` でない要素の `data-wcs` にある `if:` / `elseif:` / `else:` / `for:`（単独）。ランタイムはその名前の
+  // プロパティを書くだけで、要素は常に出て、行は 1 つ。error。
+  StructuralElement: "wcs/structural-element",
+  // state の `new Set(…)` / `new Map(…)` のキーをその場で変える（`this.selected.add(id)`）。state は見ない。error。
+  CollectionMutation: "wcs/collection-mutation",
+  // `for:` の行の中の要素のリテラルの `id`（束ねていない）。すべての行が同じ id になる。warning。
+  RowIdShared: "wcs/row-id-shared",
+  // `onSubmit:` — `on` の直後が大文字のイベント束縛（JSX の綴り）。`Submit` という名前のイベントを聞く。warning。
+  EventNameCase: "wcs/event-name-case",
+  // インラインの `<wcs-state>` / `<wcs-guard-handler>` のスクリプトの相対・ルート相対の静的 import。blob: URL から
+  // 評価されるので解決しない。error。
+  InlineImport: "wcs/inline-import",
+  // `key:`（React の key）。`key` という名前のプロパティを書くだけ。warning。
+  KeyBinding: "wcs/key-binding",
   // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
   // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
   // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・
@@ -651,6 +673,9 @@ function editDistance(a, b, max) {
 function didYouMean(input, candidates) {
   if (input.length === 0) {
     return "";
+  }
+  if (/[\s!?=<>+('"`&]/.test(input)) {
+    return " An expression is not a path: use a filter (|not, |eq(x), |gt(n)) or a getter.";
   }
   const folded = input.toLowerCase();
   let best = null;
@@ -2662,7 +2687,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.29.0";
+var version = "4.30.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -13343,6 +13368,12 @@ function shortSeed(raw) {
   return flat.length <= 32 ? flat : `${flat.slice(0, 29)}\u2026`;
 }
 var MAX_LISTED_KEYS = 10;
+function collectionFix(key, method, kind) {
+  const k = `this.${key}`;
+  if (method === "clear") return `${k} = new ${kind}()`;
+  if (kind === "Set") return method === "add" ? `${k} = new Set([...${k}, id])` : `${k} = new Set([...${k}].filter((x) => x !== id))`;
+  return method === "set" ? `${k} = new Map([...${k}, [key, value]])` : `${k} = new Map([...${k}].filter(([k]) => k !== key))`;
+}
 function listKeys(keys) {
   return keys.length <= MAX_LISTED_KEYS ? keys.join(", ") : `${keys.slice(0, MAX_LISTED_KEYS).join(", ")} \u2026 (+${keys.length - MAX_LISTED_KEYS})`;
 }
@@ -13435,6 +13466,15 @@ var ja = {
   attrBooleanPresence: (a, p, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001false \u306E\u3068\u304D ${a}="false" \u306B\u306A\u308A\u307E\u3059\u3002\u8AD6\u7406\u5C5E\u6027\u306F\u5024\u306B\u95A2\u4FC2\u306A\u304F\u3001\u5728\u308B\u3060\u3051\u3067\u52B9\u304D\u307E\u3059: ${a}="false" \u3067\u3082 ${a} \u306E\u307E\u307E\u3067\u3059\uFF08\u5C5E\u6027\u3092\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: ${p}: ${rhs}`,
   attrBooleanText: (a, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001\u5C5E\u6027\u306F "true" \u304B "false" \u306B\u306A\u308A\u3001\u5916\u308C\u308B\u3053\u3068\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u5C5E\u6027\u306E\u6709\u7121\u3092\u898B\u308B\u5074\uFF08CSS \u306E [${a}]\u30FBhasAttribute()\uFF09\u306B\u306F\u3001\u3069\u3061\u3089\u3067\u3082\u5728\u308A\u307E\u3059\u3002false \u306E\u9593\u306F\u5916\u3059\u306A\u3089 attr.${a}: ${rhs}|defaults(null)\u3001\u6587\u5B57\u306E "true" / "false" \u304C\u610F\u56F3\u306A\u3089 attr.${a}: ${rhs}|string \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   radioBeforeValue: (binding, value, checkbox, fix) => `\u300C${binding}:\u300D\u304C\u3001\u3053\u306E${checkbox ? "\u30C1\u30A7\u30C3\u30AF\u30DC\u30C3\u30AF\u30B9" : "\u30E9\u30B8\u30AA"}\u306B\u5024\u3092\u4E0E\u3048\u308B\u300C${value}:\u300D\u3088\u308A\u524D\u306B\u66F8\u304B\u308C\u3066\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F\u66F8\u3044\u305F\u9806\u306B\u5F53\u305F\u308B\u306E\u3067\u3001\u5024\u304C\u307E\u3060\u30D6\u30E9\u30A6\u30B6\u306E\u65E2\u5B9A\u306E "on" \u306E\u3046\u3061\u306B\u6BD4\u3079\u3089\u308C\u3001\u6700\u521D\u306E\u63CF\u753B\u3067\u306F\u4F55\u3082\u30C1\u30A7\u30C3\u30AF\u3055\u308C\u307E\u305B\u3093\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\u3002\u5F8C\u304B\u3089 state \u306B\u66F8\u304F\u3068\u6B63\u3057\u3044\u3082\u306E\u304C\u30C1\u30A7\u30C3\u30AF\u3055\u308C\u307E\u3059\uFF09\u3002\u5024\u3092\u5148\u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044: ${fix}`,
+  bindingExpression: (expression, fix) => `\u675F\u7E1B\u306E\u53F3\u8FBA\u306F\u30D1\u30B9\u3068\u30D5\u30A3\u30EB\u30BF\u3067\u3001\u5F0F\u3067\u306F\u3042\u308A\u307E\u305B\u3093: "${expression}" \u306F\u8A55\u4FA1\u3055\u308C\u305A\u3001\u305D\u306E\u540D\u524D\u306E\u30D1\u30B9\u3068\u3057\u3066\u5F15\u304B\u308C\u307E\u3059\u3002${fix !== null ? `${fix} \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044` : "\u305D\u306E\u5024\u3092\u8A08\u7B97\u3059\u308B getter \u3092 state \u306B\u66F8\u304D\u3001getter \u306E\u540D\u524D\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044"}`,
+  handlerExpression: (property, expression, method) => `\u30A4\u30D9\u30F3\u30C8\u306E\u675F\u7E1B\u306E\u53F3\u8FBA\u306F\u30E1\u30BD\u30C3\u30C9\u306E\u540D\u524D\u3067\u3001\u547C\u3073\u51FA\u3057\u3084\u95A2\u6570\u3067\u306F\u3042\u308A\u307E\u305B\u3093: "${expression}" \u306F\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\u3002${method !== null ? `"${property}: ${method}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044` : "\u30E1\u30BD\u30C3\u30C9\u306E\u540D\u524D\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044"}\u3002\u30CF\u30F3\u30C9\u30E9\u306F (event, ...\u30EB\u30FC\u30D7\u306E\u6DFB\u5B57) \u3067\u547C\u3070\u308C\u308B\u306E\u3067\u3001\u884C\u306E\u5024\u306F\u30E1\u30BD\u30C3\u30C9\u306E\u4E2D\u3067\u6DFB\u5B57\u304B\u3089\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  attributeMustache: (name) => `{{ }} \u306F\u30C6\u30AD\u30B9\u30C8\u306E\u4E2D\u3067\u3057\u304B\u8AAD\u307E\u308C\u307E\u305B\u3093\u3002\u5C5E\u6027 "${name}" \u306E\u4E2D\u3067\u306F\u66F8\u3044\u305F\u307E\u307E\u6B8B\u308A\u307E\u3059\u3002\u5C5E\u6027\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.${name}: <\u30D1\u30B9>\u3002\u6587\u5B57\u5217\u3092\u7D44\u307F\u7ACB\u3066\u308B getter \u3092\u66F8\u3044\u3066\uFF09\u3002\u30DA\u30FC\u30B8\u3092\u8FD4\u3059\u524D\u306B\u30B5\u30FC\u30D0\u30FC\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u304C\u57CB\u3081\u308B\u306E\u306A\u3089\u3001\u3053\u306E\u307E\u307E\u3067\u6B63\u3057\u3044\u66F8\u304D\u65B9\u3067\u3059`,
+  structuralElement: (directive, tagName) => `"${directive}:" \u306F <template> \u306E\u4E0A\u3067\u3060\u3051\u50CD\u304D\u307E\u3059\u3002<${tagName}> \u306E\u4E0A\u3067\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u306F "${directive}" \u3068\u3044\u3046\u540D\u524D\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u66F8\u304F\u3060\u3051\u3067\u3001${directive === "for" ? "\u8981\u7D20\u306F\u884C\u3054\u3068\u3067\u306F\u306A\u304F 1 \u3064\u3060\u3051\u63CF\u304B\u308C\u307E\u3059" : "\u8981\u7D20\u306F\u5E38\u306B\u8868\u793A\u3055\u308C\u307E\u3059"}\u3002\u8981\u7D20\u3092 <template data-wcs="${directive === "else" ? "else:" : `${directive}: \u2026`}"> \u306E\u4E2D\u306B\u5165\u308C\u3066\u304F\u3060\u3055\u3044`,
+  collectionMutation: (key, method, kind) => `"this.${key}.${method}(\u2026)" \u306F state \u306E ${kind} \u3092\u305D\u306E\u5834\u3067\u5909\u3048\u307E\u3059\u3002state \u306F\u305D\u308C\u3092\u898B\u306A\u3044\u306E\u3067\u3001"${key}" \u306B\u675F\u306D\u305F\u3082\u306E\u3082\u3001\u305D\u308C\u3092\u8AAD\u3080 getter \u3082\u66F4\u65B0\u3055\u308C\u307E\u305B\u3093\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002\u65B0\u3057\u3044 ${kind} \u3092\u4EE3\u5165\u3059\u308B\uFF08${collectionFix(key, method, kind)}\uFF09\u304B\u3001\u914D\u5217 / \u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u6301\u3063\u3066\u304F\u3060\u3055\u3044`,
+  rowIdShared: (id) => `for: \u306E\u3059\u3079\u3066\u306E\u884C\u304C id="${id}" \u306B\u306A\u308A\u307E\u3059\u3002id \u306F 1 \u3064\u306E\u8981\u7D20\u306E\u3082\u306E\u3067\u3001\u305D\u308C\u3092\u540D\u6307\u3059 <label for> \u3084 aria-labelledby \u306F\u6700\u521D\u306E\u884C\u306B\u3057\u304B\u5C4A\u304D\u307E\u305B\u3093\u3002id \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.id: .domId \u2014 \u884C\u306E\u30AD\u30FC\u304B\u3089\u7D44\u307F\u7ACB\u3066\u308B\u884C\u306E getter \u3092\u66F8\u3044\u3066\uFF09`,
+  eventNameCase: (property, lower2) => `"${property}:" \u306F "${property.slice(2)}" \u3068\u3044\u3046\u540D\u524D\u306E\u30A4\u30D9\u30F3\u30C8\u3092\u805E\u304D\u307E\u3059\u304C\u3001\u305D\u308C\u3092\u9001\u308B\u3082\u306E\u306F\u3042\u308A\u307E\u305B\u3093 \u2014 DOM \u306E\u30A4\u30D9\u30F3\u30C8\u540D\u306F\u5C0F\u6587\u5B57\u3067\u3059\u3002DOM \u306E\u30A4\u30D9\u30F3\u30C8\u306A\u3089 "${lower2}:" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\u3002\u90E8\u54C1\u306E\u30B3\u30FC\u30EB\u30D0\u30C3\u30AF\uFF08"prop"\uFF09\u306F\u90E8\u54C1\u304C\u9001\u308B\u30A4\u30D9\u30F3\u30C8\u3067\u3001eventToken.<\u30E1\u30F3\u30D0\u30FC>: \u3067\u675F\u306D\u307E\u3059`,
+  inlineImport: (specifier, guard) => `\u30A4\u30F3\u30E9\u30A4\u30F3\u306E ${guard ? "<wcs-guard-handler>" : "<wcs-state>"} \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u306F blob: URL \u304B\u3089\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001"${specifier}" \u306F\u89E3\u6C7A\u3057\u307E\u305B\u3093\uFF08${guard ? "\u30AC\u30FC\u30C9\u306F" : "state \u306F"}\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3059\uFF09\u3002${guard ? "\u5B8C\u5168\u306A URL \u304B\u3001\u30DA\u30FC\u30B8\u306E import map \u304C\u4E0E\u3048\u308B\u540D\u524D\u3092 import \u3057\u3066\u304F\u3060\u3055\u3044" : '\u5B8C\u5168\u306A URL \u304B\u3001\u30DA\u30FC\u30B8\u306E import map \u304C\u4E0E\u3048\u308B\u540D\u524D\u3092 import \u3059\u308B\u304B\u3001state \u3092\u30D5\u30A1\u30A4\u30EB\u306B\u79FB\u3057\u3066\u304F\u3060\u3055\u3044\uFF08src="./state.js"\uFF09'}`,
+  keyBinding: () => `"key:" \u306F "key" \u3068\u3044\u3046\u540D\u524D\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u66F8\u304F\u3060\u3051\u3067\u3001\u307B\u304B\u306B\u4F55\u3082\u3057\u307E\u305B\u3093\u3002key \u306F\u8981\u308A\u307E\u305B\u3093 \u2014 \u884C\u306F\u884C\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u7A81\u304D\u5408\u308F\u3055\u308C\u3001\u53D6\u308A\u76F4\u3057\u305F\u30C7\u30FC\u30BF\u3067\u884C\u3092\u4FDD\u3064\u306E\u306F $listKeys \u3067\u3059`,
   radioNameShared: (name, binding) => `\u884C\u3054\u3068\u306E\u30E9\u30B8\u30AA\u304C\u3059\u3079\u3066 name="${name}" \u306B\u306A\u308B\u306E\u3067\u3001\u30D6\u30E9\u30A6\u30B6\u306F\u5168\u90E8\u306E\u884C\u306E\u30E9\u30B8\u30AA\u3092 1 \u3064\u306E\u30B0\u30EB\u30FC\u30D7\u306B\u3057\u307E\u3059\u3002\u30DA\u30FC\u30B8\u5168\u4F53\u3067 1 \u3064\u3057\u304B\u9078\u3070\u308C\u305F\u72B6\u614B\u306B\u306A\u3089\u305A\u3001\u8868\u793A\u306F\u6700\u521D\u306E\u63CF\u753B\u304B\u3089\u884C\u3054\u3068\u306E\u5024\u3068\u98DF\u3044\u9055\u3044\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002${binding === "radio" ? "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u308B\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u304B\u3001name \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08radio: \u306F name \u304C\u7121\u304F\u3066\u3082\u3001\u540C\u3058\u30D1\u30B9\u306B\u675F\u306D\u305F\u30E9\u30B8\u30AA\u3092\u9078\u629E\u306B\u5408\u308F\u305B\u307E\u3059\uFF09" : "\u884C\u3054\u3068\u306B\u9055\u3046 name \u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08attr.name: .<\u884C\u3054\u3068\u306B\u9055\u3046\u30D5\u30A3\u30FC\u30EB\u30C9>\uFF09\u3002\u884C\u3092\u307E\u305F\u3044\u3067 1 \u3064\u3092\u9078\u3070\u305B\u308B\u306A\u3089\u3001\u5168\u90E8\u3092 1 \u3064\u306E\u30D1\u30B9\u306B\u675F\u306D\u307E\u3059\uFF08value: .<\u884C\u306E id>; radio: <\u30D1\u30B9>\uFF09"}`,
   numberWrittenAsString: (path, left, asNumber) => `"${path}" \u306F state \u3067\u306F\u6570\u5024\u3067\u3059\u304C\u3001value: \u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8981\u7D20\u306E\u6301\u3064\u6587\u5B57\u5217\u3067\u3059\u30025 \u3068\u5165\u529B\u3057\u305F\u5F8C\u306E state \u306F "5" \u3067\u3001"5" + 1 \u306F "51" \u306B\u306A\u308A\u307E\u3059\uFF08\u4F55\u3082\u77E5\u3089\u305B\u307E\u305B\u3093\uFF09\u3002\u66F8\u304D\u623B\u3059\u3068\u304D\u306B\u6570\u5024\u306B\u3057\u3066\u304F\u3060\u3055\u3044: ${asNumber ? `valueAsNumber: ${path}\u3001\u307E\u305F\u306F` : ""}\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF ${left}|number: ${path}\uFF08|int\u30FB|float \u3082\uFF09`,
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: \u306F\u53CC\u65B9\u5411\u3067 1 \u6253\u9375\u3054\u3068\u306B\u66F8\u304D\u623B\u3057\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u305D\u306E\u305F\u3073\u306B state \u306E\u5024\u3092\u6574\u5F62\u3057\u3066\u6B04\u3078\u66F8\u304D\u76F4\u3057\u307E\u3059\u3002\u5165\u529B\u4E2D\u306E\u6B04\u304C\u66F8\u304D\u63DB\u308F\u308A\uFF08\u30AD\u30E3\u30EC\u30C3\u30C8\u306F\u672B\u5C3E\u3078\u98DB\u3073\u3001IME \u306E\u5909\u63DB\u306F\u9014\u5207\u308C\u307E\u3059\uFF09\u3001state \u304C\u53D7\u3051\u53D6\u308B\u306E\u3082\u6B04\u306E\u6574\u5F62\u6E08\u307F\u306E\u6587\u5B57\u3067\u3059\uFF08\u51FA\u529B\u30D5\u30A3\u30EB\u30BF\u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\uFF09\u3002\u6574\u5F62\u3057\u305F\u6587\u5B57\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u6B04\u306E\u78BA\u5B9A\u3067\u66F8\u304D\u623B\u3057\u3066 setter \u3067\u6574\u5F62\u3059\u308B\uFF08${prop}#onchange:\uFF09\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09` : `${prop}: \u306F\u53CC\u65B9\u5411\u3067\u3059\u304C\u3001\u51FA\u529B\u30D5\u30A3\u30EB\u30BF "${filters}" \u306F\u66F8\u304D\u623B\u3057\u3067\u5143\u306B\u623B\u308A\u307E\u305B\u3093\u3002\u8981\u7D20\u304C\u66F8\u304D\u623B\u3059\u306E\u306F\u8868\u793A\u3057\u3066\u3044\u308B\u6574\u5F62\u6E08\u307F\u306E\u5024\u3067\u3001\u6B21\u306F\u305D\u306E\u5024\u306B\u30D5\u30A3\u30EB\u30BF\u304C\u639B\u304B\u308A\u307E\u3059\u3002\u5DE6\u8FBA\u306E\u5165\u529B\u30D5\u30A3\u30EB\u30BF\u3067\u5143\u306B\u623B\u3059\uFF08${left}|<\u30D5\u30A3\u30EB\u30BF>: \u2026\uFF09\u3001\u6574\u5F62\u3057\u305F\u5024\u306F\u5225\u306E\u8981\u7D20\u306B\u8868\u793A\u3059\u308B\u3001\u307E\u305F\u306F\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${rhs}\uFF09`,
@@ -13726,6 +13766,15 @@ var en = {
   attrBooleanPresence: (a, p, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" \u2014 and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
   attrBooleanText: (a, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence \u2014 [${a}] in CSS, hasAttribute() \u2014 finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
   radioBeforeValue: (binding, value, checkbox, fix) => `"${binding}:" is written before "${value}:", which gives this ${checkbox ? "checkbox" : "radio"} its value. Bindings are applied in the order written, so it is compared while its value is still the browser's default "on": nothing is checked at the first render \u2014 nothing says so, and a later write of the state checks the right one. Write the value first: ${fix}`,
+  bindingExpression: (expression, fix) => `A binding takes a path and filters, not an expression: "${expression}" is not evaluated, it is looked up as a path of that name. ${fix !== null ? `Write ${fix}` : "Write a getter in the state that computes the value, and bind the getter's name"}`,
+  handlerExpression: (property, expression, method) => `An event binding names a method, not a call or a function: "${expression}" is not evaluated. ${method !== null ? `Write "${property}: ${method}"` : "Write the method's name"}; the handler is called with (event, ...loopIndexes), so read the row's values in the method through the loop index`,
+  attributeMustache: (name) => `{{ }} is read in text only: in the attribute "${name}" it stays as written. Bind the attribute (attr.${name}: <path>, with a getter that builds the string) \u2014 a server-side template that fills it before the page is served is fine`,
+  structuralElement: (directive, tagName) => `"${directive}:" works on a <template> only: on <${tagName}> the runtime sets a property named "${directive}" and does nothing else \u2014 ${directive === "for" ? "the element is drawn once, not once per row" : "the element is always shown"}. Put the element inside <template data-wcs="${directive === "else" ? "else:" : `${directive}: \u2026`}">`,
+  collectionMutation: (key, method, kind) => `"this.${key}.${method}(\u2026)" changes the state's ${kind} in place: the state does not see it, so nothing bound to "${key}" and no getter that reads it is updated \u2014 nothing says so. Assign a new ${kind} (${collectionFix(key, method, kind)}), or keep an array / an object`,
+  rowIdShared: (id) => `Every row of the for: gets id="${id}": an id belongs to one element, so a <label for> or aria-labelledby that names it reaches the first row only. Bind it (attr.id: .domId, with a row getter that builds it from the row's key)`,
+  eventNameCase: (property, lower2) => `"${property}:" listens for an event named "${property.slice(2)}", which nothing dispatches \u2014 DOM event names are lower case. Write "${lower2}:" for the DOM event; a callback "prop" of a part is an event the part dispatches, bound with eventToken.<member>:`,
+  inlineImport: (specifier, guard) => `An inline ${guard ? "<wcs-guard-handler>" : "<wcs-state>"} script is evaluated from a blob: URL, against which "${specifier}" does not resolve: the ${guard ? "guard" : "state"} fails to load. Import a full URL or a name the page's import map gives${guard ? "" : ', or move the state into a file (src="./state.js")'}`,
+  keyBinding: () => `"key:" sets a property named "key" and does nothing else. No key is needed: rows are matched by the row object, and $listKeys keeps rows across refetched data`,
   radioNameShared: (name, binding) => `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render \u2014 nothing says so. ${binding === "radio" ? "Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it" : "Bind a name that differs per row (attr.name: .<a row field>) \u2014 or, for one choice over all the rows, bind them all to one path: value: .<the row's id>; radio: <path>"}`,
   numberWrittenAsString: (path, left, asNumber) => `"${path}" is a number in the state, but value: writes back what the element holds, a string: after the user enters 5 the state has "5", and "5" + 1 is "51" \u2014 nothing says so. Convert it on the way in: ${asNumber ? `valueAsNumber: ${path}, or ` : ""}an input filter on the left side, ${left}|number: ${path} (also |int, |float)`,
   twoWayOutputFilter: (prop, filters, left, rhs, keystroke) => keystroke ? `${prop}: is two-way and writes back on every keystroke, and the output filter "${filters}" formats what the state holds each time: the field is rewritten while the user types \u2014 the caret jumps to the end, an IME composition is cut \u2014 and what the state receives is the field's formatted text (an output filter is not undone on the way back). Show the formatted text in another element, write back when the field is committed and format in a setter (${prop}#onchange:), or make the binding one-way: ${prop}#ro: ${rhs}` : `${prop}: is two-way, and nothing undoes the output filter "${filters}" on the way back: the element writes back the formatted value it shows, and the filter is then applied to that. Undo it with an input filter on the left side (${left}|<filter>: \u2026), show the formatted value in another element, or make the binding one-way: ${prop}#ro: ${rhs}`,
@@ -21525,7 +21574,8 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
         start: block.contentStart + spread.start,
         end: block.contentStart + spread.end,
         message: msgs.pathDynamicUnknownSpread(block.content.slice(spread.start, spread.end)),
-        severity: "info"
+        severity: "info",
+        wholeState: true
       });
     }
     const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
@@ -21887,8 +21937,320 @@ function describe(callable) {
   return callable.listed?.key ?? callable.name;
 }
 
-// src/service/moduleTopReadValidator.ts
+// src/service/frameworkHabitsValidator.ts
+var EXPRESSION_CHARACTER = /[\s!?=<>+()'"`&,]/;
+var PATH = /^(?:\.|\.?[^\s!?=<>+()'"`&,|.@][^\s!?=<>+()'"`&,|@]*)$/;
+var NUMBER2 = /^-?\d+(?:\.\d+)?$/;
+function isBindingExpression(path) {
+  if (path === "" || path.includes("@")) return false;
+  return EXPRESSION_CHARACTER.test(path);
+}
+function filterHint(expression) {
+  const text3 = expression.trim();
+  const not3 = /^!\s*(\S+)$/.exec(text3);
+  if (not3 !== null && PATH.test(not3[1])) return `${not3[1]}|not`;
+  const binary = /^(\S+)\s*(===|!==|==|!=|>=|<=|>|<|\+|-|\*|\/|%)\s*(\S+)$/.exec(text3);
+  if (binary === null || !PATH.test(binary[1])) return null;
+  const [, path, op, raw] = binary;
+  const quoted = /^(['"])(.*)\1$/.exec(raw);
+  const value = quoted !== null ? quoted[2] : raw;
+  const isNumber = quoted === null && NUMBER2.test(raw);
+  if (quoted === null && !isNumber && !["true", "false", "null"].includes(raw)) return null;
+  if (/[,()|]/.test(value)) return null;
+  const name = {
+    "===": "eq",
+    "==": "eq",
+    "!==": "ne",
+    "!=": "ne",
+    ">": "gt",
+    ">=": "ge",
+    "<": "lt",
+    "<=": "le",
+    "+": "add",
+    "-": "sub",
+    "*": "mul",
+    "/": "div",
+    "%": "mod"
+  }[op];
+  if (name !== "eq" && name !== "ne" && !isNumber) return null;
+  return `${path}|${name}(${value})`;
+}
+function calledMethod(expression) {
+  const arrow = expression.indexOf("=>");
+  const body = arrow === -1 ? expression : expression.slice(arrow + 2);
+  const call = /^\s*\{?\s*(?:this\s*\.\s*)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(/.exec(body);
+  return call === null ? null : call[1];
+}
+function propertyOf(left) {
+  return (splitOutsideQuotes2(left, "|")[0] ?? "").replace(/#.*$/, "").trim();
+}
+function validateBindingExpressions(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  if (html.includes(bindAttribute)) {
+    for (const attr of findAllBindAttributes(html, bindAttribute)) {
+      let pos = 0;
+      for (const binding of splitBindingExpressions(attr.value)) {
+        const bindingStart = attr.valueStart + pos;
+        pos += binding.length + 1;
+        const colon = indexOfOutsideQuotes2(binding, ":");
+        if (colon === -1) continue;
+        const property = propertyOf(binding.slice(0, colon));
+        if (property === "else") continue;
+        const site = expressionIn(binding, colon + 1);
+        if (site === null) continue;
+        const handler = property.startsWith("on");
+        out.push({
+          code: WcsDiagnosticCode.BindingExpression,
+          start: bindingStart + site.start,
+          end: bindingStart + site.end,
+          message: handler ? msgs.handlerExpression(property, site.text, calledMethod(site.text)) : msgs.bindingExpression(site.text, filterHint(site.text)),
+          severity: "error"
+        });
+      }
+    }
+  }
+  if ((html.includes("{{") || html.includes("@@")) && parseWcsStateElements(html, stateTagName).length > 0) {
+    const texts = [...findAllMustacheSyntax(html).filter((m) => !m.inDocumentHead), ...findAllCommentBindings(html).filter((m) => !m.inDocumentHead)];
+    for (const m of texts) {
+      const site = expressionIn(m.expression, 0);
+      if (site === null) continue;
+      out.push({
+        code: WcsDiagnosticCode.BindingExpression,
+        start: m.exprStart + site.start,
+        end: m.exprStart + site.end,
+        message: msgs.bindingExpression(site.text, filterHint(site.text)),
+        severity: "error"
+      });
+    }
+  }
+  return out;
+}
+function expressionIn(text3, from) {
+  const rhs = text3.slice(from);
+  const segments = splitOutsideQuotes2(rhs, "|");
+  if (segments.slice(1).some((s) => s.trim() === "")) return null;
+  const raw = segments[0] ?? "";
+  const path = raw.trim();
+  if (!isBindingExpression(path)) return null;
+  const start = from + raw.indexOf(path);
+  return { start, end: start + path.length, text: path };
+}
+function writtenAttributes2(html, from, to) {
+  const out = [];
+  const attribute = /([^\s"'<>/=]+)(?:(\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+)))?/g;
+  const text3 = html.slice(from, to);
+  let match;
+  while ((match = attribute.exec(text3)) !== null) {
+    const value = match[3] ?? match[4] ?? match[5] ?? null;
+    const quoted = match[3] !== void 0 || match[4] !== void 0 ? 1 : 0;
+    out.push({
+      name: match[1].toLowerCase(),
+      value,
+      start: from + match.index,
+      end: from + match.index + match[0].length,
+      valueStart: from + match.index + match[1].length + (match[2]?.length ?? 0) + quoted
+    });
+  }
+  return out;
+}
+function validateAttributeMustaches(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, fileReader) {
+  if (!html.includes("{{")) return [];
+  if (parseWcsStateElements(html, stateTagName).length === 0) return [];
+  if (isMustacheDisabled(html, stateTagName, fileReader)) return [];
+  const msgs = getMessages(locale2);
+  const bind = bindAttribute.toLowerCase();
+  const out = [];
+  for (const tag of findStartTagRegions(html)) {
+    if (!html.slice(tag.start, tag.end).includes("{{")) continue;
+    for (const a of writtenAttributes2(html, tag.start, tag.end)) {
+      if (a.value === null || a.name === bind) continue;
+      const open = a.value.indexOf("{{");
+      if (open === -1) continue;
+      const close = a.value.indexOf("}}", open + 2);
+      if (close === -1) continue;
+      out.push({
+        code: WcsDiagnosticCode.AttributeMustache,
+        start: a.valueStart + open,
+        end: a.valueStart + close + 2,
+        message: msgs.attributeMustache(a.name),
+        severity: "warning"
+      });
+    }
+  }
+  return out;
+}
+function validateMarkupHabits(html, bindAttribute = "data-wcs", locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  const boundId = /* @__PURE__ */ new Set();
+  if (html.includes(bindAttribute)) {
+    for (const attr of findAllBindAttributes(html, bindAttribute)) {
+      const bindings = splitBindingExpressions(attr.value);
+      const nonEmpty = bindings.filter((b) => b.trim() !== "").length;
+      let pos = 0;
+      for (const binding of bindings) {
+        const bindingStart = attr.valueStart + pos;
+        pos += binding.length + 1;
+        if (binding.trim() === "") continue;
+        const colon = indexOfOutsideQuotes2(binding, ":");
+        const rawLeft = colon === -1 ? binding : binding.slice(0, colon);
+        const exact = rawLeft.trim();
+        const leftStart = bindingStart + (rawLeft.length - rawLeft.trimStart().length);
+        const property = propertyOf(rawLeft);
+        if (property === "id" || property === "attr.id" || property === ".id" || property === "...") {
+          if (attr.attrsStart !== void 0) boundId.add(attr.attrsStart);
+        }
+        if (STRUCTURAL_BINDING_TYPE_SET2.has(exact) && nonEmpty === 1 && attr.tagName !== "template") {
+          out.push({
+            code: WcsDiagnosticCode.StructuralElement,
+            start: leftStart,
+            end: leftStart + exact.length,
+            message: msgs.structuralElement(exact, attr.tagName ?? ""),
+            severity: "error"
+          });
+          continue;
+        }
+        if (/^on[A-Z]/.test(property)) {
+          out.push({
+            code: WcsDiagnosticCode.EventNameCase,
+            start: leftStart,
+            end: leftStart + property.length,
+            message: msgs.eventNameCase(property, `on${property.slice(2).toLowerCase()}`),
+            severity: "warning"
+          });
+        } else if (property === "key" && attr.tagName !== void 0 && !attr.tagName.includes("-")) {
+          out.push({
+            code: WcsDiagnosticCode.KeyBinding,
+            start: leftStart,
+            end: leftStart + property.length,
+            message: msgs.keyBinding(),
+            severity: "warning"
+          });
+        }
+      }
+    }
+  }
+  out.push(...sharedRowIds(html, bindAttribute, boundId, msgs));
+  return out;
+}
+function sharedRowIds(html, bindAttribute, boundId, msgs) {
+  if (!/<template[^>]*for\s*:/i.test(html)) return [];
+  const out = [];
+  const said = /* @__PURE__ */ new Set();
+  const chainAt = createTemplateChain(html);
+  for (const tag of findStartTagRegions(html)) {
+    if (boundId.has(tag.start)) continue;
+    const id = writtenAttributes2(html, tag.start, tag.end).find((a) => a.name === "id");
+    if (id === void 0 || id.value === null || id.value.trim() === "") continue;
+    const fors = getEnclosingFors(html, tag.start, bindAttribute);
+    if (fors.length === 0) continue;
+    const loop = fors[fors.length - 1];
+    const chain = chainAt(tag.start);
+    if (chain[chain.length - 1] !== loop.anchor) continue;
+    const key = `${loop.anchor}\0${id.value}`;
+    if (said.has(key)) continue;
+    said.add(key);
+    out.push({
+      code: WcsDiagnosticCode.RowIdShared,
+      start: id.start,
+      end: id.end,
+      message: msgs.rowIdShared(id.value),
+      severity: "warning"
+    });
+  }
+  return out;
+}
 var GUARD_TAG = "wcs-guard-handler";
+var RELATIVE_SPECIFIER = /^(?:\.{1,2}\/|\/(?!\/))/;
+function validateInlineImports(html, stateTagName = "wcs-state", locale2) {
+  if (!/\bimport\b|\bexport\b/.test(html)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  const check = (blocks, guard) => {
+    for (const block of blocks) {
+      if (block.modulePath !== void 0) continue;
+      for (const s of relativeImports(block.content)) {
+        out.push({
+          code: WcsDiagnosticCode.InlineImport,
+          start: block.contentStart + s.start,
+          end: block.contentStart + s.end,
+          message: msgs.inlineImport(s.specifier, guard),
+          severity: "error"
+        });
+      }
+    }
+  };
+  if (html.includes(GUARD_TAG)) check(parseWcsScriptBlocks(html, GUARD_TAG), true);
+  check(parseLoadedScriptBlocks(html, stateTagName), false);
+  return out;
+}
+function relativeImports(source) {
+  if (!/\b(?:import|export)\b/.test(source)) return [];
+  let program;
+  try {
+    program = parseErasingTypes(source, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true });
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const node of program.body) {
+    if (node.type !== "ImportDeclaration" && node.type !== "ExportAllDeclaration" && node.type !== "ExportNamedDeclaration") continue;
+    const src = node.source;
+    if (src === void 0 || src === null || src.type !== "Literal" || typeof src.value !== "string") continue;
+    if (!RELATIVE_SPECIFIER.test(src.value)) continue;
+    out.push({ specifier: src.value, start: src.start, end: src.end });
+  }
+  return out;
+}
+
+// src/service/collectionMutationValidator.ts
+var METHODS = {
+  Set: /* @__PURE__ */ new Set(["add", "delete", "clear"]),
+  Map: /* @__PURE__ */ new Set(["set", "delete", "clear"])
+};
+var CALL = String.raw`\bthis\s*\??\.\s*(${ID})\s*\??\.\s*(add|set|delete|clear)(?=\s*\()`;
+function validateCollectionMutations(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
+    const script = block.content;
+    if (!/new\s+(?:Set|Map)\b/.test(script)) continue;
+    const kinds = /* @__PURE__ */ new Map();
+    const kindOf = (key) => {
+      if (!kinds.has(key)) {
+        const declaration = findTopLevelDeclaration(script, key);
+        const seed = declaration?.kind === "data" ? /^new\s+(Set|Map)\s*\(/.exec(declaration.value ?? "") : null;
+        kinds.set(key, seed === null ? null : seed[1]);
+      }
+      return kinds.get(key);
+    };
+    let bodies = null;
+    for (const match of execAllMasked(CALL, script)) {
+      const [key, method] = match.groups;
+      if (key === void 0 || method === void 0 || isApiRoot(key)) continue;
+      const kind = kindOf(key);
+      if (kind === null || !METHODS[kind].has(method)) continue;
+      bodies ??= analyzeCallableBodies(script);
+      const body = bodies.find((b) => match.index >= b.bodyStart && match.index < b.bodyStart + b.body.length);
+      const scope = body === void 0 ? script : body.body;
+      if (new RegExp(String.raw`\bthis\s*\??\.\s*${key}\s*=(?!=)`).test(maskCommentsAndStrings(scope))) continue;
+      const start = block.contentStart + match.index;
+      out.push({
+        code: WcsDiagnosticCode.CollectionMutation,
+        start,
+        end: start + match.length,
+        message: msgs.collectionMutation(key, method, kind),
+        severity: "error",
+        statePath: key
+      });
+    }
+  }
+  return out;
+}
+
+// src/service/moduleTopReadValidator.ts
+var GUARD_TAG2 = "wcs-guard-handler";
 var STORAGES = /* @__PURE__ */ new Set(["localStorage", "sessionStorage"]);
 var GLOBALS = /* @__PURE__ */ new Set(["window", "globalThis", "self"]);
 var STORAGE_WRITES = /* @__PURE__ */ new Set(["setItem", "removeItem", "clear"]);
@@ -21908,7 +22270,7 @@ function validateModuleTopReads(html, stateTagName = "wcs-state", locale2) {
       }
     }
   };
-  if (html.includes(GUARD_TAG)) check(parseWcsScriptBlocks(html, GUARD_TAG), true);
+  if (html.includes(GUARD_TAG2)) check(parseWcsScriptBlocks(html, GUARD_TAG2), true);
   check(parseLoadedScriptBlocks(html, stateTagName), false);
   return out;
 }
@@ -22008,7 +22370,8 @@ function validateStateSources(html, stateTagName = "wcs-state", locale2, fileRea
       start: span.start,
       end: span.end,
       message: getMessages(locale2).stateSrcUnread(src),
-      severity: "info"
+      severity: "info",
+      wholeState: true
     });
   }
   return out;
@@ -22945,6 +23308,7 @@ function validateText(text3, options, applicationSchema, env) {
   out.push(...validateOutputPathWrites(text3, bindAttribute, stateTagName, locale2, fileReader));
   out.push(...validateAccessorLists(text3, stateTagName, locale2));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
+  out.push(...validateCollectionMutations(text3, stateTagName, locale2));
   out.push(...validateModuleTopReads(text3, stateTagName, locale2));
   out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader, bindAttribute, applicationSchema));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));
@@ -22958,6 +23322,16 @@ function validateText(text3, options, applicationSchema, env) {
   }
   for (const d of validateNestedAssigns(text3, stateTagName, locale2)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
+  }
+  out.push(...validateAttributeMustaches(text3, bindAttribute, stateTagName, locale2, fileReader));
+  out.push(...validateMarkupHabits(text3, bindAttribute, locale2));
+  out.push(...validateInlineImports(text3, stateTagName, locale2));
+  const expressions = validateBindingExpressions(text3, bindAttribute, stateTagName, locale2);
+  if (expressions.length > 0) {
+    const inExpression = (d) => d.code !== WcsDiagnosticCode.BindingExpression && expressions.some((e) => d.start >= e.start && d.end <= e.end);
+    const kept2 = out.filter((d) => !inExpression(d));
+    out.length = 0;
+    out.push(...kept2, ...expressions);
   }
   const ignored = [
     ...findIgnoredRanges(text3, bindAttribute),
@@ -23181,6 +23555,7 @@ function runValidation(inputs, options = {}) {
   let errorCount = 0;
   let warningCount = 0;
   let infoCount = 0;
+  let uncheckedCount = 0;
   for (const source of [...diagnosticsBySource.keys()].sort()) {
     const diags = diagnosticsBySource.get(source);
     const mapper = createPositionMapper(textBySource.get(source) ?? "");
@@ -23188,7 +23563,9 @@ function runValidation(inputs, options = {}) {
       if (d.severity === "error") errorCount++;
       else if (d.severity === "warning") warningCount++;
       else infoCount++;
-      if (options.errorsOnly && d.severity !== "error") continue;
+      const unchecked = d.severity === "info" && d.wholeState === true;
+      if (unchecked) uncheckedCount++;
+      if (options.errorsOnly && d.severity !== "error" && !(options.strict === true && unchecked)) continue;
       const pos = mapper(d.start);
       lines.push(`${source}:${pos.line}:${pos.column} ${severityLabel[d.severity]} ${d.code} ${d.message}`);
     }
@@ -23198,6 +23575,9 @@ function runValidation(inputs, options = {}) {
   if (notRead.length > 0) {
     notes.push(`not read: ${notRead.join(", ")} \u2014 wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files`);
   }
+  if (options.strict === true && uncheckedCount > 0) {
+    notes.push(`strict: ${uncheckedCount} info about a state that was not read at all (an unread src, a spread at the top of the state) counted like warnings \u2014 give --root, or a stateSchema, to have it checked`);
+  }
   if (nothingToCheck.length > 0) {
     notes.push(`nothing to check: ${nothingToCheck.join(", ")} \u2014 no data-wcs binding, <wcs-*> tag or wcstack script in them`);
   }
@@ -23206,7 +23586,8 @@ function runValidation(inputs, options = {}) {
     errorCount,
     warningCount,
     infoCount,
-    exitCode: errorCount > 0 || options.strict === true && warningCount > 0 ? 1 : 0,
+    uncheckedCount,
+    exitCode: errorCount > 0 || options.strict === true && (warningCount > 0 || uncheckedCount > 0) ? 1 : 0,
     diagnosticsBySource,
     notRead,
     nothingToCheck,
@@ -23315,7 +23696,7 @@ function main(argv) {
   }
   process.stdout.write(
     `
-${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}
+${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? ` (strict${result.uncheckedCount > 0 ? `; ${result.uncheckedCount} unchecked counted as warnings` : ""})` : ""}
 `
   );
   for (const note of result.notes) process.stdout.write(note + "\n");

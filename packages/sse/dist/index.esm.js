@@ -61,7 +61,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/sse","version":"4.29.0"};
+var pkg = {"name":"@wcstack/sse","version":"4.30.0"};
 
 /**
  * sseCapabilities.ts
@@ -736,6 +736,20 @@ function reflectBooleanAttribute(el, name, value) {
 // beforeunload で閉じた後、pagehide が来ないままこれだけ経ったら、文書は残ったとみなして開き直す
 // （離脱の確認で「留まる」、ダウンロードだったリンク、mailto: のリンク）。
 const UNLOAD_REOPEN_DELAY = 1000;
+// beforeunload の後、これだけの間に navigate が来たら「beforeunload が先に来るブラウザ」とみなす（WebKit では
+// 同じタスクの中で続く。規格どおりのブラウザでは navigate が先で、beforeunload の後には来ない）
+const EARLY_UNLOAD_WINDOW = 50;
+const pageOrders = new WeakMap();
+const pageNavigation = () => globalThis.navigation;
+const pageOrder = () => {
+    const n = pageNavigation();
+    if (n === undefined)
+        return undefined;
+    let o = pageOrders.get(n);
+    if (o === undefined)
+        pageOrders.set(n, o = { early: false, before: -Infinity, navigate: -Infinity });
+    return o;
+};
 // EventSource.CLOSED（Core と同じく、モジュールの読み込み時に EventSource を要らない）
 const SSE_CLOSED = 2;
 class WcsSse extends HTMLElement {
@@ -1041,7 +1055,20 @@ class WcsSse extends HTMLElement {
     // さらに閉じるもの（開いている・開こうとしているストリーム）か開き直すものがある間だけ — リスナがあるだけで
     // ページを back/forward cache から外すブラウザがある（router の leaveConfirm と同じ）。auto-reconnect を待つ
     // 間は閉じるものが無い: 待っている開き直しはそのまま（同じ文書の遷移で WebKit が出しても、それで足りる）。
+    //
+    // 4.30 から: WebKit は beforeunload を navigate より先に出す（規格の順は navigate が先）。その順を一度見た文書
+    // では、beforeunload で閉じるのをやめる — リンクの遷移のたびに閉じて開き直し、その間にサーバが送ったものを
+    // 落としていた（docs/seam-apps.md、street-reports）。そこで閉じるのは pagehide（WebKit は Firefox の
+    // メッセージを出さない）。最初の 1 回は、順が分かる前なので閉じて開き直す。
     _onBeforeUnload = () => {
+        // (a document where beforeunload comes before navigate: it does not mean the page goes — pagehide closes)
+        const order = pageOrder();
+        if (order !== undefined) {
+            if (order.early)
+                return;
+            const now = performance.now();
+            order.before = now - order.navigate < EARLY_UNLOAD_WINDOW ? -Infinity : now;
+        }
         // (it listens only while there is a stream to close or one it closed: a second beforeunload while it is
         // closed — a guard's redirect in WebKit — keeps it closed and waits again)
         this._closedForUnload = true;
@@ -1050,7 +1077,7 @@ class WcsSse extends HTMLElement {
         this._reopenTimer = setTimeout(this._reopenAfterUnload, UNLOAD_REOPEN_DELAY);
     };
     _syncUnloadListener = () => {
-        const want = this.isConnected && (this._core.readyState !== SSE_CLOSED || this._closedForUnload);
+        const want = this.isConnected && pageOrder()?.early !== true && (this._core.readyState !== SSE_CLOSED || this._closedForUnload);
         if (want === this._unloadListening)
             return;
         this._unloadListening = want;
@@ -1064,6 +1091,13 @@ class WcsSse extends HTMLElement {
     _onSameDocumentNavigation = () => {
         if (this._closedForUnload)
             queueMicrotask(this._reopenAfterUnload);
+    };
+    // A navigate event right after a beforeunload: this browser asks before it knows whether the document stays.
+    _onNavigate = () => {
+        const order = pageOrder();
+        order.navigate = performance.now();
+        if (order.navigate - order.before < EARLY_UNLOAD_WINDOW)
+            order.early = true;
     };
     _reopenAfterUnload = () => {
         // (connect() clears the flag and the timer; nothing to do when something took the reopen meanwhile)
@@ -1099,7 +1133,9 @@ class WcsSse extends HTMLElement {
         window[method]("pagehide", this._onPageHide);
         window[method]("pageshow", this._onPageShow);
         // the Navigation API, where the browser has it
-        globalThis.navigation?.[method]("currententrychange", this._onSameDocumentNavigation);
+        const navigation = pageNavigation();
+        navigation?.[method]("currententrychange", this._onSameDocumentNavigation);
+        navigation?.[method]("navigate", this._onNavigate);
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）

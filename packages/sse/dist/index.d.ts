@@ -297,6 +297,7 @@ declare class WcsSse extends HTMLElement {
     private _onBeforeUnload;
     private _syncUnloadListener;
     private _onSameDocumentNavigation;
+    private _onNavigate;
     private _reopenAfterUnload;
     private _onPageHide;
     private _onPageShow;
