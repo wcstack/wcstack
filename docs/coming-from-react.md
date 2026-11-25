@@ -57,7 +57,7 @@ where each thing went and where a habit led the wrong way. This page is that rec
 | The document title | `<wcs-head><title>…</title></wcs-head>` in the route | direct |
 | An event stream | `<wcs-sse url="…" events="report" data-wcs="eventToken.message: onReport">` | direct |
 | Routes, `useParams`, `useLocation`, `useSearchParams`, `useNavigate` | `<wcs-router>` with `params:` / `path:` / `searchParams:` bound into the state; write `navigateUrl` (push) or `replaceUrl` (replace) | direct |
-| `<Link>`, `<NavLink>` | `<wcs-link to="…">`; `match="prefix"` for a section, and `current="page"` to say so to a screen reader (since 4.30, not released yet) | direct |
+| `<Link>`, `<NavLink>` | `<wcs-link to="…">`; `match="prefix"` for a section, and `current="page"` to say so to a screen reader (since 4.30) | direct |
 | `<Navigate replace>` | A guard that returns the path | a different shape |
 | `useBlocker` + your own dialog | `leaveConfirm` asks with the browser's `confirm()`; an in-page dialog has no counterpart yet | none |
 | `React.lazy` | The autoloader loads a part when its tag first appears; code is `import()`ed in a method and a state flag gates what reads it | a different shape |
@@ -76,7 +76,7 @@ where each thing went and where a habit led the wrong way. This page is that rec
 
 Each of these was written by the author — or made on purpose in a copy of the finished app — and run through the
 lint, the type check, the unit tests, the e2e suite and a browser. "Lint" and the `[wcs/…]` console messages below
-are as of 4.30 (not released yet); up to 4.29 most of them said nothing.
+are as of 4.30; up to 4.29 most of them said nothing.
 
 | The habit | What happens | Who says so |
 |---|---|---|

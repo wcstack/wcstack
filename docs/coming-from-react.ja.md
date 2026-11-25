@@ -56,7 +56,7 @@ English: [coming-from-react.md](./coming-from-react.md)
 | 文書の題名 | ルートの中の `<wcs-head><title>…</title></wcs-head>` | そのまま |
 | イベントのストリーム | `<wcs-sse url="…" events="report" data-wcs="eventToken.message: onReport">` | そのまま |
 | ルート、`useParams`・`useLocation`・`useSearchParams`・`useNavigate` | `<wcs-router>` の `params:`・`path:`・`searchParams:` を state に束ねる。書くのは `navigateUrl`（push）か `replaceUrl`（replace） | そのまま |
-| `<Link>`・`<NavLink>` | `<wcs-link to="…">`。区画には `match="prefix"`、それを読み上げにも言うなら `current="page"`（4.30（未リリース）から） | そのまま |
+| `<Link>`・`<NavLink>` | `<wcs-link to="…">`。区画には `match="prefix"`、それを読み上げにも言うなら `current="page"`（4.30 から） | そのまま |
 | `<Navigate replace>` | パスを返すガード | 形が違う |
 | `useBlocker` と自前のダイアログ | `leaveConfirm` はブラウザの `confirm()` で尋ねます。ページの中のダイアログで尋ねる手段は、まだありません | 無い |
 | `React.lazy` | 部品は、そのタグが最初に現れたときに autoloader が読み込む。コードはメソッドの中で `import()` し、読む側を state のフラグで止める | 形が違う |
@@ -74,7 +74,7 @@ English: [coming-from-react.md](./coming-from-react.md)
 ## 何が噛みつき、誰がそれを言うか
 
 どれも、作者が実際に書いたか、完成したアプリの写しでわざと作って、lint・型検査・単体テスト・e2e・ブラウザに
-かけたものです。下の「lint」と `[wcs/…]` のコンソールのメッセージは 4.30（未リリース）のものです。4.29 までは、
+かけたものです。下の「lint」と `[wcs/…]` のコンソールのメッセージは 4.30 のものです。4.29 までは、
 その多くが何も言いませんでした。
 
 | 習慣 | 起きること | 誰が言うか |

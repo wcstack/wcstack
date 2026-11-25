@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.30.0] — 2026-11-26
 
 Another framework's habits — from the `street-reports` seam app ([docs/seam-apps.md](./docs/seam-apps.md)): a working React app and its e2e suite, handed to a first-time author to be moved to wcstack without changing the suite. The author's decisions of 2026-11-25 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.26. A guide came out of it: [Coming from React](./docs/coming-from-react.md).
 

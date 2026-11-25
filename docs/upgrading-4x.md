@@ -520,11 +520,27 @@ Nothing changes at run time: this release is the lint (`@wcstack/lint`, and the 
 
 Workarounds became unnecessary: the getters a part exports, declared by hand as optional keys in the JSDoc type of the page's data so that the lint accepted the page.
 
-## Still needed on 4.29.0
+### 4.30.0
+
+2026-11-26 — [CHANGELOG](../CHANGELOG.md#4300--2026-11-26)
+
+- `@wcstack/state`: **with `$listKeys`, an assignment reaches a getter that reads the list also when only fields of the rows changed.** A getter such as `this.cards.filter((c) => c.status === "done")` now follows a refresh (a card whose status changed used to leave its column and enter no other), and a `$watch` on the list fires for such an assignment.
+- `@wcstack/state` (the diagnostics add-on): three new console warnings where a page has what they name — `[wcs/attribute-mustache]` (`{{ }}` in an attribute value), `[wcs/structural-element]` (`if:` / `for:` on an element that is not a `<template>`), `[wcs/style-object]` (`style:` given an object). A binding whose right side is an expression is told "An expression is not a path" where it was offered a near name.
+- `@wcstack/lint` (and the VS Code extension 2.23.0): **new rules may fail a page that passed.** Errors: `wcs/binding-expression`, `wcs/structural-element`, `wcs/collection-mutation`, `wcs/inline-import`. Warnings: `wcs/attribute-mustache`, `wcs/row-id-shared`, `wcs/event-name-case`, `wcs/key-binding`. An expression in a binding was a path warning — or nothing.
+- `@wcstack/lint --strict`: **a state the lint could not read at all fails the run** — a `<wcs-state src>` it cannot find (a path from `/` needs `--root`), a state with a `...spread` at its top (give a `stateSchema`).
+- `@wcstack/sse`: in WebKit the stream is no longer closed and reopened on every `<wcs-link>` of the router (the first link of a page load still reconnects once).
+- `@wcstack/router`: `<wcs-link current="page">` names the `aria-current` of an active link.
+
+Workarounds became unnecessary: an `EventSource` of the page's own in place of `<wcs-sse>` under the router in WebKit; plain `<a>`s with a click handler for a navigation whose link is the current page on the paths under it; reading rows through `$getAll` only so that a getter over a `$listKeys` list follows a refresh.
+
+## Still needed on 4.30.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
 - The lint reads a part only where it finds its file: a page that names its parts from `/` (`"@components/x-card": "/parts/x-card.js"`) is linted with `--root=<the site's directory>`, and the editor, which has no root, says nothing of those parts. A part whose state is not an object literal is not read, and neither is what a part's methods read (lint README, "What a page assembled from parts is told"): unit tests cover the rest.
+- A page's state outlives its route: the selection, the search text and the last record are still there when the user comes back, and nothing says so. Reset what the page should forget in a `$watch` on the router's `routeName` (router README, "The state outlives the route"; [coming-from-react.md](./coming-from-react.md)).
+- The router has no in-app "stay": `leaveConfirm` asks with the browser's `confirm()`. A page that asks in its own dialog holds its own links and guards the other routes itself ([seam-apps.md](./seam-apps.md), street-reports).
+- A write to one row's field (`this["todos.0.done"] = v`, a two-way `checked: .done` in a row) does not re-evaluate a getter that reads the field from the row object (`this.todos.filter((t) => !t.done)`): assign the list, or read the fields through `$getAll("todos.*.done", [])` (state README, "`$listKeys`").
 - A volume does not read the root, and the root's `$connectedCallback` and `$watch` run before a volume that arrives later has its keys and methods: hand a volume what it needs, and wait for its `connectedCallbackPromise` (state README, "Mounting Additional State").
 - A DCC is given whole values through properties: a write to a field inside an object or array it shares with the page does not reach the other side's rows, and a `$watch` on an input does not run for the first value — read it in `$connectedCallback` as well (state README, "What a DCC Is Given").
 - A browser test that leaves a page while an inline state is still being imported may see `<wcs-state> failed to initialize` in Firefox and WebKit: the import was cut off by the unload, and the page was not broken.
