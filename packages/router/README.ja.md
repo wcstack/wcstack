@@ -138,6 +138,34 @@ router は、スタンプしたルート本文の終わりにコメントの印 
 
 **例外: ナビゲーションをまたいで DOM を文書に置いたままにしたいときは state で切り替える（`<template data-wcs="if: …">`）。** ルートを離れると本文は文書から外され、入場のときに同じノードが戻されます。ノードが持つもの（入力途中のフォームの値）は残りますが、文書につながっていることが要るものは残りません。再生中の `<video>` は止まり（すでに Picture-in-Picture にある動画は、Chromium では小窓で流れ続けますが、どのブラウザでもそうとは限りません —— ページをまたいで流し続ける動画は、`<wcs-pip>` と一緒にルーターの外に置きます）、全画面の要素やポインターを捕捉している要素はどちらも解かれ、スクロール済みのリストはスクロール位置を失い（Chromium と WebKit）、`disconnectedCallback` で後始末する部品は初めからやり直します。そうした内容は router の外に置き、router の `routeName` / `typedParams` 出力が立てる state のフラグにバインドし、ルート要素は空（または `<wcs-head>` だけ）にします。
 
+**state はルートより長生きします。** ルートの本文は外されてまた戻され、`@wcstack/state` は文書に 1 つの state を保ちます: ページが書いたキー —— 選択、検索の文字、最後に表示したレコード —— は、戻ってきたときにも残っています。次のレコードを読み込んでいる間、state には前のレコードが残っています（`/reports/51` で、51 が届くまで通報 50）。誰もそれを知らせません。ページがアンマウントされるフレームワークは、これを自分で忘れます。ここでは、ページが忘れるべきものを、入る所・出る所で自分で戻します —— router の `routeName` を state に束ね、それを watch します:
+
+```html
+<wcs-router data-wcs="routeName: routeName; params: routeParams">
+  <template>
+    <wcs-route path="/reports" name="list"> … </wcs-route>
+    <wcs-route path="/reports/:id" name="detail"> … </wcs-route>
+  </template>
+</wcs-router>
+```
+
+```javascript
+export default {
+  routeName: "",
+  selected: [],
+  report: null,
+  $watch: {
+    routeName(now, before) {
+      if (before === "list") this.selected = [];      // 一覧を離れるときに忘れるもの
+      if (now === "detail") this.report = null;       // 新しい URL の下に前の通報を出さない
+    },
+    "routeParams.id"() { this.report = null; },        // 同じルートの別のレコード
+  },
+};
+```
+
+先に `null` を書くと、そのレコードを囲む `if:` の枝も作り直されます —— その中の部品（自分の文字を持つコメント欄）が最初からになるのはそのためで、React の `key={id}` に当たります。[React から来た人へ](../../docs/coming-from-react.ja.md) を参照。
+
 ```html
 <wcs-router data-wcs="routeName: routeName">
   <template>

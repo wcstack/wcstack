@@ -508,6 +508,8 @@ All published packages share one version and are released in lockstep — a rele
 
 Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading within 4.x — what each release changes for a working page, and the workarounds it made unnecessary: [docs/upgrading-4x.md](./docs/upgrading-4x.md). Upgrading from 3.x: [docs/migration-v4.md](./docs/migration-v4.md). Upgrading from 2.x: [docs/migration-v3.md](./docs/migration-v3.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
 
+Coming from React? [docs/coming-from-react.md](./docs/coming-from-react.md) says where each construct goes — and which habits bite.
+
 ## License
 
 MIT

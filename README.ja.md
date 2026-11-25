@@ -504,6 +504,8 @@ npm run lint             # ESLint
 
 **deprecation の運用**: 可能な限り、削除の前に最低 1 つの minor リリースで予告します（移行先を指す lint ルールおよび/または実行時の告知）— v1.x は `wcs/named-state-deprecated` で名前付き State を予告し、v2.0 が `name=` / `@name` を削除しました。
 
+React から来た人へ: [docs/coming-from-react.ja.md](./docs/coming-from-react.ja.md) —— どの構文がどこへ行くか、どの習慣が噛みつくか。
+
 リリース履歴: [CHANGELOG.md](./CHANGELOG.md)（英語）。4.x の中での更新 —— 各リリースで動いているページに何が変わるか、どの回避策が要らなくなったか: [docs/upgrading-4x.ja.md](./docs/upgrading-4x.ja.md)。3.x からの移行: [docs/migration-v4.ja.md](./docs/migration-v4.ja.md)。2.x からの移行: [docs/migration-v3.ja.md](./docs/migration-v3.ja.md)。1.x からの移行: [docs/migration-v2.ja.md](./docs/migration-v2.ja.md)。
 
 ## License

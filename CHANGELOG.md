@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+Another framework's habits — from the `street-reports` seam app ([docs/seam-apps.md](./docs/seam-apps.md)): a working React app and its e2e suite, handed to a first-time author to be moved to wcstack without changing the suite. The author's decisions of 2026-11-25 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.26. A guide came out of it: [Coming from React](./docs/coming-from-react.md).
+
+### Upgrading
+
+- `@wcstack/state`: **with `$listKeys`, an assignment now reaches a getter that reads the list also when only fields of the rows changed** (it did when rows were added, removed or moved). A getter such as `this.cards.filter((c) => c.status === "done")` follows a refresh; a `$watch` on the list fires for such an assignment too. A page that worked around it — by reading the fields through `$getAll`, or by not declaring `$listKeys` — needs no change.
+- `@wcstack/state` (the diagnostics add-on): three new warnings may appear in the console of a page that has what they name — `[wcs/attribute-mustache]`, `[wcs/structural-element]`, `[wcs/style-object]` — and the message of a binding whose right side is an expression changes its second sentence.
+- `@wcstack/lint`: **new rules may fail a page that passed.** Errors: `wcs/binding-expression` (an expression where a path belongs — it was a path warning, or nothing), `wcs/structural-element` (`if:` / `for:` on an element that is not a `<template>`), `wcs/collection-mutation` (a `Set` or `Map` of the state changed in place), `wcs/inline-import` (a relative `import` in an inline state). Warnings: `wcs/attribute-mustache`, `wcs/row-id-shared`, `wcs/event-name-case`, `wcs/key-binding`.
+- `@wcstack/lint --strict`: **a state the lint could not read now fails the run** — a `<wcs-state src>` it cannot find (a path from `/` needs `--root`) and a state built with a `...spread` were infos, and the gate passed with nothing checked.
+- `@wcstack/sse`: in WebKit the stream is no longer closed and reopened on every link of `@wcstack/router`. A page that replaced `<wcs-sse>` with its own `EventSource` for this can go back.
+
+### Added
+
+- `@wcstack/router`: **`<wcs-link current="page">`** — the `aria-current` value the anchor gets wherever the link is active. Without it the rule is unchanged (`page` on the path itself, `true` under it). A navigation whose items are sections — a list's link that is the current page on `/reports/12` too — could not be written: a bound `aria-current` never reaches the anchor.
+- `@wcstack/state` (the diagnostics add-on): **`[wcs/attribute-mustache]`** — `{{ }}` in an attribute value (`href="/reports/{{ id }}"`) stays as written; **`[wcs/structural-element]`** — `if:` / `for:` on an element that is not a `<template>` does nothing; **`[wcs/style-object]`** — `style:` given an object leaves no style. Each once, with what to write. And an expression where a path belongs (`!loading`, `count + 1`, a ternary, a call) is told "An expression is not a path: use a filter (|not, |eq(x), |gt(n)) or a getter" where it was offered a near name.
+- `@wcstack/lint` (and the VS Code extension): **rules for what another framework's habits write** — `wcs/binding-expression`, `wcs/attribute-mustache`, `wcs/structural-element`, `wcs/collection-mutation`, `wcs/row-id-shared`, `wcs/event-name-case`, `wcs/inline-import`, `wcs/key-binding` (lint README, "What a page written from another framework's habits is told"). Of twenty React idioms carried over literally, the 4.29 lint spoke in eight.
+- [docs/coming-from-react.md](./docs/coming-from-react.md) (and `.ja.md`): where each React construct goes, which habits bite and who says so. `@wcstack/router`'s README: the state outlives the route, and how a page resets what it should forget.
+
+### Fixed
+
+- `@wcstack/state` (the `list-keys` add-on): **a refresh that changed only fields did not reach a getter that reads the list.** `this.cards = fresh` with `$listKeys: { cards: "id" }` wrote the changed fields and never the list: a card whose `status` changed left the column it was in and entered no other, the counts disagreed, and the next refresh did not repair it. The list is now written whenever anything changed; the rows are the kept objects, so none is drawn again, and a refresh that changes nothing still does nothing.
+- `@wcstack/sse`: **in WebKit, `<wcs-sse>` closed and reopened its stream on every `<wcs-link>` of the router**, and what the server sent in each gap was lost. WebKit fires `beforeunload` before the `navigate` event of a navigation that stays in the document; the element now learns that order per document and closes on `pagehide` there. Five links: six connections on 4.29.0, two now (the first link still reconnects once). Chromium and Firefox are unchanged.
+
 ## [4.29.0] — 2026-11-25
 
 The lint and the parts of a page — two decisions of the author's from the `garden-plots` seam app (2026-11-24, [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.25): the lint reads a component, and the order of `radio:` is the lint's to tell.

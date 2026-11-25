@@ -138,6 +138,34 @@ The router marks where a stamped route body ends with a comment, `<!--@@wcs-rout
 
 **Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must stay in the document across the navigation.** Leaving a route removes its body from the document, and entering puts the same nodes back. What the nodes hold survives (a half-filled form keeps its input), but what needs them to stay connected does not: a `<video>` stops playing (one already in Picture-in-Picture plays on in Chromium's small window, and not in every browser — a video that must go on across pages lives outside the router, with its `<wcs-pip>`), an element that is fullscreen or holds the pointer lock leaves both, a scrolled list loses its scroll position (in Chromium and WebKit), and a component that tears down in `disconnectedCallback` starts over. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
 
+**The state outlives the route.** A route's body is taken out and put back, and `@wcstack/state` keeps one state for the document: the keys a page wrote — its selection, its search text, the record it last showed — are still there when the user comes back, and while the next record loads the previous one is still in the state (on `/reports/51`, report 50 until 51 arrives). Nothing reports it. A framework whose pages unmount forgets all of this by itself; here the page resets what it should forget, where it is entered or left — bind the router's `routeName` into the state and watch it:
+
+```html
+<wcs-router data-wcs="routeName: routeName; params: routeParams">
+  <template>
+    <wcs-route path="/reports" name="list"> … </wcs-route>
+    <wcs-route path="/reports/:id" name="detail"> … </wcs-route>
+  </template>
+</wcs-router>
+```
+
+```javascript
+export default {
+  routeName: "",
+  selected: [],
+  report: null,
+  $watch: {
+    routeName(now, before) {
+      if (before === "list") this.selected = [];      // what the list forgets when it is left
+      if (now === "detail") this.report = null;       // never the last report under a new URL
+    },
+    "routeParams.id"() { this.report = null; },        // another record of the same route
+  },
+};
+```
+
+Writing `null` first also rebuilds an `if:` branch around the record — which is how a part inside it (a comment box with its own text) starts again, as `key={id}` does in React. See [Coming from React](../../docs/coming-from-react.md).
+
 ```html
 <wcs-router data-wcs="routeName: routeName">
   <template>
