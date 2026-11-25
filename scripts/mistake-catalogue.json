@@ -2051,20 +2051,29 @@
     {
       "id": "attribute-mustache",
       "lint": [{ "code": "wcs/attribute-mustache", "severity": "warning" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes `{{ }}` in an attribute: `href=\"/reports/{{ id }}\"`, `class=\"row {{ kind }}\"`, `<wcs-link to=\"/reports/{{ .id }}\">`.", "ja": "属性に `{{ }}` を書く: `href=\"/reports/{{ id }}\"`・`class=\"row {{ kind }}\"`・`<wcs-link to=\"/reports/{{ .id }}\">`。" },
-      "effect": { "en": "`{{ }}` is read in text only: the attribute keeps the braces as written (a link to `/reports/{{ id }}`), and nothing says so. A server-side template that fills it before the page is served is fine — which is why the lint warns, and only in a file with a `<wcs-state>` whose state does not declare `enableMustache: false`.", "ja": "`{{ }}` はテキストの中でしか読まれない: 属性には波括弧が書いたまま残り（`/reports/{{ id }}` へのリンク）、何も言わない。ページを返す前にサーバーのテンプレートが埋めるのなら正しい — だから lint は警告で、`<wcs-state>` のあるファイルで、その state が `enableMustache: false` を宣言していないときだけ言う。" },
-      "disposition": "runtime-report",
+      "effect": { "en": "`{{ }}` is read in text only: the attribute keeps the braces as written (a link to `/reports/{{ id }}`), and up to 4.29 nothing said so. Since 4.30 the diagnostics add-on says it once per tag and attribute, a few seconds after the page is ready (`[wcs/attribute-mustache]`). A server-side template that fills it before the page is served is fine — which is why the lint warns, and only in a file with a `<wcs-state>` whose state does not declare `enableMustache: false`.", "ja": "`{{ }}` はテキストの中でしか読まれない: 属性には波括弧が書いたまま残り（`/reports/{{ id }}` へのリンク）、何も言わない。ページを返す前にサーバーのテンプレートが埋めるのなら正しい — だから lint は警告で、`<wcs-state>` のあるファイルで、その state が `enableMustache: false` を宣言していないときだけ言う。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "wcs/attribute-mustache" }],
       "note": { "en": "Found by the street-reports seam app (a React app ported by a first-time author, docs/seam-apps.md). The author decided on 2026-11-25 to give the lint a rule for each such habit: an error where the runtime refuses or drops it, a warning otherwise. The fix is a binding: `attr.href: <path>` with a getter that builds the string. The runtime's diagnostics add-on reports `[wcs/attribute-mustache]` from 4.30 (a separate change).", "ja": "継ぎ目アプリ street-reports（初めての作者が React のアプリを移した — docs/seam-apps.ja.md）が見つけた。2026-11-25 に著者が、こうした癖ごとに lint の規則を置くと決めた: ランタイムが拒むか落とすものは error、ほかは warning。 直し方は束縛: 文字列を組み立てる getter を書いて `attr.href: <パス>`。ランタイムの diagnostics の後付けは 4.30 から `[wcs/attribute-mustache]` を報告する（別の変更）。" }
     },
     {
       "id": "structural-element",
       "lint": [{ "code": "wcs/structural-element", "severity": "error" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes `if:` / `elseif:` / `else:` / `for:` on an element that is not a `<template>`: `<p data-wcs=\"if: open\">`, `<li data-wcs=\"for: items\">`.", "ja": "`<template>` でない要素に `if:` / `elseif:` / `else:` / `for:` を書く: `<p data-wcs=\"if: open\">`・`<li data-wcs=\"for: items\">`。" },
-      "effect": { "en": "The runtime sets a property of that name and does nothing else: the element is always shown, and the list is one element, not one per row — nothing says so. Beside another binding the lint and the runtime already refuse it (`wcs/template-syntax`).", "ja": "ランタイムはその名前のプロパティを書くだけで、ほかに何もしない: 要素は常に表示され、一覧は行ごとではなく 1 つ — 何も言わない。ほかの束縛と並べたときは、lint もランタイムも既に拒む（`wcs/template-syntax`）。" },
-      "disposition": "runtime-report",
+      "effect": { "en": "The runtime sets a property of that name and does nothing else: the element is always shown, and the list is one element, not one per row. Up to 4.29 nothing said so; since 4.30 the diagnostics add-on says it once per tag and directive for the page's own elements (`[wcs/structural-element]` — a row's elements are the lint's to see). Beside another binding the lint and the runtime already refuse it (`wcs/template-syntax`).", "ja": "ランタイムはその名前のプロパティを書くだけで、ほかに何もしない: 要素は常に表示され、一覧は行ごとではなく 1 つ — 何も言わない。ほかの束縛と並べたときは、lint もランタイムも既に拒む（`wcs/template-syntax`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "wcs/structural-element" }],
       "note": { "en": "Found by the street-reports seam app (a React app ported by a first-time author, docs/seam-apps.md). The author decided on 2026-11-25 to give the lint a rule for each such habit: an error where the runtime refuses or drops it, a warning otherwise. The fix: put the element inside `<template data-wcs=\"if: …\">`. The runtime's diagnostics add-on reports `[wcs/structural-element]` for the page's own elements from 4.30 (a separate change).", "ja": "継ぎ目アプリ street-reports（初めての作者が React のアプリを移した — docs/seam-apps.ja.md）が見つけた。2026-11-25 に著者が、こうした癖ごとに lint の規則を置くと決めた: ランタイムが拒むか落とすものは error、ほかは warning。 直し方: 要素を `<template data-wcs=\"if: …\">` の中に入れる。ランタイムの diagnostics の後付けは 4.30 から、ページ自身の要素について `[wcs/structural-element]` を報告する（別の変更）。" }
+    },
+    {
+      "id": "style-object",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Gives `style:` an object, as JSX's `style={{ width }}`: `style: bar` with `{ width: \"40%\" }`.", "ja": "JSX の `style={{ width }}` のように、`style:` にオブジェクトを渡す: `{ width: \"40%\" }` を `style: bar` に。" },
+      "effect": { "en": "The element keeps no style (a bar without a width). Since 4.30 the diagnostics add-on says so once per binding (`[wcs/style-object]`): bind each property (`style.width:`, a string with its unit) or a CSS string (`attr.style:`). Up to 4.29 nothing was said. The lint cannot tell what a getter returns.", "ja": "要素は style を持たない（幅の無いバー）。4.30 から、diagnostics の後付けが束縛ごとに 1 度言う（`[wcs/style-object]`）: プロパティごとに束ねるか（`style.width:`、単位つきの文字列）、CSS の文字列を束ねる（`attr.style:`）。4.29 までは何も言わなかった。getter が何を返すかは、lint には分からない。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "wcs/style-object" }],
+      "note": { "en": "Found by the street-reports seam app (docs/seam-apps.md): the statistics page's bars were empty, and every check passed.", "ja": "継ぎ目アプリ street-reports（docs/seam-apps.ja.md）: 統計のページのバーが空で、すべての検査が通った。" }
     },
     {
       "id": "collection-mutation",
