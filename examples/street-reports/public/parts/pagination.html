@@ -1,0 +1,35 @@
+<!--
+  components/Pagination.jsx → <sr-pagination>, a Declarative Custom Component.
+  Use:      <sr-pagination data-wcs="page: listPageInput; totalPages: listTotalPages"></sr-pagination>
+  Bindable: page (both directions — the React onPageChange(p) callback became a two-way `page`), totalPages (in).
+  Renders nothing for a single page, as the React component returned null.
+-->
+<sr-pagination data-wc-definition>
+  <template shadowrootmode="open">
+    <link rel="stylesheet" href="/styles.css">
+    <style>:host { display: block; }</style>
+    <template data-wcs="if: show">
+      <nav class="pagination" aria-label="ページ送り">
+        <button type="button" data-wcs="disabled: atFirst; onclick: prev">前へ</button>
+        <span data-wcs="textContent: label"></span>
+        <button type="button" data-wcs="disabled: atLast; onclick: next">次へ</button>
+      </nav>
+    </template>
+    <wcs-state>
+      <script type="module">
+        export default {
+          page: 1,
+          totalPages: 1,
+          get current() { return Math.max(1, Number(this.page) || 1); },
+          get show() { return Number(this.totalPages) > 1; },
+          get atFirst() { return this.current <= 1; },
+          get atLast() { return this.current >= Number(this.totalPages); },
+          get label() { return `${this.current} / ${this.totalPages} ページ`; },
+          prev() { if (!this.atFirst) this.page = this.current - 1; },
+          next() { if (!this.atLast) this.page = this.current + 1; },
+          $bindables: ["page", "totalPages"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</sr-pagination>

@@ -1,0 +1,20 @@
+{
+  "name": "wcstack-street-reports",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a React team's app moved to wcstack — a city's ledger of problem reports (a list filtered through the URL, a report with comments and a photo lightbox, a form with a draft and a leave dialog, a board with live moves, statistics), with the React original beside it.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/debounce": "^4.30.0",
+    "@wcstack/server": "^4.30.0",
+    "@wcstack/sse": "^4.30.0",
+    "@wcstack/state": "^4.30.0",
+    "@wcstack/storage": "^4.30.0",
+    "@wcstack/testing": "^4.30.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.0.5"
+  }
+}
