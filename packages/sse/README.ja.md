@@ -211,6 +211,7 @@ data: {"side":"buy","qty":10}
 - 文書が残れば、そのときの `url` でまた開きます: 同じ文書の遷移が確定したとき（Navigation API の `currententrychange`）はすぐに、そうでなければ 1 秒のうちに `pagehide` が来なかったときに。開けば `connected` が `true` になります — 変わったかもしれないものを読み直す `connected` の `$watch`（いずれにせよ要る再接続の処理。[再接続の後に取りこぼしを埋める](#再接続)）がそこで動きます: 間に送られたイベントは届きません。
 - `pagehide` では閉じたままです。back/forward cache からの `pageshow`（`persisted`）では、開いていたならまた開きます — `<wcs-ws>` と同じです。
 - また開くのは、要素がこうして自分で閉じたストリームだけです: `close()` の後、`url` が無いとき（その間にクリアされた）、ページが一度もつながなかった `manual` の要素は開きません。`connect()` / `trigger` と `url` の変化が、この開き直しを引き取ります。
+- **`beforeunload` が `navigate` イベントより先に来るブラウザ**（WebKit。規格の順は逆です）では、`beforeunload` はページが離れる合図になりません: router のリンクのたびに出ます。4.30（未リリース）から、要素がその順 —— `beforeunload` のすぐ後に `navigate` —— を文書の中で一度見たら、そこでは `beforeunload` で閉じるのをやめ、`pagehide` で閉じます（WebKit は Firefox のメッセージを出しません）。ページを読み込んで最初のリンクでは今までどおり閉じて開き直し、その後のリンクでは開いたままです。4.29 まではリンクのたびに閉じていました —— リンク 5 回でつなぎ直し 5 回、その間にサーバが送ったものは失われました（docs/seam-apps.ja.md、street-reports）。
 
 4.25 までは、要素はここで何もせず、README はページ自身の `beforeunload` リスナで閉じるよう書いていました — router の下の WebKit では、最初の遷移の後ストリームが閉じたままになりました（docs/seam-apps.ja.md、lending-desk）。上げるときは、そのリスナを外してください: 要素が閉じ、また開きます。
 
