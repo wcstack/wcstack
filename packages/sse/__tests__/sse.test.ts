@@ -800,6 +800,117 @@ describe("WcsSse", () => {
       expect(MockEventSource.instances).toHaveLength(3);
     });
 
+    // WebKit は beforeunload を navigate より先に出す（規格の順は navigate が先）。リンクの遷移のたびに閉じて
+    // 開き直すと、その間にサーバが送ったものを落とす（docs/seam-apps.md、street-reports）
+    describe("beforeunload が navigate より先に来るブラウザ（WebKit）", () => {
+      const linkNavigation = async (): Promise<void> => {
+        beforeUnload();
+        navigation.dispatchEvent(new Event("navigate"));
+        navigation.dispatchEvent(new Event("currententrychange"));
+        await flush();
+      };
+
+      it("最初の 1 回は閉じて開き直す。順が分かった後は、beforeunload では閉じない（つなぎ直さない）", async () => {
+        const { el, es } = await live();
+        await linkNavigation();
+        expect(es.close).toHaveBeenCalled();
+        expect(MockEventSource.instances).toHaveLength(2);
+        const second = MockEventSource.last;
+        second.simulateOpen();
+        // 2 回目からのリンクの遷移
+        await linkNavigation();
+        await linkNavigation();
+        expect(second.close).not.toHaveBeenCalled();
+        expect(MockEventSource.instances).toHaveLength(2);
+        expect(el.connected).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it("順が分かった直後の 2 回目の beforeunload（ガードのリダイレクト）は何もしない: 遷移が確定したら 1 本だけ開き直す", async () => {
+        await live();
+        beforeUnload();
+        navigation.dispatchEvent(new Event("navigate"));
+        expect(vi.getTimerCount()).toBe(1);
+        vi.advanceTimersByTime(600);
+        // the guard redirects: WebKit asks again, before the navigation commits
+        beforeUnload();
+        navigation.dispatchEvent(new Event("navigate"));
+        // (the wait of the first one goes on: it is not started again)
+        vi.advanceTimersByTime(399);
+        expect(MockEventSource.instances).toHaveLength(1);
+        navigation.dispatchEvent(new Event("currententrychange"));
+        await flush();
+        expect(MockEventSource.instances).toHaveLength(2);
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it("順が分かった文書では pagehide で閉じ、persisted の pageshow で開き直す", async () => {
+        await live();
+        await linkNavigation();
+        const second = MockEventSource.last;
+        second.simulateOpen();
+        beforeUnload();
+        expect(second.close).not.toHaveBeenCalled();
+        window.dispatchEvent(pageEvent("pagehide", true));
+        expect(second.close).toHaveBeenCalled();
+        window.dispatchEvent(pageEvent("pageshow", true));
+        expect(MockEventSource.instances).toHaveLength(3);
+      });
+
+      it("順が分かった文書に後から付いた要素も、beforeunload では閉じない", async () => {
+        await live();
+        await linkNavigation();
+        MockEventSource.last.simulateOpen();
+        const { el, es } = await live({ url: "/other" });
+        beforeUnload();
+        expect(es.close).not.toHaveBeenCalled();
+        expect(el.connected).toBe(true);
+      });
+
+      it("navigate が先の文書（規格の順）では、beforeunload のたびに閉じる（今までどおり）", async () => {
+        await live();
+        navigation.dispatchEvent(new Event("navigate"));
+        beforeUnload();
+        expect(MockEventSource.last.close).toHaveBeenCalled();
+        navigation.dispatchEvent(new Event("currententrychange"));
+        await flush();
+        MockEventSource.last.simulateOpen();
+        navigation.dispatchEvent(new Event("navigate"));
+        beforeUnload();
+        expect(MockEventSource.last.close).toHaveBeenCalled();
+      });
+
+      it("beforeunload から時間がたってからの navigate では、順が分かったことにしない（「留まる」と答えた後の遷移）", async () => {
+        const now = vi.spyOn(performance, "now");
+        try {
+          await live();
+          now.mockReturnValue(1000);
+          beforeUnload();
+          now.mockReturnValue(1050);
+          navigation.dispatchEvent(new Event("navigate"));
+          navigation.dispatchEvent(new Event("currententrychange"));
+          await flush();
+          MockEventSource.last.simulateOpen();
+          now.mockReturnValue(5000);
+          beforeUnload();
+          expect(MockEventSource.last.close).toHaveBeenCalled();
+        } finally {
+          now.mockRestore();
+        }
+      });
+
+      it("navigation API の無いブラウザでは、beforeunload のたびに閉じる", async () => {
+        delete (globalThis as any).navigation;
+        await live();
+        beforeUnload();
+        expect(MockEventSource.last.close).toHaveBeenCalled();
+        vi.advanceTimersByTime(1000);
+        MockEventSource.last.simulateOpen();
+        beforeUnload();
+        expect(MockEventSource.last.close).toHaveBeenCalled();
+      });
+    });
+
     it("閉じている間の 2 回目の beforeunload は、閉じたまま待ち直す（2 本開かない）", async () => {
       await live();
       beforeUnload();

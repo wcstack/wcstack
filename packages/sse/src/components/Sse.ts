@@ -7,6 +7,23 @@ import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttr
 // beforeunload で閉じた後、pagehide が来ないままこれだけ経ったら、文書は残ったとみなして開き直す
 // （離脱の確認で「留まる」、ダウンロードだったリンク、mailto: のリンク）。
 const UNLOAD_REOPEN_DELAY = 1000;
+// beforeunload の後、これだけの間に navigate が来たら「beforeunload が先に来るブラウザ」とみなす（WebKit では
+// 同じタスクの中で続く。規格どおりのブラウザでは navigate が先で、beforeunload の後には来ない）
+const EARLY_UNLOAD_WINDOW = 50;
+// 文書（その navigation オブジェクト）ごとに: beforeunload が navigate より先に来ると分かったか、navigate より先に
+// 来た beforeunload を聞いた時刻（直前に navigate があった beforeunload は規格の順なので数えない）、最後に navigate を
+// 聞いた時刻。先に来ると分かった文書では、beforeunload は「離れる」の知らせにならない — 文書が残る遷移
+// （@wcstack/router の <wcs-link>）でも出るので、閉じるのは pagehide
+interface PageOrder { early: boolean; before: number; navigate: number }
+const pageOrders = new WeakMap<object, PageOrder>();
+const pageNavigation = (): EventTarget | undefined => (globalThis as { navigation?: EventTarget }).navigation;
+const pageOrder = (): PageOrder | undefined => {
+  const n = pageNavigation();
+  if (n === undefined) return undefined;
+  let o = pageOrders.get(n);
+  if (o === undefined) pageOrders.set(n, o = { early: false, before: -Infinity, navigate: -Infinity });
+  return o;
+};
 // EventSource.CLOSED（Core と同じく、モジュールの読み込み時に EventSource を要らない）
 const SSE_CLOSED = 2;
 
@@ -342,8 +359,20 @@ export class WcsSse extends HTMLElement {
   // さらに閉じるもの（開いている・開こうとしているストリーム）か開き直すものがある間だけ — リスナがあるだけで
   // ページを back/forward cache から外すブラウザがある（router の leaveConfirm と同じ）。auto-reconnect を待つ
   // 間は閉じるものが無い: 待っている開き直しはそのまま（同じ文書の遷移で WebKit が出しても、それで足りる）。
+  //
+  // 4.30 から: WebKit は beforeunload を navigate より先に出す（規格の順は navigate が先）。その順を一度見た文書
+  // では、beforeunload で閉じるのをやめる — リンクの遷移のたびに閉じて開き直し、その間にサーバが送ったものを
+  // 落としていた（docs/seam-apps.md、street-reports）。そこで閉じるのは pagehide（WebKit は Firefox の
+  // メッセージを出さない）。最初の 1 回は、順が分かる前なので閉じて開き直す。
 
   private _onBeforeUnload = (): void => {
+    // (a document where beforeunload comes before navigate: it does not mean the page goes — pagehide closes)
+    const order = pageOrder();
+    if (order !== undefined) {
+      if (order.early) return;
+      const now = performance.now();
+      order.before = now - order.navigate < EARLY_UNLOAD_WINDOW ? -Infinity : now;
+    }
     // (it listens only while there is a stream to close or one it closed: a second beforeunload while it is
     // closed — a guard's redirect in WebKit — keeps it closed and waits again)
     this._closedForUnload = true;
@@ -353,7 +382,7 @@ export class WcsSse extends HTMLElement {
   };
 
   private _syncUnloadListener = (): void => {
-    const want = this.isConnected && (this._core.readyState !== SSE_CLOSED || this._closedForUnload);
+    const want = this.isConnected && pageOrder()?.early !== true && (this._core.readyState !== SSE_CLOSED || this._closedForUnload);
     if (want === this._unloadListening) return;
     this._unloadListening = want;
     if (want) window.addEventListener("beforeunload", this._onBeforeUnload);
@@ -364,6 +393,13 @@ export class WcsSse extends HTMLElement {
   // navigation makes the page write (a route's params) is the one opened.
   private _onSameDocumentNavigation = (): void => {
     if (this._closedForUnload) queueMicrotask(this._reopenAfterUnload);
+  };
+
+  // A navigate event right after a beforeunload: this browser asks before it knows whether the document stays.
+  private _onNavigate = (): void => {
+    const order = pageOrder()!;
+    order.navigate = performance.now();
+    if (order.navigate - order.before < EARLY_UNLOAD_WINDOW) order.early = true;
   };
 
   private _reopenAfterUnload = (): void => {
@@ -403,7 +439,9 @@ export class WcsSse extends HTMLElement {
     window[method]("pagehide", this._onPageHide);
     window[method]("pageshow", this._onPageShow);
     // the Navigation API, where the browser has it
-    (globalThis as { navigation?: EventTarget }).navigation?.[method]("currententrychange", this._onSameDocumentNavigation);
+    const navigation = pageNavigation();
+    navigation?.[method]("currententrychange", this._onSameDocumentNavigation);
+    navigation?.[method]("navigate", this._onNavigate);
   }
 
   connectedCallback(): void {
