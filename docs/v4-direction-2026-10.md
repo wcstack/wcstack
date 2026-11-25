@@ -476,6 +476,16 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 
 記録だけにしたもの: 1 つの行の項目への書き込みで派生リストの片方だけが動く件（既知の系統。README に書いた。lint の規則を配列に広げるかは未決）、Firefox で state の import が切れると未捕捉になる件（garden-plots に続き 2 度目。core が要る）、部品の `src=` の state がインスタンスごとに import される件、`wcs-tsc` と `@wcstack/testing` の小さな件、`<svg>` の中の `for:` が文書に無い件（4 巡目の 4 本目で書く）。
 
+**未決のまま文書に残したこと**（2026-11-26、著者: 「未決事項はドキュメントに残し、進めて」）。4.30 には入れない。
+
+- **router の「留まる」の API（4 の続き）** — 案は出したが、合意していない。作っていない。案: `<wcs-router>` に、関数を渡さない形で足す。
+  - 入力 `leave-hold`（真の間、別のルートへの遷移 — リンク、戻る / 進む、`navigate()` — を確定させずに止める）。
+  - 出力 `leaving`（止めている行き先。止めていなければ `null`。ページはこれで自分のダイアログを出す）。
+  - コマンド `proceed()` / `stay()`（ダイアログの答え）。
+  - 戻る / 進むで URL が先に変わったときは、router が元の項目へ戻す（作者が手で書いた `history.go(1)` に当たる）。`leaveConfirm`（ブラウザの `confirm()`）はそのまま。ナビゲーションの中核に触るので、全数テスト（`navigation.exhaustive.test.ts`）に法則を足して、別の PR にする。
+- **getter が行の項目を行オブジェクトから読む形への lint** — `get remaining() { return this.todos.filter((t) => !t.done).length; }` と、行の中の双方向の束縛（`checked: .done`）や `this["todos.0.done"] = v` の組み合わせで、getter は更新されない（追跡されるのは `todos` だけ）。既存の `wcs/getter-untracked-read` は、オブジェクトのキーだけを見て、配列をわざと外している（docs/getter-dependency-ast-impl-plan.md の D7: 「行の置換は一覧そのものを書き換えるので足りる」— 束縛が行の項目を書く場合を数えていなかった）。束縛か、パスへの書き込みが行の項目を書く証拠があるときだけ報告する形で広げるか、を決める。state の README には書いた。
+- **flaky なテストの最初の失敗をどう残すか** — [verification-practices-study.md](./verification-practices-study.md) §4.1。全テストで trace を記録する案は、測って取り下げた。代案は未決。
+
 修正は core を変えずに収まった（`core.min.js` は 20,476 B のまま）。止める目安には当たっていない（何も言わずに行を落とす欠陥が 1 つ、そして新しい種類の発見 — ほかのフレームワークの習慣から来る間違いで、lint が知っていたのは 20 種のうち 8）。次は 4 巡目の 3 本目、流れてくるデータ。
 
 ## 6. やらないこと
