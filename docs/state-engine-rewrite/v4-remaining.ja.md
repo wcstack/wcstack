@@ -2097,3 +2097,40 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - examples/README.ja.md の継ぎ目アプリの表は music-room で止まっている。
   - core の残りは 4 B。
   - 止める目安には当たっていない。次は 4 巡目の 2 本目（移植する作者）。
+
+### 4.30.0 の公開（2026-11-26）
+
+- **中身**: minor。継ぎ目アプリ 4 巡目の 2 本目 street-reports（React 19 のアプリを、その e2e を書き換えずに wcstack へ移す）の所見。著者の決定 9 点（2026-11-25、v4-direction §5.26。すべて推奨どおり）と、「未決事項はドキュメントに残し、進めて」（2026-11-26）。
+  - #754（merge commit bcdfd055）state: `$listKeys` のある一覧への代入が、項目だけ変わったときも、一覧を読む getter に届く（これまでは、メンバーと順が同じだと一覧そのものを書かなかった — カードが列から消えて、どの列にも入らなかった）。list-keys の add-on だけの変更で、core は触っていない。diagnostics の add-on: 式を書いた束縛に「An expression is not a path: use a filter … or a getter」、5 秒後の見回りで `[wcs/attribute-mustache]`（属性の値の `{{ }}`）と `[wcs/structural-element]`（`<template>` でない要素の `if:` / `for:`）、束縛の適用で `[wcs/style-object]`。
+  - #755（64653a88）sse: WebKit は `beforeunload` を `navigate` より先に出す。その順を見た文書では `beforeunload` で閉じず、`pagehide` で閉じる。WebKit 26.5 でリンク 5 本: 接続 6 本 → 2 本（最初のリンクでは、順が分かる前なので閉じて開き直す）。
+  - #756（8166409b）router: `<wcs-link current="page">`（アクティブなリンクの `aria-current` の値）。
+  - #758（44d3cf4d）lint: `wcs/binding-expression`・`wcs/structural-element`・`wcs/collection-mutation`・`wcs/inline-import`（error）、`wcs/attribute-mustache`・`wcs/row-id-shared`・`wcs/event-name-case`・`wcs/key-binding`（warning）。`--strict` は、state をまるごと読めなかったという info（`wcs/state-src-unread`、トップレベルの spread の `wcs/path-dynamic-unknown`）を warning と同じに数える。キーごとの「読めない」は今までどおり通す。検査器のテスト 1,853 件、誤りの目録 251 項目。
+  - #757（054bfd34）文書: `docs/coming-from-react.md`（日英・新規）、router README の「The state outlives the route」（`routeName` の `$watch` で戻す例をブラウザで確かめた）、seam-apps の street-reports の節、v4-direction §5.26。
+  - 未決のまま文書に残したもの（§5.26）: router の「留まる」の API 案（`leave-hold`・`leaving`・`proceed()` / `stay()`）、getter が行の項目を行オブジェクトから読む形への lint、flaky の最初の失敗の残し方。
+- **準備**: PR #759（merge commit b8c470cb）。CHANGELOG を `[4.30.0] — 2026-11-26` として締め、docs/upgrading-4x.md（日英）に 4.30.0 の節、固定版 18 か所、README の「未リリース」の印を外した。準備のブランチで heavy の検証と e2e を通した（#757 は 1 つのチェックが残っているうちにマージしていた。文書だけの変更）。
+- **main で `minor`（run 45692473127）**: 成功した。版を上げたコミット 9b6ee099、タグ `v4.30.0`、GitHub Release（`sri.json` 付き。本文の先頭に CHANGELOG の節を足した）。
+  - 検証: 公開直後の 1 回目は npm 47/49（`@wcstack/signals` と `@wcstack/worker` の反映待ち）・SRI 43/44（jsDelivr の 502）・固定 URL 7/8。2 回目で npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・固定 URL 8/8。
+- **公開後の作業**:
+  - PR #760（merge commit f605a681）: サイズの基準値を 4.30.0 の dist で取り直した。diagnostics 14,373 → 14,794 B（3 つの警告と式の案内）、list-keys 963 → 959 B、`index.esm.js` 61,541 → 61,956 B、`auto.min.js` 58,553 B、分割の core 24,787 B。`core.min.js` は 20,476 B のまま（残り 4 B）。slack は無い。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換えた。拡張の版を 2.23.0 にし、CHANGELOG の節に日付を入れた。
+  - 拡張 2.23.0: f605a681 の main で `npm run package`。890 ファイル、5,052,620 B、SHA-256 `950cc8a07bb5c676872691b00a4906f204a30f16921f660c2ff14fc8a29e25a5`。公開は著者（公開後に Marketplace の vsix と SHA を比べ、注釈付きタグ `vscode-wcs-v2.23.0` を f605a681 に）。
+  - 拡張 2.22.0: Marketplace に出ていた。vsix を落として SHA-256 が手元のもの（`9e488b1d…68c9`）と一致するのを確かめ、注釈付きタグ `vscode-wcs-v2.22.0` を 0e32bd68 に付けた。
+  - wcstack-skill: PR #79（merge commit 870f9d8）と注釈付きタグ `v4.30.0`。`references/coming-from-react.md`（新規）、state-binding（`$listKeys` と getter、落とし穴 64〜66）、router-and-scaffold（`current`、state はルートより長生きする）、io-node-catalog（WebKit の `<wcs-sse>`）、verification（`--strict` と新しい規則）、versions（4.29 以下に固定したページの 4 行）、刻印 23 か所。刻印した URL 9 つが 200 を返し、hook が npm の lint 4.30.0 で新しい規則を返すのを確かめた。
+  - LP（wcstack.github.io 480dbe5）: リリースの表示、v4.30.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-62pasf6u…`。約 86 KB）、llms（references は 11 本）。
+- **例の着地**: PR #761（merge commit 192030b1）。`examples/street-reports/`（作者の移植そのもの。React のソースは隣の `react-original/`）と `e2e/tests/street-reports.spec.ts`（React のアプリのテスト 50 件をそのまま。Chromium で全部、Firefox で 6 件）。イベントのストリームは `<wcs-sse>` に戻し、CDN の版の固定と `<div id="root">` の包みを外した。ゲートの入力は `e2e/playwright.config.ts` の Firefox の `testMatch` に spec の名前を足しただけ。途中で 4 つ見つかった（seam-apps「Landing street-reports」）:
+  - **WebKit の `<wcs-sse>` は、ページの読み込みごとに 1 回、まだつなぎ直す**（4.30 は順を最初のリンクで学ぶ）。作者の「接続を数える」テストが WebKit でだけ 6 本を数えて落ちる（6 回中 6 回）。作者の手作りのストリームでは通る。リポジトリの e2e は WebKit を走らせない。例は `<wcs-sse>` のままにして README に書いた。最初のリンクも閉じずに済ませるかは未決（§5.26。Firefox で閉じるのが 1 タスク遅れるので、測ってから）。
+  - WebKit × Playwright: リダイレクトの直後の `page.goto()` が、取りに行っている部品や開こうとしているストリームを切る。WebKit の自分のエラー行を Playwright が「捕まえられなかったエラー」として報告する。手元の dist から配ると頻繁に起きる（「/ redirects to /reports …」は手作りのストリームでも 4 回中 3 回。作者の元のアプリ — CDN、4.29.0 — は 100 回中 100 回通る）。記録だけ。
+  - 機械: Chromium で約 7,000 回のうち 3 回、ページが空で現れた（`Failed to fetch dynamically imported module …/state/app.js`）。fixture に「落ちたリクエスト」を添える行を足して名前が分かった: `/lib/api.js` が `net::ERR_NO_BUFFER_SPACE`。12 ワーカーで 24 回ずつ繰り返すと、この機械の動的ポート 16,384 のうち約 8,100 が TIME_WAIT になる（Windows）。そのテストだけ 300 回、ページの読み込み 720 回では 0。アプリでもサーバーでもない。
+  - lint の穴: 生成した schema（`stateSource` つき）を持つアプリが 2 つあると、manifest を両方渡す 1 回の実行では `wcs/manifest-state-collision`（error）になる — このリポジトリの CI の `wcs-validate` がそう渡すので、PR の最初の CI が落ちた。例は生成した manifest をコミットせずに着地させた（`--strict` で error 0・warning 0・info 10。README に作り方）。同居させるかは未決（§5.26）。
+- **見落としていた失敗が 2 件あった**（#758 の最初の e2e、run 45681131246。後の 2 回が通ったのを見てマージし、最初の実行を見ていなかった。#761 の最初の実行の flaky を数えていて気づいた）:
+  - **stamp-rally の「トークンが失効 → 保存済みの組で入り直す」が 3 回続けて失敗**（#761 の最初の実行では flaky）。原因は例のアプリ自身: `sessionExpired()` が理由の印を、新しい session と同じバッチで消していた。token の `$watch` はバッチの後に走るので理由を見ず、新しいトークンをサインアウトと取り違えて URL を `/` に置き換えた — **入り直した歩く人をホームへ飛ばしていた**。テストは、飛ばされる前の一瞬のスタンプ帳の見出しを捕まえて通っていた（手元では 150 回中 2 回落ちる。手順をなぞって 1.5 秒後に見ると 12 回中 12 回ホーム）。成果物に残っていた再試行の trace の通信記録（401 → login 200 → その後なし）から辿った。
+  - **lending-desk の「/admin: 職員は入れ、団体は / へ」が flaky**。spec の補助関数 `signIn()` が、state の準備ができた直後に URL を読んで決めていた。遅い機械では、ガードの `/login` へのリダイレクトが届く前に「サインイン済み」と見て、サインインせずに戻った。アプリは正しかった。
+  - PR #762: 例は理由を watch が読むまで残し、watch はスタンプ帳のデータを取り直す。テストは 2 回目のサインインの後の要求を待ってから、ページがどこにいるかを確かめる（直す前のアプリに対して 10 回中 10 回落ちる）。`signIn()` はページが落ち着く先（フォームか、サインインしている人の名前）を待つ。2 つの spec を Chromium と Firefox で 3 回ずつ（267 件）。**著者の「進めて」待ち**。
+  - 決まり: flaky は、PR の**すべての** e2e の実行で数える（最後の実行だけでなく）。失敗して後で通った実行も「再試行で通った」と同じ。
+- **残り**:
+  - 拡張 2.23.0 の公開（著者）→ SHA の比較とタグ。
+  - PR #762 のマージ。
+  - `failOnFlakyTests`: #758 の最初の実行（失敗 1・flaky 1）と #761 の最初の実行（flaky 1）で数え直し。#762 の後から数える（10 回続いたら入れる）。
+  - 未決（§5.26）: router の「留まる」の API、getter が行の項目を読む形への lint、flaky の最初の失敗の残し方、`<wcs-sse>` の WebKit での最初の 1 回、生成した schema を持つアプリ 2 つの lint。
+  - examples/README.ja.md の継ぎ目アプリの表は music-room で止まっている。
+  - core の残りは 4 B。
+  - 止める目安には当たっていない。次は 4 巡目の 3 本目（流れてくるデータ: `$stream`、`<wcs-worker>`）。
