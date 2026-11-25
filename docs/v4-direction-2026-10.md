@@ -485,6 +485,7 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
   - 戻る / 進むで URL が先に変わったときは、router が元の項目へ戻す（作者が手で書いた `history.go(1)` に当たる）。`leaveConfirm`（ブラウザの `confirm()`）はそのまま。ナビゲーションの中核に触るので、全数テスト（`navigation.exhaustive.test.ts`）に法則を足して、別の PR にする。
 - **getter が行の項目を行オブジェクトから読む形への lint** — `get remaining() { return this.todos.filter((t) => !t.done).length; }` と、行の中の双方向の束縛（`checked: .done`）や `this["todos.0.done"] = v` の組み合わせで、getter は更新されない（追跡されるのは `todos` だけ）。既存の `wcs/getter-untracked-read` は、オブジェクトのキーだけを見て、配列をわざと外している（docs/getter-dependency-ast-impl-plan.md の D7: 「行の置換は一覧そのものを書き換えるので足りる」— 束縛が行の項目を書く場合を数えていなかった）。束縛か、パスへの書き込みが行の項目を書く証拠があるときだけ報告する形で広げるか、を決める。state の README には書いた。
 - **flaky なテストの最初の失敗をどう残すか** — [verification-practices-study.md](./verification-practices-study.md) §4.1。全テストで trace を記録する案は、測って取り下げた。代案は未決。
+- **`<wcs-sse>` が WebKit で最初のリンクのときだけつなぎ直すこと（7 の続き）** — 4.30 は `beforeunload` と `navigate` の順を最初のリンクで学ぶので、そのリンクでは閉じて開き直し、その間にサーバーが送ったものは届かない（README に書いてある）。street-reports を examples に取り込んだとき（2026-11-26）、作者のテスト — ボードへ 3 往復する間の接続を数える — が WebKit でだけ 6 本を数えて落ちた（[seam-apps.md](./seam-apps.md)、Landing street-reports）。案: 順がまだ分からない文書の `beforeunload` では、すぐ閉じずに次のタスクまで待ち、その間に `navigate` が来たら閉じない（WebKit では同じタスクの中で続く）。Firefox では閉じるのが 1 タスク遅れる — そこで閉じるのは Firefox のメッセージを出さないためなので、Firefox で測ってから決める（`e2e/tests/sse-unload.spec.ts`）。作っていない。
 
 修正は core を変えずに収まった（`core.min.js` は 20,476 B のまま）。止める目安には当たっていない（何も言わずに行を落とす欠陥が 1 つ、そして新しい種類の発見 — ほかのフレームワークの習慣から来る間違いで、lint が知っていたのは 20 種のうち 8）。次は 4 巡目の 3 本目、流れてくるデータ。
 
