@@ -51,9 +51,16 @@ fixed seed and a fixed clock.
 ## Checks
 
 ```bash
-npx @wcstack/lint --strict --root=public public/index.html public/parts/*.html   # with public/wcstack.manifest.json
+npx @wcstack/lint --strict --root=public public/index.html public/parts/*.html   # 0 errors, 0 warnings, 10 infos
 npm install && npm test                                                          # 29 unit tests (@wcstack/testing)
 ```
+
+The ten infos name keys whose values the lint cannot read (lists built with `.map()` from `lib/labels.js`, what a
+`<wcs-fetch>` writes): the paths bound under them are not checked. The author checked those too, against a schema
+generated from the state's JSDoc — with `@wcstack/typescript` installed, `npx wcs-schema emit state/app.js` in
+`public/` writes `wcstack.manifest.json`, and the same lint then reports nothing. That file is not committed here: the
+repository checks all its examples in one run of the lint, where two applications' schemas are a collision
+(`wcs/manifest-state-collision`), and `examples/lending-desk` has one.
 
 The e2e spec is [`e2e/tests/street-reports.spec.ts`](../../e2e/tests/street-reports.spec.ts): the React app's own
 suite (50 tests — it locates by role, label and text, and does not care which framework drew the page), started
