@@ -40,7 +40,7 @@ wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<d
 | `--lang=ja\|en` | 診断メッセージの言語。未指定時は環境ロケール（`LC_ALL` / `LC_MESSAGES` / `LANG` → OS ロケール）に従う。code / range は言語に依らず不変 |
 | `--root=<dir>`（`--root <dir>` も） | 4.10 から: サイトのルートのディレクトリ。/ から始まるパスをその下で読む — `<base href="/ja/">` の下の `<wcs-state src="/app.js">`（`docs/csp.md` と `examples/router-i18n` の形）や、state のファイルの `/…` からの import は `<dir>/app.js` として読む。ディレクトリの外へ出るもの（`/../x.js`）は読まない。無ければ / から始まるパスは読まない（`wcs/state-src-unread`、info）。そうしたファイルの指摘はディレクトリの下のパスで出す（`public/app.js:12:5 …`） |
 | `--errors-only`（別名 `--quiet`） | error severity の行だけ表示。warning / info の件数と exit code は不変 |
-| `--strict` | warning severity の診断でも exit `1` にする。severity 自体は不変（IDE の表示と同じ）で、exit code の閾値だけを error → warning に下げる。summary 行の末尾に `(strict)` が付く。パスの typo（`wcs/binding-path-missing` は warning）で CI を落としたいときに使う — ただし先に `<wcs-state src>` を全て解決可能にしておくこと（解決できない外部 state が残す warning でも落ちるようになる）。`--errors-only` と併用可: 表示は error のみのまま、exit code は warning を反映する |
+| `--strict` | warning severity の診断でも exit `1` にする。severity 自体は不変（IDE の表示と同じ）で、exit code の閾値だけを error → warning に下げる。summary 行の末尾に `(strict)` が付く。パスの typo（`wcs/binding-path-missing` は warning）で CI を落としたいときに使う — ただし先に `<wcs-state src>` を全て解決可能にしておくこと（解決できない外部 state が残す warning でも落ちるようになる）。`--errors-only` と併用可: 表示は error のみのまま、exit code は warning を反映する。4.30（未リリース）から、state を検査できなかったと言う 2 つの info（`wcs/state-src-unread`・`wcs/path-dynamic-unknown`）も warning と同じく数え、`--errors-only` でも表示する |
 
 ## 出力と exit code
 
@@ -196,6 +196,22 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 - **部品のテンプレートのパスで、先頭のキーをどこも与えないもの**は `wcs/binding-path-missing`（warning）で、部品のファイルに出ます: そのキーが部品自身の state のものでなく、ページが渡してもおらず（`state.view:`）、マウント先のオブジェクトにも無いとき — テンプレートの `nmae`、ページが `state.veiw:` と書いた所の `view.x`、部品の中で読んだページのパス（`pageTitle`: 渡してください）。部品の中では、そういう読みはマウント先へ落ちて何も失敗しません。実行時は 4.28 から報告していて、これは同じ基準です。マウント先のオブジェクトは、形が分かるとき（種・JSDoc の型・スキーマ）だけ判定します: 空で始まるリストの行には何も言いません。先頭のキーより深い所は言いません。
 - 確かなときだけ読みます: オブジェクトリテラルの `state = { … }`（フィールドか、コンストラクタの `this.state = { … }`）で、スプレッドも計算されたキーも無いもの。テンプレートは、モジュールの中の 1 つの文字列。lint が読めないファイル（`--root` なしの `/` から始まるパス）、呼び出しで作る state、見つからないクラスには、これまでどおり何も言いません。
 
+
+## ほかのフレームワークの癖で書いたページに言うこと
+
+4.30（未リリース）から。継ぎ目アプリ street-reports — 初めての作者が React のアプリを wcstack に移した。React（JSX）の作者が持ち込む癖は何も言われずに動くか、lint が別のものとして言いました: 式は「存在しないパス」と言われ、束縛の右辺のテンプレートリテラルや引用符の文字列は何も言われませんでした。ランタイムが拒むか黙って落とすものは error、ほかは warning で、確かなことだけを言います。
+
+- **`wcs/binding-expression`**（error） — 束縛の右辺はパスとフィルタで、式ではありません: `hidden: !loading`・`textContent: count + 1`・`class.active: status === 'new'`・`class.is-new: .status === 'new'`・`textContent: done ? '完了' : '未完了'`・`` attr.href: `/reports/${id}` ``・`textContent: '件数: ' + count`・`textContent: formatDate(reportedAt)`・`if: items.length > 0`・`{{ count + 1 }}`・`<!--@@: count + 1 -->`。式とは、右辺（最初の `|` より前）に空白か `` ! ? = < > + ( ) ' " ` & , `` のどれかがあるもの — パスはどれも持てません。メッセージは、形にフィルタがあればそれを示し（`!x` → `x|not`・`x > 0` → `x|gt(0)`・`x === 'new'` → `x|eq(new)`・`x + 1` → `x|add(1)`）、無ければ getter を勧めます。引数付きやアロー関数のイベントの束縛（`onclick: remove(.id)`・`onchange: () => toggleRow(.id)`）には、ハンドラはメソッドの名前で `(event, ...ループの添字)` で呼ばれると言います。1 つの文字列に 1 件: 同じ文字列のパスが無いという報告（`wcs/binding-path-missing`・`wcs/path-nonexistent`）は重ねません。引数付きのフィルタ・修飾子・行のパス・ワイルドカードと添字のパス・スプレッド・`else:`・`state.key:`・`command.x:`・`eventToken.x:` は式ではありません。`a || b` は既に error です（`wcs/binding-syntax`、空のフィルタ）。`<wcs-state>` の無いファイルの `{{ }}` はほかのテンプレートエンジンのもの（`{{#each}}`）で、読みません。
+- **`wcs/attribute-mustache`**（warning） — 束縛属性以外の属性の値の `{{ }}`: `href="/reports/{{ id }}"`・`class="row {{ kind }}"`・`alt="{{ title }}"`・`<wcs-link to="/reports/{{ .id }}">`。`{{ }}` はテキストでしか読まれないので、属性には波括弧が残ります。属性を束ねてください（`attr.href: <パス>`。文字列を組み立てる getter を書いて）。ページを返す前にサーバーのテンプレートが埋めるのなら正しいので warning です。`<wcs-state>` のあるファイル（または DCC の定義）だけで、state が `$behavior: { enableMustache: false }` を宣言しているとき・`data-wcs-ignore` の中では言いません。属性ごとに 1 回。
+- **`wcs/structural-element`**（error） — `<template>` でない要素の `data-wcs` に単独で書いた `if:` / `elseif:` / `else:` / `for:`（`<p data-wcs="if: open">`・`<li data-wcs="for: items">`）: ランタイムはその名前のプロパティを書くだけで、要素は常に表示され、一覧は 1 つの要素です。要素を `<template data-wcs="if: …">` の中に入れてください。ほかの束縛と並べたものは、これまでどおり `wcs/template-syntax` が言います。
+- **`wcs/collection-mutation`**（error） — state のメソッド・setter・`$watch` と `$on` のハンドラ（`wcs/array-mutation` が見る所）で、state のリテラルでの初期値が `new Set(…)` / `new Map(…)` のキーへの `this.selected.add(id)`・`.delete(…)`・`.clear()`・`this.byId.set(k, v)`。state はそれを見ません。新しいものを代入する（`this.selected = new Set([...this.selected, id])`）か、配列 / オブジェクトで持ってください。メソッドがキーを代入し直すときは言いません。
+- **`wcs/row-id-shared`**（warning） — `for:` の行の要素のリテラルの `id="…"` で、束縛（`attr.id:` / `id:`）が与えないもの: すべての行が同じ id になり、`<label for>` や `aria-labelledby` は最初の行にしか届きません。束ねてください（`attr.id: .domId` — 行のキーから組み立てる行の getter を書いて）。ループと id ごとに 1 回。行の中の `if:` の枝の下（1 行だけで描かれることがある）と shadow root の中では言いません。
+- **`wcs/event-name-case`**（warning） — `onSubmit:`・`onClick:`・`onChange:`（JSX の綴り）: `Submit` という名前のイベントのリスナーが付き、それを送るものはありません。DOM のイベントなら `onsubmit:`。部品のコールバック（"prop"）は部品が送るイベントで、`eventToken.<メンバー>:` で束ねます。
+- **`wcs/inline-import`**（error） — インラインの `<wcs-state>` や `<wcs-guard-handler>` のスクリプトの静的な `import … from "./x.js"`（`../`・`/`）: `blob:` URL から評価されるので、import は解決しません。`src=` のファイル・完全な URL・import map の名前を使ってください。完全な URL・裸の指定子・`src=` の state には言いません。
+- **`wcs/key-binding`**（warning） — ネイティブ要素の `key:`（React の `key`）: `key` という名前のプロパティを書くだけで、何もしません。key は要りません — 行は行のオブジェクトで突き合わされ、取り直したデータで行を保つのは `$listKeys` です。カスタム要素の `key` は入力のことがある（`<wcs-storage>`）ので言いません。
+- **`--strict` は検査できなかったものを数えます。** `wcs/state-src-unread`（lint が読めない `<wcs-state src>`）と `wcs/path-dynamic-unknown`（静的に読めない値・state の `...spread`）は info のままですが、`--strict` では warning と同じく数え（exit `1`）、summary 行がその数を言い（`(strict; 2 unchecked counted as warnings)`）、その後に `strict:` の注記が続きます。4.29 までの `--strict` は、そうした state を検査しないまま exit `0` でした。
+
+新しい error は `--errors-only` にも出ます。新しい warning は `--strict` で失敗します。
 
 ## 生成 → 検証 → 修正ループでの利用
 

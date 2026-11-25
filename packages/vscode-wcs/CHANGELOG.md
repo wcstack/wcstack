@@ -2,6 +2,20 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+継ぎ目アプリ street-reports（初めての作者が React のアプリを wcstack に移した）から、ほかのフレームワークの癖の規則（2026-11-25 の著者の決定: ランタイムが拒むか黙って落とすものは error、ほかは warning。確かなことだけを言う）。リポジトリのすべてのページで error は 0 件のまま。
+
+- `wcs/binding-expression`（新規、error）: 束縛の右辺（最初の `|` より前）が式 — `hidden: !loading`・`textContent: count + 1`・`class.active: status === 'new'`・`` attr.href: `/r/${id}` ``・`{{ count + 1 }}`・`<!--@@: … -->`。空白か `` ! ? = < > + ( ) ' " ` & , `` を含む右辺を式とする（パスはどれも持てない）。形にフィルタがあればそれを示す（`!x` → `x|not`・`x > 0` → `x|gt(0)`・`x === 'new'` → `x|eq(new)`・`x + 1` → `x|add(1)`）。呼び出しやアロー関数の `on…:` には、ハンドラはメソッドの名前で `(event, ...ループの添字)` で呼ばれると言う。同じ文字列の `wcs/binding-path-missing` / `wcs/path-nonexistent` は重ねない。これまでは「存在しないパス」と言い、引用符やバッククォートで始まるものと、読めないキー（`new Set()`）の下では何も言わなかった。`a || b`（既に `wcs/binding-syntax`）と `<wcs-state>` の無いファイルの `{{ }}`（Handlebars の `{{#each}}`）には言わない。
+- `wcs/attribute-mustache`（新規、warning）: 束縛属性以外の属性の値の `{{ }}`（`href="/reports/{{ id }}"`）。属性には書いたまま残る。サーバーのテンプレートが埋めるなら正しいので warning。`<wcs-state>` のあるファイルだけで、state が `enableMustache: false` を宣言していれば黙る。
+- `wcs/structural-element`（新規、error）: `<template>` でない要素に単独で書いた `if:` / `elseif:` / `else:` / `for:`。ランタイムはその名前のプロパティを書くだけ。
+- `wcs/collection-mutation`（新規、error）: state のリテラルで `new Set(…)` / `new Map(…)` を初期値に持つキーへの `this.selected.add(id)`・`.delete`・`.clear`・`this.byId.set`（`wcs/array-mutation` と同じ所を見る）。同じメソッドでキーを代入し直すときは黙る。
+- `wcs/row-id-shared`（新規、warning）: `for:` の行の要素のリテラルの `id`（束ねていないもの）。ループと id ごとに 1 回。行の中の `if:` の枝の下は黙る（`examples/homeroom` の `if: .answering` は 1 行だけで描かれる）。
+- `wcs/event-name-case`（新規、warning）: `onSubmit:` / `onClick:`（`on` の直後が大文字）。
+- `wcs/inline-import`（新規、error）: インラインの `<wcs-state>` / `<wcs-guard-handler>` のスクリプトの相対・ルート相対の静的 import（blob: URL から評価されるので解決しない）。完全な URL・裸の指定子・`src=` の state には言わない。
+- `wcs/key-binding`（新規、warning）: ネイティブ要素の `key:`（React の key）。カスタム要素には言わない（`<wcs-storage>` の `key` は入力）。
+- CLI の `--strict`: 検査できなかった state を言う info（`wcs/state-src-unread`・`wcs/path-dynamic-unknown`）を warning と同じく数え（exit 1）、summary 行（`(strict; N unchecked counted as warnings)`）と `strict:` の注記でそう言う。`--errors-only` でもその行を出す。`--strict` なしでは info のまま。これまでは `--strict` でも、そうした state を検査しないまま exit 0 だった。
+
 ## 2.22.0 — 2026-11-25
 
 `@wcstack/state` 4.29.0 から作った（npm の `@wcstack/lint` 4.29.0・`@wcstack/typescript` 4.29.0 と同じ判定）。継ぎ目アプリ garden-plots（部品で組み立てるページ）から、著者が決めた 2 点（docs/v4-direction-2026-10.md §5.25）: lint は部品を読む・`radio:` の順序は lint が知らせる。

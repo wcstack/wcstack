@@ -183,11 +183,13 @@ export default {
     expect(ofCode(found, WcsDiagnosticCode.NumberWrittenAsString)).toEqual([]);
   });
 
-  it('CLI: info だけのページは --strict でも exit 0', () => {
+  it('CLI: info だけのページは --strict なしで exit 0。--strict では、検査できなかった state の info（wcs/path-dynamic-unknown）を warning と同じく数えて exit 1（4.30 から）', () => {
     const html = page(`const init = load();
 export default { team: init.team };`, '<input data-wcs="value: team.name">');
+    const lax = runValidation([{ source: 'index.html', text: html, kind: 'html' }], { locale: 'en' });
+    expect([lax.exitCode, lax.errorCount, lax.warningCount, lax.infoCount, lax.uncheckedCount]).toEqual([0, 0, 0, 1, 1]);
     const result = runValidation([{ source: 'index.html', text: html, kind: 'html' }], { strict: true, locale: 'en' });
-    expect([result.exitCode, result.errorCount, result.warningCount, result.infoCount]).toEqual([0, 0, 0, 1]);
+    expect([result.exitCode, result.errorCount, result.warningCount, result.infoCount, result.uncheckedCount]).toEqual([1, 0, 0, 1, 1]);
   });
 });
 
@@ -389,9 +391,11 @@ describe('ekiden-entry の再現ページ（repro/lint/member.html）', () => {
 <form><input data-wcs="value: team.kana"><button type="reset">クリア</button></form>
 </body></html>`;
 
-  it('4.22 の出力（偽の binding-path-missing 3 件・aria の binding-type-expectation 2 件）が消え、新しい規則が 2 件出る', () => {
+  it('4.22 の出力（偽の binding-path-missing 3 件・aria の binding-type-expectation 2 件）が消え、新しい規則が 2 件出る（4.30 からインラインの state の相対 import も）', () => {
     const found = validate(PAGE, 'en', { 'shape.js': SHAPE });
     expect(found.map((d) => [d.code, d.severity, textOf(PAGE, d)])).toEqual([
+      // インラインの state は blob: URL から評価されるので、"./shape.js" はブラウザでは解決しない（4.30 の wcs/inline-import）
+      [WcsDiagnosticCode.InlineImport, 'error', '"./shape.js"'],
       [WcsDiagnosticCode.PathDynamicUnknown, 'info', 'team'],
       [WcsDiagnosticCode.PathDynamicUnknown, 'info', 'rep'],
       [WcsDiagnosticCode.PathDynamicUnknown, 'info', 'whole'],

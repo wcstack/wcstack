@@ -205,6 +205,24 @@ export interface WcsMessageCatalog {
    * the two left sides as written (`radio#ro`, `attr.value`); `fix` is the two bindings in the order that works.
    */
   radioBeforeValue(binding: string, value: string, checkbox: boolean, fix: string): string;
+  /** The right side of a binding is an expression. `fix`: the path and filter that write it (`x|not`), or null (a getter). */
+  bindingExpression(expression: string, fix: string | null): string;
+  /** An event binding whose right side is a call or a function. `method`: the method it calls, when it can be told. */
+  handlerExpression(property: string, expression: string, method: string | null): string;
+  /** `{{ }}` in the value of the attribute `name`. */
+  attributeMustache(name: string): string;
+  /** A structural binding (`if` / `elseif` / `else` / `for`) on an element that is not a `<template>`. */
+  structuralElement(directive: string, tagName: string): string;
+  /** `this.<key>.<method>(…)` on a `Set` / `Map` of the state. */
+  collectionMutation(key: string, method: string, kind: 'Set' | 'Map'): string;
+  /** A literal id every row of a `for:` shares. */
+  rowIdShared(id: string): string;
+  /** `onSubmit:` — `lower` is the DOM event's spelling (`onsubmit`). */
+  eventNameCase(property: string, lower: string): string;
+  /** A relative or root-relative static import in an inline state (`guard`: a `<wcs-guard-handler>`'s) script. */
+  inlineImport(specifier: string, guard: boolean): string;
+  /** `key:` in a `data-wcs`. */
+  keyBinding(): string;
   /**
    * A two-way `value:` with no conversion on the way in, into a path the state holds as a number. `path` and `left`
    * (the binding's left side, `value#onchange`) as written; `asNumber`: the element has `valueAsNumber`.
@@ -536,6 +554,14 @@ function shortSeed(raw: string): string {
 /** At most this many keys are named in one message (the rest are counted). */
 const MAX_LISTED_KEYS = 10;
 
+/** The assignment that replaces `this.<key>.<method>(…)` on a `Set` / `Map` (`wcs/collection-mutation`). */
+function collectionFix(key: string, method: string, kind: 'Set' | 'Map'): string {
+  const k = `this.${key}`;
+  if (method === 'clear') return `${k} = new ${kind}()`;
+  if (kind === 'Set') return method === 'add' ? `${k} = new Set([...${k}, id])` : `${k} = new Set([...${k}].filter((x) => x !== id))`;
+  return method === 'set' ? `${k} = new Map([...${k}, [key, value]])` : `${k} = new Map([...${k}].filter(([k]) => k !== key))`;
+}
+
 /** `a, b, c` — past MAX_LISTED_KEYS, `… (+N)`. */
 function listKeys(keys: readonly string[]): string {
   return keys.length <= MAX_LISTED_KEYS ? keys.join(', ') : `${keys.slice(0, MAX_LISTED_KEYS).join(', ')} … (+${keys.length - MAX_LISTED_KEYS})`;
@@ -687,6 +713,24 @@ const ja: WcsMessageCatalog = {
     `"attr.${a}" に boolean を束ねています。attr.* は String(value) を書くので、属性は "true" か "false" になり、外れることはありません（外すのは null / undefined だけ）。属性の有無を見る側（CSS の [${a}]・hasAttribute()）には、どちらでも在ります。false の間は外すなら attr.${a}: ${rhs}|defaults(null)、文字の "true" / "false" が意図なら attr.${a}: ${rhs}|string と書いてください`,
   radioBeforeValue: (binding, value, checkbox, fix) =>
     `「${binding}:」が、この${checkbox ? 'チェックボックス' : 'ラジオ'}に値を与える「${value}:」より前に書かれています。束縛は書いた順に当たるので、値がまだブラウザの既定の "on" のうちに比べられ、最初の描画では何もチェックされません（何も知らせません。後から state に書くと正しいものがチェックされます）。値を先に書いてください: ${fix}`,
+  bindingExpression: (expression, fix) =>
+    `束縛の右辺はパスとフィルタで、式ではありません: "${expression}" は評価されず、その名前のパスとして引かれます。${fix !== null ? `${fix} と書いてください` : 'その値を計算する getter を state に書き、getter の名前を束ねてください'}`,
+  handlerExpression: (property, expression, method) =>
+    `イベントの束縛の右辺はメソッドの名前で、呼び出しや関数ではありません: "${expression}" は評価されません。${method !== null ? `"${property}: ${method}" と書いてください` : 'メソッドの名前を書いてください'}。ハンドラは (event, ...ループの添字) で呼ばれるので、行の値はメソッドの中で添字から読んでください`,
+  attributeMustache: (name) =>
+    `{{ }} はテキストの中でしか読まれません。属性 "${name}" の中では書いたまま残ります。属性を束ねてください（attr.${name}: <パス>。文字列を組み立てる getter を書いて）。ページを返す前にサーバーのテンプレートが埋めるのなら、このままで正しい書き方です`,
+  structuralElement: (directive, tagName) =>
+    `"${directive}:" は <template> の上でだけ働きます。<${tagName}> の上ではランタイムは "${directive}" という名前のプロパティを書くだけで、${directive === 'for' ? '要素は行ごとではなく 1 つだけ描かれます' : '要素は常に表示されます'}。要素を <template data-wcs="${directive === 'else' ? 'else:' : `${directive}: …`}"> の中に入れてください`,
+  collectionMutation: (key, method, kind) =>
+    `"this.${key}.${method}(…)" は state の ${kind} をその場で変えます。state はそれを見ないので、"${key}" に束ねたものも、それを読む getter も更新されません（何も知らせません）。新しい ${kind} を代入する（${collectionFix(key, method, kind)}）か、配列 / オブジェクトで持ってください`,
+  rowIdShared: (id) =>
+    `for: のすべての行が id="${id}" になります。id は 1 つの要素のもので、それを名指す <label for> や aria-labelledby は最初の行にしか届きません。id を束ねてください（attr.id: .domId — 行のキーから組み立てる行の getter を書いて）`,
+  eventNameCase: (property, lower) =>
+    `"${property}:" は "${property.slice(2)}" という名前のイベントを聞きますが、それを送るものはありません — DOM のイベント名は小文字です。DOM のイベントなら "${lower}:" と書いてください。部品のコールバック（"prop"）は部品が送るイベントで、eventToken.<メンバー>: で束ねます`,
+  inlineImport: (specifier, guard) =>
+    `インラインの ${guard ? '<wcs-guard-handler>' : '<wcs-state>'} のスクリプトは blob: URL から評価されるので、"${specifier}" は解決しません（${guard ? 'ガードは' : 'state は'}読み込みに失敗します）。${guard ? '完全な URL か、ページの import map が与える名前を import してください' : '完全な URL か、ページの import map が与える名前を import するか、state をファイルに移してください（src="./state.js"）'}`,
+  keyBinding: () =>
+    `"key:" は "key" という名前のプロパティを書くだけで、ほかに何もしません。key は要りません — 行は行のオブジェクトで突き合わされ、取り直したデータで行を保つのは $listKeys です`,
   radioNameShared: (name, binding) =>
     `行ごとのラジオがすべて name="${name}" になるので、ブラウザは全部の行のラジオを 1 つのグループにします。ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違います（何も知らせません）。${binding === 'radio'
       ? '行ごとに違う name を束ねる（attr.name: .<行ごとに違うフィールド>）か、name を外してください（radio: は name が無くても、同じパスに束ねたラジオを選択に合わせます）'
@@ -1122,6 +1166,24 @@ const en: WcsMessageCatalog = {
     `"attr.${a}" is given a boolean. attr.* writes String(value), so the attribute is "true" or "false" and is never removed (only null / undefined remove it): whatever tests its presence — [${a}] in CSS, hasAttribute() — finds it either way. To remove it while false, write attr.${a}: ${rhs}|defaults(null); if the text "true" / "false" is what is meant, say so: attr.${a}: ${rhs}|string`,
   radioBeforeValue: (binding, value, checkbox, fix) =>
     `"${binding}:" is written before "${value}:", which gives this ${checkbox ? 'checkbox' : 'radio'} its value. Bindings are applied in the order written, so it is compared while its value is still the browser's default "on": nothing is checked at the first render — nothing says so, and a later write of the state checks the right one. Write the value first: ${fix}`,
+  bindingExpression: (expression, fix) =>
+    `A binding takes a path and filters, not an expression: "${expression}" is not evaluated, it is looked up as a path of that name. ${fix !== null ? `Write ${fix}` : 'Write a getter in the state that computes the value, and bind the getter\'s name'}`,
+  handlerExpression: (property, expression, method) =>
+    `An event binding names a method, not a call or a function: "${expression}" is not evaluated. ${method !== null ? `Write "${property}: ${method}"` : 'Write the method\'s name'}; the handler is called with (event, ...loopIndexes), so read the row's values in the method through the loop index`,
+  attributeMustache: (name) =>
+    `{{ }} is read in text only: in the attribute "${name}" it stays as written. Bind the attribute (attr.${name}: <path>, with a getter that builds the string) — a server-side template that fills it before the page is served is fine`,
+  structuralElement: (directive, tagName) =>
+    `"${directive}:" works on a <template> only: on <${tagName}> the runtime sets a property named "${directive}" and does nothing else — ${directive === 'for' ? 'the element is drawn once, not once per row' : 'the element is always shown'}. Put the element inside <template data-wcs="${directive === 'else' ? 'else:' : `${directive}: …`}">`,
+  collectionMutation: (key, method, kind) =>
+    `"this.${key}.${method}(…)" changes the state's ${kind} in place: the state does not see it, so nothing bound to "${key}" and no getter that reads it is updated — nothing says so. Assign a new ${kind} (${collectionFix(key, method, kind)}), or keep an array / an object`,
+  rowIdShared: (id) =>
+    `Every row of the for: gets id="${id}": an id belongs to one element, so a <label for> or aria-labelledby that names it reaches the first row only. Bind it (attr.id: .domId, with a row getter that builds it from the row's key)`,
+  eventNameCase: (property, lower) =>
+    `"${property}:" listens for an event named "${property.slice(2)}", which nothing dispatches — DOM event names are lower case. Write "${lower}:" for the DOM event; a callback "prop" of a part is an event the part dispatches, bound with eventToken.<member>:`,
+  inlineImport: (specifier, guard) =>
+    `An inline ${guard ? '<wcs-guard-handler>' : '<wcs-state>'} script is evaluated from a blob: URL, against which "${specifier}" does not resolve: the ${guard ? 'guard' : 'state'} fails to load. Import a full URL or a name the page's import map gives${guard ? '' : ', or move the state into a file (src="./state.js")'}`,
+  keyBinding: () =>
+    `"key:" sets a property named "key" and does nothing else. No key is needed: rows are matched by the row object, and $listKeys keeps rows across refetched data`,
   radioNameShared: (name, binding) =>
     `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render — nothing says so. ${binding === 'radio'
       ? 'Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it'

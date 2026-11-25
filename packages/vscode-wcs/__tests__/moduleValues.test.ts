@@ -316,15 +316,17 @@ export default { dict };
     expect(found.map((d) => page.slice(d.start, d.end))).toEqual(['dict.titel']);
   });
 
-  it('CLI: 辞書のボリュームのページは --strict でも exit 0 で、info は state のファイルに 1 回だけ出ること', () => {
+  it('CLI: 辞書のボリュームのページは warning 0 で、info は state のファイルに 1 回だけ出ること。--strict ではその info（検査できなかった値）を warning と同じく数えて exit 1（4.30 から）', () => {
     const reader = filesReader({ '../i18n/state.js': STATE, '../i18n/catalog.js': CATALOG });
     const page = PAGE.replace('<p data-wcs="textContent: i18n.lnag"></p>\n', '');
     const result = runValidation([
       { source: 'site/a.html', text: page, kind: 'html', fileReader: reader },
       { source: 'site/b.html', text: page, kind: 'html', fileReader: reader },
     ], { strict: true, locale: 'en' });
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
     expect(result.warningCount).toBe(0);
+    expect(result.uncheckedCount).toBe(1);
+    expect(result.notes[0]).toMatch(/^strict: 1 info about a state not checked/);
     expect(result.lines.filter((l) => l.includes('wcs/path-dynamic-unknown')).map((l) => l.replace(/ The value.*$/, '')))
       .toEqual(['i18n/state.js:3:24 info wcs/path-dynamic-unknown']);
   });

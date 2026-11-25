@@ -20,7 +20,8 @@
  *     code / range は言語に依らず不変。
  *   --errors-only(別名 --quiet)→ error severity の行だけ表示(warning は count のみ)
  *   --strict → warning があっても exit 1(severity は不変・閾値だけ下げる)。typo
- *     (`wcs/binding-path-missing` = warning)で CI を落としたいときに使う。
+ *     (`wcs/binding-path-missing` = warning)で CI を落としたいときに使う。検査できなかった state を言う info
+ *     (`wcs/state-src-unread`・`wcs/path-dynamic-unknown`)も warning と同じく数える(4.30 から — 未検査のまま通らない)。
  *   --root=<dir>(`--root <dir>` も)→ サイトのルート。`/` から始まる `<wcs-state src>` と import を
  *     その下で読む(`<base href="/ja/">` の下の `src="/app.js"`)。無ければ従来どおり読まない(`wcs/state-src-unread`)。
  */
@@ -161,7 +162,7 @@ export function main(argv: readonly string[]): number {
   }
   // strict で落ちたときに「何で落ちたか」が summary 行だけで読めるよう印を付ける。
   process.stdout.write(
-    `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}\n`,
+    `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? ` (strict${result.uncheckedCount > 0 ? `; ${result.uncheckedCount} unchecked counted as warnings` : ""})` : ""}\n`,
   );
   // the files not read and those with nothing to check, shown with --errors-only too: the counts above say
   // nothing about them (docs/seam-apps.md, fw-inventory)

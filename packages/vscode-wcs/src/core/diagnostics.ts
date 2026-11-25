@@ -313,6 +313,28 @@ export const WcsDiagnosticCode = {
   // ランタイムは何も言わず、後から state に書くと正しいものが選ばれる（継ぎ目アプリ garden-plots の取り込み — 保存した
   // 設定がページを描く前に届くようになって見えた）。値の束縛が前にあるとき・リテラルの `value` だけのときは黙る。warning。
   RadioBeforeValue: "wcs/radio-before-value",
+  // --- another framework's habits (service/frameworkHabitsValidator.ts・collectionMutationValidator.ts — 継ぎ目アプリ
+  // street-reports: React から移した作者。ランタイムが拒むか黙って落とすものは error、ほかは warning） ---
+  // 束縛の右辺（最初の `|` より前）が式（`hidden: !loading`・`textContent: count + 1`・`{{ a ? b : c }}`・
+  // `onclick: remove(.id)`）。パスとして引かれ、何も出ない。同じ文字列のパスの検査（binding-path-missing 等）は重ねない。error。
+  BindingExpression: "wcs/binding-expression",
+  // 束縛属性以外の属性の値の `{{ }}`（`href="/r/{{ id }}"`）。`{{ }}` はテキストでしか読まれず、属性には書いたまま残る。
+  // サーバーのテンプレートが埋めるなら正しいので warning。`<wcs-state>` の無いファイルでは言わない。
+  AttributeMustache: "wcs/attribute-mustache",
+  // `<template>` でない要素の `data-wcs` にある `if:` / `elseif:` / `else:` / `for:`（単独）。ランタイムはその名前の
+  // プロパティを書くだけで、要素は常に出て、行は 1 つ。error。
+  StructuralElement: "wcs/structural-element",
+  // state の `new Set(…)` / `new Map(…)` のキーをその場で変える（`this.selected.add(id)`）。state は見ない。error。
+  CollectionMutation: "wcs/collection-mutation",
+  // `for:` の行の中の要素のリテラルの `id`（束ねていない）。すべての行が同じ id になる。warning。
+  RowIdShared: "wcs/row-id-shared",
+  // `onSubmit:` — `on` の直後が大文字のイベント束縛（JSX の綴り）。`Submit` という名前のイベントを聞く。warning。
+  EventNameCase: "wcs/event-name-case",
+  // インラインの `<wcs-state>` / `<wcs-guard-handler>` のスクリプトの相対・ルート相対の静的 import。blob: URL から
+  // 評価されるので解決しない。error。
+  InlineImport: "wcs/inline-import",
+  // `key:`（React の key）。`key` という名前のプロパティを書くだけ。warning。
+  KeyBinding: "wcs/key-binding",
   // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
   // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
   // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・
