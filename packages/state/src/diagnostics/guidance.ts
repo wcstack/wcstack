@@ -38,6 +38,11 @@ export function didYouMean(input: string, candidates: Iterable<string>): string 
   if (input.length === 0) {
     return "";
   }
+  // An expression, not a misspelt name: `!loading` was answered `Did you mean "loading"?`, and
+  // `count + 1` only "does not exist" (docs/seam-apps.md, street-reports — JSX takes an expression there).
+  if (/[\s!?=<>+('"`&]/.test(input)) {
+    return " An expression is not a path: use a filter (|not, |eq(x), |gt(n)) or a getter.";
+  }
   const folded = input.toLowerCase();
   let best: string | null = null;
   let bestDistance = 3;

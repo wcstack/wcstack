@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { bootstrapState, getBindingsReady, installFeatures, listKeys } from "../src/index";
+import { bootstrapState, getBindingsReady, installFeatures, listKeys, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
 
 beforeAll(() => {
-  installFeatures([listKeys]);
+  installFeatures([listKeys, temporal]); // temporal: the $watch of one test
   bootstrapState();
 });
 
@@ -65,6 +65,50 @@ describe("$listKeys", () => {
   ])("キーの重複・欠落・素でない行は投げる（%#）", async (rows, message) => {
     const { el } = await host("", { items: [{ id: 9 }], $listKeys: { items: "id" } });
     expect(() => el.createState("writable", (s: any) => { s.items = rows; })).toThrow(message);
+  });
+
+  it("項目だけが変わる取り直しも、一覧を読む getter に届く（行は作り直さない）", async () => {
+    const { root, write } = await host(
+      `<ul id="new"><template data-wcs="for: newCards"><li>{{ .t }}</li></template></ul>
+       <ul id="done"><template data-wcs="for: doneCards"><li>{{ .t }}</li></template></ul>
+       <p id="counts">{{ newCount }}/{{ doneCount }}</p>
+       <ol><template data-wcs="for: cards"><li>{{ .t }}</li></template></ol>`,
+      {
+        cards: [{ id: 1, status: "new", t: "a" }, { id: 2, status: "new", t: "b" }, { id: 3, status: "done", t: "c" }],
+        $listKeys: { cards: "id" },
+        get newCards() { return this.cards.filter((c: any) => c.status === "new"); },
+        get doneCards() { return this.cards.filter((c: any) => c.status === "done"); },
+        get newCount() { return this.newCards.length; },
+        get doneCount() { return this.doneCards.length; },
+      },
+    );
+    const texts = (sel: string) => Array.from(root.querySelectorAll(`${sel} li`)).map((li) => li.textContent);
+    const rows = Array.from(root.querySelectorAll("ol li"));
+    // the same rows in the same order: only card 2's status and text differ
+    await write((s) => { s.cards = [{ id: 1, status: "new", t: "a" }, { id: 2, status: "done", t: "b2" }, { id: 3, status: "done", t: "c" }]; });
+    expect(texts("#new")).toEqual(["a"]);
+    expect(texts("#done")).toEqual(["b2", "c"]);
+    expect(root.querySelector("#counts")!.textContent).toBe("1/2");
+    expect(Array.from(root.querySelectorAll("ol li"))).toEqual(rows);
+    // and back: the card returns to its column
+    await write((s) => { s.cards = [{ id: 1, status: "new", t: "a" }, { id: 2, status: "new", t: "b3" }, { id: 3, status: "done", t: "c" }]; });
+    expect(texts("#new")).toEqual(["a", "b3"]);
+    expect(texts("#done")).toEqual(["c"]);
+    expect(root.querySelector("#counts")!.textContent).toBe("2/1");
+    expect(Array.from(root.querySelectorAll("ol li"))).toEqual(rows);
+  });
+
+  it("何も変わらない取り直しは、一覧の $watch も鳴らさない", async () => {
+    const seen: unknown[] = [];
+    const { write } = await host("", {
+      cards: [{ id: 1, t: "a" }],
+      $listKeys: { cards: "id" },
+      $watch: { cards() { seen.push("cards"); } },
+    });
+    await write((s) => { s.cards = [{ id: 1, t: "a" }]; });
+    expect(seen).toEqual([]);
+    await write((s) => { s.cards = [{ id: 1, t: "b" }]; });
+    expect(seen).toEqual(["cards"]);
   });
 
   it("宣言していないリストは参照の差し替えのまま", async () => {

@@ -702,6 +702,35 @@ function undefinedElements(engine: Engine): void {
   }
 }
 
+/** What was told about another framework's habits: once per tag and attribute, or per tag and directive. */
+const toldHabits = new Set<string>();
+
+/**
+ * Two things a page written from another framework's habits has, and nothing reported (docs/seam-apps.md,
+ * street-reports — a React team's app moved over): `{{ }}` in an attribute value (`href="/reports/{{ id }}"`)
+ * stays as written, as `{{ }}` is read in text only; and `if:` / `for:` on an element that is not a
+ * `<template>` (`<p data-wcs="if: cond">`) sets a property of that name and nothing else. Looked at with the
+ * undefined elements, in the page as it is then: the rows drawn by then are seen for the first, not for the
+ * second (a row's elements lose their `data-wcs`: the lint reads the templates). Said once per tag and name.
+ */
+function habits(engine: Engine): void {
+  const attr = config.bindAttributeName;
+  for (const el of (engine.root as ParentNode).querySelectorAll("*")) {
+    // (`data-wcs-ignore`: nothing in it is bound)
+    if (el.localName === "template" || el.closest(`[${attr}-ignore]`) !== null) continue;
+    for (const a of el.attributes) {
+      // (the directive, alone in the element's `data-wcs` — beside another binding the parser refuses it; elsewhere, `{{`)
+      const d = a.name === attr ? /^\s*((?:else)?if|for)\s*:/.exec(a.value)?.[1] : undefined;
+      const key = `${el.localName} ${d ?? a.name}`;
+      if ((d === undefined && (a.name === attr || !a.value.includes("{{"))) || toldHabits.has(key)) continue;
+      toldHabits.add(key);
+      console.warn(d === undefined
+        ? `[@wcstack/state] [wcs/attribute-mustache] <${el.localName} ${a.name}="${a.value}">: {{ }} is read in text only; here it stays as written. Bind it: ${attr}="attr.${a.name}: <path>".`
+        : `[@wcstack/state] [wcs/structural-element] <${el.localName} ${attr}="${a.value}">: "${d}:" works on a <template> only; here it does nothing. Wrap the element in <template ${attr}="${d}: …">.`);
+    }
+  }
+}
+
 /** The guide to forms: compositions, values with no `input` event, resets, the page's own form controls. */
 const FORMS_GUIDE = "See https://github.com/wcstack/wcstack/blob/main/docs/forms.md";
 
@@ -780,6 +809,7 @@ function lookLater(engine: Engine, phase: string): void {
       undefinedElements(e!);
       formControls(e!);
       ioErrors(e!);
+      habits(e!);
     }
   }, UNDEFINED_AFTER);
   if (document.readyState === "complete") look();
@@ -1025,6 +1055,12 @@ function watchInputs(): void {
     const before = this.value;
     apply.call(this);
     if (before != null && this.value === undefined && this.kind === K_CUSTOM) inputUndefined(this);
+    // `style:` given an object (JSX's `style={{ width }}`): the element keeps no style, without a word
+    // (docs/seam-apps.md, street-reports). Said once per binding.
+    if (this.name === "style" && this.value !== null && typeof this.value === "object" && !toldInputs.has(this)) {
+      toldInputs.add(this);
+      console.warn(`[@wcstack/state] [wcs/style-object] "style: ${this.pattern.path}" on <${(this.node as Element).localName}> is given an object: the element keeps no style. Bind each property (style.width: <path>, a string with its unit) or a CSS string (attr.style: <path>).`);
+    }
   };
 }
 
