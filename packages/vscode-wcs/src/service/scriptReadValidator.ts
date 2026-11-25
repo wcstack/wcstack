@@ -118,6 +118,7 @@ export function validateScriptReads(
         end: block.contentStart + spread.end,
         message: msgs.pathDynamicUnknownSpread(block.content.slice(spread.start, spread.end)),
         severity: 'info',
+        wholeState: true,
       });
     }
 

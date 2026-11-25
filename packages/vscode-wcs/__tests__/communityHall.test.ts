@@ -57,7 +57,7 @@ describe('L1 — $behavior.enableMustache: false のページの {{ }} は束縛
     expect(spans(json, validate(json))).toEqual([[WcsDiagnosticCode.BindingPathMissing, 'booking.totl']]);
   });
 
-  it('宣言が無い（既定の true）なら本文の {{ }} は従来どおり束縛として検査する — 属性の値の {{ }} は束ねないので言わない', () => {
+  it('宣言が無い（既定の true）なら本文の {{ }} は従来どおり束縛として検査する — 属性の値の {{ }} は束ねないので、パスとしては言わない（4.30 から wcs/attribute-mustache の warning だけ）', () => {
     const html = CMS_PAGE(`<wcs-state><script type="module">${STATE_JS.replace('$behavior: { enableMustache: false },', '')}</script></wcs-state>`);
     const diags = validate(html);
     const said = spans(html, diags);
@@ -69,8 +69,8 @@ describe('L1 — $behavior.enableMustache: false のページの {{ }} は束縛
     expect(head?.severity).toBe('warning');
     expect(head?.message).toContain("in the document's <head>");
     expect(said.some(([, text]) => text === 'pageTitle')).toBe(false);
-    // 属性の値は束縛ではない
-    expect(said.some(([, text]) => text.includes('navHome'))).toBe(false);
+    // 属性の値は束縛ではない: パスの検査はせず、書いたまま残ることだけを warning で言う（4.30。enableMustache: false なら言わない）
+    expect(said.filter(([, text]) => text.includes('navHome'))).toEqual([[WcsDiagnosticCode.AttributeMustache, '{{navHome}}']]);
   });
 
   it('state を読めなければ（src= で reader なし）従来どおり — isMustacheDisabled は false', () => {

@@ -38,6 +38,10 @@ import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import { validateScriptReads } from "../service/scriptReadValidator.js";
 import { validateScriptWrites } from "../service/scriptWriteValidator.js";
 import { validateAccessorLists } from "../service/accessorListValidator.js";
+import {
+  validateAttributeMustaches, validateBindingExpressions, validateInlineImports, validateMarkupHabits,
+} from "../service/frameworkHabitsValidator.js";
+import { validateCollectionMutations } from "../service/collectionMutationValidator.js";
 import { validateModuleTopReads } from "../service/moduleTopReadValidator.js";
 import { validateStateAbsent, validateStateSchemaDrift, validateStateSources } from "../service/stateSourceValidator.js";
 import { isMustacheDisabled } from "../service/stateBehavior.js";
@@ -256,6 +260,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // accessor declared for several, a path relative to the row where there is none
   out.push(...validateAccessorLists(text, stateTagName, locale));
   out.push(...validateArrayMutations(text, stateTagName, locale));
+  // a Set / Map of the state changed in place (`this.selected.add(id)`): the state does not see it
+  out.push(...validateCollectionMutations(text, stateTagName, locale));
   // a session read at the top level of a module evaluated once: a guard's (error), a state's (warning)
   out.push(...validateModuleTopReads(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
@@ -278,6 +284,23 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   }
   for (const d of validateNestedAssigns(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
+  }
+  // Another framework's habits (the street-reports seam app): `{{ }}` in an attribute, a structural binding on an
+  // element that is not a <template>, `onSubmit:`, `key:`, a literal id every row shares, a relative import in an
+  // inline script
+  out.push(...validateAttributeMustaches(text, bindAttribute, stateTagName, locale, fileReader));
+  out.push(...validateMarkupHabits(text, bindAttribute, locale));
+  out.push(...validateInlineImports(text, stateTagName, locale));
+  // A right side that is an expression (`hidden: !loading`, `{{ count + 1 }}`): one finding, `wcs/binding-expression` —
+  // what the other rules say about the same text (a missing path, a path the schema lacks, a path outside a for, …)
+  // describes it as something it is not, and is dropped
+  const expressions = validateBindingExpressions(text, bindAttribute, stateTagName, locale);
+  if (expressions.length > 0) {
+    const inExpression = (d: WcsDiagnostic): boolean =>
+      d.code !== WcsDiagnosticCode.BindingExpression && expressions.some((e) => d.start >= e.start && d.end <= e.end);
+    const kept = out.filter((d) => !inExpression(d));
+    out.length = 0;
+    out.push(...kept, ...expressions);
   }
   // `data-wcs-ignore`: the runtime reads nothing in such an element as bindings, so nothing in it is reported.
   // `$behavior: { enableMustache: false }` on the page's root state: no `{{ }}` is a binding — a CMS's or a server

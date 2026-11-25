@@ -605,14 +605,20 @@ check("wcs/lint-version-behind under --strict → exit 1", ["--lang=en", "--stri
   stdout: ["0 error(s), 1 warning(s), 0 info (strict)"],
 });
 
-check("paths under a volume loaded with src= (readable or not) are clean under --strict, the unreadable src said once (info), exit 0", ["--lang=en", "--strict", volumeHtml], {
+// (since 4.30 a state the lint could not read at all fails --strict: the gate does not pass on what it did not check)
+check("paths under a volume loaded with src= (readable or not) are clean, the unreadable src said once (info), exit 0", ["--lang=en", volumeHtml], {
   exit: 0,
-  stdout: [/info wcs\/state-src-unread "\.\/missing\.js" cannot be read/, "0 error(s), 0 warning(s), 1 info (strict)"],
+  stdout: [/info wcs\/state-src-unread "\.\/missing\.js" cannot be read/, "0 error(s), 0 warning(s), 1 info"],
+});
+
+check("the same page under --strict: the unreadable src counts like a warning, exit 1, and the output says so", ["--lang=en", "--strict", volumeHtml], {
+  exit: 1,
+  stdout: [/info wcs\/state-src-unread "\.\/missing\.js" cannot be read/, "0 error(s), 0 warning(s), 1 info (strict; 1 unchecked counted as warnings)", /strict: 1 info about a state that was not read at all/],
 });
 
 check("a typo under a readable src= volume → warnings wcs/watch-path-missing and wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", volumeTypoHtml], {
   exit: 1,
-  stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 1 info (strict)"],
+  stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 1 info (strict; 1 unchecked counted as warnings)"],
 });
 
 check("the dictionary volume (shorthand keys imported from ./catalog.js, computed there) is clean under --strict, the key said once (info), exit 0", ["--lang=en", "--strict", i18nHtml], {

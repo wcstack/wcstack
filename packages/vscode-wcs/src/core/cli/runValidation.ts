@@ -8,7 +8,7 @@
  * pure(DOM / vscode / node fs 非依存 → テスト可能)。
  */
 
-import { WcsDiagnostic, WcsSeverity, sortDiagnostics } from "../diagnostics.js";
+import { WcsDiagnostic, WcsDiagnosticCode, WcsSeverity, sortDiagnostics } from "../diagnostics.js";
 import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
 import { validateManifestArtifact, validateManifestSet } from "../sidecar/validate.js";
@@ -84,7 +84,14 @@ export interface RunValidationResult {
   readonly errorCount: number;
   readonly warningCount: number;
   readonly infoCount: number;
-  /** exit code(error があれば 1。`strict` なら warning でも 1。それ以外 0)。 */
+  /**
+   * The infos that say a whole state was not read (`WcsDiagnostic.wholeState`): `wcs/state-src-unread` (a `src` the
+   * lint cannot read) and the `wcs/path-dynamic-unknown` of a spread at the top of a state. Counted in `infoCount`
+   * too. Under `strict` they count like warnings: a strict run does not pass on a state it did not read. A key whose
+   * value cannot be read (the other `wcs/path-dynamic-unknown`s) leaves the rest checked and is not counted.
+   */
+  readonly uncheckedCount: number;
+  /** exit code(error があれば 1。`strict` なら warning か uncheckedCount でも 1。それ以外 0)。 */
   readonly exitCode: 0 | 1;
   /** file source → 診断(テスト用)。 */
   readonly diagnosticsBySource: ReadonlyMap<string, readonly WcsDiagnostic[]>;
@@ -100,6 +107,7 @@ export interface RunValidationResult {
 }
 
 const severityLabel: Record<WcsSeverity, string> = { error: "error", warning: "warning", info: "info" };
+
 
 export function runValidation(inputs: readonly CliFileInput[], options: RunValidationOptions = {}): RunValidationResult {
   const diagnosticsBySource = new Map<string, readonly WcsDiagnostic[]>();
@@ -192,6 +200,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   let errorCount = 0;
   let warningCount = 0;
   let infoCount = 0;
+  let uncheckedCount = 0;
 
   // ファイルは source 昇順、診断は各ファイル内で start 昇順(validate 側で sort 済み)。
   for (const source of [...diagnosticsBySource.keys()].sort()) {
@@ -201,8 +210,10 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       if (d.severity === "error") errorCount++;
       else if (d.severity === "warning") warningCount++;
       else infoCount++;
-      // counts は全診断で数え、errorsOnly 時は表示行だけ error に絞る。
-      if (options.errorsOnly && d.severity !== "error") continue;
+      const unchecked = d.severity === "info" && d.wholeState === true;
+      if (unchecked) uncheckedCount++;
+      // counts は全診断で数え、errorsOnly 時は表示行だけ error に絞る（strict では、warning と同じく数える未検査の info も載せる）。
+      if (options.errorsOnly && d.severity !== "error" && !(options.strict === true && unchecked)) continue;
       const pos = mapper(d.start);
       lines.push(`${source}:${pos.line}:${pos.column} ${severityLabel[d.severity]} ${d.code} ${d.message}`);
     }
@@ -213,6 +224,9 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   if (notRead.length > 0) {
     notes.push(`not read: ${notRead.join(", ")} — wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files`);
   }
+  if (options.strict === true && uncheckedCount > 0) {
+    notes.push(`strict: ${uncheckedCount} info about a state that was not read at all (an unread src, a spread at the top of the state) counted like warnings — give --root, or a stateSchema, to have it checked`);
+  }
   if (nothingToCheck.length > 0) {
     notes.push(`nothing to check: ${nothingToCheck.join(", ")} — no data-wcs binding, <wcs-*> tag or wcstack script in them`);
   }
@@ -222,7 +236,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     errorCount,
     warningCount,
     infoCount,
-    exitCode: errorCount > 0 || (options.strict === true && warningCount > 0) ? 1 : 0,
+    uncheckedCount,
+    exitCode: errorCount > 0 || (options.strict === true && (warningCount > 0 || uncheckedCount > 0)) ? 1 : 0,
     diagnosticsBySource,
     notRead,
     nothingToCheck,

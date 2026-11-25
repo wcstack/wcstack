@@ -325,6 +325,8 @@ export default { dict };
     ], { strict: true, locale: 'en' });
     expect(result.exitCode).toBe(0);
     expect(result.warningCount).toBe(0);
+    // (a key whose value is not read leaves the rest of the state checked: not one of the infos --strict counts)
+    expect(result.uncheckedCount).toBe(0);
     expect(result.lines.filter((l) => l.includes('wcs/path-dynamic-unknown')).map((l) => l.replace(/ The value.*$/, '')))
       .toEqual(['i18n/state.js:3:24 info wcs/path-dynamic-unknown']);
   });
