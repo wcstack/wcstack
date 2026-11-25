@@ -359,6 +359,16 @@ test.describe("サインイン・チーム・スタンプ帳（account.spec.js�
       await expect(page.locator("main h1")).toHaveText("スタンプ帳");
       await expect.poll(async () => (await apiLog(request)).filter((e) => e.path === "/api/login").length).toBe(2);
       await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
+      // (added) …and the walker is still on the card once the page has settled: the heading above was also there for
+      // an instant before the app took the new token for a sign-out and left for "/" — which the three lines above
+      // passed, unless the machine was slow enough to miss that instant. Settled = the card asked for its data again,
+      // after the second sign-in.
+      await expect.poll(async () => {
+        const log = await apiLog(request);
+        return log.slice(log.findLastIndex((e) => e.path === "/api/login")).some((e) => e.path === "/api/me");
+      }).toBe(true);
+      await expect(page).toHaveURL(/\/card$/);
+      await expect(page.locator("main h1")).toHaveText("スタンプ帳");
       // now the saved pair is wrong too
       await request.post("/api/_test/phrase", { data: { number: "1005", phrase: "changed" } });
       await request.post("/api/_test/revoke");
