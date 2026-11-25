@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.23.0 — 2026-11-26
 
-継ぎ目アプリ street-reports（初めての作者が React のアプリを wcstack に移した）から、ほかのフレームワークの癖の規則（2026-11-25 の著者の決定: ランタイムが拒むか黙って落とすものは error、ほかは warning。確かなことだけを言う）。リポジトリのすべてのページで error は 0 件のまま。
+`@wcstack/state` 4.30.0 から作った（npm の `@wcstack/lint` 4.30.0・`@wcstack/typescript` 4.30.0 と同じ判定）。継ぎ目アプリ street-reports（初めての作者が React のアプリを wcstack に移した）から、ほかのフレームワークの癖の規則（2026-11-25 の著者の決定: ランタイムが拒むか黙って落とすものは error、ほかは warning。確かなことだけを言う）。リポジトリのすべてのページで error は 0 件のまま。
 
 - `wcs/binding-expression`（新規、error）: 束縛の右辺（最初の `|` より前）が式 — `hidden: !loading`・`textContent: count + 1`・`class.active: status === 'new'`・`` attr.href: `/r/${id}` ``・`{{ count + 1 }}`・`<!--@@: … -->`。空白か `` ! ? = < > + ( ) ' " ` & , `` を含む右辺を式とする（パスはどれも持てない）。形にフィルタがあればそれを示す（`!x` → `x|not`・`x > 0` → `x|gt(0)`・`x === 'new'` → `x|eq(new)`・`x + 1` → `x|add(1)`）。呼び出しやアロー関数の `on…:` には、ハンドラはメソッドの名前で `(event, ...ループの添字)` で呼ばれると言う。同じ文字列の `wcs/binding-path-missing` / `wcs/path-nonexistent` は重ねない。これまでは「存在しないパス」と言い、引用符やバッククォートで始まるものと、読めないキー（`new Set()`）の下では何も言わなかった。`a || b`（既に `wcs/binding-syntax`）と `<wcs-state>` の無いファイルの `{{ }}`（Handlebars の `{{#each}}`）には言わない。
 - `wcs/attribute-mustache`（新規、warning）: 束縛属性以外の属性の値の `{{ }}`（`href="/reports/{{ id }}"`）。属性には書いたまま残る。サーバーのテンプレートが埋めるなら正しいので warning。`<wcs-state>` のあるファイルだけで、state が `enableMustache: false` を宣言していれば黙る。
