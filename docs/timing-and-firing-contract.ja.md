@@ -779,6 +779,7 @@ getter は読まれるたびにブラウザを調べ、何も保存しない。�
 - **`beforeunload`**: 開いている・開こうとしているストリームを閉じ（`SseCore.suspend()`）、終わりを知らせる —— `connected` は `false` になる。1 秒のタイマーを始める。`auto-reconnect` を待つストリームには開いているものが無い: リスナは無く、その開き直しはそのまま進む。
 - **文書が残る**: `navigation` の `currententrychange`（同じ文書の遷移が確定した）が、マイクロタスクでストリームをまた開く —— 遷移がページに書かせる `url` が開くものになる —— 。そうでなければ、`pagehide` が来なかったときにタイマーが開く。開くのは `connect()` で、そのときの `url` とオプションを読む。閉じている間の 2 回目の `beforeunload` は待ち直す（2 本開くことは無い）。
 - **`pagehide`**（persisted かどうかによらず）: 閉じたままにし、タイマーを外す。開いていた —— または `beforeunload` で閉じた —— ストリームは、ページが back/forward cache に入りうるとき（`persisted`）覚えておく。
+- **`navigate` より先に来る `beforeunload`**（4.30 から。WebKit）: 要素は文書（その `navigation` オブジェクト）ごとに、直前に `navigate` の無かった最後の `beforeunload` の時刻と、最後の `navigate` の時刻を持つ。そういう `beforeunload` の後 50 ms 以内の `navigate` で、その文書に印を付ける: 以後そこでは `beforeunload` は何もせず（リスナはストリームの次の変化で外れる）、閉じるのは `pagehide`。`navigate` の後に来る `beforeunload` —— 規格の順: 実際のアンロード、ダウンロード、「留まる」—— は数えないので、Chromium や Firefox の文書に印は付かない。`@wcstack/router` と `<wcs-link>` のクリック 5 回で測った: WebKit 26.5 は 4.29.0 でストリームを 6 回、これで 2 回開いた。Chromium 149 と Firefox 151 は前後とも 1 回。戻る / 進むと `pushState` は、3 つのどれでも `beforeunload` を出さない。
 - **`persisted` の `pageshow`**: 覚えておいたストリームをまた開く。4.8 からの `<wcs-ws>` と同じ（websocket の README、「back/forward cache」）。
 
 また開くのは、要素がこうして閉じたものだけ。`close()`、クリアした `url`（§30.1）、要素を外すことは開き直しを取り消し、`connect()` / `trigger` と `url` の変化はそれを引き取る。ページがつないだ `manual` の要素はまた開く（要素が閉じたのはページの接続だから）。ページが一度もつながなかったものには、開き直すものが無い。閉じていた間に送られたイベントは届かない: `connected` が `true` になったら追いつくのはページで、ほかの再接続の後と同じ（sse の README、再接続）。

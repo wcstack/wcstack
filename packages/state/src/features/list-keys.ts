@@ -79,13 +79,14 @@ function beforeWrite(engine: Engine, p: Pattern, row: StateRow | null, value: un
     for (const f of Object.keys(kept)) if (!(f in next) && kept[f] !== null) changes.push([i, f, null]);
   }
   if (same && changes.length === 0) return true; // a no-op refresh does nothing
-  if (!same) {
-    merging = true;
-    try {
-      engine.write(p, row, merged);
-    } finally {
-      merging = false;
-    }
+  // The list itself is written whenever anything changed — also when only fields did: the author
+  // assigned the list, and a getter that reads it (`this.cards.filter(c => c.status === "done")`)
+  // is told by that write alone. The rows are the kept objects, so nothing is drawn again for it.
+  merging = true;
+  try {
+    engine.write(p, row, merged);
+  } finally {
+    merging = false;
   }
   if (changes.length > 0) {
     const list = engine.childList(p.depth === 0 ? null : row, p);

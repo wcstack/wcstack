@@ -330,6 +330,47 @@ describe('Link', () => {
       }
     });
 
+    it('current は active のときの aria-current の値を名指す: match="prefix" の下のパスでも "page"。外すと元の規則に戻る（docs/seam-apps.md、street-reports）', () => {
+      const originalHref = Object.getOwnPropertyDescriptor(window.location, 'href');
+      const at = (href: string) => Object.defineProperty(window.location, 'href', { writable: true, value: href });
+      try {
+        at('http://localhost/reports/12');
+        const router = document.createElement('wcs-router') as Router;
+        document.body.appendChild(router);
+        const link = document.createElement('wcs-link') as Link;
+        link.setAttribute('to', '/reports');
+        link.setAttribute('match', 'prefix');
+        link.setAttribute('current', 'page');
+        link.textContent = '通報一覧';
+        document.body.appendChild(link);
+        const anchor = link.anchorElement!;
+        expect(anchor.classList.contains('active')).toBe(true);
+        expect(anchor.getAttribute('aria-current')).toBe('page');
+
+        // 属性の変化に追従する: 別の値、外したら "true"（下のパス）
+        link.setAttribute('current', 'step');
+        expect(anchor.getAttribute('aria-current')).toBe('step');
+        link.removeAttribute('current');
+        expect(anchor.getAttribute('aria-current')).toBe('true');
+        link.setAttribute('current', '');
+        expect(anchor.getAttribute('aria-current')).toBe('true');
+
+        // そのページそのものでも current の値
+        link.setAttribute('current', 'location');
+        at('http://localhost/reports');
+        (link as any)._updateActiveState();
+        expect(anchor.getAttribute('aria-current')).toBe('location');
+
+        // active でなければ付けない
+        at('http://localhost/board');
+        (link as any)._updateActiveState();
+        expect(anchor.classList.contains('active')).toBe(false);
+        expect(anchor.hasAttribute('aria-current')).toBe(false);
+      } finally {
+        if (originalHref) Object.defineProperty(window.location, 'href', originalHref);
+      }
+    });
+
     it('match="prefix" なら下のパスでも active（aria-current は "true"）。完全一致は "page"、外れたら外す（docs/seam-apps.md、router-admin）', () => {
       const originalHref = Object.getOwnPropertyDescriptor(window.location, 'href');
       const at = (href: string) => Object.defineProperty(window.location, 'href', { writable: true, value: href });
