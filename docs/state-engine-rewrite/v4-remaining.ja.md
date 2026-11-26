@@ -2134,3 +2134,31 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - examples/README.ja.md の継ぎ目アプリの表は music-room で止まっている。
   - core の残りは 4 B。
   - 止める目安には当たっていない。次は 4 巡目の 3 本目（流れてくるデータ: `$stream`、`<wcs-worker>`）。
+
+### 4.31.0 の公開（2026-11-27）
+
+- **中身**: minor。外部の評価 — wcstack 4.28.0 でビルドなしの確定申告の下書きツールを 25 日で作る Advent Calendar の連載を書く間に当たった問題の記録（連載のリポジトリの `docs/issues-found.md`）。wcstack の側の 7 件は main（4.30.0）でもすべて再現した。著者の決定 7 点（2026-11-27、v4-direction §5.27。すべて推奨どおり）。
+  - #764（merge commit c3c80e45）router・testing: `mount()` はページを文書の外で組み立ててから入れる（happy-dom は開始タグで接続を呼び、フラグメントを一度に入れても節ごと）。`<wcs-link>` は文書にルーターがまだ無ければ 1 マイクロタスク待ち（待っても無ければ従来どおり throw）、内部の行き先の `href` をロケーションの変化のたびに引き直す（違うときだけ書く）。`bootstrap` に並べた登録が `<wcs-state>` を定義しなければ `mount()` が reject する（並べると既定の `[bootstrapState]` を置き換える — README と skill は「足す」と書いていた）。
+  - #765（13197fb3）typescript: カンマで並べたアクセサのキーを schema に載せる（`.` だけで分けて捨てていた）。`enum` の値と `anyOf` の要素を決まった順で書き、`check`（`stableStringify` と差分の列挙）は両方を集合として比べる — 並べ替えだけでは既存の manifest がすべて古いと言われる。行に型の無い一覧（`items: {}`）を emit / check が警告で名指す。
+  - #766（dce29dc5）lint: schema が「分からない」所（`items: {}`・`null`・`any`）は schema が無いときと同じに検査する（schema を足しても検査は弱くならない）。「もしかして」をどの段にも。`wcs/getter-untracked-read` の一覧の形（`this.incomes.reduce((t, row) => t + row.amount, 0)` — §5.26 の未決）: 読んだ項目をパスで書く証拠があるときだけ、ページの束縛なら error、契約の無いカスタム要素かスクリプトなら warning。作る途中で、`collectNestedWriteRoots` の HTML 側（`#ro` を見ず、要素を問わず `value:` を数える）を証拠に使うと examples の state-cross-tab-todo と music-room に誤報したので、束縛の証拠は `collectBindingWrites` から取った。リポジトリのすべてのページの診断は 58 件のまま。検査器のテスト 1,872 件、誤りの目録 253 項目。
+  - #767（c1c8aee4）文書: v4-direction §5.27、目録の `getter-untracked-row-read` と `schema-untyped-rows`。
+- **準備**: PR #768（merge commit 5246604a）。CHANGELOG を `[4.31.0] — 2026-11-27` として締め、docs/upgrading-4x.md（日英）に 4.31.0 の節、固定版 18 か所、release.yml が外さない「未リリース」の印（拡張の README と誤りの目録）を外した。準備のブランチで heavy の検証（media-query・signals・state・wcstack・devtools・router）と手元の e2e（Chromium 739 件）を通した。e2e は手元で testing のビルドが state と server の dist を書き換え、追跡外のチャンクを残したので戻した。
+- **main で `minor`（run 45901319553）**: 成功した。版を上げたコミット 22e61d71d、タグ `v4.31.0`、GitHub Release（`sri.json` 付き。本文の先頭に CHANGELOG の節を足した）。
+  - 検証: 1 回目は npm 45/49・SRI 41/44、2 回目は npm 48/49（`@wcstack/worker` — 実行のログには `+ @wcstack/worker@4.31.0` があった）、3 回目で npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・固定 URL 8/8。
+- **公開後の作業**:
+  - PR #769（merge commit 35540952e）: サイズの基準値を 4.31.0 の dist で取り直した。動いたのは版の文字列の分だけ（分割の core 24,787 → 24,785 B、devtools 2,514 → 2,515 B、ssr 5,781 → 5,779 B）。`core.min.js` は 20,476 B のまま（残り 4 B）。slack は無い。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換えた。拡張の版を 2.24.0 にし、CHANGELOG の節に日付を入れた。
+  - 拡張 2.24.0: 35540952e の main で `npm run package`（その後 vscode-wcs のテスト 1,872 件）。890 ファイル、5,058,849 B、SHA-256 `ade5083eec8f1555dc497ebd480e239870a06de55812f7d962dd4f3efed3cc69`。公開は著者（公開後に Marketplace の vsix と SHA を比べ、注釈付きタグ `vscode-wcs-v2.24.0` を 35540952e に）。**2.23.0 は Marketplace に出ていない**（最新は 2.22.0）: 2.24.0 を出せば 2.23.0 は飛ばしてよい（2.24.0 は 2.23.0 の中身を含む）。
+  - wcstack-skill: PR #80（merge commit b3b4760 — README に更新の手順と版の固定 `#vX.Y.Z`、`mount()` の `bootstrap` の書き方）、PR #81（9069532）と注釈付きタグ `v4.31.0`。verification（`mount()` の reject、schema の `{}` の下、emit の警告と enum の順）、state-binding（一覧の行の合計と lint の報告）、versions（4.30 以下に固定したページの 2 行）、刻印 24 か所。刻印した URL 9 つが 200 を返し、プラグインの lint の hook が npm の lint 4.31.0 で `wcs/getter-untracked-read` の一覧の形を error として返すのを確かめた。
+  - LP（wcstack.github.io 86dd150）: リリースの表示、v4.31.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-1ye9EhFP…`。約 86 KB。手元の dist・`sri.json`・jsDelivr のファイルの 3 つで一致）、llms。ローカル 7/7、本番 8/9（いつもの `/tutorial/16-publish/app/` の API の 404）。
+- **記事の側**（連載のリポジトリ。git ではないので、直す前のファイルを控えた）: 20 日目の表に `bootstrap` の 1 文、21 日目に 11 日目の 2 つの間違い（lint の error）と、getter の読み違いの実行時の警告（Chromium・CDN の 4.28.0 で出た文面）、24 日目に `#v4.28.0` でスキルを入れる補足、`issues-found.md` に訂正と結果。連載は 4.28.0 に固定しているので、記事の手順と結果は変わらない。
+- **e2e の flaky**（マージの前にすべての実行で数える決まり）:
+  - #765 の 2 回目の実行（main を取り込んだ後、run 45896043100）に 1 件: town-archive「150 枚目の写真」（Chromium、再試行で通過。#747 に続き 2 度目）。**名前と文面を読む前に、同じコマンドでマージまで進めた**（私の誤り。PR に後から記録した）。#752 で足した文面のおかげで状態が読めた: 180 点を読み込み済みなのに文書のカードは 40 枚（224…1941）、scrollY 0、150 枚目は下へ 1 歩も進む前から現れない。原因は未解明。
+  - #766 の 2 回目の実行（run 45898148459）に 2 件: community-hall「検索で捨てたカードは手放される」（`[wcs/inserted-unbound] <span data-wcs="class.soldout: soldOut.e1">` — htmx の 4 回の差し替えのどれかのカードが束ねられずに入った。ページは router も `<wcs-link>` も使わない）と ekiden-entry「走者 7 人 … 2 つ上へ」（1 人目の氏名が 10 秒間 `四区　四郎`）。その実行は #764 の router のソースから dist を作り直していた（`verify.mjs --stale-dists`）ので、main（#764 入り）の router の dist で 2 つの spec を手元で `--repeat-each=12 --retries=0` — 288 件すべて通った。どちらも初めて flaky になったテストで、原因は見つかっていない。
+  - `failOnFlakyTests` の連続回数は数え直し（#762 の後から数える決まりのまま）。
+- **残り**:
+  - 拡張 2.24.0 の公開（著者）→ SHA の比較とタグ。2.23.0 は出さなくてよい。
+  - PR #762（stamp-rally の例の不具合と e2e 2 件）のマージ — 著者の「進めて」待ちのまま。
+  - この機械の Claude Code のプラグイン（wcstack-app）は 2.1.0 のまま（2026-09 に入れた写し）。更新するかは著者に問うている。
+  - 連載の 3-2（公開先が決まったら、19 日目の「404 になる」の説明を確かめる）。
+  - 未解明の flaky 3 件（上）と、§5.26 の未決 4 件（router の「留まる」の API、flaky の最初の失敗の残し方、`<wcs-sse>` の WebKit での最初の 1 回、生成した schema を持つアプリ 2 つの lint）。
+  - core の残りは 4 B。
