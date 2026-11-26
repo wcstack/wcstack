@@ -102,10 +102,11 @@ export default {
     expect(schema.properties!.maybe).toEqual({ type: "string" });
     expect(schema.required).not.toContain("maybe");
     expect(schema.required).toContain("selected");
-    expect(schema.properties!.mode).toEqual({ type: "string", enum: ["list", "grid"] });
+    // in a fixed order (by value), not in the order TypeScript made the types
+    expect(schema.properties!.mode).toEqual({ type: "string", enum: ["grid", "list"] });
     expect(schema.properties!.level).toEqual({ type: "number", enum: [1, 2, 3] });
     expect(schema.properties!.flag).toEqual({ anyOf: [{ type: "boolean" }, { type: "null" }] });
-    expect(schema.properties!.mixed).toEqual({ anyOf: [{ type: "string" }, { type: "number" }] });
+    expect(schema.properties!.mixed).toEqual({ anyOf: [{ type: "number" }, { type: "string" }] });
     expect(schema.properties!.both).toEqual({
       anyOf: [{ type: "object", properties: { a: { type: "number" } }, required: ["a"] }, { type: "null" }],
     });
@@ -315,5 +316,57 @@ describe("loadStateFile — 入力の失敗モード", () => {
     expect(resolveCompilerOptions(lone).strict).toBe(true);
     const broken = tmp.write("broken-cfg/tsconfig.json", "{ oops");
     expect(() => resolveCompilerOptions(file, { tsconfig: broken })).toThrow(/cannot read/);
+  });
+});
+
+describe("Advent Calendar の制作の記録から（docs/v4-direction-2026-10.md §5.27）", () => {
+  it("カンマで列挙したアクセサのキーは、列挙したパスのそれぞれに載る（行の getter もトップレベルも）", () => {
+    const { schema } = schemaOf(`
+export default {
+  incomes: [] as { label: string; amount: number }[],
+  expenses: [] as { label: string; amount: number }[],
+  get "incomes.*.amountName,expenses.*.amountName"(): string { return ""; },
+  get "low, high"(): number { return 0; },
+};`);
+    expect(schema.properties!.incomes.items!.properties!.amountName).toEqual({ type: "string" });
+    expect(schema.properties!.expenses.items!.properties!.amountName).toEqual({ type: "string" });
+    expect(schema.properties!.low).toEqual({ type: "number" });
+    expect(schema.properties!.high).toEqual({ type: "number" });
+    expect(schema.required).toEqual(expect.arrayContaining(["low", "high"]));
+    expect(Object.keys(schema.properties!).some((key) => key.includes(","))).toBe(false);
+  });
+
+  it("リテラルの union の enum は値の順（種類ごと: boolean・number・string）", () => {
+    const { schema } = schemaOf(`
+export default {
+  status: "unknown" as "unknown" | "familyEmployee" | "dependent",
+  rank: 3 as 3 | 1 | 2,
+  mixed: "x" as "x" | 1 | true,
+};`);
+    expect(schema.properties!.status.enum).toEqual(["dependent", "familyEmployee", "unknown"]);
+    expect(schema.properties!.rank.enum).toEqual([1, 2, 3]);
+    expect(schema.properties!.mixed.enum).toEqual([true, 1, "x"]);
+  });
+
+  it("行に型の無い一覧（空の配列で始まる）は、場所を名指して警告する。型のある一覧は警告しない", () => {
+    const { schema, warnings } = schemaOf(`
+export default {
+  dependents: [],
+  groups: [{ name: "a", items: [] }],
+  /** @type {{ kind: string }[]} */
+  typed: [],
+};`, "js");
+    expect(schema.properties!.dependents).toEqual({ type: "array", items: {} });
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toMatch(/^`dependents` is a list whose rows have no type .* nothing under `dependents\.\*`.*@type/);
+    expect(warnings[1]).toMatch(/^`groups\.\*\.items` is a list whose rows have no type/);
+  });
+
+  it("nullable な一覧の中も辿る", () => {
+    const { warnings } = schemaOf(`
+export default {
+  maybe: null as { rows: never[] } | null,
+};`);
+    expect(warnings).toEqual([expect.stringMatching(/^`maybe\.rows` is a list whose rows have no type/)]);
   });
 });

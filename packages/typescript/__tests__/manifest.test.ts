@@ -155,6 +155,34 @@ describe("compareStateSchema — drift 検出（D9）", () => {
     expect(compareStateSchema(text, null, reordered)).toEqual({ kind: "same" });
   });
 
+  it("enum と anyOf の要素は集合として比べる（並びだけが違う manifest は同じ。required の並びは比べる）", () => {
+    // 4.30 までの emit は TypeScript が型を作った順に書いた: 状態ファイルの別の所を変えると並びが変わった
+    // （Advent Calendar の制作の記録、docs/v4-direction-2026-10.md §5.27）
+    const stored = {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["dependent", "familyEmployee", "unknown"] },
+        pick: { anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }] },
+      },
+      required: ["status", "pick"],
+    };
+    const storedText = JSON.stringify(buildManifest(null, stored));
+    const generated = {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["familyEmployee", "dependent", "unknown"] },
+        pick: { anyOf: [{ type: "null" }, { type: "number" }, { type: "string" }] },
+      },
+      required: ["status", "pick"],
+    };
+    expect(compareStateSchema(storedText, null, generated)).toEqual({ kind: "same" });
+    expect(stableStringify(generated)).toBe(stableStringify(stored));
+    // a value that differs is still a difference, and so is the order of required
+    const changed = { ...generated, properties: { ...generated.properties, status: { type: "string", enum: ["dependent", "unknown"] } } };
+    expect(compareStateSchema(storedText, null, changed)).toEqual({ kind: "differs", changes: ["~ /properties/status/enum"] });
+    expect(compareStateSchema(storedText, null, { ...generated, required: ["pick", "status"] }).kind).toBe("differs");
+  });
+
   it("--mount は部分木を比較する", () => {
     const volume = { type: "object", properties: { t: { type: "object" } } };
     const mounted = JSON.stringify(buildManifest("i18n", volume, buildManifest(null, schema)));

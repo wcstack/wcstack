@@ -1135,6 +1135,146 @@ export function findLocationRead(body: string): { start: number; end: number; te
 }
 
 // ============================================================
+// getter の中の、一覧の行のオブジェクトからの項目の読み（Advent Calendar の制作の記録・継ぎ目アプリ street-reports）
+// ============================================================
+
+/** A field a getter reads from a list's row object: `row.amount` in `this.incomes.reduce((t, row) => t + row.amount, 0)`. */
+export interface RowFieldRead {
+  /** The list as the getter names it through `this` (`incomes`; the path of `this["groups.0.items"]`). */
+  readonly list: string;
+  /** The static members read from the row, outermost first (`row.meta.price` → `["meta", "price"]`; a method called last is dropped). */
+  readonly fields: readonly string[];
+  /** The read (`row.amount`, or the key of `({ amount }) =>`), body-relative. */
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Array methods whose callback receives the rows, and which of the callback's parameters are rows. */
+const ROW_CALLBACKS: ReadonlyMap<string, readonly number[]> = new Map([
+  ['reduce', [1]], ['reduceRight', [1]],
+  ['map', [0]], ['flatMap', [0]], ['filter', [0]], ['find', [0]], ['findIndex', [0]], ['findLast', [0]], ['findLastIndex', [0]],
+  ['some', [0]], ['every', [0]], ['forEach', [0]], ['sort', [0, 1]], ['toSorted', [0, 1]],
+]);
+/** Array methods that return the same rows (some of them): a callback further down the chain receives them too. */
+const ROW_PRESERVING = new Set(['filter', 'slice', 'sort', 'toSorted', 'reverse', 'toReversed', 'toSpliced', 'concat']);
+
+/**
+ * The fields a getter reads from a list's row objects — through the callback of an array method called on `this.<list>`
+ * (also after `filter` / `slice` / `toSorted` …, and on `[...this.<list>]`) or a `for (const row of this.<list>)`.
+ * Only the list is tracked (`this.incomes`), so a write of a row's field by path (`incomes.0.amount`, a binding in
+ * the rows) never reaches the getter: a total that follows rows added and removed, and stays when an amount is edited.
+ * A `this` inside a `function` (not an arrow) is not the state, and a row parameter a nested function rebinds is not
+ * followed. A write to a row's member (`row.x = …`) is not a read. null when the body does not parse.
+ */
+export function findRowFieldReads(body: string): RowFieldRead[] | null {
+  let program: AnyNode;
+  try {
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  const out: RowFieldRead[] = [];
+
+  /** The list whose rows `node` gives, or null. */
+  const listOf = (node: AnyNode): string | null => {
+    const n = unwrapChain(node);
+    if (n.type === 'MemberExpression' && n.object.type === 'ThisExpression') {
+      const key = !n.computed && n.property.type === 'Identifier' ? n.property.name : literalString(n.property as AnyNode);
+      return key !== null && key !== '' && !key.startsWith('$') ? key : null;
+    }
+    if (n.type === 'CallExpression') {
+      const callee = unwrapChain(n.callee as AnyNode);
+      if (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier'
+        && ROW_PRESERVING.has(callee.property.name)) return listOf(callee.object as AnyNode);
+    }
+    if (n.type === 'ArrayExpression' && n.elements.length === 1 && n.elements[0]?.type === 'SpreadElement') {
+      return listOf(n.elements[0].argument as AnyNode);
+    }
+    return null;
+  };
+
+  /** The reads of `name.<field>…` under `node` (a row parameter): not into a function that binds `name` again. */
+  const readsOf = (list: string, name: string, node: AnyNode): void => {
+    const walk = (n: AnyNode): void => {
+      if (isFunctionNode(n)) {
+        const bound = new Set<string>();
+        for (const param of n.params) bindingNames(param as AnyNode, bound);
+        if (bound.has(name)) return;
+      }
+      if (n.type === 'AssignmentExpression' || n.type === 'UpdateExpression') {
+        // a write to a row's member is not a read (`row.total = …` — the in-place change rules say it); the value is walked
+        const target = (n.type === 'AssignmentExpression' ? n.left : n.argument) as AnyNode;
+        if (unwrapChain(target).type === 'MemberExpression') {
+          if (n.type === 'AssignmentExpression') walk(n.right as AnyNode);
+          return;
+        }
+      }
+      if (n.type === 'MemberExpression' || n.type === 'ChainExpression' || n.type === 'CallExpression') {
+        const call = n.type === 'CallExpression' ? n : null;
+        const { segments, base } = resolveChain((call !== null ? call.callee : n) as AnyNode);
+        if (base.type === 'Identifier' && base.name === name && segments.length > 0) {
+          const fields: string[] = [];
+          for (const segment of segments) {
+            if (segment.text === null || segment.dynamic !== null) break;
+            fields.push(segment.text);
+          }
+          // a method called last is not a field (`row.name.trim()` reads `name`)
+          if (call !== null && fields.length === segments.length) fields.pop();
+          if (fields.length > 0) out.push({ list, fields, start: n.start - PREFIX.length, end: n.end - PREFIX.length });
+          if (call !== null) for (const arg of call.arguments) walk(arg as AnyNode);
+          return;
+        }
+      }
+      forEachChild(n, walk);
+    };
+    walk(node);
+  };
+
+  /** A row parameter: a name followed in the body, or `{ amount }` read where it is written. */
+  const rowParam = (list: string, param: AnyNode | undefined, body: AnyNode): void => {
+    if (param === undefined) return;
+    const p = param.type === 'AssignmentPattern' ? param.left as AnyNode : param;
+    if (p.type === 'Identifier') { readsOf(list, p.name, body); return; }
+    if (p.type !== 'ObjectPattern') return;
+    for (const property of p.properties) {
+      if (property.type !== 'Property') continue;
+      const key = !property.computed && property.key.type === 'Identifier' ? property.key.name : literalString(property.key as AnyNode);
+      if (key !== null) out.push({ list, fields: [key], start: property.key.start - PREFIX.length, end: property.key.end - PREFIX.length });
+    }
+  };
+
+  const walk = (node: AnyNode, thisIsState: boolean): void => {
+    if (isFunctionNode(node) && node.type !== 'ArrowFunctionExpression') {
+      forEachChild(node, (child) => walk(child, false));
+      return;
+    }
+    if (isClassNode(node)) return;
+    if (thisIsState && node.type === 'CallExpression') {
+      const callee = unwrapChain(node.callee as AnyNode);
+      const method = callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier'
+        ? callee.property.name : null;
+      const rows = method === null ? undefined : ROW_CALLBACKS.get(method);
+      const list = rows === undefined ? null : listOf((callee as MemberExpression).object as AnyNode);
+      const callback = node.arguments[0] as AnyNode | undefined;
+      if (list !== null && callback !== undefined && isFunctionNode(callback)) {
+        for (const index of rows!) rowParam(list, callback.params[index] as AnyNode | undefined, callback.body as AnyNode);
+      }
+    }
+    if (thisIsState && node.type === 'ForOfStatement') {
+      const list = listOf(node.right as AnyNode);
+      const left = node.left as AnyNode;
+      const param = left.type === 'VariableDeclaration' ? left.declarations[0]?.id as AnyNode | undefined : left;
+      if (list !== null) rowParam(list, param, node.body as AnyNode);
+    }
+    forEachChild(node, (child) => walk(child, thisIsState));
+  };
+  walk(wrapper.body as AnyNode, true);
+  return out;
+}
+
+// ============================================================
 // getter の中のウィンドウと文書の読み（継ぎ目アプリ town-archive）
 // ============================================================
 
