@@ -32,7 +32,7 @@ import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { accessorRow, analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { suggestion } from './suggestion.js';
-import { AMBIENT_READ_SPELLING, collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findAmbientRead, findInPlaceChanges, findLocationRead, findOwnThis, moduleBindingNames, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
+import { AMBIENT_READ_SPELLING, collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findAmbientRead, findInPlaceChanges, findLocationRead, findOwnThis, findRowFieldReads, moduleBindingNames, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import type { WatchHandlerSource } from './stateAnalyzer.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
 import { countWildcardSegments, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
@@ -443,7 +443,7 @@ function validateGetterUntrackedReads(
       if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
       // the page's paths are the tree's: a volume's script reads below its mount path
       const prefix = mountPath === null ? [] : mountPath.split('.');
-      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split('.').length, bindingWrites());
+      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split('.').length, bindingWrites().filter((w) => w.certain));
       if (write === undefined && !nestedWriteRoots().has([...prefix, segments[0]].join('.'))) continue;
       const sp = segments.join('.');
       out.push({
@@ -461,6 +461,80 @@ function validateGetterUntrackedReads(
 }
 
 /**
+ * 一覧の行のオブジェクトからの項目の読み（`wcs/getter-untracked-read`）。getter が `this.incomes` を読み、配列のメソッド
+ * （`reduce` / `filter` / `map` …、`filter` の後の `reduce` も）の callback か `for…of` で行から `row.amount` を読む形
+ * （findRowFieldReads）。追跡されるのは `incomes` だけで、行の項目をパスで書いても（`value: .amount` の束縛・
+ * `this["incomes.0.amount"] = …`）getter は走り直さない: 行の追加と削除では合計が動くので気づきにくく、金額を打ち替えると
+ * 合計は前の値のまま（Advent Calendar の制作の記録の `this.incomes.reduce(…)`、継ぎ目アプリ street-reports の
+ * `this.cards.filter(…)`。docs/v4-direction-2026-10.md §5.26 の未決 → §5.27 で決定）。
+ *
+ * D7（docs/getter-dependency-ast-impl-plan.md）は配列を「行の置換は一覧そのものを書き換えるので足りる」として外していた —
+ * 束縛が行の項目を書く場合を数えていなかった。報告するのは、読んだ項目（その上の行・その下）を書く証拠があるときだけ:
+ *   - ページの束縛が書く（collectBindingWrites — 書き戻す束縛・組み込みタグの出力・spread。`#ro` は数えない）: error
+ *   - 契約の分からないカスタム要素の `value:` / `checked:`（ページが自分で定義した `<yen-input>`）、スクリプトの
+ *     `this["incomes.0.amount"] = …`・`$setAll`・`$update`（collectNestedWriteRoots のスクリプト側）: warning
+ *   collectNestedWriteRoots の HTML 側は使わない: `#ro` を見ず、要素を問わず `value:` を数える — `checked#ro: .done` に
+ *   ハンドラで一覧を置き換える形（examples/state-cross-tab-todo）と `<option data-wcs="value: .id">`（music-room）に誤報した
+ * 証拠は項目ごとに見る: `.label` を書くだけのページで `row.amount` を読む合計は報告しない。getter ごと・項目ごとに 1 回。
+ */
+function validateGetterRowFieldReads(
+  script: string,
+  scriptStart: number,
+  mountPath: string | null,
+  writtenPaths: () => readonly { path: string; inclusive: boolean; script: boolean }[],
+  bindingWrites: () => readonly BindingWrite[],
+  locale?: string,
+): WcsDiagnostic[] {
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === 'getter' && entry.accessor === 'get');
+  const msgs = getMessages(locale);
+  const prefix = mountPath === null ? [] : mountPath.split('.');
+  const out: WcsDiagnostic[] = [];
+  for (const getter of getters) {
+    if (!/\bthis\b/.test(getter.body)) continue;
+    const told = new Set<string>();
+    for (const read of findRowFieldReads(getter.body) ?? []) {
+      const list = [...prefix, ...read.list.split('.')];
+      const segments = [...list, '*', ...read.fields];
+      const writes = bindingWrites();
+      const bound = boundWriteOf(segments, list.length, writes.filter((w) => w.certain));
+      const soft = bound === undefined ? boundWriteOf(segments, list.length, writes.filter((w) => !w.certain)) : undefined;
+      const written = bound?.path ?? soft?.path ?? writtenUnderRows(segments, list.length, writtenPaths());
+      const fieldPath = `${read.list}.*.${read.fields.join('.')}`;
+      if (written === undefined || told.has(fieldPath)) continue;
+      told.add(fieldPath);
+      out.push({
+        code: WcsDiagnosticCode.GetterUntrackedRead,
+        start: scriptStart + getter.bodyStart + read.start,
+        end: scriptStart + getter.bodyStart + read.end,
+        message: msgs.getterRowFieldRead(read.list, fieldPath, written, (bound ?? soft)?.binding ?? null, (bound ?? soft)?.tag ?? null),
+        severity: bound === undefined ? 'warning' : 'error',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * A written path (a numeric segment read as `*`) under the list's rows — the first `tracked` segments of `segments` —
+ * that is the read `segments`, above it (a row replaced: `incomes.0`) or below it; the path as written, or undefined.
+ */
+function writtenUnderRows(
+  segments: readonly string[],
+  tracked: number,
+  written: readonly { path: string; inclusive: boolean; script: boolean }[],
+): string | undefined {
+  return written.find(({ path, inclusive, script }) => {
+    // (a script's write; an inclusive one is a volume's mount path, not a row's field)
+    if (!script || inclusive) return false;
+    const w = path.split('.').map((s) => (/^\d+$/.test(s) ? '*' : s));
+    if (w.length <= tracked) return false;
+    const common = Math.min(w.length, segments.length);
+    for (let i = 0; i < common; i++) if (w[i] !== segments[i]) return false;
+    return true;
+  })?.path;
+}
+
+/**
  * A path a binding on the page writes by path (`wcs/getter-untracked-read` is an error when a getter reads it, or
  * below it, through a plain property access). `path` may hold `*` (a row's relative path in a `for:`).
  */
@@ -469,6 +543,12 @@ interface BindingWrite {
   /** The binding as written (`...: monthFetch`, `value: form.name`). */
   readonly binding: string;
   readonly tag: string;
+  /**
+   * false: `value:` / `checked:` on a custom element the lint has no contract for (a page's own element, `<yen-input>`)
+   * — it writes back when the element declares that output, which the lint cannot see here. Only the row-field rule
+   * takes these, as a warning's evidence.
+   */
+  readonly certain: boolean;
 }
 
 /**
@@ -516,8 +596,8 @@ function collectBindingWrites(html: string, bindAttrName: string): BindingWrite[
         if (list === null) return;
         path = path === '.' ? `${list}.*` : `${list}.*.${path.slice(1)}`;
       }
-      const write = (written: string): void => {
-        out.push({ path: written, binding: binding.exprText, tag });
+      const write = (written: string, certain = true): void => {
+        out.push({ path: written, binding: binding.exprText, tag, certain });
       };
       if (parsed.bindingType === 'spread') {
         if (outputs === null) return;
@@ -531,6 +611,8 @@ function collectBindingWrites(html: string, bindAttrName: string): BindingWrite[
       } else if (parsed.bindingType === 'prop'
         && (writesBack(attr, parsed.propName, parsed.propName) || outputs?.includes(parsed.propName) === true)) {
         write(path);
+      } else if (parsed.bindingType === 'prop' && contract === undefined && tag.includes('-') && TWO_WAY_PROPS.has(parsed.propName)) {
+        write(path, false);
       }
     });
   }
@@ -795,9 +877,15 @@ function collectNestedWriteRoots(
   stateTagName: string,
   bindAttrName: string,
   blocks: readonly { content: string; mountPath: string | null }[],
+  /** The written paths themselves, each once (`inclusive`: and everything under it). */
+  written: { path: string; inclusive: boolean; script: boolean }[] = [],
 ): Map<string, string> {
   const roots = new Map<string, string>();
+  // (the written paths say where they were found: the row-field rule takes only the script's — its bindings come from
+  // collectBindingWrites, which reads `#ro` and which elements write back)
+  let script = false;
   const addPrefixes = (path: string, inclusive: boolean): void => {
+    written.push({ path, inclusive, script });
     const segments = path.split('.');
     const last = inclusive ? segments.length : segments.length - 1;
     const example = inclusive ? `${path}.*` : path;
@@ -836,6 +924,7 @@ function collectNestedWriteRoots(
   }
 
   // script 側
+  script = true;
   for (const block of blocks) {
     if (block.mountPath !== null) addPrefixes(block.mountPath, true);
     // 検出は鏡像（コメント・文字列の中身を空白化）、値の読み出しは原文から（上と同じ規約）
@@ -1181,9 +1270,15 @@ export function validateSemantics(
   const out: WcsDiagnostic[] = [];
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
   // 入れ子書き込みの証拠はドキュメント単位で 1 回だけ集める（必要になるまで作らない）
-  let nestedWriteRoots: Map<string, string> | null = null;
-  const getNestedWriteRoots = (): ReadonlyMap<string, string> =>
-    (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
+  let nestedWrites: { roots: Map<string, string>; paths: { path: string; inclusive: boolean; script: boolean }[] } | null = null;
+  const getNestedWrites = (): NonNullable<typeof nestedWrites> => {
+    if (nestedWrites === null) {
+      const paths: { path: string; inclusive: boolean; script: boolean }[] = [];
+      nestedWrites = { roots: collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks, paths), paths };
+    }
+    return nestedWrites;
+  };
+  const getNestedWriteRoots = (): ReadonlyMap<string, string> => getNestedWrites().roots;
   let bindingWrites: BindingWrite[] | null = null;
   const getBindingWrites = (): readonly BindingWrite[] => (bindingWrites ??= collectBindingWrites(html, bindAttrName));
   for (const block of blocks) {
@@ -1193,6 +1288,9 @@ export function validateSemantics(
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(
       block.content, block.contentStart, block.mountPath, getNestedWriteRoots, getBindingWrites, locale,
+    ));
+    out.push(...validateGetterRowFieldReads(
+      block.content, block.contentStart, block.mountPath, () => getNestedWrites().paths, getBindingWrites, locale,
     ));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale));
     out.push(...validateGetterClockReads(block.content, block.contentStart, locale));

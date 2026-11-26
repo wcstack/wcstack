@@ -15,6 +15,7 @@ From an outside evaluation: the record of the problems met while writing a 25-da
 - `@wcstack/testing`: **`mount()` rejects a page with a `<wcs-state>` when its `bootstrap` list leaves the tag undefined.** A `bootstrap` list replaces the default `[bootstrapState]`; a list with only the router left every binding as written and resolved. Put `bootstrapState` in the list.
 - `@wcstack/typescript`: **`wcs-schema emit` writes the values of an `enum` and the members of an `anyOf` in a fixed order** (by value). A manifest written by an earlier emit still passes `check`, which now ignores that order; the next `emit` rewrites those arrays once.
 - `@wcstack/typescript`: `wcs-schema emit` and `check` warn about each list whose rows have no type (`dependents: []`).
+- `@wcstack/lint`: **new findings may fail a page that passed `--strict`.** With a `stateSchema`, a path where the schema says nothing (`items: {}`, a value typed `null`, `any`) is checked as without a schema — a warning where it was silent. `wcs/getter-untracked-read` reports a getter that reads a list's rows (`this.incomes.reduce((t, row) => t + row.amount, 0)`) when that field is written by path: an error when a binding on the page writes it, a warning otherwise. No page in this repository changes.
 
 ### Fixed
 
@@ -24,6 +25,9 @@ From an outside evaluation: the record of the problems met while writing a 25-da
 - `@wcstack/typescript`: **an accessor declared for several paths (`get "incomes.*.amountName,expenses.*.amountName"()`) was left out of the generated `stateSchema`**, without a word: the key was split at `.` alone, and its middle segment (`amountName,expenses`) matched nothing. Each listed path now gets the member.
 - `@wcstack/typescript`: **an edit elsewhere in the state file reordered an `enum` with the same values**, and `check` called the manifest out of date: TypeScript lists a union's members in the order it first made their types.
 - `@wcstack/typescript`: a list that starts empty with no type gets `items: {}`, and the schema said nothing about its rows — not even the row getters declared under it — while nothing said so. `emit` now names the list and the type to give it.
+- `@wcstack/lint` (and the VS Code extension): **adding a `stateSchema` hid a typo it had reported.** Under a list that starts empty, `wcs-schema` writes `items: {}`, and the lint read a bare `{}` as "unknown, say nothing": `.deductio` under such a list was a warning without the schema and nothing with it. A schema now never weakens the check.
+- `@wcstack/lint`: **a total over a list's rows that a binding edits was not reported.** `get total() { return this.incomes.reduce((t, row) => t + row.amount, 0); }` with `valueAsNumber: .amount` in the rows follows rows added and removed, and keeps its value when an amount is edited: only the list is tracked. `wcs/getter-untracked-read` covered an object's member (`this.form.name`) and left lists out on purpose (a list is replaced when a row is); a binding that writes a row's field was not counted. Reported only when the field read is written by path; read it with `this.$getAll("incomes.*.amount", [])`. The same shape as the street-reports seam app's `this.cards.filter(…)`, left open in §5.26.
+- `@wcstack/lint`: a misspelt top-level key or getter (`dependentsDeductio`) or an object's member had no did-you-mean; only a row's field did. The runtime named the near one.
 
 ## [4.30.0] — 2026-11-26
 

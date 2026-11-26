@@ -13,7 +13,7 @@ import { createTemplateTester, extractAttribute, findStartTagRegions, type WcsSt
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { nativeCommandsOf, STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
-import { rowFieldSuggestion, suggestion } from './suggestion.js';
+import { pathSuggestion, suggestion } from './suggestion.js';
 import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathIndex, isUnresolvedPath, readStateScript, type FileReader } from './statePathResolver.js';
 import {
@@ -544,16 +544,16 @@ export function validateBindings(
                 severity: 'error' as const,
               }
               : schema !== undefined && !(unresolved && propNoMod.startsWith('on'))
-              ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
+              ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs, unresolved)
               : unresolved
               ? null
               : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
-              // a row field the rows lack, near one they have: name it, as the runtime does for a data list's row
+              // a name near the missing one beside it (a top-level key, a member, a row field): name it, as the runtime does
               const near = verdict.code === WcsDiagnosticCode.BindingPathMissing || verdict.code === WcsDiagnosticCode.PathNonexistent
-                ? rowFieldSuggestion(checkPath, scopedPaths, msgs)
+                ? pathSuggestion(checkPath, scopedPaths, msgs)
                 : '';
               diagnostics.push({
                 code: verdict.code,
@@ -1332,9 +1332,13 @@ function toMissingVerdict(message: string | null): PathVerdict | null {
  * - script / JSON / schema 由来の候補集合に当たれば存在（メソッド・getter・`$listKeys` 派生など
  *   schema に載らない宣言を先に拾う）。
  * - 残りは `resolveSchemaPath` の三値: `nonexistent`（object と確定しているのに member が無い）
- *   だけを `wcs/path-nonexistent`（error）にし、`unknown`（素の `{}` の下・型未確定）と
- *   `ref-error`（manifest 側の診断が担う）は沈黙する。候補集合だけで判定すると unknown が
- *   「候補に無い = 不在」に化けて偽 error になる。
+ *   だけを `wcs/path-nonexistent`（error）にし、`ref-error`（manifest 側の診断が担う）は沈黙する。
+ *   候補集合だけで判定すると unknown が「候補に無い = 不在」に化けて偽 error になる。
+ * - `unknown`（素の `{}` の下・型未確定 — 行に型の無い一覧の `items: {}`、`null` で始まる値、`any`）は、
+ *   schema が無いときと同じ検査（warning）に戻す: schema を足しても検査は弱くならない。以前は沈黙し、
+ *   schema の無いときに知らせていた一覧の下の綴り違い（`.deductio`）が、schema を置くと何も言わずに通った
+ *   （Advent Calendar の制作の記録、docs/v4-direction-2026-10.md §5.27）。spread などでスコープが開いたパスは、
+ *   schema が無いときと同じく沈黙する。
  */
 function validateSchemaPathExistence(
   checkPath: string,
@@ -1344,6 +1348,7 @@ function validateSchemaPathExistence(
   commandNames: Set<string>,
   schema: JsonSchemaNode,
   msgs: WcsMessageCatalog,
+  unresolved: boolean,
 ): PathVerdict | null {
   if (checkPath.startsWith('$')) {
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
@@ -1356,6 +1361,9 @@ function validateSchemaPathExistence(
   const resolution = resolveIndexedSchemaPath(schema, checkPath);
   if (resolution.kind === 'nonexistent') {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: 'error' };
+  }
+  if (resolution.kind === 'unknown' && !unresolved) {
+    return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
   return null;
 }
