@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.24.0 — 2026-11-27
 
-外部の評価 — wcstack 4.28.0 でビルドなしの確定申告の下書きツールを 25 日で作る Advent Calendar の連載の記録 — から（2026-11-27 の著者の決定、docs/v4-direction-2026-10.md §5.27）。
+`@wcstack/state` 4.31.0 から作った（npm の `@wcstack/lint` 4.31.0・`@wcstack/typescript` 4.31.0 と同じ判定）。外部の評価 — wcstack 4.28.0 でビルドなしの確定申告の下書きツールを 25 日で作る Advent Calendar の連載の記録 — から（2026-11-27 の著者の決定、docs/v4-direction-2026-10.md §5.27）。
 
 - `stateSchema` が何も言わない所（素の `{}` — 行に型の無い一覧の `items: {}`・`null` の型・`any`）のパスは、schema が無いときと同じに検査する（`wcs/binding-path-missing`、warning。data-wcs・`{{ }}`・コメントの束縛）。schema を足しても検査は弱くならない。これまでは沈黙し、空で始まる一覧に `wcs-schema` が書いた schema を置くと、その下の綴り違い（`.deductio`）が何も言わずに通った。スコープの開いたパス（spread）は今までどおり黙る。リポジトリのページの診断は変わらない。
 - `wcs/getter-untracked-read`: getter が `this.<一覧>` を読み、配列のメソッド（`reduce` / `filter` / `map` / `some` …。`filter` / `slice` / `toSorted` の後・`[...this.list]` も）の callback か `for…of` で行のオブジェクトから項目を読み、その項目がパスで書かれるとき。ページの束縛が書けば error（`#ro` と書き戻さない要素は数えない）、契約の無いカスタム要素の `value:` / `checked:` かスクリプトの書き込みなら warning。直し方は `this.$getAll("incomes.*.amount", [])`。§5.26 で未決だった形（継ぎ目アプリ street-reports の `filter`）。リポジトリの例への新しい報告は 0 件（作る途中で、`checked#ro` とハンドラで一覧を置き換える state-cross-tab-todo と、`<option>` の `value:` の music-room への誤報を潰した）。

@@ -13,12 +13,12 @@
   "split/core.js (with its chunks)": {
     "files": 12,
     "bytes": 59440,
-    "gzip": 24787
+    "gzip": 24785
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
     "bytes": 5656,
-    "gzip": 2514
+    "gzip": 2515
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
@@ -63,7 +63,7 @@
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 14672,
-    "gzip": 5781
+    "gzip": 5779
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
