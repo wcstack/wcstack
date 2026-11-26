@@ -7,8 +7,10 @@
  * - `$`-prefixed keys are dropped (runtime namespaces, never data paths).
  * - Members with call signatures (methods, function-valued properties) are dropped.
  * - Getters contribute their return type. Path getters (`get "users.*.ageCategory"()`)
- *   are injected at the path they compute, so the validator sees them as members.
- * - Arrays → `items`; unions split `null` out into `anyOf`; literal unions → `enum`.
+ *   are injected at the path they compute, so the validator sees them as members; one declared
+ *   for several paths (`get "users.*.full,staff.*.full"()`) at each of them.
+ * - Arrays → `items`; unions split `null` out into `anyOf`; literal unions → `enum`. The members of
+ *   an `enum` and an `anyOf` come in a fixed order, not in the order TypeScript made their types.
  * - Built-in / library object types (`Date`, `Map`, DOM types, …) become a **bare `{}`**
  *   — never `{ "type": "object" }`: the validator treats a bare `{}` as *unknown*
  *   (silent) and a typed object without the member as *nonexistent* (error).
@@ -113,7 +115,9 @@ function convertUnion(type: ts.UnionType, depth: number, ctx: Context): JsonSche
   } else if (nonNull.every((t) => (t.flags & ts.TypeFlags.BooleanLiteral) !== 0) && nonNull.length === 2) {
     node = { type: "boolean" };
   } else if (nonNull.every((t) => t.isLiteral() || (t.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
-    const values = nonNull.map((t) => literalValue(t, ctx));
+    // in a fixed order: TypeScript lists a union's members in the order it first made their types, so an edit
+    // elsewhere in the file reordered the same values (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27)
+    const values = nonNull.map((t) => literalValue(t, ctx)).sort(compareLiterals);
     const kinds = [...new Set(values.map((v) => typeof v))];
     node = kinds.length === 1 && (kinds[0] === "string" || kinds[0] === "number" || kinds[0] === "boolean")
       ? { type: kinds[0], enum: values }
@@ -121,7 +125,8 @@ function convertUnion(type: ts.UnionType, depth: number, ctx: Context): JsonSche
   } else if (nonNull.length === 1) {
     node = convertType(nonNull[0], depth, ctx, false);
   } else {
-    const converted = dedupeNodes(nonNull.map((t) => convertType(t, depth, ctx, false)));
+    // (in a fixed order, as an enum's values; `null`, when the union has it, stays last)
+    const converted = dedupeNodes(nonNull.map((t) => convertType(t, depth, ctx, false))).sort(compareNodes);
     node = converted.length === 1 ? converted[0] : { anyOf: converted };
   }
 
@@ -155,13 +160,19 @@ function convertObject(type: ts.Type, depth: number, ctx: Context, isRoot: boole
       if (isMethodSymbol(prop)) continue;
       const propType = ctx.checker.getTypeOfSymbolAtLocation(prop, ctx.location);
       if (isFunctionValued(propType, ctx)) continue;
-      if (isRoot && (name.includes(".") || name.includes("*"))) {
-        // A path getter declares a member at a nested position; inject it once the tree exists.
-        ctx.pathGetters.push({ segments: name.split("."), type: propType });
-        continue;
+      // An accessor declared for several paths lists them with commas (`get "incomes.*.label,expenses.*.label"()`):
+      // each path gets the member. Split at `.` alone, the key's middle segment (`label,expenses`) matched nothing
+      // and the getter was dropped without a word (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27)
+      const names = isRoot && name.includes(",") ? name.split(",").map((part) => part.trim()).filter((part) => part !== "") : [name];
+      for (const member of names) {
+        if (isRoot && (member.includes(".") || member.includes("*"))) {
+          // A path getter declares a member at a nested position; inject it once the tree exists.
+          ctx.pathGetters.push({ segments: member.split("."), type: propType });
+          continue;
+        }
+        properties[member] = convertType(propType, depth + 1, ctx, false);
+        if (!isOptional(prop, propType)) required.push(member);
       }
-      properties[name] = convertType(propType, depth + 1, ctx, false);
-      if (!isOptional(prop, propType)) required.push(name);
     }
     const node: JsonSchemaNode = { type: "object", properties };
     if (required.length > 0) node.required = required;
@@ -236,6 +247,21 @@ function literalValue(type: ts.Type, ctx: Context): unknown {
     return typeof value === "object" ? Number(`${value.negative ? "-" : ""}${value.base10Value}`) : value;
   }
   return undefined;
+}
+
+/** Literal values in a fixed order: by kind (boolean, number, string), then by value. */
+function compareLiterals(a: unknown, b: unknown): number {
+  const ka = typeof a;
+  const kb = typeof b;
+  if (ka !== kb) return ka < kb ? -1 : 1;
+  return (a as number | string) < (b as number | string) ? -1 : (a as number | string) > (b as number | string) ? 1 : 0;
+}
+
+/** Schema nodes in a fixed order: by their JSON. */
+function compareNodes(a: JsonSchemaNode, b: JsonSchemaNode): number {
+  const ja = JSON.stringify(a);
+  const jb = JSON.stringify(b);
+  return ja < jb ? -1 : ja > jb ? 1 : 0;
 }
 
 function dedupeNodes(nodes: JsonSchemaNode[]): JsonSchemaNode[] {
