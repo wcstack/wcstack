@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+From an outside evaluation: the record of the problems met while writing a 25-day Advent Calendar series that builds a buildless tax-return draft tool on wcstack 4.28.0. The author's decisions of 2026-11-27 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.27.
+
+### Upgrading
+
+- `@wcstack/typescript`: **`wcs-schema emit` writes the values of an `enum` and the members of an `anyOf` in a fixed order** (by value). A manifest written by an earlier emit still passes `check`, which now ignores that order; the next `emit` rewrites those arrays once.
+- `@wcstack/typescript`: `wcs-schema emit` and `check` warn about each list whose rows have no type (`dependents: []`).
+
+### Fixed
+
+- `@wcstack/typescript`: **an accessor declared for several paths (`get "incomes.*.amountName,expenses.*.amountName"()`) was left out of the generated `stateSchema`**, without a word: the key was split at `.` alone, and its middle segment (`amountName,expenses`) matched nothing. Each listed path now gets the member.
+- `@wcstack/typescript`: **an edit elsewhere in the state file reordered an `enum` with the same values**, and `check` called the manifest out of date: TypeScript lists a union's members in the order it first made their types.
+- `@wcstack/typescript`: a list that starts empty with no type gets `items: {}`, and the schema said nothing about its rows — not even the row getters declared under it — while nothing said so. `emit` now names the list and the type to give it.
+
 ## [4.30.0] — 2026-11-26
 
 Another framework's habits — from the `street-reports` seam app ([docs/seam-apps.md](./docs/seam-apps.md)): a working React app and its e2e suite, handed to a first-time author to be moved to wcstack without changing the suite. The author's decisions of 2026-11-25 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.26. A guide came out of it: [Coming from React](./docs/coming-from-react.md).

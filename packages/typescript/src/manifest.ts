@@ -214,17 +214,32 @@ function subtreeAt(schema: unknown, mountPath: string): unknown {
   return node;
 }
 
-/** JSON with object keys sorted at every level — the canonical form used for comparison. */
+/**
+ * The canonical form used for comparison: JSON with object keys sorted at every level, and the members of an
+ * `enum` or an `anyOf` — sets in JSON Schema — in a fixed order. TypeScript lists a union's members in the order
+ * it first made their types, so an edit elsewhere in the state file reordered an `enum` with the same values,
+ * and `check` reported a schema that had not changed (the Advent Calendar's record, docs/v4-direction-2026-10.md
+ * §5.27). `emit` writes them in that order too; a manifest written by an earlier emit still compares equal.
+ */
 export function stableStringify(value: unknown): string {
   return JSON.stringify(sortKeys(value));
 }
 
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
+const SET_KEYWORDS = new Set(["enum", "anyOf"]);
+
+function sortKeys(value: unknown, set = false): unknown {
+  if (Array.isArray(value)) {
+    const members = value.map((member) => sortKeys(member));
+    if (!set) return members;
+    return members
+      .map((member) => [JSON.stringify(member), member] as const)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, member]) => member);
+  }
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      out[key] = sortKeys((value as Record<string, unknown>)[key]);
+      out[key] = sortKeys((value as Record<string, unknown>)[key], SET_KEYWORDS.has(key));
     }
     return out;
   }
@@ -282,8 +297,9 @@ export function compareStateSchema(manifestText: string, mountPath: string | nul
     return sourceDiff === undefined ? { kind: "same" } : { kind: "differs", changes: [], stateSource: sourceDiff };
   }
 
-  const a = flatten(generated);
-  const b = flatten(stored);
+  // (in the canonical form: an `enum` or `anyOf` in another order is not listed as a change)
+  const a = flatten(sortKeys(generated));
+  const b = flatten(sortKeys(stored));
   const changes: string[] = [];
   for (const key of [...new Set([...a.keys(), ...b.keys()])].sort()) {
     const inA = a.has(key);
