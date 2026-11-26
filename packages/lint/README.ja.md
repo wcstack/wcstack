@@ -96,7 +96,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 - **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
 - **schema を当てるページ**（4.26 から）: schema を作った state のファイルを記した manifest — `wcstack.application.stateSource`、manifest からの相対で、`wcs-schema emit` が書きます — は、そのファイルを root の `<wcs-state src>` で読むページだけの契約です（同じパスの `.js` と `.ts`、`.mjs` と `.mts` は同じファイル）。state がインラインのページや別のファイルのページは、発見した manifest でも引数に渡した manifest でも、manifest が無いものとして検査します。4.25 までは、アプリの schema をその下のすべてのページに当てていたので、アプリの隣で自前のインラインの state を持つページの正しいパスが `wcs/path-nonexistent` の error になっていました。`stateSource` の無い manifest（手書き・それより前の `wcs-schema` が作ったもの）は、これまでどおりすべてのページに当てます。
-- **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
+- **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は schema が無いときと同じに検査し（4.31（未リリース）から。以前は沈黙した）、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
 - **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state も検査できません。4.7 から、それを属性の上で 1 回だけ言います（`wcs/state-src-unread`、info）。4.6 までは何も言いませんでした。`src` はページからの相対パスで読むので、ファイルはサーバーと同じ並びに置き、/ から始まるパスには 4.10 から `--root=<dir>` を渡してください。
 - **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイル（または JSDoc で型を付けた JavaScript のファイル）から `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
 
@@ -212,6 +212,16 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 - **`--strict` は読めなかった state を数えます。** `wcs/state-src-unread`（lint が読めない `<wcs-state src>`）と、state の先頭の `...spread` の `wcs/path-dynamic-unknown` —— どちらの後も、その state のパスは 1 つも検査されません —— は info のままですが、`--strict` では warning と同じく数えます（exit `1`）。lint が値を読めないキー（別のファイルから import した辞書、`team: init.team`）は、state の残りを検査したままにします: `--strict` が通す info のままです。そして、summary 行がその数を言い（`(strict; 2 unchecked counted as warnings)`）、その後に `strict:` の注記が続きます。4.29 までの `--strict` は、そうした state を検査しないまま exit `0` でした。
 
 新しい error は `--errors-only` にも出ます。新しい warning は `--strict` で失敗します。
+
+## 生成した schema と、行の合計を持つページに言うこと
+
+4.31（未リリース）から。外部の評価 — wcstack 4.28.0 でビルドなしの確定申告の下書きツールを 25 日で作る Advent Calendar の連載の記録から:
+
+- **`stateSchema` を足しても検査は弱くなりません。** schema が何も言わない所 — 行に型の無い一覧（`items: {}`。空で始まる一覧に `wcs-schema` が書くもの）・`null` の型の値・`any` — のパスは、schema が無いときと同じに検査します（`wcs/binding-path-missing`、warning）。そうした一覧の下の綴り違い `.deductio` は、schema が無いと知らされ、足すと通っていました。`wcs-schema emit` も、そうした一覧を名指すようになりました。
+- **`wcs/getter-untracked-read` は一覧の行も読みます。** getter が `this.incomes` を読み、行のオブジェクトから項目を読み — `this.incomes.reduce((t, row) => t + row.amount, 0)`・`this.todos.filter((t) => !t.done).length`、`filter` / `slice` / `toSorted` の後・`[...this.list]`・`for (const row of this.list)` も — その項目がパスで書かれるとき。追跡されるのは一覧だけなので、合計は行の追加と削除には付いてきて、金額を打ち替えると前の値のままです。ページの束縛が書くなら **error**（行の中の `valueAsNumber: .amount`・`checked: .done`・組み込みタグの出力）、lint が契約を持たないカスタム要素の `value:` / `checked:`（`<yen-input data-wcs="value: .amount">`）かスクリプト（`this["incomes.0.amount"] = …`・`$setAll`）が書くなら warning。その項目の書き込みが無ければ報告しません — 一覧を置き換えるページ・`#ro` の束縛・`<option data-wcs="value: .id">`。項目はパスで読んでください: `this.$getAll("incomes.*.amount", [])`。
+- **無いパスにはどこでも「もしかして」。** トップレベルのキーや getter の綴り違い（`dependentsDeductio`）・オブジェクトのメンバー（`user.nmae`）にも、ランタイムと同じく近い名前を言います。これまでは行のフィールドだけでした。
+
+新しい warning は `--strict` で落ち、新しい error は `--errors-only` でも出ます。
 
 ## 生成 → 検証 → 修正ループでの利用
 

@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+From an outside evaluation: the record of the problems met while writing a 25-day Advent Calendar series that builds a buildless tax-return draft tool on wcstack 4.28.0. The author's decisions of 2026-11-27 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.27.
+
+### Upgrading
+
+- `@wcstack/lint`: **new findings may fail a page that passed `--strict`.** With a `stateSchema`, a path where the schema says nothing (`items: {}`, a value typed `null`, `any`) is checked as without a schema — a warning where it was silent. `wcs/getter-untracked-read` reports a getter that reads a list's rows (`this.incomes.reduce((t, row) => t + row.amount, 0)`) when that field is written by path: an error when a binding on the page writes it, a warning otherwise. No page in this repository changes.
+
+### Fixed
+
+- `@wcstack/lint` (and the VS Code extension): **adding a `stateSchema` hid a typo it had reported.** Under a list that starts empty, `wcs-schema` writes `items: {}`, and the lint read a bare `{}` as "unknown, say nothing": `.deductio` under such a list was a warning without the schema and nothing with it. A schema now never weakens the check.
+- `@wcstack/lint`: **a total over a list's rows that a binding edits was not reported.** `get total() { return this.incomes.reduce((t, row) => t + row.amount, 0); }` with `valueAsNumber: .amount` in the rows follows rows added and removed, and keeps its value when an amount is edited: only the list is tracked. `wcs/getter-untracked-read` covered an object's member (`this.form.name`) and left lists out on purpose (a list is replaced when a row is); a binding that writes a row's field was not counted. Reported only when the field read is written by path; read it with `this.$getAll("incomes.*.amount", [])`. The same shape as the street-reports seam app's `this.cards.filter(…)`, left open in §5.26.
+- `@wcstack/lint`: a misspelt top-level key or getter (`dependentsDeductio`) or an object's member had no did-you-mean; only a row's field did. The runtime named the near one.
+
 ## [4.30.0] — 2026-11-26
 
 Another framework's habits — from the `street-reports` seam app ([docs/seam-apps.md](./docs/seam-apps.md)): a working React app and its e2e suite, handed to a first-time author to be moved to wcstack without changing the suite. The author's decisions of 2026-11-25 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.26. A guide came out of it: [Coming from React](./docs/coming-from-react.md).
