@@ -42,7 +42,7 @@ Registers the elements, inserts `html`, and resolves once everything under the r
 | Option | Description |
 |---|---|
 | `root` | `"document"` (default) — the HTML becomes `document.body`'s content. `"shadow"` — it goes into an open ShadowRoot on a fresh host appended to `document.body`, so bindings scope to that root |
-| `bootstrap` | Registration functions to run first. Default `[bootstrapState]` (imported lazily from `@wcstack/state`). Add what the page uses — `bootstrapRouter`, `bootstrapFetch`, … — as functions or async loaders: `async () => (await import("@wcstack/router")).bootstrapRouter()`. Every wcstack bootstrap is idempotent |
+| `bootstrap` | Registration functions to run first. Default `[bootstrapState]` (imported lazily from `@wcstack/state`). A list replaces the default: name everything the page uses — `bootstrapState` too, beside `bootstrapRouter`, `bootstrapFetch`, … — as functions or async loaders: `async () => (await import("@wcstack/router")).bootstrapRouter()`. Since 4.31 (not released yet), a page with a `<wcs-state>` whose tag the list leaves undefined rejects, saying so; it used to resolve with nothing bound. Every wcstack bootstrap is idempotent |
 | `stateTagName` | The state tag when `bootstrapState({ tagNames })` renamed it (default `wcs-state`) |
 | `maxIterations` | Stabilization rounds for elements inserted while waiting (default 10) |
 | `resolveModule` | Since 4.9. `(url: URL) => string \| URL \| null` — the local file a `<wcs-state src>` module is read from, the same option as `@wcstack/server`'s `renderToString`: it gets the URL the page names (resolved against `document.baseURI` — an `http:` URL under happy-dom) and returns a path or a `file:` URL. Node's module loader reads `file:` and `data:` URLs only. Installed for the length of the mount; the module is imported anew for each mount, so tests do not share a state object. Without it, or when it returns nothing, the state fails to initialize with a message saying so — for the root `<wcs-state>`, `mount()` rejects with it. A `.json` `src` is fetched, as before. See [A state in its own file](#a-state-in-its-own-file) |
@@ -71,11 +71,12 @@ The returned `MountedApp`:
 | `state().element` | The element itself |
 | `unmount()` | Remove the mounted HTML |
 
-`mount()` also smooths three happy-dom edges so the page behaves as in a browser:
+`mount()` also smooths four happy-dom edges so the page behaves as in a browser:
 
 - it disables `URL.createObjectURL` once per process when a browser-style one is present — Node cannot import `blob:` URLs, and without this an inline `<script type="module">` state never finishes loading (the loader then takes its `data:` URL path, as SSR does);
 - it wraps happy-dom's `textContent` / `innerText` setters to stringify like the DOM spec — happy-dom turns a numeric `0` into an empty string (and `innerText` throws on numbers), so a `textContent: count` binding would blank out at zero only under happy-dom;
-- since 4.26, it inserts the HTML with `@wcstack/server`'s `setInnerHTML`, which keeps a `<template>` written in a table where browsers keep it. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, so a page with `<tbody><template data-wcs="for: rows"><tr>…` (or a `for:` over the cells of a `<tr>`) failed to mount with `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` — up to 4.25, such a page could not be tested headlessly.
+- since 4.26, it inserts the HTML with `@wcstack/server`'s `setInnerHTML`, which keeps a `<template>` written in a table where browsers keep it. happy-dom's parser moves a `<template>` out of a `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>` or `<colgroup>` and leaves its rows or cells in the table, so a page with `<tbody><template data-wcs="for: rows"><tr>…` (or a `for:` over the cells of a `<tr>`) failed to mount with `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` — up to 4.25, such a page could not be tested headlessly;
+- since 4.31 (not released yet), it builds the page out of the document and then moves it in, so that each element connects with its children — as a browser's parser leaves the page before a module script upgrades it. happy-dom connects an element at its start tag, before its children are parsed: a `<wcs-link>` moved no text into its `<a>`, and built its `href` before the router had read its basename (`/next` for `/app/next`).
 
 #### Typing the state
 

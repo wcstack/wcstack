@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+From an outside evaluation: the record of the problems met while writing a 25-day Advent Calendar series that builds a buildless tax-return draft tool on wcstack 4.28.0. The author's decisions of 2026-11-27 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.27.
+
+### Upgrading
+
+- `@wcstack/testing`: **`mount()` rejects a page with a `<wcs-state>` when its `bootstrap` list leaves the tag undefined.** A `bootstrap` list replaces the default `[bootstrapState]`; a list with only the router left every binding as written and resolved. Put `bootstrapState` in the list.
+
+### Fixed
+
+- `@wcstack/testing`: **`mount()` builds the page out of the document and then moves it in**, so that each element connects with its children, as a browser's parser leaves a page before a module script upgrades it. happy-dom connects an element at its start tag: a `<wcs-link>` moved no text into its `<a>`, and built its `href` before the router had read its basename (`/next` for `/app/next`).
+- `@wcstack/router`: **a `<wcs-link>` that connects before any router is in the document waits a microtask before it builds its anchor**, and throws only if there is still none. A page inserted after the tags were defined, with its navigation before the `<wcs-router>` — `mount()` under happy-dom — failed with `wcs-link is not connected to a router.` A link's `href` is also built again on each location change, so a link that connected before the router had read its basename no longer keeps an `href` without it.
+- `@wcstack/testing`: the README and the type of `bootstrap` said to "add" the packages a page uses; a list replaces the default.
+
 ## [4.30.0] — 2026-11-26
 
 Another framework's habits — from the `street-reports` seam app ([docs/seam-apps.md](./docs/seam-apps.md)): a working React app and its e2e suite, handed to a first-time author to be moved to wcstack without changing the suite. The author's decisions of 2026-11-25 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.26. A guide came out of it: [Coming from React](./docs/coming-from-react.md).
