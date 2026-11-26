@@ -785,6 +785,7 @@ declare class Link extends HTMLElement implements ILink {
      * 通常は registerComponents() で Router を Link より先に upgrade することを推奨する。
      */
     get router(): Router;
+    private _findRouter;
     private _initialize;
     /**
      * URL pathname を正規化する。Router と共通実装を使うことで
@@ -799,6 +800,11 @@ declare class Link extends HTMLElement implements ILink {
     private _isInternalTarget;
     private _setAnchorHref;
     connectedCallback(): void;
+    /**
+     * a `to` assigned before the element was defined (state loaded before the router) is an own property that
+     * hides the accessor: take it in through the setter
+     */
+    private _adoptOwnTo;
     /**
      * サーバーが生成した目印付き anchor（直後の兄弟）。クライアントの採用対象
      */

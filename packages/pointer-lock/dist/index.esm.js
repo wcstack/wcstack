@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/pointer-lock","version":"4.30.0"};
+var pkg = {"name":"@wcstack/pointer-lock","version":"4.31.0"};
 
 /**
  * pointerLockCapabilities.ts

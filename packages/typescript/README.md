@@ -52,7 +52,7 @@ Since 4.26, a root emit (no `--mount`) also records the file the schema comes fr
 
 ### `wcs-schema check <state.ts|state.js> [options]`
 
-Regenerates the schema and compares it with `--manifest=<path>` (default `wcstack.manifest.json`), key order ignored. Since 4.31 (not released yet), so is the order of an `enum`'s values and of an `anyOf`'s members: TypeScript lists a union in the order it first made its types, and an edit elsewhere in the state file reordered an `enum` with the same values.
+Regenerates the schema and compares it with `--manifest=<path>` (default `wcstack.manifest.json`), key order ignored. Since 4.31, so is the order of an `enum`'s values and of an `anyOf`'s members: TypeScript lists a union in the order it first made its types, and an edit elsewhere in the state file reordered an `enum` with the same values.
 
 Exit codes: `0` up to date · `1` drift (each change is listed as a JSON pointer: `+` only in the type, `-` only in the manifest, `~` different) · `2` usage error, missing manifest, or the state has no `stateSchema` yet.
 
@@ -124,7 +124,7 @@ Only the JSON-Schema subset the sidecar spec allows (`type`, `properties`, `requ
 | TypeScript | stateSchema |
 |---|---|
 | `string` / `number` / `boolean` / `null` | `{ "type": … }` (`integer`-less: numbers are `number`) |
-| `"a" \| "b"`, `1 \| 2` | `{ "type": "string", "enum": ["a", "b"] }` — since 4.31 (not released yet), in a fixed order (by value), as are the members of an `anyOf` |
+| `"a" \| "b"`, `1 \| 2` | `{ "type": "string", "enum": ["a", "b"] }` — since 4.31, in a fixed order (by value), as are the members of an `anyOf` |
 | `T[]`, `readonly T[]`, tuples | `{ "type": "array", "items": … }` |
 | `T \| null` | `{ "anyOf": [T, { "type": "null" }] }` |
 | `T \| undefined`, `x?: T` | `T`, and `x` is left out of `required` |
@@ -132,13 +132,13 @@ Only the JSON-Schema subset the sidecar spec allows (`type`, `properties`, `requ
 | object literals, interfaces, classes from your code | `{ "type": "object", "properties": …, "required": … }` |
 | `Date`, `Map`, `Set`, DOM types, anything from a library, `any`, `unknown`, `Record<string, T>`, an object type with an index signature (`{ [year: number]: T }`, `{ [key: string]: T }`) | a **bare `{}`** |
 | `get x(): T` | `x: T` — getters are members |
-| `get "users.*.ageCategory"(): string` | injected as `users.items.properties.ageCategory` — a path getter is a member at the path it computes; since 4.31 (not released yet), one declared for several paths (`get "users.*.full,staff.*.full"()`) at each of them (it was dropped) |
+| `get "users.*.ageCategory"(): string` | injected as `users.items.properties.ageCategory` — a path getter is a member at the path it computes; since 4.31, one declared for several paths (`get "users.*.full,staff.*.full"()`) at each of them (it was dropped) |
 | methods, function-valued properties, `$`-prefixed keys (`$watch`, `$commandTokens`, …) | dropped |
 | nesting deeper than `--max-depth` | a bare `{}` |
 
 The bare `{}` matters: the validator treats it as *unknown* and stays silent below it, whereas a typed object that lacks a member is *nonexistent* and an **error**. A `Date` or a `Record<string, unknown>` therefore never produces false errors for the paths under it.
 
-A list that starts empty with no type (`dependents: []`) gets `items: {}`: the schema says nothing about its rows, not even the row getters declared under it. Since 4.31 (not released yet), `emit` and `check` name each such list in a warning, and the lint checks the paths under it as it would without a schema (before, adding the schema made a misspelt `.deductio` under such a list pass without a word). Give the list a type that lists its fields: `/** @type {{ kind: string, income: number }[]} */ dependents: []`.
+A list that starts empty with no type (`dependents: []`) gets `items: {}`: the schema says nothing about its rows, not even the row getters declared under it. Since 4.31, `emit` and `check` name each such list in a warning, and the lint checks the paths under it as it would without a schema (before, adding the schema made a misspelt `.deductio` under such a list pass without a word). Give the list a type that lists its fields: `/** @type {{ kind: string, income: number }[]} */ dependents: []`.
 
 ## Library API
 

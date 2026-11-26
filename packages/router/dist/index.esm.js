@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.30.0";
+var version = "4.31.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -4221,21 +4221,18 @@ class Link extends HTMLElement {
      * 通常は registerComponents() で Router を Link より先に upgrade することを推奨する。
      */
     get router() {
+        return this._findRouter() ?? raiseError(`${config.tagNames.link} is not connected to a router.`);
+    }
+    _findRouter() {
         if (this._router) {
             return this._router;
         }
         // DOM 祖先走査で最寄りの Router を探す（マルチ Router 対応）
-        const ancestor = this.closest(config.tagNames.router);
-        if (ancestor) {
-            return (this._router = ancestor);
-        }
         // 祖先にない場合は ownerDocument 内の Router を探す
-        const root = this.getRootNode();
-        const found = root.querySelector?.(config.tagNames.router);
-        if (found) {
-            return (this._router = found);
-        }
-        raiseError(`${config.tagNames.link} is not connected to a router.`);
+        const found = this.closest(config.tagNames.router)
+            ?? this.getRootNode().querySelector?.(config.tagNames.router)
+            ?? null;
+        return found === null ? null : (this._router = found);
     }
     _initialize() {
         // サーバーでは書かない: 直列化されると style 属性になり、厳しい style-src が拒む（docs/seam-apps.md、
@@ -4287,7 +4284,10 @@ class Link extends HTMLElement {
             const joined = pathname === ""
                 ? window.location.pathname
                 : this._joinInternalPath(this.router.basename, pathname);
-            anchor.href = joined + effectiveSearch(search) + hash;
+            const href = joined + effectiveSearch(search) + hash;
+            // 書くのは変わったときだけ: _updateActiveState がロケーションの変化のたびに引き直す
+            if (anchor.getAttribute('href') !== href)
+                anchor.href = href;
         }
         else {
             try {
@@ -4320,7 +4320,30 @@ class Link extends HTMLElement {
             });
             return;
         }
+        // ルーターがまだ文書に無い: リンクをルーターより前に書いたページを、タグを定義した後で流し込んだ
+        // （happy-dom の innerHTML は開始タグの時点で接続を呼ぶ — @wcstack/testing の mount()）。流し込みは同期で
+        // 終わるので、1 microtask 譲ってから組み立てる。子もそのときに揃う。譲っても無ければ従来どおり投げる。
+        // 以前はその場で投げ、mount() が失敗した（Advent Calendar の制作の記録、docs/v4-direction-2026-10.md §5.27）
+        this._adoptOwnTo();
+        if (!this._initialized && this._isInternalTarget(this.to) && this._findRouter() === null) {
+            queueMicrotask(() => {
+                if (this.isConnected && !this._initialized)
+                    this._connect();
+            });
+            return;
+        }
         this._connect();
+    }
+    /**
+     * a `to` assigned before the element was defined (state loaded before the router) is an own property that
+     * hides the accessor: take it in through the setter
+     */
+    _adoptOwnTo() {
+        if (Object.prototype.hasOwnProperty.call(this, "to")) {
+            const value = this.to;
+            delete this.to;
+            this.to = value;
+        }
     }
     /**
      * サーバーが生成した目印付き anchor（直後の兄弟）。クライアントの採用対象
@@ -4333,13 +4356,7 @@ class Link extends HTMLElement {
         return null;
     }
     _connect() {
-        // a `to` assigned before the element was defined (state loaded before the router) is an own property that
-        // hides the accessor: take it in through the setter
-        if (Object.prototype.hasOwnProperty.call(this, "to")) {
-            const value = this.to;
-            delete this.to;
-            this.to = value;
-        }
+        this._adoptOwnTo();
         if (!this._initialized) {
             this._initialize();
         }
@@ -4472,9 +4489,10 @@ class Link extends HTMLElement {
         }
     }
     _updateActiveState = () => {
-        // クエリのみリンク（to="?k=v"）の href は現在 pathname に依存するため、
-        // active 判定と同じリスナー経路でロケーション変更に追従させる（§4.1）。
-        if (this._path.startsWith('?') && this._anchorElement) {
+        // 内部の行き先の href は、active 判定と同じリスナー経路で引き直す。クエリのみリンク（to="?k=v"）の href は
+        // 現在 pathname に依存し（§4.1）、ルーターの初期化より先に接続したリンクは basename をまだ知らなかった —
+        // `/app/next` が `/next` になった（ルーターは初期化の終わりにこの通知を出す。Advent Calendar の制作の記録）
+        if (this._anchorElement && this._isInternalTarget(this._path)) {
             this._setAnchorHref(this._anchorElement, this._path);
         }
         // active 判定は pathname の比較（§1.1 欠陥 7 の修理）に、`to` のクエリを足す（`to` にクエリが無ければ

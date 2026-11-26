@@ -201,10 +201,14 @@ function installModuleResolver(resolve) {
  * `bind-component` element (its state is its host's property), and not one inside a `<template>`
  * (template content is not in the page: a `for:` / `if:` row, a route, a DCC definition).
  */
-function findWaitingState(html, stateTagName) {
+/** The HTML parsed out of the page, for the checks made before it goes in. */
+function parseProbe(html) {
     const probe = document.createElement("template");
     setInnerHTML(probe, html);
-    return [...probe.content.querySelectorAll(stateTagName)].find((el) => !el.hasAttribute("bind-component") &&
+    return probe.content;
+}
+function findWaitingState(probe, stateTagName) {
+    return [...probe.querySelectorAll(stateTagName)].find((el) => !el.hasAttribute("bind-component") &&
         !el.hasAttribute("state") &&
         !el.hasAttribute("src") &&
         !el.hasAttribute("json") &&
@@ -232,7 +236,8 @@ async function mount(html, options = {}) {
     // before anything touches the document: a misspelt option used to be ignored
     checkOptions("mount()", options, MOUNT_OPTIONS);
     const stateTagName = options.stateTagName ?? "wcs-state";
-    const waiting = findWaitingState(html, stateTagName);
+    const probe = parseProbe(html);
+    const waiting = findWaitingState(probe, stateTagName);
     if (waiting !== undefined) {
         throw new Error(`@wcstack/testing: ${startTag(waiting)} has no state to load (no state, src or json attribute, and no inline <script type="module">), ` +
             `so it waits for setInitialState() — which a test cannot call before mount() returns: mount() would never resolve. ` +
@@ -243,6 +248,15 @@ async function mount(html, options = {}) {
     patchTextSetters();
     for (const bootstrap of options.bootstrap ?? (await defaultBootstraps())) {
         await bootstrap();
+    }
+    // `bootstrap` replaces the default `[bootstrapState]`. A list without it left the page's `<wcs-state>` an
+    // unknown element: every binding stayed as written, and mount() resolved without a word — the README and
+    // the skill said to "add" the router (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27).
+    if (customElements.get(stateTagName) === undefined && probe.querySelector(stateTagName) !== null) {
+        throw new Error(`@wcstack/testing: the page has a <${stateTagName}>, but no element is defined under that name after the bootstraps ran, ` +
+            `so nothing on the page would be bound. A \`bootstrap\` list replaces the default [bootstrapState]: put it in the list too — ` +
+            `bootstrap: [async () => (await import("@wcstack/router")).bootstrapRouter(), async () => (await import("@wcstack/state")).bootstrapState()]. ` +
+            `If bootstrapState({ tagNames }) renamed the tag, pass the name as stateTagName.`);
     }
     let root;
     let container;
@@ -259,21 +273,19 @@ async function mount(html, options = {}) {
             container = host;
         }
         else {
-            if (html.includes("shadowrootmode")) {
-                // built out of the page, so that a declarative shadow root is whole when its host connects —
-                // as a browser's parser leaves it before a module script runs. Filled in place, its nodes
-                // connected one by one: a `<wcs-state>` written before a DCC definition's markup took the
-                // content as it stood then, and the instances came up without that markup, without a word.
-                const holder = document.createElement("div");
-                setInnerHTML(holder, html);
-                attachDeclarativeShadowRoots(holder);
-                document.body.innerHTML = "";
-                while (holder.firstChild !== null)
-                    document.body.appendChild(holder.firstChild);
-            }
-            else {
-                setInnerHTML(document.body, html);
-            }
+            // Built out of the page, then moved in: each top-level node connects with its children, and a
+            // declarative shadow root is whole when its host connects — as a browser's parser leaves the page
+            // before a module script upgrades it. Filled in place, happy-dom connects each element at its start
+            // tag, before its children are parsed: a `<wcs-state>` written before a DCC definition's markup took
+            // the content as it stood then (the instances came up without that markup, without a word), and a
+            // `<wcs-link>` moved no text into its `<a>` and built its `href` before the router had read its
+            // basename — `/app/next` became `/next` (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27).
+            const holder = document.createElement("div");
+            setInnerHTML(holder, html);
+            attachDeclarativeShadowRoots(holder);
+            document.body.innerHTML = "";
+            while (holder.firstChild !== null)
+                document.body.appendChild(holder.firstChild);
             root = document;
             container = document.body;
         }

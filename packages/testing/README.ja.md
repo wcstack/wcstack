@@ -42,7 +42,7 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 | オプション | 説明 |
 |---|---|
 | `root` | `"document"`（既定）— HTML は `document.body` の中身になる。`"shadow"` — `document.body` に追加した host の open ShadowRoot に入り、バインドはその root に閉じる |
-| `bootstrap` | 先に走らせる登録関数。既定 `[bootstrapState]`（`@wcstack/state` から遅延 import）。並べると既定を置き換える: ページが使うものを全部 — `bootstrapRouter`・`bootstrapFetch` … に加えて `bootstrapState` も — 関数か非同期ローダー `async () => (await import("@wcstack/router")).bootstrapRouter()` で並べる。4.31（未リリース）から、`<wcs-state>` のあるページで、並べた登録がそのタグを定義しなければ、そう言って reject する（以前は何も束ねずに resolve した）。wcstack の bootstrap は全て冪等 |
+| `bootstrap` | 先に走らせる登録関数。既定 `[bootstrapState]`（`@wcstack/state` から遅延 import）。並べると既定を置き換える: ページが使うものを全部 — `bootstrapRouter`・`bootstrapFetch` … に加えて `bootstrapState` も — 関数か非同期ローダー `async () => (await import("@wcstack/router")).bootstrapRouter()` で並べる。4.31 から、`<wcs-state>` のあるページで、並べた登録がそのタグを定義しなければ、そう言って reject する（以前は何も束ねずに resolve した）。wcstack の bootstrap は全て冪等 |
 | `stateTagName` | `bootstrapState({ tagNames })` で state タグを改名したときの名前（既定 `wcs-state`） |
 | `maxIterations` | 待機中に挿入された要素を拾う安定化ループの回数（既定 10） |
 | `resolveModule` | 4.9 から。`(url: URL) => string \| URL \| null` — `<wcs-state src>` のモジュールを読むローカルのファイル。`@wcstack/server` の `renderToString` と同じオプションで、ページが名指す URL（`document.baseURI` で解決したもの — happy-dom の下では `http:` の URL）を受け取り、パスか `file:` URL を返す。Node のモジュールローダは `file:` と `data:` の URL しか読まない。mount の間だけ置かれ、モジュールは mount ごとに読み直すので、テストの間で状態のオブジェクトは共有されない。これが無いか何も返さないと、状態の初期化はそう言って失敗する — ルートの `<wcs-state>` なら `mount()` がそれで reject する。`.json` の `src` は従来どおり fetch で読む。[自分のファイルにある状態](#自分のファイルにある状態) を参照 |
@@ -76,7 +76,7 @@ expect(app.root.querySelector("#pager")!.shadowRoot!.querySelector(".info")!.tex
 - ブラウザ風の `URL.createObjectURL` があればプロセスにつき 1 回それを無効化する — Node は `blob:` URL を import できず、これが無いとインライン `<script type="module">` の state が永久に読み込み中になる（ローダーは SSR と同じく `data:` URL 経路に倒れる）。
 - happy-dom の `textContent` / `innerText` setter を DOM 仕様どおりに文字列化するよう包む — happy-dom は数値 `0` を空文字にし（`innerText` は数値で throw する）、`textContent: count` のバインドが 0 で消えるのは happy-dom 下だけになるため。
 - 4.26 から、HTML を `@wcstack/server` の `setInnerHTML` で挿入する。表の中に書いた `<template>` を、ブラウザと同じ所に置く。happy-dom のパーサは `<table>`・`<thead>`・`<tbody>`・`<tfoot>`・`<tr>`・`<colgroup>` の中の `<template>` を表の外へ追い出し、その行やセルを表の中に残すので、`<tbody><template data-wcs="for: rows"><tr>…` のページ（`<tr>` のセルの `for:` も）は `[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template` で mount できなかった — 4.25 までは、そうしたページをヘッドレスでテストできなかった。
-- 4.31（未リリース）から、ページを文書の外で組み立ててから入れる。要素は子のそろった木として接続する — ブラウザのパーサが、モジュールのスクリプトが upgrade する前に残すページと同じ。happy-dom は開始タグの時点で要素を接続し、子はまだ無い: `<wcs-link>` は `<a>` へ移す文字を持たず、ルーターが basename を読む前に `href` を作っていた（`/app/next` が `/next`）。
+- 4.31 から、ページを文書の外で組み立ててから入れる。要素は子のそろった木として接続する — ブラウザのパーサが、モジュールのスクリプトが upgrade する前に残すページと同じ。happy-dom は開始タグの時点で要素を接続し、子はまだ無い: `<wcs-link>` は `<a>` へ移す文字を持たず、ルーターが basename を読む前に `href` を作っていた（`/app/next` が `/next`）。
 
 #### 状態の型
 

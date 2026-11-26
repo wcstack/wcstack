@@ -46,8 +46,10 @@ declare function loadStateFile(file: string, options?: LoadStateOptions): Loaded
  * - `$`-prefixed keys are dropped (runtime namespaces, never data paths).
  * - Members with call signatures (methods, function-valued properties) are dropped.
  * - Getters contribute their return type. Path getters (`get "users.*.ageCategory"()`)
- *   are injected at the path they compute, so the validator sees them as members.
- * - Arrays → `items`; unions split `null` out into `anyOf`; literal unions → `enum`.
+ *   are injected at the path they compute, so the validator sees them as members; one declared
+ *   for several paths (`get "users.*.full,staff.*.full"()`) at each of them.
+ * - Arrays → `items`; unions split `null` out into `anyOf`; literal unions → `enum`. The members of
+ *   an `enum` and an `anyOf` come in a fixed order, not in the order TypeScript made their types.
  * - Built-in / library object types (`Date`, `Map`, DOM types, …) become a **bare `{}`**
  *   — never `{ "type": "object" }`: the validator treats a bare `{}` as *unknown*
  *   (silent) and a typed object without the member as *nonexistent* (error).
@@ -84,7 +86,7 @@ interface GenerateOptions extends LoadStateOptions, SchemaOptions {
 }
 interface GeneratedSchema {
     readonly schema: JsonSchemaNode;
-    /** Non-fatal notes (e.g. the state type resolved to `any`). */
+    /** Non-fatal notes (e.g. the state type resolved to `any`, a list whose rows have no type). */
     readonly warnings: readonly string[];
 }
 declare function generateStateSchema(file: string, options?: GenerateOptions): GeneratedSchema;
@@ -170,7 +172,13 @@ declare function sameStateSource(a: string, b: string): boolean;
  * instead of reporting a confusing "missing stateSchema".
  */
 declare function isV1Manifest(manifest: unknown): boolean;
-/** JSON with object keys sorted at every level — the canonical form used for comparison. */
+/**
+ * The canonical form used for comparison: JSON with object keys sorted at every level, and the members of an
+ * `enum` or an `anyOf` — sets in JSON Schema — in a fixed order. TypeScript lists a union's members in the order
+ * it first made their types, so an edit elsewhere in the state file reordered an `enum` with the same values,
+ * and `check` reported a schema that had not changed (the Advent Calendar's record, docs/v4-direction-2026-10.md
+ * §5.27). `emit` writes them in that order too; a manifest written by an earlier emit still compares equal.
+ */
 declare function stableStringify(value: unknown): string;
 type SchemaComparison = {
     readonly kind: "same";

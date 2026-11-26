@@ -29,10 +29,12 @@ interface MountOptions {
     readonly root?: "document" | "shadow";
     /**
      * Element registrations to run before inserting the HTML. Default:
-     * `[bootstrapState]` imported lazily from `@wcstack/state`. Add the packages
-     * the page uses — `bootstrapRouter`, `bootstrapFetch`, … — as functions or
-     * async loaders (`async () => (await import("@wcstack/router")).bootstrapRouter()`);
-     * every wcstack bootstrap is idempotent, so calling them per test is safe.
+     * `[bootstrapState]` imported lazily from `@wcstack/state`. A list replaces the
+     * default: name every package the page uses — `bootstrapState` too, beside
+     * `bootstrapRouter`, `bootstrapFetch`, … — as functions or async loaders
+     * (`async () => (await import("@wcstack/router")).bootstrapRouter()`). A page with
+     * a `<wcs-state>` whose tag the list leaves undefined rejects. Every wcstack
+     * bootstrap is idempotent, so calling them per test is safe.
      */
     readonly bootstrap?: readonly BootstrapFunction[];
     /** Tag name of the state element when `bootstrapState({ tagNames })` renamed it (default `wcs-state`). */

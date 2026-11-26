@@ -2687,7 +2687,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.30.0";
+var version = "4.31.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -2773,9 +2773,9 @@ function missingSegment(path, tree) {
   }
   return null;
 }
-function rowFieldSuggestion(path, candidates, msgs) {
+function pathSuggestion(path, candidates, msgs) {
   const missing = missingSegment(path, pathTree(candidates));
-  if (missing === null || !missing.parent.split(".").includes("*")) return "";
+  if (missing === null) return "";
   return suggestion(missing.segment, missing.names, msgs);
 }
 function suggestion(input, candidates, msgs) {
@@ -13461,6 +13461,7 @@ var ja = {
   objectKeyAssign: (t, acc, sp) => `"${t}" \u306E\u30AD\u30FC\u306B\u305D\u306E\u5834\u3067\u4EE3\u5165\u3057\u3066\u3044\u307E\u3059\u3002state \u306F\u3053\u306E\u66F8\u304D\u8FBC\u307F\u3092\u898B\u306A\u3044\u306E\u3067\u3001\u305D\u308C\u3092\u8AAD\u3080\u675F\u7E1B\u30FBgetter\u30FB$watch \u306F\u5909\u308F\u3089\u305A\u3001\u4F55\u3082\u63CF\u304D\u76F4\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4EE3\u5165\u3059\u308B\uFF08${acc} = { ...${acc}, [key]: value }\uFF09\u304B\u3001\u30C9\u30C3\u30C8\u30D1\u30B9\u3067\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08this["${sp}"] = \u2026\uFF09`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u304C\u3001<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001getter \u306F\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  getterRowFieldRead: (list, fieldPath, written, binding, tag) => `\u3053\u306E getter \u306F\u4E00\u89A7 "${list}" \u3092\u8AAD\u307F\u3001\u884C\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u304B\u3089\u9805\u76EE\u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u3002\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${list}" \u3060\u3051\u3067\u3001${binding !== null ? `<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F` : "\u30DA\u30FC\u30B8\u306F"} "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001\u884C\u306E\u8FFD\u52A0\u3068\u524A\u9664\u3067\u306F\u6B63\u3057\u304F\u898B\u3048\u3066\u3082\u3001\u884C\u306E\u5024\u3092\u5909\u3048\u308B\u3068\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u306E\u307E\u307E\u3067\u3059\u3002\u884C\u306E\u9805\u76EE\u306F\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044: this.$getAll("${fieldPath}", [])`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
   attrBooleanPresence: (a, p, rhs) => `"attr.${a}" \u306B boolean \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u3002attr.* \u306F String(value) \u3092\u66F8\u304F\u306E\u3067\u3001false \u306E\u3068\u304D ${a}="false" \u306B\u306A\u308A\u307E\u3059\u3002\u8AD6\u7406\u5C5E\u6027\u306F\u5024\u306B\u95A2\u4FC2\u306A\u304F\u3001\u5728\u308B\u3060\u3051\u3067\u52B9\u304D\u307E\u3059: ${a}="false" \u3067\u3082 ${a} \u306E\u307E\u307E\u3067\u3059\uFF08\u5C5E\u6027\u3092\u5916\u3059\u306E\u306F null / undefined \u3060\u3051\uFF09\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044: ${p}: ${rhs}`,
@@ -13761,6 +13762,7 @@ var en = {
   objectKeyAssign: (t, acc, sp) => `This assigns a key of "${t}" in place. The state does not see the write, so no binding, getter or $watch that reads it changes, and nothing is rendered again. Assign a new object (${acc} = { ...${acc}, [key]: value }), or write the dot path this["${sp}"] = \u2026`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) => `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
+  getterRowFieldRead: (list, fieldPath, written, binding, tag) => `This getter reads the list "${list}" and a field from its row objects. Only "${list}" is tracked, and ${binding !== null ? `the binding "${binding}" on <${tag}>` : "the page"} writes "${written}" by path: that write never reaches this getter, which looks right when rows are added or removed and keeps its last value when a row's value changes. Read the rows' fields by path: this.$getAll("${fieldPath}", [])`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
   attrBooleanPresence: (a, p, rhs) => `"attr.${a}" is given a boolean. attr.* writes String(value), so false is written as ${a}="false" \u2014 and a boolean attribute is on whenever it is present, whatever its value: ${a}="false" still means ${a} (only null / undefined remove an attribute). Bind the property instead: ${p}: ${rhs}`,
@@ -16130,6 +16132,122 @@ function findLocationRead(body) {
   walk2(wrapper.body);
   return found;
 }
+var ROW_CALLBACKS = /* @__PURE__ */ new Map([
+  ["reduce", [1]],
+  ["reduceRight", [1]],
+  ["map", [0]],
+  ["flatMap", [0]],
+  ["filter", [0]],
+  ["find", [0]],
+  ["findIndex", [0]],
+  ["findLast", [0]],
+  ["findLastIndex", [0]],
+  ["some", [0]],
+  ["every", [0]],
+  ["forEach", [0]],
+  ["sort", [0, 1]],
+  ["toSorted", [0, 1]]
+]);
+var ROW_PRESERVING = /* @__PURE__ */ new Set(["filter", "slice", "sort", "toSorted", "reverse", "toReversed", "toSpliced", "concat"]);
+function findRowFieldReads(body) {
+  let program;
+  try {
+    program = parseErasingTypes(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  const out = [];
+  const listOf = (node) => {
+    const n = unwrapChain(node);
+    if (n.type === "MemberExpression" && n.object.type === "ThisExpression") {
+      const key = !n.computed && n.property.type === "Identifier" ? n.property.name : literalString2(n.property);
+      return key !== null && key !== "" && !key.startsWith("$") ? key : null;
+    }
+    if (n.type === "CallExpression") {
+      const callee = unwrapChain(n.callee);
+      if (callee.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier" && ROW_PRESERVING.has(callee.property.name)) return listOf(callee.object);
+    }
+    if (n.type === "ArrayExpression" && n.elements.length === 1 && n.elements[0]?.type === "SpreadElement") {
+      return listOf(n.elements[0].argument);
+    }
+    return null;
+  };
+  const readsOf = (list, name, node) => {
+    const walk3 = (n) => {
+      if (isFunctionNode(n)) {
+        const bound = /* @__PURE__ */ new Set();
+        for (const param of n.params) bindingNames(param, bound);
+        if (bound.has(name)) return;
+      }
+      if (n.type === "AssignmentExpression" || n.type === "UpdateExpression") {
+        const target = n.type === "AssignmentExpression" ? n.left : n.argument;
+        if (unwrapChain(target).type === "MemberExpression") {
+          if (n.type === "AssignmentExpression") walk3(n.right);
+          return;
+        }
+      }
+      if (n.type === "MemberExpression" || n.type === "ChainExpression" || n.type === "CallExpression") {
+        const call = n.type === "CallExpression" ? n : null;
+        const { segments, base } = resolveChain(call !== null ? call.callee : n);
+        if (base.type === "Identifier" && base.name === name && segments.length > 0) {
+          const fields = [];
+          for (const segment of segments) {
+            if (segment.text === null || segment.dynamic !== null) break;
+            fields.push(segment.text);
+          }
+          if (call !== null && fields.length === segments.length) fields.pop();
+          if (fields.length > 0) out.push({ list, fields, start: n.start - PREFIX.length, end: n.end - PREFIX.length });
+          if (call !== null) for (const arg of call.arguments) walk3(arg);
+          return;
+        }
+      }
+      forEachChild(n, walk3);
+    };
+    walk3(node);
+  };
+  const rowParam = (list, param, body2) => {
+    if (param === void 0) return;
+    const p = param.type === "AssignmentPattern" ? param.left : param;
+    if (p.type === "Identifier") {
+      readsOf(list, p.name, body2);
+      return;
+    }
+    if (p.type !== "ObjectPattern") return;
+    for (const property of p.properties) {
+      if (property.type !== "Property") continue;
+      const key = !property.computed && property.key.type === "Identifier" ? property.key.name : literalString2(property.key);
+      if (key !== null) out.push({ list, fields: [key], start: property.key.start - PREFIX.length, end: property.key.end - PREFIX.length });
+    }
+  };
+  const walk2 = (node, thisIsState) => {
+    if (isFunctionNode(node) && node.type !== "ArrowFunctionExpression") {
+      forEachChild(node, (child) => walk2(child, false));
+      return;
+    }
+    if (isClassNode(node)) return;
+    if (thisIsState && node.type === "CallExpression") {
+      const callee = unwrapChain(node.callee);
+      const method = callee.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier" ? callee.property.name : null;
+      const rows = method === null ? void 0 : ROW_CALLBACKS.get(method);
+      const list = rows === void 0 ? null : listOf(callee.object);
+      const callback = node.arguments[0];
+      if (list !== null && callback !== void 0 && isFunctionNode(callback)) {
+        for (const index of rows) rowParam(list, callback.params[index], callback.body);
+      }
+    }
+    if (thisIsState && node.type === "ForOfStatement") {
+      const list = listOf(node.right);
+      const left = node.left;
+      const param = left.type === "VariableDeclaration" ? left.declarations[0]?.id : left;
+      if (list !== null) rowParam(list, param, node.body);
+    }
+    forEachChild(node, (child) => walk2(child, thisIsState));
+  };
+  walk2(wrapper.body, true);
+  return out;
+}
 var WINDOW_HOLDERS = /* @__PURE__ */ new Set(["window", "globalThis", "self"]);
 var WINDOW_VALUES = /* @__PURE__ */ new Map([
   ["innerWidth", "size"],
@@ -16990,11 +17108,11 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
               code: WcsDiagnosticCode.RecursionUnsupported,
               message: msgs.recursionUnsupported(checkPath, "binding"),
               severity: "error"
-            } : schema !== void 0 && !(unresolved && propNoMod.startsWith("on")) ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs) : unresolved ? null : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
+            } : schema !== void 0 && !(unresolved && propNoMod.startsWith("on")) ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs, unresolved) : unresolved ? null : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
-              const near = verdict.code === WcsDiagnosticCode.BindingPathMissing || verdict.code === WcsDiagnosticCode.PathNonexistent ? rowFieldSuggestion(checkPath, scopedPaths, msgs) : "";
+              const near = verdict.code === WcsDiagnosticCode.BindingPathMissing || verdict.code === WcsDiagnosticCode.PathNonexistent ? pathSuggestion(checkPath, scopedPaths, msgs) : "";
               diagnostics.push({
                 code: verdict.code,
                 start: pathStart,
@@ -17445,7 +17563,7 @@ function matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet) {
 function toMissingVerdict(message) {
   return message ? { code: WcsDiagnosticCode.BindingPathMissing, message, severity: "warning" } : null;
 }
-function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, schema, msgs) {
+function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, schema, msgs, unresolved) {
   if (checkPath.startsWith("$")) {
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
@@ -17453,6 +17571,9 @@ function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scoped
   const resolution = resolveIndexedSchemaPath(schema, checkPath);
   if (resolution.kind === "nonexistent") {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: "error" };
+  }
+  if (resolution.kind === "unknown" && !unresolved) {
+    return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
   return null;
 }
@@ -17866,7 +17987,10 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
     if (isValidTemplatePath(path, pathSet2, scoped)) return null;
     if (defaultSchema !== void 0 && !path.startsWith("$")) {
       const resolution = resolveIndexedSchemaPath(defaultSchema, path);
-      return resolution.kind === "nonexistent" ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) } : null;
+      if (resolution.kind === "nonexistent") {
+        return { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) };
+      }
+      if (resolution.kind !== "unknown") return null;
     }
     if (isUnresolvedPath(path, pathIndex.scopes)) return null;
     return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
@@ -17875,7 +17999,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
   const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
-  const nearRowField = (code, path) => code === WcsDiagnosticCode.BindingPathMissing || code === WcsDiagnosticCode.PathNonexistent ? rowFieldSuggestion(path, defaultPaths, msgs) : "";
+  const nearName = (code, path) => code === WcsDiagnosticCode.BindingPathMissing || code === WcsDiagnosticCode.PathNonexistent ? pathSuggestion(path, defaultPaths, msgs) : "";
   const mustaches = findAllMustacheSyntax(html);
   const comments = findAllCommentBindings(html);
   for (const item of [...mustaches, ...comments]) {
@@ -17988,7 +18112,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
               code: verdict.code,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: verdict.message + msgs.expansionSuffix(expandedPath) + nearRowField(verdict.code, expandedPath),
+              message: verdict.message + msgs.expansionSuffix(expandedPath) + nearName(verdict.code, expandedPath),
               severity: verdict.severity
             });
           }
@@ -18000,7 +18124,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
             code: verdict.code,
             start: item.exprStart,
             end: item.exprStart + pathPart.length,
-            message: verdict.message + nearRowField(verdict.code, pathPart),
+            message: verdict.message + nearName(verdict.code, pathPart),
             severity: verdict.severity
           });
         }
@@ -19349,7 +19473,7 @@ function validateGetterUntrackedReads(script, scriptStart, mountPath, nestedWrit
       const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
       if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
       const prefix = mountPath === null ? [] : mountPath.split(".");
-      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split(".").length, bindingWrites());
+      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split(".").length, bindingWrites().filter((w) => w.certain));
       if (write === void 0 && !nestedWriteRoots().has([...prefix, segments[0]].join("."))) continue;
       const sp = segments.join(".");
       out.push({
@@ -19362,6 +19486,45 @@ function validateGetterUntrackedReads(script, scriptStart, mountPath, nestedWrit
     }
   }
   return out;
+}
+function validateGetterRowFieldReads(script, scriptStart, mountPath, writtenPaths, bindingWrites, locale2) {
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter" && entry.accessor === "get");
+  const msgs = getMessages(locale2);
+  const prefix = mountPath === null ? [] : mountPath.split(".");
+  const out = [];
+  for (const getter of getters) {
+    if (!/\bthis\b/.test(getter.body)) continue;
+    const told = /* @__PURE__ */ new Set();
+    for (const read of findRowFieldReads(getter.body) ?? []) {
+      const list = [...prefix, ...read.list.split(".")];
+      const segments = [...list, "*", ...read.fields];
+      const writes = bindingWrites();
+      const bound = boundWriteOf(segments, list.length, writes.filter((w) => w.certain));
+      const soft = bound === void 0 ? boundWriteOf(segments, list.length, writes.filter((w) => !w.certain)) : void 0;
+      const written = bound?.path ?? soft?.path ?? writtenUnderRows(segments, list.length, writtenPaths());
+      const fieldPath = `${read.list}.*.${read.fields.join(".")}`;
+      if (written === void 0 || told.has(fieldPath)) continue;
+      told.add(fieldPath);
+      out.push({
+        code: WcsDiagnosticCode.GetterUntrackedRead,
+        start: scriptStart + getter.bodyStart + read.start,
+        end: scriptStart + getter.bodyStart + read.end,
+        message: msgs.getterRowFieldRead(read.list, fieldPath, written, (bound ?? soft)?.binding ?? null, (bound ?? soft)?.tag ?? null),
+        severity: bound === void 0 ? "warning" : "error"
+      });
+    }
+  }
+  return out;
+}
+function writtenUnderRows(segments, tracked, written) {
+  return written.find(({ path, inclusive, script }) => {
+    if (!script || inclusive) return false;
+    const w = path.split(".").map((s) => /^\d+$/.test(s) ? "*" : s);
+    if (w.length <= tracked) return false;
+    const common = Math.min(w.length, segments.length);
+    for (let i = 0; i < common; i++) if (w[i] !== segments[i]) return false;
+    return true;
+  })?.path;
 }
 function boundWriteOf(segments, tracked, writes) {
   return writes.find((write) => {
@@ -19389,8 +19552,8 @@ function collectBindingWrites(html, bindAttrName) {
         if (list === null) return;
         path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
       }
-      const write = (written) => {
-        out.push({ path: written, binding: binding.exprText, tag });
+      const write = (written, certain = true) => {
+        out.push({ path: written, binding: binding.exprText, tag, certain });
       };
       if (parsed.bindingType === "spread") {
         if (outputs === null) return;
@@ -19403,6 +19566,8 @@ function collectBindingWrites(html, bindAttrName) {
         write(path);
       } else if (parsed.bindingType === "prop" && (writesBack(attr, parsed.propName, parsed.propName) || outputs?.includes(parsed.propName) === true)) {
         write(path);
+      } else if (parsed.bindingType === "prop" && contract === void 0 && tag.includes("-") && TWO_WAY_PROPS.has(parsed.propName)) {
+        write(path, false);
       }
     });
   }
@@ -19545,9 +19710,11 @@ function templateKeyPath(raw) {
   const path = raw.replace(/\$\{[^{}]*\}/g, "*");
   return TEMPLATE_KEY_PATH.test(path) ? path : null;
 }
-function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
+function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks, written = []) {
   const roots = /* @__PURE__ */ new Map();
+  let script = false;
   const addPrefixes = (path, inclusive) => {
+    written.push({ path, inclusive, script });
     const segments = path.split(".");
     const last = inclusive ? segments.length : segments.length - 1;
     const example = inclusive ? `${path}.*` : path;
@@ -19587,6 +19754,7 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
     const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
     if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(path, false);
   }
+  script = true;
   for (const block of blocks) {
     if (block.mountPath !== null) addPrefixes(block.mountPath, true);
     const scan = maskCommentsAndStrings(block.content);
@@ -19818,8 +19986,15 @@ function validateOnHandlerThis(script, scriptStart, locale2) {
 function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrName = "data-wcs") {
   const out = [];
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
-  let nestedWriteRoots = null;
-  const getNestedWriteRoots = () => nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks);
+  let nestedWrites = null;
+  const getNestedWrites = () => {
+    if (nestedWrites === null) {
+      const paths = [];
+      nestedWrites = { roots: collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks, paths), paths };
+    }
+    return nestedWrites;
+  };
+  const getNestedWriteRoots = () => getNestedWrites().roots;
   let bindingWrites = null;
   const getBindingWrites = () => bindingWrites ??= collectBindingWrites(html, bindAttrName);
   for (const block of blocks) {
@@ -19832,6 +20007,14 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
       block.contentStart,
       block.mountPath,
       getNestedWriteRoots,
+      getBindingWrites,
+      locale2
+    ));
+    out.push(...validateGetterRowFieldReads(
+      block.content,
+      block.contentStart,
+      block.mountPath,
+      () => getNestedWrites().paths,
       getBindingWrites,
       locale2
     ));
