@@ -52,7 +52,7 @@ exit code: `0` 書き出し済み · `2` usage エラー / 読めない / 構文
 
 ### `wcs-schema check <state.ts|state.js> [options]`
 
-schema を再生成し、`--manifest=<path>`（既定 `wcstack.manifest.json`）の内容とキー順を無視して比較します。
+schema を再生成し、`--manifest=<path>`（既定 `wcstack.manifest.json`）の内容とキー順を無視して比較します。4.31（未リリース）から、`enum` の値と `anyOf` の要素の並びも無視します: TypeScript は union を型を最初に作った順で並べるので、状態ファイルの別の所を変えると、同じ値の `enum` の並びが変わっていました。
 
 exit code: `0` 最新 · `1` 乖離あり（変更は JSON pointer で列挙: `+` 型にだけある / `-` manifest にだけある / `~` 違う） · `2` usage エラー / manifest が無い / その state の `stateSchema` がまだ無い。
 
@@ -124,7 +124,7 @@ sidecar 規範が許す JSON-Schema サブセットだけ（`type` / `properties
 | TypeScript | stateSchema |
 |---|---|
 | `string` / `number` / `boolean` / `null` | `{ "type": … }`（`integer` は使わず全て `number`） |
-| `"a" \| "b"`、`1 \| 2` | `{ "type": "string", "enum": ["a", "b"] }` |
+| `"a" \| "b"`、`1 \| 2` | `{ "type": "string", "enum": ["a", "b"] }` — 4.31（未リリース）から、値の決まった順。`anyOf` の要素も同じ |
 | `T[]`、`readonly T[]`、タプル | `{ "type": "array", "items": … }` |
 | `T \| null` | `{ "anyOf": [T, { "type": "null" }] }` |
 | `T \| undefined`、`x?: T` | `T`。`x` は `required` に入らない |
@@ -132,11 +132,13 @@ sidecar 規範が許す JSON-Schema サブセットだけ（`type` / `properties
 | 自分のコードのオブジェクトリテラル / interface / class | `{ "type": "object", "properties": …, "required": … }` |
 | `Date`、`Map`、`Set`、DOM 型、ライブラリ由来の型、`any`、`unknown`、`Record<string, T>`、インデックスシグネチャを持つオブジェクト型（`{ [year: number]: T }`、`{ [key: string]: T }`） | **素の `{}`** |
 | `get x(): T` | `x: T` — getter はメンバー |
-| `get "users.*.ageCategory"(): string` | `users.items.properties.ageCategory` に注入 — パス getter は計算先のパスのメンバー |
+| `get "users.*.ageCategory"(): string` | `users.items.properties.ageCategory` に注入 — パス getter は計算先のパスのメンバー。4.31（未リリース）から、複数のパスへ宣言したもの（`get "users.*.full,staff.*.full"()`）はそれぞれのパスに（以前は捨てていた） |
 | メソッド、関数値プロパティ、`$` 始まりキー（`$watch`・`$commandTokens` …） | 捨てる |
 | `--max-depth` より深い入れ子 | 素の `{}` |
 
 素の `{}` が要点です: 検証器はこれを *unknown* として扱いその下では沈黙しますが、メンバーを欠く型付きオブジェクトは *nonexistent* で **error** です。`Date` や `Record<string, unknown>` の下のパスが偽 error になることはありません。
+
+型の無い空の配列で始まる一覧（`dependents: []`）は `items: {}` になり、schema はその行について何も言いません — 下に宣言した行の getter も載りません。4.31（未リリース）から、`emit` と `check` はそうした一覧を警告で名指し、lint はその下のパスを schema が無いときと同じに検査します（以前は schema を置くと、そうした一覧の下の綴り違い `.deductio` が何も言わずに通った）。一覧にフィールドを並べた型を付けてください: `/** @type {{ kind: string, income: number }[]} */ dependents: []`。
 
 ## ライブラリ API
 

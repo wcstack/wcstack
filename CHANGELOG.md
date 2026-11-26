@@ -13,12 +13,17 @@ From an outside evaluation: the record of the problems met while writing a 25-da
 ### Upgrading
 
 - `@wcstack/testing`: **`mount()` rejects a page with a `<wcs-state>` when its `bootstrap` list leaves the tag undefined.** A `bootstrap` list replaces the default `[bootstrapState]`; a list with only the router left every binding as written and resolved. Put `bootstrapState` in the list.
+- `@wcstack/typescript`: **`wcs-schema emit` writes the values of an `enum` and the members of an `anyOf` in a fixed order** (by value). A manifest written by an earlier emit still passes `check`, which now ignores that order; the next `emit` rewrites those arrays once.
+- `@wcstack/typescript`: `wcs-schema emit` and `check` warn about each list whose rows have no type (`dependents: []`).
 
 ### Fixed
 
 - `@wcstack/testing`: **`mount()` builds the page out of the document and then moves it in**, so that each element connects with its children, as a browser's parser leaves a page before a module script upgrades it. happy-dom connects an element at its start tag: a `<wcs-link>` moved no text into its `<a>`, and built its `href` before the router had read its basename (`/next` for `/app/next`).
 - `@wcstack/router`: **a `<wcs-link>` that connects before any router is in the document waits a microtask before it builds its anchor**, and throws only if there is still none. A page inserted after the tags were defined, with its navigation before the `<wcs-router>` — `mount()` under happy-dom — failed with `wcs-link is not connected to a router.` A link's `href` is also built again on each location change, so a link that connected before the router had read its basename no longer keeps an `href` without it.
 - `@wcstack/testing`: the README and the type of `bootstrap` said to "add" the packages a page uses; a list replaces the default.
+- `@wcstack/typescript`: **an accessor declared for several paths (`get "incomes.*.amountName,expenses.*.amountName"()`) was left out of the generated `stateSchema`**, without a word: the key was split at `.` alone, and its middle segment (`amountName,expenses`) matched nothing. Each listed path now gets the member.
+- `@wcstack/typescript`: **an edit elsewhere in the state file reordered an `enum` with the same values**, and `check` called the manifest out of date: TypeScript lists a union's members in the order it first made their types.
+- `@wcstack/typescript`: a list that starts empty with no type gets `items: {}`, and the schema said nothing about its rows — not even the row getters declared under it — while nothing said so. `emit` now names the list and the type to give it.
 
 ## [4.30.0] — 2026-11-26
 
