@@ -87,15 +87,55 @@ describe('Link', () => {
       expect(link.router).toBe(router);
     });
 
-    it('routerが見つからない場合にエラーを投げること', () => {
+    it('routerが見つからない場合、1 microtask 譲ってからエラーを投げること', () => {
+      const queued: Array<() => void> = [];
+      vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => { queued.push(callback); });
       const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
 
-      // routerがない状態でappendChildするとconnectedCallbackでエラーが発生するため、
-      // appendChild自体がエラーを投げることを期待
+      // 接続の時点ではまだ投げない（ルーターが同じ流し込みの後ろにあるかもしれない）
       expect(() => {
         document.body.appendChild(link);
-      }).toThrow('[@wcstack/router] wcs-link is not connected to a router.');
+      }).not.toThrow();
+      expect(link.anchorElement).toBeNull();
+      expect(queued).toHaveLength(1);
+      expect(() => queued[0]()).toThrow('[@wcstack/router] wcs-link is not connected to a router.');
+    });
+
+    it('譲る間にルーターが文書に入れば、そのルーターで組み立てること', () => {
+      const queued: Array<() => void> = [];
+      vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => { queued.push(callback); });
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'テスト';
+      document.body.appendChild(link);
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      queued[0]();
+      expect(link.router).toBe(router);
+      expect(link.anchorElement?.getAttribute('href')).toBe('/test');
+      expect(link.anchorElement?.textContent).toBe('テスト');
+    });
+
+    it('譲る間に外されたリンクは組み立てず、投げないこと', () => {
+      const queued: Array<() => void> = [];
+      vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => { queued.push(callback); });
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      document.body.appendChild(link);
+      link.remove();
+      expect(() => queued[0]()).not.toThrow();
+      expect(link.anchorElement).toBeNull();
+    });
+
+    it('外部の行き先（ルーターが要らない）は譲らずにその場で組み立てること', () => {
+      const queued: Array<() => void> = [];
+      vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => { queued.push(callback); });
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', 'https://example.com/');
+      document.body.appendChild(link);
+      expect(queued).toHaveLength(0);
+      expect(link.anchorElement?.getAttribute('href')).toBe('https://example.com/');
     });
   });
 
@@ -222,8 +262,10 @@ describe('Link', () => {
       document.body.appendChild(router);
 
       const link = document.createElement('wcs-link') as Link;
-      link.setAttribute('to', '/test');
-      
+      // 外部の行き先: 内部の行き先だと、文書の外のリンクはルーターを見つけられず、組み立てを 1 microtask 譲る
+      // （親の検査まで来ない）
+      link.setAttribute('to', 'https://example.com/test');
+
       // 親なしでconnectedCallbackを呼ぶ (通常はありえないがテストのため)
       // create element without appending to DOM
       
