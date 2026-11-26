@@ -490,6 +490,26 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 
 修正は core を変えずに収まった（`core.min.js` は 20,476 B のまま）。止める目安には当たっていない（何も言わずに行を落とす欠陥が 1 つ、そして新しい種類の発見 — ほかのフレームワークの習慣から来る間違いで、lint が知っていたのは 20 種のうち 8）。次は 4 巡目の 3 本目、流れてくるデータ。
 
+### 5.27 Advent Calendar の連載の記録から決めたこと（2026-11-27、著者）
+
+外部の評価。wcstack 4.28.0 でビルドなしの確定申告の下書きツールを 25 日で作る Advent Calendar の連載を書く間に当たった問題の記録（連載のリポジトリの `docs/issues-found.md`: wcstack の側 7 件・仕様どおりでつまずいた所 9 件・環境と公開先の制約 8 件・制作の誤り 20 件）を、main（4.30.0）で再現して分類し、問いを 7 つ出した（2026-11-26）。wcstack の側の 7 件は、どれも main でも再現した。著者はすべて推奨のとおりに決めた。
+
+1. **`stateSchema` を足しても検査は弱くならない**（記録の 1-3） — schema が何も言わない所（行に型の無い一覧の `items: {}`・`null` の型・`any`）のパスは、schema が無いときと同じに検査する（warning）。空で始まる一覧に `wcs-schema` が書く schema を置くと、それまで lint が知らせていた `.deductio` が何も言わずに通っていた。`wcs-schema emit` / `check` も、そうした一覧を警告で名指す。比べた案: emit が名指すだけ、lint が info で「検査していない」と言うだけ。
+2. **`mount()` の `bootstrap` は既定を置き換える、と文書を直し、state を並べ忘れたページは失敗させる**（1-2） — README（英日）・型の説明・skill が「足す」と書いていて、router だけを並べると `<wcs-state>` は未定義のまま、何も束ねずに `mount()` が成功した。足す挙動に変える案は採らない（`bootstrapState({ tagNames })` で改名したページで、同じクラスを二重に定義する）。
+3. **`mount()` はページを文書の外で組み立ててから入れ、`<wcs-link>` はルーターが文書に無ければ 1 マイクロタスク待ち、`href` をロケーションの変化のたびに引き直す**（1-1） — happy-dom は開始タグで接続を呼び（フラグメントを一度に入れても節ごと）、リンクは子・ルーター・basename を接続のときに一度だけ読んでいた。リンクがルーターより前なら `mount()` が失敗し、後ろなら `<a>` が空で `href` に basename が付かなかった。ページの書き方（リンクの位置）がテストの道具の都合で決まっていた。
+4. **getter が一覧を行のオブジェクトから読む形を lint で言う**（2-2。§5.26 の未決） — `this.incomes.reduce((t, row) => t + row.amount, 0)` と、行の中の `<yen-input data-wcs="value: .amount">`。§5.26 の案のとおり、読んだ項目をパスで書く証拠があるときだけ報告する: ページの束縛なら error、契約の無いカスタム要素かスクリプトなら warning。直し方は `$getAll`。
+5. **小さい 3 つを直す** — `wcs-schema` がカンマで並べたアクセサのキーを黙って捨てていた（1-4）。enum の並びが TypeScript の内部の順のままで、別の所の編集で変わった（1-5。書き出しを決まった順にし、`check` も enum と `anyOf` を集合として比べる — 並べ替えだけでは既存の manifest がすべて古いと言われる）。lint の「もしかして」が行のフィールドだけだった（1-6。実行時はトップレベルにも出す）。
+6. **skill の README に更新の手順を書く**（1-7） — 配布元は 4.30.0 だが、Claude Code は他社のマーケットプレイスを既定では自動更新せず、2026-09 に入れた写しは 2.1.0 のままだった（著者の機械）。版の固定は `/plugin marketplace add wcstack/wcstack-skill#v4.28.0`。
+7. **4.31.0 の minor 1 回にまとめる** — core に触れない（router・testing・typescript・lint・文書・skill）。
+
+記録の訂正（連載の側へ返したもの）: 2-3（`<wcs-storage>` に `#init=element` を付けない）と 2-4（行の配列に直接つなぐ）は、4.28.0 の lint が error で言う（`wcs/storage-seed-clobber`・`wcs/input-nested-write`、加えて warning の `wcs/storage-init-seed`）。記録の「知らせ: なし」は、lint を入れる前の 11 日目の時点の話だった。2-7（getter の中の読み違い）は、実行時の diagnostics の後付けが `[wcs/read-path-missing] … Did you mean "amount"? The getter reads undefined.` を 1 回警告する（`setTimeout` の後に出る。happy-dom の最小のページで確かめた）。
+
+作る途中で分かったこと: 4 の証拠を `collectNestedWriteRoots` の HTML 側から取ると、`#ro` を見ず、要素を問わず `value:` を書き込みと数えるので、examples の state-cross-tab-todo（`checked#ro: .done` とハンドラで一覧を置き換える — 正しい書き方）と music-room（`<option data-wcs="value: .id">`）に誤報した。束縛の証拠は `collectBindingWrites` から取り、リポジトリのすべてのページで診断は変わらない。1 の後も同じ（58 件のまま）。
+
+記録だけにしたもの: 2 節の残り（仕様どおりの動作で、記事が「やってみるとこうなる」と説明済み）、3 節（環境と公開先 — `file://`・静的ホスティングの 404・`<meta>` の CSP の `frame-ancestors`・`esm.run` と SRI（docs/sri.md §3 に既にある）・happy-dom で確かめられないこと・vitest の小文字のドライブ文字・Vite の `new URL`）。`innerHTML` で `<nav>` をルーターより前に入れたブラウザで `href` に basename が付かないはずの件は、ソースからの推測で、ブラウザでは確かめていない（3 の `href` の引き直しで、どちらにしても直る）。
+
+修正は core を変えずに収まった（`core.min.js` は 20,476 B のまま）。PR は #764（router・testing）・#765（typescript）・#766（lint）・この文書・wcstack-skill の README。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。
