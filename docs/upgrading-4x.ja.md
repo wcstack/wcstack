@@ -533,14 +533,25 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策: WebKit の router の下で `<wcs-sse>` の代わりに自前の `EventSource` を持つこと。下のパスでも「現在のページ」になるナビのリンクを、素の `<a>` とクリックのハンドラで書くこと。`$listKeys` の一覧の上の getter を取り直しに追従させるためだけに、行を `$getAll` で読むこと。
 
-## 4.30.0 でもまだ要るもの
+### 4.31.0
+
+2026-11-27 — [CHANGELOG](../CHANGELOG.md#4310--2026-11-27)
+
+- `@wcstack/lint`（と VS Code の拡張 2.24.0）: **新しい報告で、`--strict` を通っていたページが落ちることがある。** `stateSchema` があるとき、schema が何も言わない所（`items: {}` — 空で始まる一覧に `wcs-schema` が書くもの、`null` の型、`any`）のパスは、schema が無いときと同じに検査する — 無言だった所が warning になる。`wcs/getter-untracked-read` は、一覧の行を読む getter（`this.incomes.reduce((t, row) => t + row.amount, 0)`）を、その項目がパスで書かれるとき報告する: ページの束縛が書けば error、ほかは warning。無いトップレベルの名前にも「もしかして」が付く。
+- `@wcstack/typescript`: `wcs-schema emit` は `enum` の値と `anyOf` の要素を決まった順で書く — 次の emit でその配列が 1 回だけ書き換わる。`check` は並びを無視するので、前の emit が書いた manifest もそのまま通る。複数のパスへ宣言したアクセサ（`get "a.*.x,b.*.x"()`）が schema に載り、行に型の無い一覧は警告で名指す。
+- `@wcstack/testing`: **`<wcs-state>` のあるページで、`bootstrap` に並べた登録がそのタグを定義しなければ、`mount()` が reject する** —— 並べると既定の `[bootstrapState]` を置き換える。ページは文書の外で組み立ててから入れるので、要素は子のそろった形で接続する。
+- `@wcstack/router`: 文書にルーターがまだ無いときに接続した `<wcs-link>` は、1 マイクロタスク待ってから `<a>` を作る。`href` はロケーションの変化のたびに作り直す。
+
+要らなくなった回避策: happy-dom の `mount()` で組み立てられるようにするためだけに `<wcs-link>` を `<wcs-router>` の後ろに置くこと、`<a>` に文字が無いのでリンクを `wcs-link[to="…"] + a` で探すテスト。生成した schema で行の検査を保つためだけに一覧に付けた JSDoc の型（付けたままにする: 付いていれば綴り違いは warning でなく error になる）。
+
+## 4.31.0 でもまだ要るもの
 
 - 別のライブラリが入れるマークアップ（htmx の入れ替え、Turbo のフレーム）は入れた側が binder に渡し、捨てるときに手放す。描いたページを戻す履歴のキャッシュは、アイランドのあるページでは切る（[islands.ja.md](./islands.ja.md)）。
 - Firefox には scoped custom element registry が無い: 自分の wcstack を動かしているページに置くウィジェットは、そこで何をするかを決める（[islands.ja.md](./islands.ja.md)）。
 - lint が部品を読むのは、そのファイルを見つけられるときだけ: 部品を `/` から名指すページ（`"@components/x-card": "/parts/x-card.js"`）は `--root=<サイトのディレクトリ>` を付けて lint する。root を持たないエディタは、そういう部品には何も言わない。state がオブジェクトリテラルでない部品は読まず、部品のメソッドが読むパスも検査しない（lint の README、「部品で組み立てたページに言うこと」）: 残りは単体テストで見る。
 - ページの state はルートより長生きする: 選択・検索の文字・最後に表示したレコードは、戻ってきたときにも残っていて、誰もそれを知らせない。ページが忘れるべきものは、router の `routeName` への `$watch` で戻す（router の README「state はルートより長生きします」、[coming-from-react.ja.md](./coming-from-react.ja.md)）。
 - router に、ページの中で答える「留まる」は無い: `leaveConfirm` はブラウザの `confirm()` で尋ねる。自分のダイアログで尋ねるページは、自分のリンクを止め、ほかのルートを自分でガードする（[seam-apps.ja.md](./seam-apps.ja.md)、street-reports）。
-- 1 つの行の項目への書き込み（`this["todos.0.done"] = v`、行の中の双方向の `checked: .done`）は、その項目を行オブジェクトから読む getter（`this.todos.filter((t) => !t.done)`）を評価し直さない: 一覧を代入するか、項目を `$getAll("todos.*.done", [])` で読む（state の README「`$listKeys`」）。
+- 1 つの行の項目への書き込み（`this["todos.0.done"] = v`、行の中の双方向の `checked: .done`）は、その項目を行オブジェクトから読む getter（`this.todos.filter((t) => !t.done)`）を評価し直さない: 一覧を代入するか、項目を `$getAll("todos.*.done", [])` で読む（state の README「`$listKeys`」）。項目がパスで書かれていれば、lint が言う（`wcs/getter-untracked-read`）。
 - ボリュームはルートを読まない。ルートの `$connectedCallback` と `$watch` は、後から届くボリュームのキーやメソッドがそろう前に走る: ボリュームに要るものは渡し、その `connectedCallbackPromise` を待つ（state の README、「追加の状態をマウントする」）。
 - DCC は、プロパティで値を丸ごと受け取る: ページと共有するオブジェクトや配列の中の項目への書き込みは、相手側の行には届かない。入力の `$watch` は最初の値では走らない —— `$connectedCallback` でも読む（state の README、「DCC に渡すもの」）。
 - ページ内の state を import している最中にページを離れるブラウザのテストは、Firefox と WebKit で `<wcs-state> failed to initialize` を見ることがある: import が unload で打ち切られただけで、ページは壊れていない。
