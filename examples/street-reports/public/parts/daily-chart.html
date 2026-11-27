@@ -1,0 +1,63 @@
+<!--
+  StatsPage.jsx DailyChart → <sr-daily-chart>, a Declarative Custom Component. It is fetched by the autoloader
+  the first time the statistics page renders it (the lazy half of `React.lazy(() => import('./pages/StatsPage.jsx'))`).
+  Bindable: perDay (in) — [{ day: 'YYYY-MM-DD', count }].
+-->
+<sr-daily-chart data-wc-definition>
+  <template shadowrootmode="open">
+    <link rel="stylesheet" href="/styles.css">
+    <style>:host { display: block; }</style>
+    <figure class="chart">
+      <svg viewBox="0 0 640 160" role="img" aria-labelledby="chart-title" preserveAspectRatio="none">
+        <title id="chart-title" data-wcs="textContent: titleText"></title>
+        <!-- workaround: a <template> inside <svg> is parsed as an SVG element, not an HTML template, so for: cannot
+             render the bars; they are drawn as markup built from numbers only (no user text). -->
+        <g data-wcs="innerHTML: barsMarkup"></g>
+      </svg>
+      <details>
+        <summary>日別の件数を表で見る</summary>
+        <table class="compact">
+          <thead>
+            <tr>
+              <th scope="col">日付</th>
+              <th scope="col">件数</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template data-wcs="for: rows">
+              <tr>
+                <td data-wcs="textContent: .day"></td>
+                <td data-wcs="textContent: .count"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <wcs-state>
+      <script type="module">
+        export default {
+          /** @type {{ day: string, count: number }[]} */
+          perDay: [],
+          get rows() { return Array.isArray(this.perDay) ? this.perDay : []; },
+          get titleText() {
+            const rows = this.rows;
+            const total = rows.reduce((sum, d) => sum + d.count, 0);
+            const peak = rows.reduce((best, d) => (d.count > best.count ? d : best), rows[0] ?? { day: "", count: 0 });
+            return `日別の通報数: ${rows.length} 日間で合計 ${total} 件、最多は ${peak.day} の ${peak.count} 件`;
+          },
+          get barsMarkup() {
+            const rows = this.rows;
+            const max = Math.max(1, ...rows.map((d) => d.count));
+            const barWidth = 640 / Math.max(1, rows.length);
+            return rows.map((d, i) => {
+              const h = (Number(d.count) / max) * 150;
+              return `<rect x="${i * barWidth + 1}" y="${160 - h}" width="${Math.max(1, barWidth - 2)}" height="${h}"></rect>`;
+            }).join("");
+          },
+          $bindables: ["perDay"],
+        };
+      </script>
+    </wcs-state>
+  </template>
+</sr-daily-chart>

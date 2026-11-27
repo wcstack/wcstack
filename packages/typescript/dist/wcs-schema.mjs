@@ -194,8 +194,10 @@ function openSpread(checker, sourceFile, location) {
  * - `$`-prefixed keys are dropped (runtime namespaces, never data paths).
  * - Members with call signatures (methods, function-valued properties) are dropped.
  * - Getters contribute their return type. Path getters (`get "users.*.ageCategory"()`)
- *   are injected at the path they compute, so the validator sees them as members.
- * - Arrays → `items`; unions split `null` out into `anyOf`; literal unions → `enum`.
+ *   are injected at the path they compute, so the validator sees them as members; one declared
+ *   for several paths (`get "users.*.full,staff.*.full"()`) at each of them.
+ * - Arrays → `items`; unions split `null` out into `anyOf`; literal unions → `enum`. The members of
+ *   an `enum` and an `anyOf` come in a fixed order, not in the order TypeScript made their types.
  * - Built-in / library object types (`Date`, `Map`, DOM types, …) become a **bare `{}`**
  *   — never `{ "type": "object" }`: the validator treats a bare `{}` as *unknown*
  *   (silent) and a typed object without the member as *nonexistent* (error).
@@ -271,7 +273,9 @@ function convertUnion(type, depth, ctx) {
         node = { type: "boolean" };
     }
     else if (nonNull.every((t) => t.isLiteral() || (t.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
-        const values = nonNull.map((t) => literalValue(t, ctx));
+        // in a fixed order: TypeScript lists a union's members in the order it first made their types, so an edit
+        // elsewhere in the file reordered the same values (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27)
+        const values = nonNull.map((t) => literalValue(t, ctx)).sort(compareLiterals);
         const kinds = [...new Set(values.map((v) => typeof v))];
         node = kinds.length === 1 && (kinds[0] === "string" || kinds[0] === "number" || kinds[0] === "boolean")
             ? { type: kinds[0], enum: values }
@@ -281,7 +285,8 @@ function convertUnion(type, depth, ctx) {
         node = convertType(nonNull[0], depth, ctx, false);
     }
     else {
-        const converted = dedupeNodes(nonNull.map((t) => convertType(t, depth, ctx, false)));
+        // (in a fixed order, as an enum's values; `null`, when the union has it, stays last)
+        const converted = dedupeNodes(nonNull.map((t) => convertType(t, depth, ctx, false))).sort(compareNodes);
         node = converted.length === 1 ? converted[0] : { anyOf: converted };
     }
     if (!hasNull)
@@ -321,14 +326,20 @@ function convertObject(type, depth, ctx, isRoot) {
             const propType = ctx.checker.getTypeOfSymbolAtLocation(prop, ctx.location);
             if (isFunctionValued(propType, ctx))
                 continue;
-            if (isRoot && (name.includes(".") || name.includes("*"))) {
-                // A path getter declares a member at a nested position; inject it once the tree exists.
-                ctx.pathGetters.push({ segments: name.split("."), type: propType });
-                continue;
+            // An accessor declared for several paths lists them with commas (`get "incomes.*.label,expenses.*.label"()`):
+            // each path gets the member. Split at `.` alone, the key's middle segment (`label,expenses`) matched nothing
+            // and the getter was dropped without a word (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27)
+            const names = isRoot && name.includes(",") ? name.split(",").map((part) => part.trim()).filter((part) => part !== "") : [name];
+            for (const member of names) {
+                if (isRoot && (member.includes(".") || member.includes("*"))) {
+                    // A path getter declares a member at a nested position; inject it once the tree exists.
+                    ctx.pathGetters.push({ segments: member.split("."), type: propType });
+                    continue;
+                }
+                properties[member] = convertType(propType, depth + 1, ctx, false);
+                if (!isOptional(prop, propType))
+                    required.push(member);
             }
-            properties[name] = convertType(propType, depth + 1, ctx, false);
-            if (!isOptional(prop, propType))
-                required.push(name);
         }
         const node = { type: "object", properties };
         if (required.length > 0)
@@ -403,6 +414,20 @@ function literalValue(type, ctx) {
     }
     return undefined;
 }
+/** Literal values in a fixed order: by kind (boolean, number, string), then by value. */
+function compareLiterals(a, b) {
+    const ka = typeof a;
+    const kb = typeof b;
+    if (ka !== kb)
+        return ka < kb ? -1 : 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+/** Schema nodes in a fixed order: by their JSON. */
+function compareNodes(a, b) {
+    const ja = JSON.stringify(a);
+    const jb = JSON.stringify(b);
+    return ja < jb ? -1 : ja > jb ? 1 : 0;
+}
 function dedupeNodes(nodes) {
     const seen = new Set();
     const out = [];
@@ -422,7 +447,33 @@ function dedupeNodes(nodes) {
 function generateStateSchema(file, options = {}) {
     const loaded = loadStateFile(file, options);
     const schema = loaded.open ? {} : stateTypeToSchema(loaded.checker, loaded.program, loaded.type, loaded.location, options);
-    return { schema, warnings: loaded.warnings };
+    const warnings = [
+        ...loaded.warnings,
+        ...untypedRows(schema).map((path) => `\`${path}\` is a list whose rows have no type (it starts empty and nothing types it): the generated stateSchema ` +
+            `says nothing under \`${path}.*\` — not the rows' fields, not the row getters declared there — and a misspelt ` +
+            `path under it is not an error. Give it a type that lists the fields (a JSDoc @type, e.g. ` +
+            `/** @type {{ id: number, name: string }[]} */)`),
+    ];
+    return { schema, warnings };
+}
+/**
+ * The lists whose `items` is a bare `{}` — unknown to the validator, which then checks nothing under them against
+ * the schema. A state that starts a list empty (`dependents: []`) gets one, and a page that had a near-miss
+ * reported without the schema had it reported no more once the schema was there, with nothing said (the Advent
+ * Calendar's record, docs/v4-direction-2026-10.md §5.27).
+ */
+function untypedRows(node, path = "", out = []) {
+    if (node.items !== undefined) {
+        if (Object.keys(node.items).length === 0)
+            out.push(path);
+        else
+            untypedRows(node.items, `${path}.*`, out);
+    }
+    for (const [key, child] of Object.entries(node.properties ?? {}))
+        untypedRows(child, path === "" ? key : `${path}.${key}`, out);
+    for (const member of node.anyOf ?? [])
+        untypedRows(member, path, out);
+    return out;
 }
 
 /**
@@ -621,17 +672,31 @@ function subtreeAt(schema, mountPath) {
     }
     return node;
 }
-/** JSON with object keys sorted at every level — the canonical form used for comparison. */
+/**
+ * The canonical form used for comparison: JSON with object keys sorted at every level, and the members of an
+ * `enum` or an `anyOf` — sets in JSON Schema — in a fixed order. TypeScript lists a union's members in the order
+ * it first made their types, so an edit elsewhere in the state file reordered an `enum` with the same values,
+ * and `check` reported a schema that had not changed (the Advent Calendar's record, docs/v4-direction-2026-10.md
+ * §5.27). `emit` writes them in that order too; a manifest written by an earlier emit still compares equal.
+ */
 function stableStringify(value) {
     return JSON.stringify(sortKeys(value));
 }
-function sortKeys(value) {
-    if (Array.isArray(value))
-        return value.map(sortKeys);
+const SET_KEYWORDS = new Set(["enum", "anyOf"]);
+function sortKeys(value, set = false) {
+    if (Array.isArray(value)) {
+        const members = value.map((member) => sortKeys(member));
+        if (!set)
+            return members;
+        return members
+            .map((member) => [JSON.stringify(member), member])
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([, member]) => member);
+    }
     if (value !== null && typeof value === "object") {
         const out = {};
         for (const key of Object.keys(value).sort()) {
-            out[key] = sortKeys(value[key]);
+            out[key] = sortKeys(value[key], SET_KEYWORDS.has(key));
         }
         return out;
     }
@@ -679,8 +744,9 @@ function compareStateSchema(manifestText, mountPath, generated, stateSource) {
     if (stableStringify(stored) === stableStringify(generated)) {
         return sourceDiff === undefined ? { kind: "same" } : { kind: "differs", changes: [], stateSource: sourceDiff };
     }
-    const a = flatten(generated);
-    const b = flatten(stored);
+    // (in the canonical form: an `enum` or `anyOf` in another order is not listed as a change)
+    const a = flatten(sortKeys(generated));
+    const b = flatten(sortKeys(stored));
     const changes = [];
     for (const key of [...new Set([...a.keys(), ...b.keys()])].sort()) {
         const inA = a.has(key);
@@ -740,7 +806,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.30.0";
+var version = "4.31.0";
 var pkg = {
 	version: version};
 

@@ -157,13 +157,21 @@ describe('L3 — 行のフィールドの打ち間違いに「もしかして」
     ]);
   });
 
-  it('近い名前の無いフィールド・行の外のパス（トップレベル・オブジェクトのキー）は従来どおり（もしかして無し）', () => {
-    const html = state(`items: [{ name: "a" }], user: { name: "" }, total: 0,`)
+  it('近い名前の無いフィールドには出さない。行の外のパス（トップレベル・オブジェクトのキー・getter）にも、近い名前があれば出す', () => {
+    // 行の外は 4.30 まで出さなかった（実行時は出す）: トップレベルの getter の綴り違いに名前が付かなかった
+    // （Advent Calendar の制作の記録、docs/v4-direction-2026-10.md §5.27）
+    const html = state(`items: [{ name: "a" }], user: { name: "" }, total: 0, get dependentsDeduction() { return 0; },`)
       + `<template data-wcs="for: items"><p data-wcs="textContent: .zzzzzz"></p></template>`
-      + `<p data-wcs="textContent: totl"></p><p data-wcs="textContent: user.nmae"></p>`;
+      + `<p data-wcs="textContent: totl"></p><p data-wcs="textContent: user.nmae"></p>`
+      + `<p data-wcs="textContent: dependentsDeductio"></p><p data-wcs="textContent: qqqqqq"></p>`;
     const found = ofCode(validate(html), WcsDiagnosticCode.BindingPathMissing);
-    expect(found).toHaveLength(3);
-    expect(found.every((d) => !d.message.includes('Did you mean'))).toBe(true);
+    expect(found.map((d) => [textOf(html, d), (/Did you mean "([^"]+)"/.exec(d.message) ?? [])[1] ?? null])).toEqual([
+      ['.zzzzzz', null],
+      ['totl', 'total'],
+      ['user.nmae', 'name'],
+      ['dependentsDeductio', 'dependentsDeduction'],
+      ['qqqqqq', null],
+    ]);
   });
 });
 

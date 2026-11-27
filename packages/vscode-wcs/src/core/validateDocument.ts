@@ -79,7 +79,8 @@ export interface ValidateDocumentOptions {
    * 宣言されていれば、未存在パスが `wcs/binding-path-missing`(warning)ではなく
    * `wcs/path-nonexistent`(error)になる(docs/app-testing-and-typescript-impl-plan.md D6)。
    * 存在判定は sidecar/schemaSubset.ts の `resolveSchemaPath` の三値で行い、`unknown`
-   * (素の `{}` の下・動的構造)は沈黙する。
+   * (素の `{}` の下・動的構造)は schema が無いときと同じ検査に戻る(schema を足しても検査は
+   * 弱くならない — docs/v4-direction-2026-10.md §5.27)。
    *
    * 未指定で `fileReader` があれば、HTML の位置から最近傍の `wcstack.manifest.json` を
    * 発見して使う(D8・sidecar/discover.ts)。CLI は明示引数に application manifest が

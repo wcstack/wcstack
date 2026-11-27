@@ -24,7 +24,7 @@ import { pathExistsInCandidates, resolveIndexedSchemaPath, type BindingDiagnosti
 import { hasRecursionWildcard } from "./recursionPaths.js";
 import { removedFilterMessage } from "./removedNames.js";
 import { classifyIndexParam, hasUnsafeSegment, MAX_INDEX_PARAM } from "./indexPath.js";
-import { rowFieldSuggestion } from "./suggestion.js";
+import { pathSuggestion } from "./suggestion.js";
 
 export function validateTemplateSyntax(
   html: string,
@@ -64,9 +64,11 @@ export function validateTemplateSyntax(
     if (isValidTemplatePath(path, pathSet, scoped)) return null;
     if (defaultSchema !== undefined && !path.startsWith("$")) {
       const resolution = resolveIndexedSchemaPath(defaultSchema, path);
-      return resolution.kind === "nonexistent"
-        ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) }
-        : null;
+      if (resolution.kind === "nonexistent") {
+        return { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) };
+      }
+      // where the schema says nothing (`items: {}`, `null`, `any`), check as without a schema (bindingValidator's rule)
+      if (resolution.kind !== "unknown") return null;
     }
     if (isUnresolvedPath(path, pathIndex.scopes)) return null;
     return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
@@ -76,10 +78,10 @@ export function validateTemplateSyntax(
   const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
-  /** A row field the rows lack, near one they have (bindingValidator's rule): `. Did you mean "…"?`, or ''. */
-  const nearRowField = (code: WcsDiagnosticCodeValue, path: string): string =>
+  /** A name near the missing one beside it (bindingValidator's rule): `. Did you mean "…"?`, or ''. */
+  const nearName = (code: WcsDiagnosticCodeValue, path: string): string =>
     code === WcsDiagnosticCode.BindingPathMissing || code === WcsDiagnosticCode.PathNonexistent
-      ? rowFieldSuggestion(path, defaultPaths, msgs)
+      ? pathSuggestion(path, defaultPaths, msgs)
       : "";
 
   const mustaches = findAllMustacheSyntax(html);
@@ -232,7 +234,7 @@ export function validateTemplateSyntax(
               code: verdict.code,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: verdict.message + msgs.expansionSuffix(expandedPath) + nearRowField(verdict.code, expandedPath),
+              message: verdict.message + msgs.expansionSuffix(expandedPath) + nearName(verdict.code, expandedPath),
               severity: verdict.severity,
             });
           }
@@ -244,7 +246,7 @@ export function validateTemplateSyntax(
             code: verdict.code,
             start: item.exprStart,
             end: item.exprStart + pathPart.length,
-            message: verdict.message + nearRowField(verdict.code, pathPart),
+            message: verdict.message + nearName(verdict.code, pathPart),
             severity: verdict.severity,
           });
         }

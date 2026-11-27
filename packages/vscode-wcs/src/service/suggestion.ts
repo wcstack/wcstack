@@ -43,15 +43,18 @@ export function missingSegment(
 }
 
 /**
- * 「もしかして」for a row field: the first segment of `path` the candidates lack lies under a row (a `*` before it —
- * `rows.*.amountLabl`), and a field of the same rows is near it (the runtime says the same for a data list's row).
- * Names the field (`. Did you mean "amountLabel"?`), or ''. The rows' fields are whatever the analyzer read: a data
- * list's rows, a getter's mapped literal, a JSDoc type.
+ * 「もしかして」for a missing path: the first segment of `path` the candidates lack, and a name near it beside it —
+ * a top-level key or getter (`dependentsDeductio`), an object's member, a row's field (`rows.*.amountLabl`), as the
+ * runtime says. Names it (`. Did you mean "amountLabel"?`), or ''. The rows' fields are whatever the analyzer read:
+ * a data list's rows, a getter's mapped literal, a JSDoc type.
+ *
+ * Only a row's field had one (the ledger-repair seam app added it for rows): a misspelt top-level getter was told
+ * without the name the runtime gave (the Advent Calendar's record, docs/v4-direction-2026-10.md §5.27).
  */
-export function rowFieldSuggestion(path: string, candidates: readonly PathCandidate[], msgs: WcsMessageCatalog): string {
+export function pathSuggestion(path: string, candidates: readonly PathCandidate[], msgs: WcsMessageCatalog): string {
   // (built only for a path that is missing — a rare case — so not cached)
   const missing = missingSegment(path, pathTree(candidates));
-  if (missing === null || !missing.parent.split('.').includes('*')) return '';
+  if (missing === null) return '';
   return suggestion(missing.segment, missing.names, msgs);
 }
 

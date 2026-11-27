@@ -86,6 +86,12 @@ export interface WcsMessageCatalog {
    * のとき。書き込みは getter に届かないと断定できる（error）。`binding` は束縛の原文、`written` はそれが書くパス。
    */
   getterUntrackedReadBound(root: string, suggestedPath: string, binding: string, tag: string, written: string): string;
+  /**
+   * getter が一覧を `this.<list>` で読み、配列のメソッド（`reduce` / `filter` …）か `for…of` で行のオブジェクトから項目を
+   * 読む（`row.amount`）。追跡されるのは一覧だけで、ページかスクリプトがその行の項目をパスで書く（`written`）。
+   * `binding`/`tag` があればページの束縛が書く（error）。`fieldPath` は `$getAll` に渡すパス（`incomes.*.amount`）。
+   */
+  getterRowFieldRead(list: string, fieldPath: string, written: string, binding: string | null, tag: string | null): string;
   onHandlerThis(name: string): string;
   /** getter の中の `location` 読み（state ではないので追跡されない — 最初の URL のまま）。 */
   getterReadsLocation(read: string): string;
@@ -704,6 +710,8 @@ const ja: WcsMessageCatalog = {
     `ここで追跡されるのは "${root}" だけです。"${sp}" が変わってもこの getter は再評価されません（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) =>
     `ここで追跡されるのは "${root}" だけですが、<${tag}> の束縛 "${binding}" は "${written}" をパスで書きます。その書き込みはこの getter に届かず、getter は前に計算した値を返し続けます（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
+  getterRowFieldRead: (list, fieldPath, written, binding, tag) =>
+    `この getter は一覧 "${list}" を読み、行のオブジェクトから項目を読んでいます。追跡されるのは "${list}" だけで、${binding !== null ? `<${tag}> の束縛 "${binding}" は` : 'ページは'} "${written}" をパスで書きます。その書き込みはこの getter に届かず、行の追加と削除では正しく見えても、行の値を変えると前に計算した値のままです。行の項目はパスで読んでください: this.$getAll("${fieldPath}", [])`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
@@ -1157,6 +1165,8 @@ const en: WcsMessageCatalog = {
     `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   getterUntrackedReadBound: (root, sp, binding, tag, written) =>
     `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
+  getterRowFieldRead: (list, fieldPath, written, binding, tag) =>
+    `This getter reads the list "${list}" and a field from its row objects. Only "${list}" is tracked, and ${binding !== null ? `the binding "${binding}" on <${tag}>` : 'the page'} writes "${written}" by path: that write never reaches this getter, which looks right when rows are added or removed and keeps its last value when a row's value changes. Read the rows' fields by path: this.$getAll("${fieldPath}", [])`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
