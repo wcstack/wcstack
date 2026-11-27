@@ -20,6 +20,7 @@
 import type { FileReader } from "../../service/statePathResolver.js";
 import { createTemplateTester, parseWcsStateElements } from "../../language/htmlParse.js";
 import { LoadedManifest, loadManifest } from "./loader.js";
+import { sameStateFile, segmentsOf } from "./statePaths.js";
 import type { JsonSchemaNode } from "./types.js";
 
 export const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
@@ -90,19 +91,6 @@ export function applicationStateSourceOf(loaded: LoadedManifest): string | undef
   return typeof stateSource === "string" && stateSource.trim() !== "" ? stateSource.trim() : undefined;
 }
 
-/** A path's segments, `.` dropped and `..` folded where it can be; whether it is absolute (`/…`, `C:/…`). */
-function segmentsOf(path: string): { readonly absolute: boolean; readonly segments: string[] } {
-  const norm = path.replace(/\\/g, "/");
-  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
-  const segments: string[] = [];
-  for (const segment of norm.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
-    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
-  }
-  return { absolute, segments };
-}
-
 /**
  * The manifest's `stateSource` as a path relative to a page's directory: `pageSource` and `manifestSource` name the
  * page and the manifest in one frame (both relative to the same directory, or both absolute). undefined when they are
@@ -120,11 +108,6 @@ export function stateSourceFromPage(pageSource: string, manifestSource: string, 
   return [...dir.slice(common).map(() => ".."), ...target.slice(common)].join("/");
 }
 
-/** The same file for the scoping: a path's `.ts` / `.mts` counts as its `.js` / `.mjs` (what a build emits). */
-function sameStateFile(a: string, b: string): boolean {
-  const canonical = (p: string): string => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
-  return canonical(a) === canonical(b);
-}
 
 /**
  * Whether a stateSchema generated from `stateSource` (relative to the page's directory — DiscoveredApplicationManifest)

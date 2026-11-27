@@ -147,6 +147,7 @@ export default defineState({
   // =====================================================================================================
   // context/ToastContext.jsx — the queue (was a useReducer), at most 3 visible, a 4 s timer per visible toast
   // =====================================================================================================
+  /** @type {{ id: number, message: string }[]} */
   toasts: [],
   get visibleToasts() {
     return this.toasts.slice(0, MAX_VISIBLE_TOASTS);
@@ -233,6 +234,7 @@ export default defineState({
   listText: '', // the search box (local while typing)
   listTextSettled: null, // useDebouncedValue(text, 300) — <wcs-debounce> writes it
   listLastSeen: null, // useLastSeen()
+  /** @type {{ key: string, ids: number[] }} */
   listSelection: { key: '', ids: [] }, // selection, keyed by the filters it belongs to
   listBulkBusy: false,
 

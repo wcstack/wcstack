@@ -11,6 +11,7 @@
 import { WcsDiagnostic, WcsDiagnosticCode } from "../diagnostics.js";
 import { DiagnosticContext } from "./schemaSubset.js";
 import { JsonSpan, parseJsonWithSpans, pointer } from "./jsonSource.js";
+import { differentStateFiles } from "./statePaths.js";
 import {
   JsonSchemaNode,
   SUPPORTED_NAMESPACE_VERSION,
@@ -125,6 +126,15 @@ export interface ResolvedTagContract {
   readonly source: string;
 }
 
+/** An application artifact's stateSchema, as resolved over the set (ResolvedContracts.applicationSchemas). */
+export interface ApplicationSchemaEntry {
+  readonly schema: JsonSchemaNode;
+  /** The artifact that declared it (its source). */
+  readonly source: string;
+  /** That artifact's `stateSource` (relative to it — see ApplicationExtension), when it names one. */
+  readonly stateSource?: string;
+}
+
 export interface ResolvedContracts {
   /** 衝突していない tag → 契約。衝突した tag は含めない(unknown 扱いにするため)。 */
   readonly tags: ReadonlyMap<string, ResolvedTagContract>;
@@ -137,6 +147,12 @@ export interface ResolvedContracts {
   readonly applicationSchemaSource?: string;
   /** That artifact's `stateSource` (relative to it — see ApplicationExtension), when it names one. */
   readonly applicationStateSource?: string;
+  /**
+   * Every stateSchema that is used: none on a collision, one (the `applicationSchema` above), or several when each names
+   * a different state file (`stateSource`) — each the contract of the pages whose root state loads its file
+   * (v4-direction §5.28).
+   */
+  readonly applicationSchemas: readonly ApplicationSchemaEntry[];
   /** application artifact が 1 つでも渡されたか(明示指定が発見結果を置き換える判定用)。 */
   readonly hasApplicationArtifact: boolean;
   /** 衝突/override 診断を、それを生んだ artifact の source ごとに束ねたもの。 */
@@ -165,9 +181,8 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
   const collided = new Set<string>();
   const firstSource = new Map<string, string>();
   const filterOwner = new Map<string, string>();
-  let schemaOwner: string | undefined;
-  let schemaWinner: JsonSchemaNode | undefined;
-  let schemaStateSource: unknown;
+  const schemaEntries: ApplicationSchemaEntry[] = [];
+  let schemaCollided = false;
   let hasApplicationArtifact = false;
 
   for (const lm of loaded) {
@@ -229,22 +244,32 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
       }
     }
 
-    // application: stateSchema の衝突(D8 — v2: 単一ツリーのスロットは 1 つ)。
-    // 後勝ちにせず、勝者なし。
+    // application: stateSchema の衝突(D8 — v2: 単一ツリーのスロットは 1 つ)。後勝ちにせず、勝者なし。
+    // ただし、生成元の状態ファイル(stateSource)をそれぞれ名指し、それが互いに違う schema どうしは衝突しない:
+    // ページごとに、その root の <wcs-state src> が読むファイルの schema が当たる(v4-direction §5.28 — 生成した
+    // schema を持つアプリ 2 つを、1 回の実行で検査する)。
     if (lm.manifest.kind === "application" && application?.stateSchema !== undefined) {
       const schema = application.stateSchema;
       if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
-        if (schemaOwner === undefined) {
-          schemaOwner = lm.artifact.source;
-          schemaWinner = schema as JsonSchemaNode;
-          schemaStateSource = application.stateSource;
+        const stateSource = typeof application.stateSource === "string" && application.stateSource.trim() !== ""
+          ? application.stateSource.trim()
+          : undefined;
+        const entry: ApplicationSchemaEntry = {
+          schema: schema as JsonSchemaNode,
+          source: lm.artifact.source,
+          ...(stateSource !== undefined ? { stateSource } : {}),
+        };
+        const other = schemaEntries.find((e) => !(e.stateSource !== undefined && entry.stateSource !== undefined &&
+          differentStateFiles(e.source, e.stateSource, entry.source, entry.stateSource)));
+        if (other === undefined) {
+          schemaEntries.push(entry);
         } else {
-          // 衝突 = 勝者なし（読み手はこの undefined だけを見る）
-          schemaWinner = undefined;
+          // 衝突 = 勝者なし（どの schema も使わない）
+          schemaCollided = true;
           ctxFor(lm).add(
             WcsDiagnosticCode.ManifestStateCollision,
             pointer("manifestExtensions", "wcstack.application", "stateSchema"),
-            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
+            `Multiple application artifacts declare a stateSchema (also in "${other.source}"); neither is used.`,
             "error",
             undefined,
             true,
@@ -262,14 +287,14 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
 
-  const stateSource = schemaWinner !== undefined && typeof schemaStateSource === "string" && schemaStateSource.trim() !== ""
-    ? schemaStateSource.trim()
-    : undefined;
+  const schemas = schemaCollided ? [] : schemaEntries;
+  const single = schemas.length === 1 ? schemas[0] : undefined;
   return {
     tags: winners,
-    applicationSchema: schemaWinner,
-    ...(schemaWinner !== undefined ? { applicationSchemaSource: schemaOwner } : {}),
-    ...(stateSource !== undefined ? { applicationStateSource: stateSource } : {}),
+    applicationSchema: single?.schema,
+    ...(single !== undefined ? { applicationSchemaSource: single.source } : {}),
+    ...(single?.stateSource !== undefined ? { applicationStateSource: single.stateSource } : {}),
+    applicationSchemas: schemas,
     hasApplicationArtifact,
     diagnosticsBySource,
   };

@@ -2,6 +2,10 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- コマンドラインに渡した application manifest の 2 つが両方 `stateSchema` を宣言しても、それぞれが違う state のファイル（`stateSource`、`wcs-schema emit` が書く）を名指すなら `wcs/manifest-state-collision` にしない。各ページには、ルートの `<wcs-state src>` が読むファイルの schema を当て、どちらのファイルも読まないページには当てない。同じファイル（`.ts` と `.js` も同じ）を名指す 2 つ・名指さないものがある組・比べられない組（絶対と相対のパス）は今までどおり衝突し、衝突が 1 つでもあればどの schema も使わない。生成した schema を持つアプリ 2 つ（このリポジトリの examples/lending-desk と street-reports）を、1 回の実行で検査できる（2026-11-28 の著者の決定、docs/v4-direction-2026-10.md §5.28）。IDE はページごとに最も近い manifest を発見するので、もとから衝突しなかった。
+
 ## 2.24.0 — 2026-11-27
 
 `@wcstack/state` 4.31.0 から作った（npm の `@wcstack/lint` 4.31.0・`@wcstack/typescript` 4.31.0 と同じ判定）。外部の評価 — wcstack 4.28.0 でビルドなしの確定申告の下書きツールを 25 日で作る Advent Calendar の連載の記録 — から（2026-11-27 の著者の決定、docs/v4-direction-2026-10.md §5.27）。
