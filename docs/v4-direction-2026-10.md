@@ -476,7 +476,7 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 
 記録だけにしたもの: 1 つの行の項目への書き込みで派生リストの片方だけが動く件（既知の系統。README に書いた。lint の規則を配列に広げるかは未決）、Firefox で state の import が切れると未捕捉になる件（garden-plots に続き 2 度目。core が要る）、部品の `src=` の state がインスタンスごとに import される件、`wcs-tsc` と `@wcstack/testing` の小さな件、`<svg>` の中の `for:` が文書に無い件（4 巡目の 4 本目で書く）。
 
-**未決のまま文書に残したこと**（2026-11-26、著者: 「未決事項はドキュメントに残し、進めて」）。4.30 には入れない。
+**未決のまま文書に残したこと**（2026-11-26、著者: 「未決事項はドキュメントに残し、進めて」）。4.30 には入れない。getter の lint は 4.31.0 で決め（§5.27）、残りの 4 件は 2026-11-28 に決めた（§5.28）。
 
 - **router の「留まる」の API（4 の続き）** — 案は出したが、合意していない。作っていない。案: `<wcs-router>` に、関数を渡さない形で足す。
   - 入力 `leave-hold`（真の間、別のルートへの遷移 — リンク、戻る / 進む、`navigate()` — を確定させずに止める）。
@@ -509,6 +509,22 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 記録だけにしたもの: 2 節の残り（仕様どおりの動作で、記事が「やってみるとこうなる」と説明済み）、3 節（環境と公開先 — `file://`・静的ホスティングの 404・`<meta>` の CSP の `frame-ancestors`・`esm.run` と SRI（docs/sri.md §3 に既にある）・happy-dom で確かめられないこと・vitest の小文字のドライブ文字・Vite の `new URL`）。`innerHTML` で `<nav>` をルーターより前に入れたブラウザで `href` に basename が付かないはずの件は、ソースからの推測で、ブラウザでは確かめていない（3 の `href` の引き直しで、どちらにしても直る）。
 
 修正は core を変えずに収まった（`core.min.js` は 20,476 B のまま）。PR は #764（router・testing）・#765（typescript）・#766（lint）・この文書・wcstack-skill の README。
+
+### 5.28 §5.26 の未決 4 件から決めたこと（2026-11-28、著者）
+
+§5.26 に残した未決のうち、4.31.0 で決めた getter の lint（§5.27）を除く 4 件。著者の「未決の 4 件を解消しよう」に、測れるものを測ってから問いを 4 つ出した。著者はすべて推奨のとおりに決めた。
+
+1. **router の「留まる」は案のとおり作る** — `<wcs-router>` に入力 `leaveHold`（属性 `leave-hold`）・出力 `leaving`・コマンド `proceed()` / `stay()`。関数を渡さず、data-wcs だけで書ける。比べた案: 取り消せるイベント（`wcs-router:before-leave` と `detail.proceed()` — ページに JavaScript のハンドラが要る）、作らずに今の回避策（ガードと `history.go(1)`）を文書に書く。作る中で決めたこと（PR #776）:
+   - ページの中のナビゲーションでは `leaveConfirm` より先。ページを離れるもの（basename の外・読み直し・閉じる）はページのダイアログを待てないので `leaveConfirm` / `beforeunload` のまま —— 両方を書く。
+   - 止めないもの: クエリだけ、URL がすでに指すパスへ、最初のルート、`proceed()` の遷移（次の commit まで）、ガードのリダイレクト。リダイレクトを止めると URL だけがガードのルートに進み画面が残るので、router に `guardRedirect()` を足した（`replace()` を通る）。
+   - 次に止めたものが `leaving` を置き換える。別のルートへの commit が捨てる。`leaveHold` が外れても `leaving` は残り、`proceed()` は効く（「破棄して移動」のハンドラが下書きを片付けるのと `proceed()` を、どちらの順で書いてもよい）。
+   - 戻る / 進むは `navigate` イベントを取り消して止める（Chromium と Firefox が、同じ文書の「戻る」を、ユーザーの操作の有無によらず取り消させると測った）。取り消せないときは、描かずに受けて元の項目へ戻る。Navigation API の無いブラウザでは止めない（popstate は取り消せず、向きも分からない —— `leaveConfirm` も聞かない）。
+   - 全数テスト（`navigation.exhaustive.test.ts`）に `hold` / `proceed` / `stay` を足し、作る途中で 1 件見つけた: ガードを待つ間（URL は進み、ルートはまだ前のもの）のクエリだけのナビゲーションが止まった。「URL がすでに指すパスへは止めない」で直した。
+2. **flaky なテストの最初の失敗は、成果物として残す** — 調べると、最初の失敗の `error-context.md`（エラー・呼び出しのログ・ページの ARIA スナップショット）は今の設定でも `e2e/test-results/` に書かれていて、ワークフローがジョブの落ちたときしか上げないので捨てられていた。flaky の reporter が `flaky.json` を書き、ワークフローは失敗か flaky のある実行でそのディレクトリを上げる（14 日）。失敗の後の画像（`screenshot: "only-on-failure"`）も足す。通るテストには何もしない（全テストの trace は挙動を変えたので取り下げた — [verification-practices-study.ja.md](./verification-practices-study.ja.md) §4.1）。比べた案: 上げるだけ（画像なし）、今のまま。PR #774（ゲートの入力）。
+3. **`<wcs-sse>` は、順がまだ分からない文書で、直前に `navigate` の無い `beforeunload` では、閉じるのを 1 タスク待つ**（§5.26 の 7 の続き） — 3 ブラウザで測った: WebKit の street-reports「3 往復でストリームが漏れない」は今 3 回中 3 回落ち、案で 3 回中 3 回通る（同じ文書の遷移で一度も閉じない）。Firefox は待つ道（`page.goto()` の離脱）を通ってもメッセージが 6 回中 0 回。次のタスクは 3 ブラウザとも `pagehide` より先に来る。比べた案: 今のまま（最初のリンクの 1 回は README に書いてある）。PR #773。
+4. **生成した schema を持つアプリ 2 つは、1 回の lint で検査できるようにする** — 違う状態ファイル（`stateSource`）を名指す schema どうしは衝突にせず、ページごとに、ルートの `<wcs-state src>` が読むファイルの schema を当てる。同じファイル（`.ts` と `.js` も同じ）・名指さないものがある組・比べられない組（絶対と相対のパス）は今までどおり衝突し、衝突が 1 つでもあればどれも使わない。IDE はページごとに最も近い manifest を発見するので、もとから衝突しなかった。street-reports は生成した manifest をコミットした（`wcs-schema` 4.31 が警告した、行に型の無い一覧 2 つに JSDoc の型を足して）。比べた案: CI をアプリごとに分ける（手で 1 回で渡す利用者には同じ error が残る）、今のまま。PR #775。
+
+どれも core に触れない（router・sse・lint・e2e と CI）。§5.26 の未決は、これで残っていない。
 
 ## 6. やらないこと
 
