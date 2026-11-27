@@ -324,7 +324,10 @@ page whose root `<wcs-state src>` loads that file (`.js` and `.ts`, `.mjs` and `
 path being one file); a page whose state is inline or another file is checked as if no
 manifest were there — up to 4.25 the app's schema made the correct paths of a page beside it
 (a counter screen with its own inline state) `wcs/path-nonexistent` errors. A manifest without
-`stateSource` (hand-written, or generated before) applies to every page as before. For a declared
+`stateSource` (hand-written, or generated before) applies to every page as before. Manifests passed
+on the command line replace the discovery; two that both declare a `stateSchema` are a
+`wcs/manifest-state-collision` error — unless each names a different state file (since 2.25.0,
+not released yet): then each page gets the schema of the file its root state loads. For a declared
 state, a missing path is reported as `wcs/path-nonexistent` (error) instead of
 `wcs/binding-path-missing` (warning), and `for:` on a schema-confirmed non-array is
 `wcs/path-type-mismatch`. Methods, getters, and `$listKeys` from the script count as

@@ -285,7 +285,10 @@ drift。診断には安定コード（例 `manifest-schema-version` / `manifest-
 相対 — `wcs-schema emit` が書く）、schema はそのファイルを root の `<wcs-state src>` で読むページにだけ当てます（同じパスの
 `.js` と `.ts`、`.mjs` と `.mts` は同じファイル）。インラインの state や別のファイルのページは manifest が無いものとして検査します
 （4.25 までは、隣のページ — 自前のインラインの state を持つ受付画面 — の正しいパスが `wcs/path-nonexistent` の error になっていた）。
-`stateSource` の無い manifest（手書き・それより前に作ったもの）は、これまでどおりすべてのページに当てます。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
+`stateSource` の無い manifest（手書き・それより前に作ったもの）は、これまでどおりすべてのページに当てます。コマンドラインに
+渡した manifest は発見を置き換え、そのうち 2 つが両方 `stateSchema` を宣言すると `wcs/manifest-state-collision`（error）です
+—— ただし 2.25.0（未リリース）から、それぞれが違う state のファイルを名指すなら衝突せず、各ページには root の state が読む
+ファイルの schema を当てます。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
 sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
 CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint)
 として配布されています（同一の CLI バンドルを同梱する依存ゼロのラッパー）:

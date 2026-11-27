@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/lint` (and the VS Code extension): **two apps with a generated schema could not be checked in one run.** Two application manifests passed on the command line that both declare a `stateSchema` were a `wcs/manifest-state-collision` error, and neither schema was used — even when each names the state file it was generated from (`stateSource`, since 4.26) and so is the contract of its own pages only. This repository's CI passes every page and manifest in one run, so the street-reports example landed without its generated manifest. Now two that each name a different state file are not a collision: each page gets the schema of the file its root `<wcs-state src>` loads, and a page that loads neither gets none. Two that name the same file (`.ts` and `.js` alike), a set where one names none, and two that cannot be compared (an absolute and a relative path) still collide, and any collision leaves every schema unused, as before (docs/v4-direction-2026-10.md §5.28).
+
 ## [4.31.0] — 2026-11-27
 
 From an outside evaluation: the record of the problems met while writing a 25-day Advent Calendar series that builds a buildless tax-return draft tool on wcstack 4.28.0. The author's decisions of 2026-11-27 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.27.

@@ -365,7 +365,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `wcs/manifest-ref-cycle` | sidecar の manifest の参照が循環している。 |
 | `wcs/manifest-ref-unresolved` | sidecar の manifest の参照先が無い。 |
 | `wcs/manifest-schema-version` | sidecar の manifest が、lint の読まない schema の版を名乗っている。 |
-| `wcs/manifest-state-collision` | 2 つの application の manifest が同じ state の stateSchema を宣言している。lint はどちらでもその state を検査しない。 |
+| `wcs/manifest-state-collision` | 2 つの application の manifest が同じ state の stateSchema を宣言している —— 同じ state のファイルを名指すか、名指さないものがある（4.32（未リリース）から、それぞれ違うファイルを名指す 2 つは、それぞれそのファイルを読むページの契約になる）。lint はどちらでもその state を検査しない。 |
 | `wcs/manifest-tag-collision` | 2 つの sidecar の manifest が、override 無しで同じタグを宣言している。 |
 | `wcs/manifest-unknown-keyword` | sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。 |
 | `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。4.10 から、値を読めないキー（計算した値を束縛する名前。ロケールの辞書を合わせた `t` の `{ t }`）の下をページが束ねるときも、キーの上で 1 回だけ言う。JSDoc の `@type {typeof import("./en.js").default}` を付けると、そのパスを検査する。4.23 から、その場に書いたリテラルでない値（`const init = emptyEntry()` の `team: init.team`・`errs: emptyErrs()`）も同じ: 4.22 までは、その下のパスが 1 件ずつ `wcs/binding-path-missing` の誤報だった（継ぎ目アプリ ekiden-entry のページで 91 件）。 |
