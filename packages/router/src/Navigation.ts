@@ -16,6 +16,10 @@ export type NavigationNavigateOptions = {
 
 export type NavigationLike = {
   navigate?: (url: string, options?: NavigationNavigateOptions) => NavigationResultLike | void | undefined;
+  /** 戻る / 進むの行き先（leaveHold が止めたもの）へ、または止めた項目へ戻る。mock では欠け得る */
+  traverseTo?: (key: string) => NavigationResultLike | void | undefined;
+  /** 今の項目（navigate イベントの中では、まだ遷移の前の項目）。mock では欠け得る */
+  currentEntry?: { readonly key: string } | null;
   addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
   removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
 };

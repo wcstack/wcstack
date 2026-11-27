@@ -12,7 +12,7 @@ import { normalizeBasename, normalizePathname, sliceBasename } from "../normaliz
 import { parseSearchParams, shallowEqualRecords } from "../searchParams.js";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
-import { reflectAttribute } from "../protocol/inputAttribute.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 import { isAbortError } from "../isAbortError.js";
 import { bindSubtree, getBinder } from "../protocol/binder.js";
 import { inSsr } from "../inSsr.js";
@@ -43,7 +43,8 @@ interface NavigateEventLike {
   preventDefault?: () => void;
   hashChange: boolean;
   downloadRequest: string | null;
-  destination: { url: string };
+  /** key は戻る / 進むの行き先の項目（leaveHold が止めたものを proceed() で辿り直す）。mock では欠け得る */
+  destination: { url: string; key?: string };
   /** ナビゲーションを起こした要素（クリックされたリンク）。無いブラウザ・mock では欠ける */
   sourceElement?: Element | null;
   /** Navigation API の navigationType。mock / polyfill では欠け得る */
@@ -53,6 +54,16 @@ interface NavigateEventLike {
     scroll?: "after-transition" | "manual";
     focusReset?: "after-transition" | "manual";
   }) => void;
+}
+
+/** leaveHold が止めたナビゲーション（proceed() が同じ種類で行い直す） */
+interface HeldNavigation {
+  /** leaving に出す行き先: basename の下のパス + クエリ + フラグメント */
+  readonly path: string;
+  /** リンク・navigate() は push、replace() / replaceUrl は replace */
+  readonly history: "push" | "replace";
+  /** 戻る / 進むなら、行き先の項目の key（proceed() はそこへ辿り直す） */
+  readonly traverseKey?: string;
 }
 
 const EMPTY_RECORD: Record<string, never> = Object.freeze({});
@@ -94,6 +105,9 @@ export class Router extends HTMLElement implements IRouter {
       // guard 関数がオブジェクトを返したナビゲーションのロード済みデータ（loader）。
       // output-only。データ無しのナビゲーションでは null に戻る
       { name: "data", event: "wcs-router:data-changed", semantics: "state" },
+      // leaveHold が止めているナビゲーションの行き先（navigate() が受ける形 — basename の下のパスとクエリと
+      // フラグメント）。止めていなければ null。output-only。ページはこれで自分のダイアログを出す（§5.28）
+      { name: "leaving", event: "wcs-router:leaving-changed", semantics: "state" },
     ],
     // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
     // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
@@ -105,10 +119,14 @@ export class Router extends HTMLElement implements IRouter {
       { name: "navigateUrl" },
       { name: "replaceUrl" },
       { name: "leaveConfirm", attribute: "leave-confirm" },
+      { name: "leaveHold", attribute: "leave-hold" },
     ],
     commands: [
       { name: "navigate", async: true },
       { name: "replace", async: true },
+      // leaving への答え: 止めたナビゲーションをそのまま行う / 捨てる
+      { name: "proceed", async: true },
+      { name: "stay" },
     ],
   };
 
@@ -147,6 +165,14 @@ export class Router extends HTMLElement implements IRouter {
   private _leaveConfirmed: boolean = false;
   /** ページを離れるナビゲーションが確認された: beforeunload で二度聞かない（次のタスクで戻す） */
   private _unloadConfirmed: boolean = false;
+  /** leaveHold が止めているナビゲーション（leaving はその path）。止めていなければ null */
+  private _held: HeldNavigation | null = null;
+  /** proceed() が始めたナビゲーション: 次の commit まで止めない（その遷移の guard のリダイレクトも） */
+  private _proceeding: boolean = false;
+  /** 取り消せなかった戻る / 進むを、止めた項目へ戻している: その項目の key（戻る遷移は描き直さない） */
+  private _revertingTo: string | null = null;
+  /** guardRedirect() が replace() を呼んでいる間（_performNavigation が同期の頭で読む） */
+  private _redirecting: boolean = false;
   private _listeningUnload: boolean = false;
   private _connectedCallbackPromise: Promise<void>;
   private _resolveConnectedCallback: (() => void) | null = null;
@@ -283,6 +309,74 @@ export class Router extends HTMLElement implements IRouter {
   set leaveConfirm(value: string | boolean | null | undefined) {
     reflectAttribute(this, "leave-confirm", value === true ? DEFAULT_LEAVE_CONFIRM : value === false ? null : value);
     this._syncBeforeUnload();
+  }
+
+  // `leaveHold` は input（属性は leave-hold、真偽値）。真の間、別のルートへのナビゲーション — リンク、戻る /
+  // 進む、navigate() / navigateUrl — を確定させずに止め、行き先を `leaving` に出す。ページは自分のダイアログを
+  // 出し、`proceed()`（行く）か `stay()`（留まる）で答える。leaveConfirm（ブラウザの confirm()）の、ページが
+  // 答える形（React の useBlocker に当たる。docs/seam-apps.md の street-reports、v4-direction §5.28）。クエリだけの
+  // ナビゲーション・最初の表示・proceed() の遷移（その guard のリダイレクトも）は止めない。ページを離れる
+  // ナビゲーション（basename の外、読み直し、閉じる）は待てないので leaveConfirm / beforeunload のまま。
+  get leaveHold(): boolean {
+    return this.hasAttribute("leave-hold");
+  }
+
+  set leaveHold(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "leave-hold", value);
+  }
+
+  /** leaveHold が止めているナビゲーションの行き先（navigate() が受ける形）。止めていなければ null */
+  get leaving(): string | null {
+    return this._held?.path ?? null;
+  }
+
+  private _setHeld(held: HeldNavigation | null): void {
+    if ((this._held?.path ?? null) === (held?.path ?? null) && this._held?.traverseKey === held?.traverseKey) {
+      this._held = held;
+      return;
+    }
+    this._held = held;
+    this.dispatchEvent(new CustomEvent("wcs-router:leaving-changed", { detail: this.leaving, bubbles: true }));
+  }
+
+  /**
+   * 止めるか: leaveHold が真で、最初の表示の後、proceed() の遷移でなく、別のルートへ出るもの。今の URL と同じ
+   * パスへのもの（クエリだけ）は止めない — 前のナビゲーションの guard を待つ間は、URL は進み、ルートはまだ前の
+   * もの（全数テストの [link(/g), hold, query]）。
+   */
+  private _shouldHold(fullPath: string): boolean {
+    const normalized = this._normalizePathname(fullPath);
+    return this.leaveHold && this._hasCommitted && !this._proceeding &&
+      normalized !== this._normalizePathname(window.location.pathname) &&
+      !this.isSameMatch(sliceBasename(normalized, this._basename));
+  }
+
+  /** leaving に出す形: basename の下のパス + クエリ + フラグメント（navigate() にそのまま渡せる） */
+  private _leavingPath(fullPath: string, search: string, hash: string): string {
+    return sliceBasename(this._normalizePathname(fullPath), this._basename) + search + hash;
+  }
+
+  /**
+   * 止めたナビゲーションを行う（leaving への「行く」）。同じ種類で: リンク・navigate() は push、replace() /
+   * replaceUrl は replace、戻る / 進むはその項目へ辿り直す。leaveHold のままでも止めない（その遷移の guard の
+   * リダイレクトも）。止めていなければ何もしない。
+   */
+  async proceed(): Promise<void> {
+    const held = this._held;
+    if (held === null) return;
+    this._setHeld(null);
+    this._proceeding = true;
+    const navigation = getNavigation();
+    if (held.traverseKey !== undefined && navigation?.traverseTo) {
+      await navigation.traverseTo(held.traverseKey)?.finished;
+      return;
+    }
+    await this._performNavigation(held.path, held.history === "replace");
+  }
+
+  /** 止めたナビゲーションを捨てる（leaving への「留まる」）。URL も画面も今のまま */
+  stay(): void {
+    this._setHeld(null);
   }
 
   private _onBeforeUnload = (e: Event): void => {
@@ -480,6 +574,9 @@ export class Router extends HTMLElement implements IRouter {
     this._path = commit.path;
     this._hasCommitted = true;
     this._leaveConfirmed = false;
+    this._proceeding = false;
+    // 別のルートへ移った（止めずに通った戻る / 進む、leaveHold を外した後のリンク）: 止めていた行き先は古い
+    if (pathChanged && this._held !== null) this._setHeld(null);
     // --- その後で発火（順序規範: data → params → route-name → search → path） ---
     if (dataChanged) {
       this.dispatchEvent(new CustomEvent("wcs-router:data-changed", {
@@ -593,7 +690,23 @@ export class Router extends HTMLElement implements IRouter {
     await this._performNavigation(path, true);
   }
 
+  /**
+   * guard のリダイレクト（showRouteContent）。replace() と同じだが、すでに通したナビゲーションの続きなので
+   * leaveHold は止めない — 止めると URL だけが guard のルートに進み、画面は前のまま残る。replace() を通すのは、
+   * それを差し替えたテストがそのまま効くように。
+   */
+  guardRedirect(path: string): Promise<void> {
+    this._redirecting = true;
+    try {
+      return this.replace(path);
+    } finally {
+      this._redirecting = false;
+    }
+  }
+
   private async _performNavigation(path: string, replace: boolean): Promise<void> {
+    // (read before the first await: guardRedirect() sets it around its synchronous call)
+    const redirect = this._redirecting;
     // クエリ / ハッシュ込みターゲットの受理（docs/router-state-contract-design.md §4.1）。
     // normalizePathname / basename 結合は pathname にのみ適用し、search / hash は
     // 再結合して URL に渡す。pathname 空（"?k=v" / "?" / "#x"）は現在の pathname を
@@ -604,10 +717,14 @@ export class Router extends HTMLElement implements IRouter {
         ? window.location.pathname
         : this._joinInternalPath(this._basename, target.pathname);
     const url = fullPath + effectiveSearch(target.search) + target.hash;
-    if (this.leaveConfirm !== null) {
-      // 1 マイクロタスク待ってから確かめる: 保存のハンドラが leaveConfirm を外すバインディングと
+    if (this.leaveConfirm !== null || this.leaveHold) {
+      // 1 マイクロタスク待ってから確かめる: 保存のハンドラが leaveConfirm / leaveHold を外すバインディングと
       // navigateUrl を同じ drain で書いたとき、どちらが先に適用されても外れた後の値を見る
       await Promise.resolve();
+      if (!redirect && this._shouldHold(fullPath)) {
+        this._setHeld({ path: this._leavingPath(fullPath, effectiveSearch(target.search), target.hash), history: replace ? "replace" : "push" });
+        return;
+      }
       if (!this._confirmLeave(fullPath)) return;
     }
     const navigation = getNavigation();
@@ -719,6 +836,41 @@ export class Router extends HTMLElement implements IRouter {
     if (!navEvent.canIntercept || !this._isOwnPath(fullPath)) {
       if (!navEvent.canIntercept || !this._ownedByAnotherRouter(fullPath)) this._confirmUnload(navEvent);
       return;
+    }
+    // 取り消せなかった戻る / 進むを止めた項目へ戻す遷移（下）: 画面は変わっていないので描き直さない
+    if (this._revertingTo !== null && navEvent.destination.key === this._revertingTo) {
+      this._revertingTo = null;
+      navEvent.intercept({ handler: async () => {}, scroll: "manual", focusReset: "manual" });
+      return;
+    }
+    // leaveHold: 別のルートへ出るナビゲーションを止め、行き先を leaving に出す。自分の navigate() / replace()
+    // からのものは止めるかを確かめ済み
+    if (!this._leaveChecked && this._shouldHold(fullPath)) {
+      const traverseKey = navEvent.navigationType === "traverse" ? navEvent.destination.key : undefined;
+      const held: HeldNavigation = {
+        path: this._leavingPath(fullPath, url.search, url.hash),
+        history: navEvent.navigationType === "replace" ? "replace" : "push",
+        ...(traverseKey !== undefined ? { traverseKey } : {}),
+      };
+      if (navEvent.cancelable !== false) {
+        navEvent.preventDefault?.();
+        this._setHeld(held);
+        return;
+      }
+      // 取り消せない戻る / 進む: URL は先に変わる。描かずに受け、止めた項目へ戻る（作者が手で書く history.go(1)）
+      const fromKey = getNavigation()?.currentEntry?.key;
+      if (traverseKey !== undefined && fromKey !== undefined) {
+        this._setHeld(held);
+        navEvent.intercept({
+          handler: async () => {
+            this._revertingTo = fromKey;
+            setTimeout(() => void getNavigation()?.traverseTo?.(fromKey)?.finished?.catch(() => {}), 0);
+          },
+          scroll: "manual",
+          focusReset: "manual",
+        });
+        return;
+      }
     }
     // 別のルートへ出る前の確認（leaveConfirm）。取り消せないナビゲーション（一部の戻る / 進む）では
     // 聞けない。自分の navigate() / replace() からのものは確認済み

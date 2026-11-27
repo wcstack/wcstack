@@ -56,9 +56,10 @@ export default defineConfig({
     // And the street-reports seam app (a React team's app moved over): the board's move from a second context, the
     // leave dialog on a link and on Back, the lightbox's focus, the debounced search, the event streams not
     // leaking over three visits, and the theme in a second tab (street-reports).
+    // And the router's leaveHold: a held Back is the browser's NavigateEvent, cancelled or not (router-leave-hold).
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk|garden-plots|street-reports)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library|audio-gesture|signals-delegate|io-move-row|ekiden-entry|fetch-infinite-scroll|town-archive|router-encoded-paths|io-screen-sensors|stamp-rally|sse-unload|lending-desk|garden-plots|street-reports|router-leave-hold)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

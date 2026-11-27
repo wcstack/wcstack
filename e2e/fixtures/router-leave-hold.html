@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: router leaveHold — the page's own "leave?" dialog</title>
+  <!-- docs/v4-direction-2026-10.md §5.28 (the street-reports seam app): while leaveHold is true, the router holds a
+       navigation to another route — a link, Back, a navigateUrl write — and puts its destination in `leaving`. The
+       page shows its own dialog and answers with the router's proceed() / stay() commands. A save handler that clears
+       the draft and writes navigateUrl in one update is not held. -->
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/edit">edit</wcs-link>
+    <wcs-link to="/other">other</wcs-link>
+  </nav>
+
+  <wcs-state>
+    <script type="module">
+      export default {
+        $commandTokens: ["proceedLeave", "stayHere"],
+        path: "",
+        draft: "",
+        saved: "",
+        leaving: null,
+        navigateUrl: null,
+        get dirty() {
+          return this.draft !== this.saved;
+        },
+        get asking() {
+          return this.leaving !== null;
+        },
+        keepEditing() {
+          this.$command.stayHere.emit();
+        },
+        discard() {
+          this.draft = this.saved;
+          this.$command.proceedLeave.emit();
+        },
+        saveAndGo() {
+          this.saved = this.draft;
+          this.navigateUrl = "/other";
+        },
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-router basename="/e2e/fixtures"
+    data-wcs="path: path; leaveHold: dirty; leaving: leaving; navigateUrl: navigateUrl; command.proceed: $command.proceedLeave; command.stay: $command.stayHere">
+    <template>
+      <wcs-route path="/">
+        <h1 id="view">home</h1>
+      </wcs-route>
+      <wcs-route path="/edit">
+        <h1 id="view">edit</h1>
+        <label>Draft <input id="draft" data-wcs="value: draft"></label>
+        <button data-wcs="onclick: saveAndGo">Save and go</button>
+      </wcs-route>
+      <wcs-route path="/other">
+        <h1 id="view">other</h1>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+
+  <template data-wcs="if: asking">
+    <div role="dialog" aria-label="Unsaved changes">
+      <p>Leave for <output id="dest" data-wcs="textContent: leaving"></output>?</p>
+      <button data-wcs="onclick: keepEditing">Keep editing</button>
+      <button data-wcs="onclick: discard">Discard and leave</button>
+    </div>
+  </template>
+</body>
+</html>

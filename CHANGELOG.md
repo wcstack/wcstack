@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Added
+
+- `@wcstack/router`: **a page's own "leave?" dialog** — `leaveHold` (input, attribute `leave-hold`), `leaving` (output) and the commands `proceed()` / `stay()` on `<wcs-router>`. While `leaveHold` is `true`, a navigation to another route — a link, Back / Forward, `navigate()` / `replace()`, `navigateUrl` / `replaceUrl` — is held instead of made, and its destination is put in `leaving`; the page shows its dialog and answers with `proceed()` (the held navigation as it was: a push, a replace, or a step through the history to that entry) or `stay()`. `leaveConfirm` asked with the browser's `confirm()` only, and a page that wanted its own dialog — React's `useBlocker` — held a route with the same guard on every other route, built its nav links by hand and undid Back with `history.go(1)` (the street-reports seam app). Not held: a query-only navigation, one to the path already in the URL, the first route, `proceed()`'s navigation and the redirects of a guard. A Back the browser does not let the page cancel is taken back to the entry the page was on; in a browser without the Navigation API, Back / Forward are not held. A navigation that leaves the page still gets `leaveConfirm` and the browser's prompt. The bounded exhaustive suite of navigations (`navigation.exhaustive.test.ts`) plays `hold`, `proceed` and `stay` too, and found one case while it was being built: a query-only navigation while a guard was pending was held, because the route had not moved yet (docs/v4-direction-2026-10.md §5.28).
+
 ## [4.31.0] — 2026-11-27
 
 From an outside evaluation: the record of the problems met while writing a 25-day Advent Calendar series that builds a buildless tax-return draft tool on wcstack 4.28.0. The author's decisions of 2026-11-27 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.27.

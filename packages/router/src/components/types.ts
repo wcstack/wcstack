@@ -159,6 +159,8 @@ export interface IRouter extends IRouteChildContainer {
   navigate(path: string): Promise<void>;
   /** navigateUrl（push）の対になる replace 遷移（§4.2） */
   replace(path: string): Promise<void>;
+  /** guard のリダイレクト（replace）。すでに通したナビゲーションの続きなので、leaveHold は止めない */
+  guardRedirect(path: string): Promise<void>;
   /**
    * 初期化（最初のルート適用と navigate リスナの登録）が終わると決着する。guard のリダイレクトは
    * これを待つ — 初期化中の遷移はリスナに捕まらず、文書ごとの読み込みになるため

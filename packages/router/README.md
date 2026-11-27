@@ -215,9 +215,11 @@ Define routes and layout slots inside a child template tag. A direct child templ
 | `navigateUrl` | write surface (null-idle transient) | Write a target to push-navigate. `null` means idle; writing a string starts `navigate()`, and the property resets itself to `null` when the navigation finishes. `null` / `""` writes are no-ops. The target is a **route path** — the basename is added for you: write `/products/3`, not the `href` of a link (`/ja/products/3` under the basename `/ja` lands on `/ja/ja/products/3`). |
 | `replaceUrl` | write surface (null-idle transient) | Identical contract to `navigateUrl`, but the navigation **replaces** the current history entry. |
 | `leaveConfirm` | input (attribute `leave-confirm`) | While it is a non-empty string, a navigation to **another route** — a link, Back / Forward, `navigate()` — first asks `confirm(leaveConfirm)` and stays when it is declined. So does a navigation that **leaves the page** and the page may cancel — a link outside the router's `basename` (a language switch, with the locale in the basename) or to another site, a form submission — where the Navigation API is (elsewhere it gets the browser's prompt); when it is accepted, the browser does not ask again. Closing or reloading the page gets the browser's own prompt (`beforeunload`). The one switch covers both: to guard only what a reload loses but a route change keeps (uploads still running in a page-level element), leave `leaveConfirm` unset for them and add your own `beforeunload` listener in `$connectedCallback`. Bind it to unsaved changes: `data-wcs="leaveConfirm: discardPrompt"` with `get discardPrompt() { return this.dirty ? "Discard your changes?" : null; }`. A query-only navigation does not ask, nor does the redirect of a navigation already confirmed. A save handler may clear it and write `navigateUrl` in the same update: the router checks after that update. A Back / Forward the browser does not let a page cancel is not asked. `null` removes the attribute. Since 4.9, a boolean works too: `true` asks with a default message in English (`Leave this page? Changes you made may not be saved.`; bind a string to ask in the page's language) and `false` asks nothing — before, the router turned it into the text, and `leaveConfirm: dirty` asked `confirm("false")` on every navigation. |
+| `leaveHold` | input (attribute `leave-hold`) | Since 4.32 (not released yet). While it is `true`, a navigation to **another route** — a link, Back / Forward, `navigate()` / `replace()`, `navigateUrl` / `replaceUrl` — is **held**: not made, its destination put in `leaving`, so the page can ask in its own dialog and answer with `proceed()` or `stay()` (React's `useBlocker`). Bind it to unsaved changes: `leaveHold: dirty`. It takes precedence over `leaveConfirm` for those navigations; a navigation that **leaves the page** (outside the basename, a reload, closing the tab) cannot wait for a page's dialog, and still gets `leaveConfirm` / the browser's prompt — set both. Not held: a query-only navigation, a navigation to the path already in the URL, the first route, the navigation `proceed()` makes and its guard's redirects. A save handler may clear it and write `navigateUrl` in the same update. Back / Forward the browser does not let a page cancel are taken back to the entry the page was on (the URL changes for a moment; the screen does not); in a browser without the Navigation API they are not held. See [A page's own "leave?" dialog](#a-pages-own-leave-dialog-leavehold). |
+| `leaving` | output only | Since 4.32 (not released yet). The destination of the navigation `leaveHold` holds, in the form `navigate()` takes (the path under the basename, with its query and hash), or `null`. A second held navigation replaces it; a navigation to another route that goes through (one made after `leaveHold` turned `false`, or a Back / Forward in a browser without the Navigation API) drops it. Fires `wcs-router:leaving-changed`. |
 | `basename` | input | Writes the `basename` attribute, which the router reads once, when it initializes: set it before then (a later write does not move the routing base, as with the attribute). Reading it returns the basename in effect (`""` before initialization). `null` removes the attribute; `undefined` restores the attribute the element started with. |
 
-Commands `navigate(path)` and `replace(path)` (both async) are also declared, so they can be invoked through the command-token protocol.
+Commands `navigate(path)` and `replace(path)` (both async) are also declared, so they can be invoked through the command-token protocol — and, since 4.32 (not released yet), `proceed()` (async) and `stay()`, the answers to `leaving`: `proceed()` makes the held navigation as it was (a push, a replace, or a step through the history to that entry), `stay()` drops it. Neither does anything when nothing is held.
 
 Output-only members are **read** when a binding attaches and streamed through their change events afterwards — the value is read, not awaited, so a binding that attaches after the router already resolved its first route misses nothing.
 
@@ -236,6 +238,39 @@ Two things a search page with its query in the URL gets wrong without a word:
 - **Announcing the result count.** Write the sentence ("12 books found") from the response of the request — the `<wcs-fetch>`'s response event, `eventToken.value: results` with `$on: { results(state, event) { … } }` ([which response `value` holds](../fetch/README.md#output-state-bindable-async-state)) — not from `value` and the current query in a getter: `value` keeps the previous response while the new query's request is in flight, so the region first said the new query with the previous total. Put the region outside the route content (see [Accessibility contract](#accessibility-contract)).
 
 **Multiple routers**: `params` / `routeName` reflect each router's own match, but the page URL has a single query string — a query written through *any* router replaces the query for the whole page. Reads, however, are per-router: a router commits `searchParams` only when it processes a navigation under its own `basename`, so its value is "the query as of the last navigation this router processed".
+
+#### A page's own "leave?" dialog (`leaveHold`)
+
+Since 4.32 (not released yet). `leaveConfirm` asks with the browser's `confirm()`; `leaveHold` lets the page ask in its own dialog:
+
+```html
+<wcs-router data-wcs="leaveHold: dirty; leaving: leaving; leaveConfirm: dirty;
+                      command.proceed: $command.leave; command.stay: $command.stay">…</wcs-router>
+
+<template data-wcs="if: asking">
+  <div role="dialog" aria-label="Unsaved changes">
+    <p>Leave for <output data-wcs="textContent: leaving"></output>? Your changes will be lost.</p>
+    <button data-wcs="onclick: keepEditing">Keep editing</button>
+    <button data-wcs="onclick: discard">Discard and leave</button>
+  </div>
+</template>
+```
+
+```javascript
+export default {
+  $commandTokens: ["leave", "stay"],
+  draft: "", saved: "", leaving: null,
+  get dirty() { return this.draft !== this.saved; },
+  get asking() { return this.leaving !== null; },
+  keepEditing() { this.$command.stay.emit(); },
+  discard() { this.draft = this.saved; this.$command.leave.emit(); },
+};
+```
+
+- `leaveConfirm: dirty` beside it covers what no page can hold: a reload, closing the tab, a link out of the app.
+- `proceed()` goes even if `leaveHold` is still `true` — the handler need not clear the draft first.
+- A save that ends with `navigateUrl` is not held when the same update clears `dirty`: the router checks after that update.
+- Up to 4.31 the page could only hold a route with its guards — the same guard on every other route, the links of the nav built by hand, Back undone with `history.go(1)` (docs/seam-apps.md, street-reports).
 
 #### Query strings in navigation targets
 
