@@ -71,8 +71,8 @@ against this server with `WCS_LOCAL=1`.
 The app was written on 4.29.0. Landing it took out what 4.30.0 made unnecessary:
 
 - **The event streams are `<wcs-sse>` again.** The author had replaced the element with a port of the React hook: in
-  WebKit it closed and reopened on every link of the router. Since 4.30.0 it does so once per page load, at the first
-  link, and no more (see "In WebKit" below).
+  WebKit it closed and reopened on every link of the router. In 4.30.0 and 4.31 it does so once per page load, at the
+  first link, and from 4.32 not at all (see "In WebKit" below).
 - The lint rules of 4.30.0 (`wcs/binding-expression`, `wcs/structural-element`, `wcs/attribute-mustache`, …) would
   have named most of what the author's first, React-shaped attempts got wrong.
 
