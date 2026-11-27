@@ -172,8 +172,13 @@ async function ready(page: Page): Promise<void> {
 async function signIn(page: Page, id: string, path = "/"): Promise<void> {
   await page.goto(path);
   await ready(page);
-  if (!page.url().includes("/login")) return;
-  await page.getByLabel("団体番号").fill(id);
+  // (added) Wait for what the page settles on — the form, or the name of who is signed in — before deciding. The
+  // guard's redirect to /login can land after ready(): reading the URL here took a guarded page that had not been
+  // redirected yet for "signed in" and returned without signing in (flaky on CI: the test then waited on the form).
+  const form = page.getByLabel("団体番号");
+  await expect(form.or(page.getByTestId("who")).first()).toBeVisible();
+  if (!(await form.isVisible())) return;
+  await form.fill(id);
   await page.getByLabel("あいことば").fill(`midori-${id.toLowerCase()}`);
   await page.getByRole("button", { name: "サインイン" }).click();
   await expect(page).not.toHaveURL(/\/login/);

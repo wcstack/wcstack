@@ -797,7 +797,9 @@ export default {
     this.sessionEndReason = "expired";
     const where = location.pathname + location.search;
     silentSignIn({ again: true }).then((s) => {
-      if (s?.token) { this.session = s; this.sessionEndReason = ""; return; }
+      // (the reason stays for the token watch, which reads it and clears it: the watch runs after this batch, so
+      // clearing it here hid it — the watch took the new token for a sign-out and sent the walker home)
+      if (s?.token) { this.session = s; return; }
       this.notice = "もう一度サインインしてください。";
       this.session = null;
       if (this.onMemberPage) this.replaceUrl = "/login?next=" + encodeURIComponent(where);
@@ -816,7 +818,9 @@ export default {
         this.team = null;
         this.members = [];
         this.teamForm = { name: "", color: SWATCHES[0] };
-        if (reason === "expired") return;
+        // signed in again with the saved pair: the page stays, and asks for what the 401 did not give (the header
+        // the element sends is the new one by now — this handler runs after the batch that wrote the session)
+        if (reason === "expired") { if (cur) this.meReload = true; return; }
         if (reason === "logout") { this.navigateUrl = "/"; return; }
         if (this.onMemberPage) this.replaceUrl = "/";
       }
