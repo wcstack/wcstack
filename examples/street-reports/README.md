@@ -51,16 +51,22 @@ fixed seed and a fixed clock.
 ## Checks
 
 ```bash
-npx @wcstack/lint --strict --root=public public/index.html public/parts/*.html   # 0 errors, 0 warnings, 10 infos
+npx @wcstack/lint --strict --root=public public/index.html public/parts/*.html   # 0 errors, 0 warnings, 0 infos
 npm install && npm test                                                          # 29 unit tests (@wcstack/testing)
 ```
 
-The ten infos name keys whose values the lint cannot read (lists built with `.map()` from `lib/labels.js`, what a
-`<wcs-fetch>` writes): the paths bound under them are not checked. The author checked those too, against a schema
-generated from the state's JSDoc — with `@wcstack/typescript` installed, `npx wcs-schema emit state/app.js` in
-`public/` writes `wcstack.manifest.json`, and the same lint then reports nothing. That file is not committed here: the
-repository checks all its examples in one run of the lint, where two applications' schemas are a collision
-(`wcs/manifest-state-collision`), and `examples/lending-desk` has one.
+Some keys hold values the lint cannot read on its own (lists built with `.map()` from `lib/labels.js`, what a
+`<wcs-fetch>` writes). The author checked the paths under them against a schema generated from the state's JSDoc —
+`npx wcs-schema emit state/app.js` in `public/` (with `@wcstack/typescript` installed) writes
+`public/wcstack.manifest.json`, which the lint finds by itself; `npx wcs-schema check state/app.js` says whether it is
+out of date. Without it, the lint names those keys in ten infos and checks nothing under them.
+
+The manifest is committed since 4.32 (not released yet), and the repository's CI checks it. Before, it was not: the
+repository checks all its examples in one run of the lint, and two applications' schemas (`examples/lending-desk` has
+one) were a collision, `wcs/manifest-state-collision`. Two schemas that each name the state file they were generated
+from (`stateSource`) are no longer one: each page gets the one its `<wcs-state src>` loads (docs/v4-direction-2026-10.md
+§5.28). Two JSDoc types were added for it — `toasts` and `listSelection` start empty, and `wcs-schema` 4.31 warns about
+a list whose rows have no type.
 
 The e2e spec is [`e2e/tests/street-reports.spec.ts`](../../e2e/tests/street-reports.spec.ts): the React app's own
 suite (50 tests — it locates by role, label and text, and does not care which framework drew the page), started

@@ -11,7 +11,7 @@
 import { WcsDiagnostic, sortDiagnostics } from "../diagnostics.js";
 import { DiagnosticContext, validateSchemaSubset } from "./schemaSubset.js";
 import { pointer } from "./jsonSource.js";
-import { LoadedManifest, ManifestArtifact, loadManifest, resolvePackageContracts } from "./loader.js";
+import { ApplicationSchemaEntry, LoadedManifest, ManifestArtifact, loadManifest, resolvePackageContracts } from "./loader.js";
 import { checkDrift } from "./drift.js";
 import {
   JsonSchemaNode,
@@ -79,6 +79,11 @@ export interface ManifestSetResult {
   readonly resolvedSchemaSource?: string;
   /** That artifact's `stateSource` (relative to it), when it names one: the schema is scoped to that state's pages. */
   readonly resolvedStateSource?: string;
+  /**
+   * Every stateSchema that is used (ResolvedContracts.applicationSchemas): none on a collision, one, or several that
+   * each name a different state file — then each is the contract of the pages that load its file.
+   */
+  readonly resolvedSchemas: readonly ApplicationSchemaEntry[];
   /** application artifact が 1 つでも含まれていたか(明示指定が発見結果を置き換える)。 */
   readonly hasApplicationArtifact: boolean;
 }
@@ -131,6 +136,7 @@ export function validateManifestSet(input: ManifestSetInput): ManifestSetResult 
     resolvedSchema: resolved.applicationSchema,
     ...(resolved.applicationSchemaSource !== undefined ? { resolvedSchemaSource: resolved.applicationSchemaSource } : {}),
     ...(resolved.applicationStateSource !== undefined ? { resolvedStateSource: resolved.applicationStateSource } : {}),
+    resolvedSchemas: resolved.applicationSchemas,
     hasApplicationArtifact: resolved.hasApplicationArtifact,
   };
 }

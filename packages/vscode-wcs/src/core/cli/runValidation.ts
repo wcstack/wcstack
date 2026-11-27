@@ -12,7 +12,8 @@ import { WcsDiagnostic, WcsDiagnosticCode, WcsSeverity, sortDiagnostics } from "
 import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
 import { validateManifestArtifact, validateManifestSet } from "../sidecar/validate.js";
-import { discoverApplicationManifest, joinRelativeSource, stateSourceFromPage } from "../sidecar/discover.js";
+import { discoverApplicationManifest, joinRelativeSource, schemaAppliesToPage, stateSourceFromPage } from "../sidecar/discover.js";
+import type { ApplicationSchemaEntry } from "../sidecar/loader.js";
 import { JsonSchemaNode, LiveBindableDeclaration } from "../sidecar/types.js";
 import type { FileReader } from "../../service/statePathResolver.js";
 
@@ -108,6 +109,34 @@ export interface RunValidationResult {
 
 const severityLabel: Record<WcsSeverity, string> = { error: "error", warning: "warning", info: "info" };
 
+/**
+ * The explicit manifests' stateSchema for one page, with its state file relative to the page. One schema: that one
+ * (validateDocument scopes it when it names its state file). Several — each naming a different state file
+ * (loader.ts): the one whose file the page's root state loads, or none; two apps with a generated schema, checked in
+ * one run (v4-direction §5.28).
+ */
+function explicitSchemaFor(
+  input: CliFileInput,
+  schemas: readonly ApplicationSchemaEntry[],
+  stateTagName: string,
+): { readonly schema: JsonSchemaNode; readonly stateSource: string | undefined } | undefined {
+  if (schemas.length === 1) {
+    const [only] = schemas;
+    return {
+      schema: only.schema,
+      stateSource: only.stateSource === undefined ? undefined : stateSourceFromPage(input.source, only.source, only.stateSource),
+    };
+  }
+  for (const entry of schemas) {
+    // (several are kept only when each names its state file)
+    const stateSource = stateSourceFromPage(input.source, entry.source, entry.stateSource as string);
+    if (stateSource !== undefined && schemaAppliesToPage(input.text, stateTagName, stateSource, input.fileReader)) {
+      return { schema: entry.schema, stateSource };
+    }
+  }
+  return undefined;
+}
+
 
 export function runValidation(inputs: readonly CliFileInput[], options: RunValidationOptions = {}): RunValidationResult {
   const diagnosticsBySource = new Map<string, readonly WcsDiagnostic[]>();
@@ -117,9 +146,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // application artifact が含まれていれば、その解決済み stateSchema が HTML 検証の契約になり、
   // 最近傍発見(D8)は行わない — 明示指定が発見結果を丸ごと置き換える。
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
-  let explicitSchema: JsonSchemaNode | undefined;
-  // the explicit schema's state file (`stateSource`), with the manifest it is relative to
-  let explicitStateSource: { readonly manifest: string; readonly stateSource: string } | undefined;
+  // the explicit stateSchemas: none (a collision), one, or several that each name a different state file
+  let explicitSchemas: readonly ApplicationSchemaEntry[] = [];
   let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
@@ -131,10 +159,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     }
     if (result.hasApplicationArtifact) {
       haveExplicitApplication = true;
-      explicitSchema = result.resolvedSchema;
-      if (result.resolvedSchemaSource !== undefined && result.resolvedStateSource !== undefined) {
-        explicitStateSource = { manifest: result.resolvedSchemaSource, stateSource: result.resolvedStateSource };
-      }
+      explicitSchemas = result.resolvedSchemas;
     }
   }
 
@@ -151,11 +176,10 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     if (!hasAnythingToCheck(input.text, options.bindAttribute ?? "data-wcs", options.stateTagName ?? "wcs-state")) {
       nothingToCheck.push(input.source);
     }
-    let applicationSchema = explicitSchema;
+    const explicit = explicitSchemaFor(input, explicitSchemas, options.stateTagName ?? "wcs-state");
+    let applicationSchema = explicit?.schema;
     // a schema whose manifest names its state file is this page's only when the page loads that file (validateDocument)
-    let applicationStateSource = explicitStateSource === undefined
-      ? undefined
-      : stateSourceFromPage(input.source, explicitStateSource.manifest, explicitStateSource.stateSource);
+    let applicationStateSource = explicit?.stateSource;
     if (!haveExplicitApplication && input.fileReader !== undefined) {
       const discovered = discoverApplicationManifest(input.fileReader);
       applicationSchema = discovered?.schema;

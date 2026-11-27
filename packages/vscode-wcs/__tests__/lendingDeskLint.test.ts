@@ -653,3 +653,84 @@ describe('T8 wcs/drift-state-key — スクリプトと食い違う stateSchema'
     expect(analyzeTopLevelStateKeys('export default { a: 1, m() {}, m() {}, a: 2 };')).toEqual({ keys: ['a'], methods: ['m'], materializes: false });
   });
 });
+
+// ============================================================
+// T7b（street-reports の取り込みから。v4-direction §5.28 D）
+// ============================================================
+
+describe('T7b 生成した schema を持つアプリ 2 つを 1 回の実行で — 違う状態ファイルを名指す schema は衝突しない', () => {
+  const schemaA: JsonSchemaNode = { type: 'object', properties: { count: { type: 'number' } } };
+  const schemaB: JsonSchemaNode = { type: 'object', properties: { title: { type: 'string' } } };
+  const pageA = '<wcs-state src="./state.js"></wcs-state><p data-wcs="textContent: count"></p><p data-wcs="textContent: cuont"></p>';
+  const pageB = '<wcs-state src="./state.js"></wcs-state><p data-wcs="textContent: title"></p><p data-wcs="textContent: titel"></p>';
+  const filesA = { 'state.js': 'export default { count: 0 };' };
+  const filesB = { 'state.js': 'export default { title: "" };' };
+  const codes = (diags: readonly WcsDiagnostic[] | undefined): string[] => (diags ?? []).map((d) => d.code);
+  const nonexistent = (html: string, diags: readonly WcsDiagnostic[] | undefined): string[] =>
+    ofCode(diags ?? [], WcsDiagnosticCode.PathNonexistent).map((d) => textOf(html, d));
+
+  it('ページごとに、その root の <wcs-state src> が読むファイルの schema を当てること（衝突の error は出ない）', () => {
+    const result = runValidation([
+      { source: 'apps/a/index.html', text: pageA, kind: 'html', fileReader: reader(filesA) },
+      { source: 'apps/b/index.html', text: pageB, kind: 'html', fileReader: reader(filesB) },
+      { source: 'apps/a/wcstack.manifest.json', text: manifest(schemaA, { stateSource: 'state.ts' }), kind: 'manifest' },
+      { source: 'apps/b/wcstack.manifest.json', text: manifest(schemaB, { stateSource: 'state.ts' }), kind: 'manifest' },
+    ], { locale: 'en' });
+    expect(nonexistent(pageA, result.diagnosticsBySource.get('apps/a/index.html'))).toEqual(['cuont']);
+    expect(nonexistent(pageB, result.diagnosticsBySource.get('apps/b/index.html'))).toEqual(['titel']);
+    expect(result.diagnosticsBySource.get('apps/a/wcstack.manifest.json')).toEqual([]);
+    expect(result.diagnosticsBySource.get('apps/b/wcstack.manifest.json')).toEqual([]);
+  });
+
+  it('どちらのファイルも読まないページ（別の src・インラインの state）には、どちらの schema も当てないこと', () => {
+    const other = '<wcs-state src="./other.js"></wcs-state><p data-wcs="textContent: count"></p>';
+    const result = runValidation([
+      { source: 'apps/c/index.html', text: other, kind: 'html', fileReader: reader({ 'other.js': 'export default { count: 0 };' }) },
+      { source: 'apps/a/wcstack.manifest.json', text: manifest(schemaA, { stateSource: 'state.ts' }), kind: 'manifest' },
+      { source: 'apps/b/wcstack.manifest.json', text: manifest(schemaB, { stateSource: 'state.ts' }), kind: 'manifest' },
+    ], { locale: 'en' });
+    expect(result.diagnosticsBySource.get('apps/c/index.html')).toEqual([]);
+  });
+
+  it('集合の結果: 使う schema は 2 つ、単独の resolvedSchema は無い', () => {
+    const set = validateManifestSet({ artifacts: [
+      { text: manifest(schemaA, { stateSource: 'state.ts' }), source: 'apps/a/wcstack.manifest.json' },
+      { text: manifest(schemaB, { stateSource: 'state.ts' }), source: 'apps/b/wcstack.manifest.json' },
+    ] });
+    expect(set.resolvedSchemas.map((e) => [e.source, e.stateSource])).toEqual([
+      ['apps/a/wcstack.manifest.json', 'state.ts'],
+      ['apps/b/wcstack.manifest.json', 'state.ts'],
+    ]);
+    expect(set.resolvedSchema).toBeUndefined();
+    expect(set.diagnostics).toEqual([]);
+  });
+
+  it('同じファイル（.ts と .js も同じ）・stateSource の無いもの・比べられない組（絶対と相対）は今までどおり衝突し、どれも使わないこと', () => {
+    const cases: [string, string, string, string | undefined][] = [
+      ['apps/a/x.manifest.json', 'state.ts', 'apps/a/y.manifest.json', 'state.ts'],
+      ['apps/a/x.manifest.json', 'state.ts', 'apps/a/y.manifest.json', './state.js'],
+      ['apps/a/x.manifest.json', 'state.ts', 'apps/b/y.manifest.json', '../a/state.ts'],
+      ['apps/a/x.manifest.json', 'state.ts', 'apps/b/y.manifest.json', undefined],
+      ['C:/w/apps/a/x.manifest.json', 'state.ts', 'apps/b/y.manifest.json', 'state.ts'],
+    ];
+    for (const [a, sa, b, sb] of cases) {
+      const result = runValidation([
+        { source: 'apps/a/index.html', text: pageA, kind: 'html', fileReader: reader(filesA) },
+        { source: a, text: manifest(schemaA, { stateSource: sa }), kind: 'manifest' },
+        { source: b, text: manifest(schemaB, sb === undefined ? {} : { stateSource: sb }), kind: 'manifest' },
+      ], { locale: 'en' });
+      expect(codes(result.diagnosticsBySource.get(b)), `${a} ${sa} / ${b} ${sb}`).toContain(WcsDiagnosticCode.ManifestStateCollision);
+      expect(nonexistent(pageA, result.diagnosticsBySource.get('apps/a/index.html')), `${b} ${sb}`).toEqual([]);
+    }
+  });
+
+  it('衝突が 1 つでもあれば、ほかと衝突しない 3 つ目の schema も使わないこと（勝者なし）', () => {
+    const set = validateManifestSet({ artifacts: [
+      { text: manifest(schemaA, { stateSource: 'state.ts' }), source: 'apps/a/x.manifest.json' },
+      { text: manifest(schemaA, { stateSource: 'state.ts' }), source: 'apps/a/y.manifest.json' },
+      { text: manifest(schemaB, { stateSource: 'state.ts' }), source: 'apps/b/wcstack.manifest.json' },
+    ] });
+    expect(set.resolvedSchemas).toEqual([]);
+    expect(set.diagnostics.map((d) => d.code)).toEqual([WcsDiagnosticCode.ManifestStateCollision]);
+  });
+});
