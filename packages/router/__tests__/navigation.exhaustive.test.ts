@@ -15,10 +15,14 @@ import './setup';
  * happy-dom に Navigation API は無いので、ルーターは popstate の経路を通る: リンクは navigate()（URL を
  * 積んでから当てる）、戻る / 進むは URL を差し替えてから popstate。
  *
- * CI の深さは 4（2,516 列、約 1.5 秒）。4.11.0 のルーターはここで 4.11.2 の 2 件を落とす —
+ * CI の深さは 4。4.11.0 のルーターはここで 4.11.2 の 2 件を落とす —
  * `link(/b), link(/a)` で URL /a に画面 b、`link(/g), link(/g), refuse(oldest)` で追い越されたガードの拒否が
- * "/" へ送る。手元で深くするには `NAV_DEPTH=6 npx vitest run __tests__/navigation.exhaustive.test.ts`
- * （160,363 列、約 6 分）。
+ * "/" へ送る。手元で深くするには `NAV_DEPTH=6 npx vitest run __tests__/navigation.exhaustive.test.ts`。
+ *
+ * 4.32 から leaveHold（v4-direction §5.28）の手も打つ: `hold`（leaveHold を切り替える）、`proceed` / `stay`（止めた
+ * リンクへの答え）。止めたリンクは利用者が向かった先を動かさず、行き先はゴーストの `held` が持つ。止めるのは、
+ * leaveHold が真で、今のルートとも今の URL のパスとも違う行き先で、proceed() の遷移の途中でないリンク（ガードのリダイレクトと、
+ * この経路の戻る / 進む — popstate は取り消せない — は止めない）。別のルートへ移る commit が止めた行き先を捨てる。
  */
 
 const DEPTH = Number(process.env.NAV_DEPTH ?? 4);
@@ -41,7 +45,8 @@ type Action =
   | { readonly kind: 'traverse'; readonly to: string }
   | { readonly kind: 'query' }
   | { readonly kind: 'frame' }
-  | { readonly kind: 'allow' | 'refuse'; readonly which: 'oldest' | 'newest' };
+  | { readonly kind: 'allow' | 'refuse'; readonly which: 'oldest' | 'newest' }
+  | { readonly kind: 'hold' | 'proceed' | 'stay' };
 
 const show = (action: Action): string => {
   switch (action.kind) {
@@ -68,6 +73,14 @@ interface World {
   /** 利用者が始めたナビゲーションの数（ガードのリダイレクトも 1 つ） */
   navigations: number;
   queries: number;
+  /** leaveHold（ゴースト） */
+  holding: boolean;
+  /** 止めたリンクの行き先（ゴースト）。止めていなければ null */
+  held: string | null;
+  /** held が当てになるか: 止めたリンクと同じ手の間に別のルートへの commit もあると、順が分からない */
+  heldKnown: boolean;
+  /** 前の手の後の router.path（別のルートへの commit を見分ける） */
+  lastPath: string;
 }
 
 const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -101,7 +114,7 @@ async function mount(): Promise<World> {
   document.body.innerHTML = MARKUP;
   const router = document.querySelector('wcs-router') as Router;
   await router.connectedCallbackPromise;
-  const next: World = { router, frames, guards: [], intended: '/a', navigations: 0, queries: 0 };
+  const next: World = { router, frames, guards: [], intended: '/a', navigations: 0, queries: 0, holding: false, held: null, heldKnown: true, lastPath: '/a' };
   const guarded = router.routeChildNodes.find((route: IRoute) => (route as unknown as Element).getAttribute('path') === '/g')!;
   guarded.guardHandler = () => new Promise<true | string>((resolve) => {
     next.guards.push({ navigation: next.navigations, settle: resolve });
@@ -117,18 +130,49 @@ function enabled(w: World): Action[] {
     { kind: 'traverse', to: '/a' }, { kind: 'traverse', to: '/b' },
     { kind: 'query' },
   ];
+  actions.push({ kind: 'hold' });
+  if (w.held !== null) actions.push({ kind: 'proceed' }, { kind: 'stay' });
   if (w.frames.length > 0) actions.push({ kind: 'frame' });
   if (w.guards.length > 0) actions.push({ kind: 'allow', which: 'oldest' }, { kind: 'refuse', which: 'oldest' });
   if (w.guards.length > 1) actions.push({ kind: 'allow', which: 'newest' }, { kind: 'refuse', which: 'newest' });
   return actions;
 }
 
+/** 別のルートへの commit があったら、止めていた行き先は捨てる（ルーターと同じ）。あったかを返す */
+function observeCommit(w: World): boolean {
+  if (w.router.path === w.lastPath) return false;
+  w.lastPath = w.router.path;
+  w.held = null;
+  return true;
+}
+
 async function apply(w: World, action: Action): Promise<void> {
+  let heldTo: string | null = null;
   switch (action.kind) {
     case 'link':
-      w.navigations += 1;
-      w.intended = action.to;
+      // 止めるのは: leaveHold が真で、今のルートとも今の URL のパスとも違う行き先で、proceed() の遷移の途中でない
+      if (w.holding && action.to !== w.router.path && action.to !== location.pathname &&
+        !(w.router as unknown as { _proceeding: boolean })._proceeding) {
+        heldTo = action.to;
+      } else {
+        w.navigations += 1;
+        w.intended = action.to;
+      }
       void w.router.navigate(action.to);
+      break;
+    case 'hold':
+      w.holding = !w.holding;
+      w.router.leaveHold = w.holding;
+      break;
+    case 'proceed':
+      w.navigations += 1;
+      w.intended = w.held!;
+      w.held = null;
+      void w.router.proceed();
+      break;
+    case 'stay':
+      w.held = null;
+      w.router.stay();
       break;
     case 'traverse':
       w.navigations += 1;
@@ -161,6 +205,11 @@ async function apply(w: World, action: Action): Promise<void> {
     }
   }
   await settle();
+  const committed = observeCommit(w);
+  if (heldTo !== null) {
+    if (committed) w.heldKnown = false;
+    w.held = heldTo;
+  }
 }
 
 /** ガードを古い順に通し、フレームを当て、何も待たなくなるまで進める */
@@ -170,6 +219,7 @@ async function drain(w: World): Promise<void> {
     else if (w.frames.length > 0) w.frames.shift()!();
     else return;
     await settle();
+    observeCommit(w);
   }
   throw new Error('drain did not finish');
 }
@@ -198,6 +248,10 @@ async function run(actions: readonly Action[]): Promise<{ violation: [string, st
   }
   if (w.router.path !== location.pathname) {
     return { violation: witness('PathIsTheUrl', `URL ${currentUrl()} で path は ${w.router.path}`), next };
+  }
+  // 止めた行き先はゴーストのとおり（止めたリンク、proceed / stay、別のルートへの commit）
+  if (w.heldKnown && w.router.leaving !== w.held) {
+    return { violation: witness('LeavingIsTheHeldLink', `leaving は ${w.router.leaving}、止めたリンクは ${w.held}`), next };
   }
   return { violation: null, next };
 }
@@ -243,7 +297,7 @@ describe('ルーター — ナビゲーションの重なりの有界全列挙',
     history.replaceState(null, '', '/');
   });
 
-  it(`${DEPTH} 手までのどの順序でも、待つものが無くなれば URL・画面・path がそろう`, async () => {
+  it(`${DEPTH} 手までのどの順序でも、待つものが無くなれば URL・画面・path・止めた行き先がそろう`, async () => {
     const { witnesses, count } = await shortestWitnesses();
     expect(count).toBeGreaterThan(0);
     expect([...witnesses.values()]).toEqual([]);

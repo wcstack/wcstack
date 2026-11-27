@@ -721,6 +721,274 @@ describe('Router', () => {
     });
   });
 
+  describe('leaveHold（ページが答える「留まる」— docs/seam-apps.md の street-reports、v4-direction §5.28）', () => {
+    /** commit 済みの router（今は /edit）。navigation の mock を入れる（navigate / traverseTo は navigate イベントを返す形にできる） */
+    function committedRouter(path = '/edit') {
+      const router = document.createElement('wcs-router') as Router;
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: '', path });
+      const navigation: any = { navigate: vi.fn(), traverseTo: vi.fn(), currentEntry: { key: 'k-edit' }, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+      (window as any).navigation = navigation;
+      const leaving: (string | null)[] = [];
+      router.addEventListener('wcs-router:leaving-changed', (e) => leaving.push((e as CustomEvent).detail));
+      return { router, navigation, leaving };
+    }
+    const navEventTo = (url: string, extra: Record<string, unknown> = {}) => ({
+      canIntercept: true, hashChange: false, downloadRequest: null, navigationType: 'push',
+      destination: { url }, intercept: vi.fn(), preventDefault: vi.fn(), ...extra,
+    });
+    afterEach(() => {
+      delete (window as any).confirm;
+      delete (window as any).navigation;
+    });
+
+    it('表面: 入力 leaveHold（属性 leave-hold、真偽値）・出力 leaving・コマンド proceed / stay', () => {
+      expect(Router.wcBindable.inputs!.find((i) => i.name === 'leaveHold')?.attribute).toBe('leave-hold');
+      expect(Router.wcBindable.properties.find((p) => p.name === 'leaving')?.event).toBe('wcs-router:leaving-changed');
+      const router = document.createElement('wcs-router') as Router;
+      expect(router.leaveHold).toBe(false);
+      expect(router.leaving).toBeNull();
+      router.leaveHold = true;
+      expect(router.getAttribute('leave-hold')).toBe('');
+      router.leaveHold = false;
+      expect(router.hasAttribute('leave-hold')).toBe(false);
+    });
+
+    it('別のルートへのナビゲーションを止め（取り消し、intercept しない）、行き先を leaving に出す', () => {
+      const { router, leaving } = committedRouter();
+      router.leaveHold = true;
+      const ev = navEventTo('http://localhost/products?page=2#top');
+      (router as any)._onNavigateFunc(ev);
+      expect(ev.preventDefault).toHaveBeenCalled();
+      expect(ev.intercept).not.toHaveBeenCalled();
+      expect(router.leaving).toBe('/products?page=2#top');
+      expect(leaving).toEqual(['/products?page=2#top']);
+    });
+
+    it('leaveConfirm より先: 両方あっても confirm() は出さない', () => {
+      const { router } = committedRouter();
+      router.leaveHold = true;
+      router.leaveConfirm = 'Discard?';
+      const confirm = vi.fn(() => true);
+      (window as any).confirm = confirm;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      expect(confirm).not.toHaveBeenCalled();
+      expect(router.leaving).toBe('/products');
+    });
+
+    it('同じルート（クエリだけ）・leaveHold なし・最初の表示の前は止めない', () => {
+      const { router } = committedRouter();
+      router.leaveHold = true;
+      const query = navEventTo('http://localhost/edit?tab=2');
+      (router as any)._onNavigateFunc(query);
+      expect(query.intercept).toHaveBeenCalled();
+      router.leaveHold = false;
+      const off = navEventTo('http://localhost/products');
+      (router as any)._onNavigateFunc(off);
+      expect(off.intercept).toHaveBeenCalled();
+      const fresh = document.createElement('wcs-router') as Router;
+      fresh.leaveHold = true;
+      const first = navEventTo('http://localhost/products');
+      (fresh as any)._onNavigateFunc(first);
+      expect(first.intercept).toHaveBeenCalled();
+      expect(router.leaving).toBeNull();
+      expect(fresh.leaving).toBeNull();
+    });
+
+    it('今の URL と同じパスへのもの（前のナビゲーションの guard を待つ間のクエリ）は、ルートが前のままでも止めない', () => {
+      const { router } = committedRouter('/edit');
+      history.replaceState(null, '', '/products');
+      try {
+        router.leaveHold = true;
+        const query = navEventTo('http://localhost/products?q=1');
+        (router as any)._onNavigateFunc(query);
+        expect(query.intercept).toHaveBeenCalled();
+        expect(router.leaving).toBeNull();
+      } finally {
+        history.replaceState(null, '', '/');
+      }
+    });
+
+    it('止めている間の次のナビゲーションは行き先を置き換える。同じ行き先なら知らせない', () => {
+      const { router, leaving } = committedRouter();
+      router.leaveHold = true;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/orders'));
+      expect(router.leaving).toBe('/orders');
+      expect(leaving).toEqual(['/products', '/orders']);
+    });
+
+    it('stay() は捨てる（URL も画面もそのまま）。止めていなければ proceed() も stay() も何もしない', async () => {
+      const { router, navigation, leaving } = committedRouter();
+      router.stay();
+      await router.proceed();
+      expect(leaving).toEqual([]);
+      router.leaveHold = true;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      router.stay();
+      expect(router.leaving).toBeNull();
+      expect(leaving).toEqual(['/products', null]);
+      expect(navigation.navigate).not.toHaveBeenCalled();
+    });
+
+    it('navigate() / replace() も止める。proceed() は同じ種類（push / replace）で行い、その navigate イベントは止めない', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      const events: any[] = [];
+      navigation.navigate.mockImplementation((url: string) => {
+        const ev = navEventTo(`http://localhost${url}`);
+        events.push(ev);
+        (router as any)._onNavigateFunc(ev);
+      });
+      await router.navigate('/products');
+      expect(navigation.navigate).not.toHaveBeenCalled();
+      expect(router.leaving).toBe('/products');
+      await router.proceed();
+      expect(navigation.navigate).toHaveBeenLastCalledWith('/products');
+      expect(events[0].intercept).toHaveBeenCalled();
+      expect(router.leaving).toBeNull();
+      // replace: proceed() is a replace too
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: '', path: '/products' });
+      await router.replace('/orders');
+      expect(router.leaving).toBe('/orders');
+      await router.proceed();
+      expect(navigation.navigate).toHaveBeenLastCalledWith('/orders', { history: 'replace' });
+    });
+
+    it('proceed() の遷移は次の commit まで止めない（その guard のリダイレクトも）。commit の後はまた止める', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      await router.navigate('/admin');
+      await router.proceed();
+      // the guard redirects to /login before anything commits
+      const redirect = navEventTo('http://localhost/login', { navigationType: 'replace' });
+      (router as any)._onNavigateFunc(redirect);
+      expect(redirect.intercept).toHaveBeenCalled();
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: '', path: '/login' });
+      const next = navEventTo('http://localhost/products');
+      (router as any)._onNavigateFunc(next);
+      expect(next.preventDefault).toHaveBeenCalled();
+      expect(navigation.navigate).toHaveBeenCalledTimes(1);
+    });
+
+    it('guard のリダイレクト（guardRedirect）は止めない: 通したナビゲーションの続き。replace() を通る', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      const replace = vi.spyOn(router, 'replace');
+      await router.guardRedirect('/login');
+      expect(replace).toHaveBeenCalledWith('/login');
+      expect(router.leaving).toBeNull();
+      expect(navigation.navigate).toHaveBeenCalledWith('/login', { history: 'replace' });
+      // a replace() of the page is held
+      await router.replace('/orders');
+      expect(router.leaving).toBe('/orders');
+    });
+
+    it('navigate() と同じ流れで leaveHold が外れたら止めない（保存のハンドラが両方を書く形）', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      const done = router.navigate('/products/3');
+      router.leaveHold = false;
+      await done;
+      expect(router.leaving).toBeNull();
+      expect(navigation.navigate).toHaveBeenCalledWith('/products/3');
+    });
+
+    it('replace の navigate イベント（ガードの外からの replace）を止めたら、proceed() も replace で行う', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/orders', { navigationType: 'replace' }));
+      await router.proceed();
+      expect(navigation.navigate).toHaveBeenCalledWith('/orders', { history: 'replace' });
+    });
+
+    it('basename の下: leaving は basename を除いた形で、proceed() は basename を付けて行う', async () => {
+      const { router, navigation } = committedRouter();
+      (router as any)._basename = '/app';
+      router.leaveHold = true;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/app/products?x=1'));
+      expect(router.leaving).toBe('/products?x=1');
+      await router.proceed();
+      expect(navigation.navigate).toHaveBeenCalledWith('/app/products?x=1');
+    });
+
+    it('戻る / 進む（取り消せる）: 止め、proceed() はその項目へ辿り直す（その遷移は止めない）', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      const back = navEventTo('http://localhost/list', { navigationType: 'traverse', destination: { url: 'http://localhost/list', key: 'k-list' } });
+      (router as any)._onNavigateFunc(back);
+      expect(back.preventDefault).toHaveBeenCalled();
+      expect(router.leaving).toBe('/list');
+      const again = navEventTo('http://localhost/list', { navigationType: 'traverse', destination: { url: 'http://localhost/list', key: 'k-list' } });
+      navigation.traverseTo.mockImplementation(() => {
+        (router as any)._onNavigateFunc(again);
+        return { finished: Promise.resolve() };
+      });
+      await router.proceed();
+      expect(navigation.traverseTo).toHaveBeenCalledWith('k-list');
+      expect(again.intercept).toHaveBeenCalled();
+      expect(again.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('戻る / 進む（取り消せない）: 描かずに受け、止めた項目へ戻る。その戻る遷移も描かない', async () => {
+      vi.useFakeTimers();
+      try {
+        const { router, navigation } = committedRouter();
+        router.leaveHold = true;
+        const back = navEventTo('http://localhost/list', { navigationType: 'traverse', cancelable: false, destination: { url: 'http://localhost/list', key: 'k-list' } });
+        (router as any)._onNavigateFunc(back);
+        expect(back.preventDefault).not.toHaveBeenCalled();
+        expect(router.leaving).toBe('/list');
+        const options = back.intercept.mock.calls[0][0];
+        expect([options.scroll, options.focusReset]).toEqual(['manual', 'manual']);
+        navigation.traverseTo.mockReturnValue({ finished: Promise.reject(new Error('aborted')) });
+        await options.handler();
+        vi.runAllTimers();
+        await Promise.resolve();
+        expect(navigation.traverseTo).toHaveBeenCalledWith('k-edit');
+        // the router's own return reaches it as a traverse to k-edit
+        const ret = navEventTo('http://localhost/edit', { navigationType: 'traverse', cancelable: false, destination: { url: 'http://localhost/edit', key: 'k-edit' } });
+        (router as any)._onNavigateFunc(ret);
+        expect(ret.intercept.mock.calls[0][0].scroll).toBe('manual');
+        await ret.intercept.mock.calls[0][0].handler();
+        expect(router.leaving).toBe('/list');
+        expect((router as any)._revertingTo).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('取り消せない戻る / 進むで、戻る先が分からない（currentEntry の無い）ときは止めずに通す', () => {
+      const { router, navigation } = committedRouter();
+      navigation.currentEntry = null;
+      router.leaveHold = true;
+      const back = navEventTo('http://localhost/list', { navigationType: 'traverse', cancelable: false, destination: { url: 'http://localhost/list', key: 'k-list' } });
+      (router as any)._onNavigateFunc(back);
+      expect(router.leaving).toBeNull();
+      expect(back.intercept.mock.calls[0][0].scroll).toBe('after-transition');
+    });
+
+    it('別のルートへ移る commit で、止めていた行き先は捨てる（クエリだけの commit では残す）', () => {
+      const { router, leaving } = committedRouter();
+      router.leaveHold = true;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: 'tab=2', path: '/edit' });
+      expect(router.leaving).toBe('/products');
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: '', path: '/list' });
+      expect(router.leaving).toBeNull();
+      expect(leaving).toEqual(['/products', null]);
+    });
+
+    it('戻る / 進むの行き先を、Navigation API の無いブラウザの proceed() は navigate で行う', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveHold = true;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/list', { navigationType: 'traverse', destination: { url: 'http://localhost/list', key: 'k-list' } }));
+      delete navigation.traverseTo;
+      await router.proceed();
+      expect(navigation.navigate).toHaveBeenCalledWith('/list');
+    });
+  });
+
   describe('_onNavigateFunc', () => {
     it('canInterceptがfalseの場合、何もしないこと', () => {
       const router = document.createElement('wcs-router') as Router;
@@ -1273,7 +1541,7 @@ describe('Router', () => {
     it('wcBindableが正しく定義されていること', () => {
       expect(Router.wcBindable.protocol).toBe('wc-bindable');
       expect(Router.wcBindable.version).toBe(1);
-      expect(Router.wcBindable.properties).toHaveLength(8);
+      expect(Router.wcBindable.properties).toHaveLength(9);
       expect(Router.wcBindable.properties[0].name).toBe('navigateUrl');
       expect(Router.wcBindable.properties[0].event).toBe('wcs-router:navigate-url-changed');
       expect(Router.wcBindable.properties[1].name).toBe('replaceUrl');
@@ -1608,7 +1876,7 @@ describe('Router', () => {
 
   describe('wcBindable (inputs / commands)', () => {
     it('inputsにbasenameが宣言されていること', () => {
-      expect(Router.wcBindable.inputs).toHaveLength(4);
+      expect(Router.wcBindable.inputs).toHaveLength(5);
       expect(Router.wcBindable.inputs![0].name).toBe('basename');
       expect(Router.wcBindable.inputs![0].attribute).toBe('basename');
     });
@@ -1629,11 +1897,13 @@ describe('Router', () => {
     });
 
     it('commandsにnavigateとreplaceが宣言されていること', () => {
-      expect(Router.wcBindable.commands).toHaveLength(2);
+      expect(Router.wcBindable.commands).toHaveLength(4);
       expect(Router.wcBindable.commands![0].name).toBe('navigate');
       expect(Router.wcBindable.commands![0].async).toBe(true);
       expect(Router.wcBindable.commands![1].name).toBe('replace');
       expect(Router.wcBindable.commands![1].async).toBe(true);
+      // leaveHold の答え（§5.28）
+      expect(Router.wcBindable.commands!.slice(2)).toEqual([{ name: 'proceed', async: true }, { name: 'stay' }]);
     });
 
     // docs/router-state-contract-design.md §4.2 — replaceUrl は navigateUrl と完全同型

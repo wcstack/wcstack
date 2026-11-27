@@ -97,7 +97,7 @@ export async function runGuardPhase(
       redirectCounts.set(routerNode, count);
       routerNode.connectedCallbackPromise
         .catch(() => {})
-        .then(() => routerNode.replace(e.fallbackPath))
+        .then(() => routerNode.guardRedirect(e.fallbackPath))
         .catch((err) => {
           if (!isAbortError(err)) console.error('Fallback navigation failed:', err);
         });
