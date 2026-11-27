@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/sse`: **in WebKit, the first `<wcs-link>` after a page load no longer reconnects the stream.** WebKit fires `beforeunload` before the `navigate` event, even for a navigation the router keeps in the document; 4.30 learnt that order from the first link and stopped closing on `beforeunload` after it, so that first link still closed the stream and opened it again, and what the server sent in the gap was lost (an example's "leaks no event streams" test counted six connections for five, in WebKit only). Where the order is not known yet, a `beforeunload` with no `navigate` just before it now closes the stream in the next task, and does not when a `navigate` came meanwhile — WebKit's comes in the same task. A `beforeunload` right after a `navigate` (the standard order of a page that leaves) still closes at once. Measured in Chromium, Firefox and WebKit: the next task comes before `pagehide`, and Firefox logs nothing (docs/v4-direction-2026-10.md §5.28).
+
 ## [4.31.0] — 2026-11-27
 
 From an outside evaluation: the record of the problems met while writing a 25-day Advent Calendar series that builds a buildless tax-return draft tool on wcstack 4.28.0. The author's decisions of 2026-11-27 are in [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.27.
