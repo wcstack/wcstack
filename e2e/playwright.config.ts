@@ -15,7 +15,12 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
+    // A failed attempt leaves its error-context.md (the error, the call log, an ARIA snapshot of the page) and a
+    // screenshot taken after the failure; the retry records a trace. Nothing is recorded for an attempt that passes:
+    // a trace of every test changed what some of them observe (docs/verification-practices-study.md §4.1). The
+    // workflow keeps test-results/ when a test failed or was flaky.
     trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   projects: [
     // The headless shell has no getUserMedia: the field report's spec runs in full Chromium with a fake

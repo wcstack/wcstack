@@ -130,9 +130,12 @@ jobs:
       # integrity, Trusted Types) — e2e/playwright.config.ts
       - run: npx playwright install --with-deps chromium firefox
       - run: npm test
+      # Kept when a test failed, or passed only on a retry (flaky-summary-reporter.ts writes test-results/flaky.json): the
+      # first failure's error-context.md and screenshot, and the retry's trace. A passing job threw the first failure
+      # of a flaky test away (docs/verification-practices-study.md §4.1, the author's decision of 2026-11-28).
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: ${{ !cancelled() && (failure() || hashFiles('e2e/test-results/flaky.json') != '') }}
         with:
           name: playwright-report
           path: e2e/test-results/
-          retention-days: 7
+          retention-days: 14
