@@ -7,11 +7,12 @@ import { collectErrors } from "./helpers";
 // loading.」をコンソールに出す（console.error）。文書にあった対処 — beforeunload で close() — は WebKit で
 // ライブの更新を止めた: WebKit は Navigation API で横取りされた同じ文書の遷移（<wcs-link>・ガードのリダイレクト・
 // navigateUrl）でも beforeunload を出す（Chromium と Firefox は出さない）。4.26 から要素が自分で: beforeunload で閉じ、
-// 文書が残れば開き直す。
+// 文書が残れば開き直す。4.30 から WebKit の順（beforeunload が navigate より先）を見た文書では閉じず、4.32 から最初の
+// リンクでも閉じない（順が分からない beforeunload は次のタスクまで待つ — v4-direction §5.28）。
 //
 // - @browsers の 3 つは Firefox でも走る（playwright.config.ts の firefox プロジェクト）。このリポジトリの e2e に
-//   WebKit のプロジェクトは無い: WebKit では手元で、webkit のプロジェクトを足した設定で走らせて確かめた（同じ文書の
-//   遷移で閉じて開き直すのは WebKit だけ）。
+//   WebKit のプロジェクトは無い: WebKit では手元で、webkit のプロジェクトを足した設定で走らせて確かめた（2026-11-28、
+//   4.32 の案で 3 回ずつ: 同じ文書の遷移でどのブラウザも閉じない。4.31 では WebKit が最初のリンクで 1 回閉じた）。
 // - bfcache の復元は Chromium だけ（headless shell は復元しないので channel "chromium" で、Playwright の
 //   --disable-back-forward-cache も外す。shift-desk と同じ）。Playwright の Firefox と WebKit は、何も無いページも
 //   bfcache から戻さなかった。
@@ -35,7 +36,7 @@ declare global {
 }
 
 test.describe("sse-unload — <wcs-sse> とページの離脱", () => {
-  test("@browsers router の同じ文書の遷移（<wcs-link>・ガードのリダイレクト・navigateUrl・戻る）の後もイベントが届き続ける", async ({ page, browserName }) => {
+  test("@browsers router の同じ文書の遷移（<wcs-link>・ガードのリダイレクト・navigateUrl・戻る）の後もイベントが届き続ける", async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto(FIXTURE);
     await page.evaluate(() => sessionStorage.removeItem("signed-in"));
@@ -60,13 +61,9 @@ test.describe("sse-unload — <wcs-sse> とページの離脱", () => {
     await expect(page.locator("#view")).toHaveText("login");
     await expectLive(page);
 
-    const changes = await page.evaluate(() => window.__conn);
-    if (browserName === "webkit") {
-      // WebKit's beforeunload on each same-document navigation (not on Back): closed, then opened again
-      expect(changes.filter((c) => c === false).length).toBeGreaterThanOrEqual(3);
-    } else {
-      expect(changes).toEqual([true]);
-    }
+    // no browser closes the stream on a same-document navigation: WebKit's beforeunload neither, since 4.32 — its
+    // navigate comes in the same task, and the close waits for the next one
+    expect(await page.evaluate(() => window.__conn)).toEqual([true]);
     expect(errors).toEqual([]);
   });
 

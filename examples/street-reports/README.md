@@ -71,8 +71,8 @@ against this server with `WCS_LOCAL=1`.
 The app was written on 4.29.0. Landing it took out what 4.30.0 made unnecessary:
 
 - **The event streams are `<wcs-sse>` again.** The author had replaced the element with a port of the React hook: in
-  WebKit it closed and reopened on every link of the router. Since 4.30.0 it does so once per page load, at the first
-  link, and no more (see "In WebKit" below).
+  WebKit it closed and reopened on every link of the router. In 4.30.0 and 4.31 it does so once per page load, at the
+  first link, and from 4.32 not at all (see "In WebKit" below).
 - The lint rules of 4.30.0 (`wcs/binding-expression`, `wcs/structural-element`, `wcs/attribute-mustache`, …) would
   have named most of what the author's first, React-shaped attempts got wrong.
 
@@ -81,11 +81,13 @@ The app was written on 4.29.0. Landing it took out what 4.30.0 made unnecessary:
 The repository's e2e runs the suite in Chromium, and six of its tests in Firefox. The author ran all 50 in WebKit too,
 with the hand-made stream and the packages from the CDN; this example differs there in two ways.
 
-- **The first link after a page load reconnects the event stream once.** WebKit fires `beforeunload` before it knows
-  that the router keeps the document; `<wcs-sse>` closes there, learns the order from that first link, and leaves the
-  stream open on every link after it (`@wcstack/sse` README, "When the page leaves"). What the server sends in that
-  one gap does not arrive. The suite's "leaks no event streams" test counts the connections and finds six where it
-  asks for five — in WebKit only, every run.
+- **Up to 4.31, the first link after a page load reconnects the event stream once.** WebKit fires `beforeunload`
+  before it knows that the router keeps the document; `<wcs-sse>` 4.31 closes there, learns the order from that first
+  link, and leaves the stream open on every link after it (`@wcstack/sse` README, "When the page leaves"). What the
+  server sends in that one gap does not arrive. The suite's "leaks no event streams" test counts the connections and
+  finds six where it asks for five — in WebKit only, every run. From 4.32 the element waits a task before it closes,
+  and WebKit's `navigate` comes within it: no link reconnects, and the test passes in WebKit (3 runs of 3, measured on
+  2026-11-28).
 - **A page cut while it loads leaves errors behind.** A test that calls `page.goto()` again right after a redirect
   cuts the part the autoloader is fetching, or the stream that is opening; WebKit prints its own error for each
   (`… due to access control checks`), and Playwright reports those as uncaught. With the packages served locally

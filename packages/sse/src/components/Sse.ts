@@ -70,6 +70,8 @@ export class WcsSse extends HTMLElement {
   // 間 true。その期限のタイマー。pagehide で閉じ、persisted の pageshow で開き直す間 true
   private _closedForUnload = false;
   private _reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  // a beforeunload in a document whose order is not known yet: the close waits for the next task (_onBeforeUnload)
+  private _closeTimer: ReturnType<typeof setTimeout> | null = null;
   private _reopenOnShow = false;
   // beforeunload を聞いている間 true（_syncUnloadListener）
   private _unloadListening = false;
@@ -363,7 +365,13 @@ export class WcsSse extends HTMLElement {
   // 4.30 から: WebKit は beforeunload を navigate より先に出す（規格の順は navigate が先）。その順を一度見た文書
   // では、beforeunload で閉じるのをやめる — リンクの遷移のたびに閉じて開き直し、その間にサーバが送ったものを
   // 落としていた（docs/seam-apps.md、street-reports）。そこで閉じるのは pagehide（WebKit は Firefox の
-  // メッセージを出さない）。最初の 1 回は、順が分かる前なので閉じて開き直す。
+  // メッセージを出さない）。
+  //
+  // 4.32 から: 順がまだ分からない文書で、直前に navigate の無い beforeunload は、閉じるのを次のタスクまで待つ。
+  // WebKit の navigate は同じタスクの中で続くので、最初のリンクでも閉じない（4.31 までは閉じて開き直し、その
+  // 間にサーバが送ったものを落としていた — v4-direction §5.28）。直前に navigate があれば規格の順（ページが
+  // 離れる）なのですぐ閉じる。次のタスクは pagehide より先に来るので、Firefox のメッセージは出ない（Chromium・
+  // Firefox・WebKit で測った）。
 
   private _onBeforeUnload = (): void => {
     // (a document where beforeunload comes before navigate: it does not mean the page goes — pagehide closes)
@@ -371,15 +379,31 @@ export class WcsSse extends HTMLElement {
     if (order !== undefined) {
       if (order.early) return;
       const now = performance.now();
-      order.before = now - order.navigate < EARLY_UNLOAD_WINDOW ? -Infinity : now;
+      if (now - order.navigate >= EARLY_UNLOAD_WINDOW) {
+        // (no navigate just before: the order is not known yet. WebKit sends its navigate in this same task, and
+        // then the document may stay — so the close waits for the next task, and does not happen if it came)
+        order.before = now;
+        if (this._closeTimer === null) this._closeTimer = setTimeout(this._closeAfterBeforeUnload, 0);
+        return;
+      }
+      order.before = -Infinity;
     }
+    this._closeForUnload();
+  };
+
+  private _closeAfterBeforeUnload = (): void => {
+    this._closeTimer = null;
+    if (pageOrder()?.early !== true) this._closeForUnload();
+  };
+
+  private _closeForUnload(): void {
     // (it listens only while there is a stream to close or one it closed: a second beforeunload while it is
     // closed — a guard's redirect in WebKit — keeps it closed and waits again)
     this._closedForUnload = true;
     this._core.suspend();
     this._clearReopenTimer();
     this._reopenTimer = setTimeout(this._reopenAfterUnload, UNLOAD_REOPEN_DELAY);
-  };
+  }
 
   private _syncUnloadListener = (): void => {
     const want = this.isConnected && pageOrder()?.early !== true && (this._core.readyState !== SSE_CLOSED || this._closedForUnload);
@@ -424,6 +448,10 @@ export class WcsSse extends HTMLElement {
   private _cancelReopen(): void {
     this._closedForUnload = false;
     this._clearReopenTimer();
+    if (this._closeTimer !== null) {
+      clearTimeout(this._closeTimer);
+      this._closeTimer = null;
+    }
     this._syncUnloadListener();
   }
 
