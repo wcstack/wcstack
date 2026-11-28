@@ -2177,13 +2177,12 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 検証: 1 回目は npm 48/49（`@wcstack/sse` — 実行のログには `+ @wcstack/sse@4.32.0` があった）・SRI 43/44・固定 URL 7/8（jsDelivr の signals が 502）、2 回目で npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・固定 URL 8/8。
 - **公開後の作業**:
   - PR #779（merge commit 874319e27）: サイズの基準値を 4.32.0 の dist で取り直した。動いたのは版の文字列の分だけ（分割の core 24,785 → 24,786 B、devtools 2,515 → 2,514 B、ssr 5,779 → 5,780 B）。`core.min.js` は 20,476 B のまま（残り 4 B）。slack は無い。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換えた。拡張の版を 2.25.0 にし、CHANGELOG の節に日付を入れた。**拡張の CHANGELOG に「router の新しいメンバーを補完と検査が知る」と一度書き、誤りだったので外した**: 組み込みのタグの一覧（`builtinTags.generated.ts`）には `<wcs-router>` がもともと無く、lint は `<wcs-router>` のメンバー名を検査しない（`leaveHodl: dirty` も通る — npm の lint 4.31.0・4.32.0 とも）。
-  - 拡張 2.25.0: 874319e27 の main で `npm run package`（その後 vscode-wcs のテスト 1,877 件）。890 ファイル、5,059,771 B、SHA-256 `f373affe5c5247c21ab6e55950f431d8da640476eb614efa6b0cc3d840c33e11`。公開は著者（公開後に Marketplace の vsix と SHA を比べ、注釈付きタグ `vscode-wcs-v2.25.0` を 874319e27 に）。
+  - 拡張 2.25.0: 874319e27 の main で `npm run package`（その後 vscode-wcs のテスト 1,877 件）。890 ファイル、5,059,771 B、SHA-256 `f373affe5c5247c21ab6e55950f431d8da640476eb614efa6b0cc3d840c33e11`。著者が 2026-11-28 に公開した。Marketplace の vsix（`…/wcstack-intellisense/2.25.0/vspackage`）の SHA-256 が手元のものと一致し、注釈付きタグ `vscode-wcs-v2.25.0` を 874319e27 に付けた。
   - wcstack-skill: PR #82（merge commit 78fc5a9）と注釈付きタグ `v4.32.0`。router-and-scaffold（`leaveHold` / `leaving` の行とコマンド、ダイアログのハンドラ）、coming-from-react（`useBlocker` の行）、io-node-catalog（WebKit の最初のリンク）、verification（2 つの生成 manifest を 1 回の lint で）、versions（4.31 以下に固定したページの 2 行）、刻印 24 か所。刻印した URL 9 つが 200 を返した。
   - LP（wcstack.github.io 9d99bd3）: リリースの表示、v4.32.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-EmPSGnqq…`。約 87 KB — 86.6 KB を四捨五入。手元の dist・`sri.json`・jsDelivr のファイルの 3 つで一致）、llms。ローカル 7/7、本番 8/9（いつもの `/tutorial/16-publish/app/` の API の 404）。本番に v4.32.0 が出ているのを確かめた。
   - 例: PR #780（merge commit f1ec17084）。street-reports の離脱のダイアログを `leaveHold: formBlocking` に移した（ガード 5 つ・`window` の関数・ナビのクリックの保留・`history.go(1)` を外した。76 行減、18 行増）。生成した manifest を作り直し（`check` は最新）、例の lint は 0/0/0。React のテスト群は変えずに、離脱のダイアログのテストが Chromium と Firefox で 8/8、例の単体テスト 29 件が npm の 4.32.0 で通った。手元で spec 全体を 3 回ずつ走らせて 168 件中 1 件落ちたのは、board のテスト自身の API の取得の `ECONNRESET`（8 ワーカー。単独で 4/4）。
 - **`failOnFlakyTests`**: #774 の flaky で数え直し。その後 #776・#778 が flaky 0、#780 も flaky 0（841 件）— 3 回。
 - **残り**:
-  - 拡張 2.25.0 の公開（著者）→ SHA の比較とタグ。
   - street-reports の間引きの検索のテスト（Firefox）の flaky の原因（#774 の成果物で最初の失敗は読めた）。ほかの未解明の flaky 3 件（4.31.0 の節）。
   - この機械のプラグイン（wcstack-app）は 4.31.0。4.32.0 に上げるかは著者に問う。
   - 連載の 3-2（公開先が決まったら）。
