@@ -2687,7 +2687,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.31.0";
+var version = "4.32.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -22803,6 +22803,30 @@ function parseJsonWithSpans(text3) {
   }
 }
 
+// src/core/sidecar/statePaths.ts
+function segmentsOf(path) {
+  const norm = path.replace(/\\/g, "/");
+  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
+  const segments = [];
+  for (const segment of norm.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
+    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
+  }
+  return { absolute, segments };
+}
+function sameStateFile(a, b) {
+  const canonical = (p) => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
+  return canonical(a) === canonical(b);
+}
+function differentStateFiles(manifestA, stateSourceA, manifestB, stateSourceB) {
+  const a = segmentsOf(manifestA);
+  const b = segmentsOf(manifestB);
+  if (a.absolute !== b.absolute) return false;
+  const file = (manifest2, stateSource) => segmentsOf([...manifest2.slice(0, -1), stateSource].join("/")).segments.join("/");
+  return !sameStateFile(file(a.segments, stateSourceA), file(b.segments, stateSourceB));
+}
+
 // src/core/sidecar/types.ts
 var SUPPORTED_SCHEMA_VERSION = 2;
 var SUPPORTED_NAMESPACE_VERSION = 2;
@@ -22895,9 +22919,8 @@ function resolvePackageContracts(loaded) {
   const collided = /* @__PURE__ */ new Set();
   const firstSource = /* @__PURE__ */ new Map();
   const filterOwner = /* @__PURE__ */ new Map();
-  let schemaOwner;
-  let schemaWinner;
-  let schemaStateSource;
+  const schemaEntries = [];
+  let schemaCollided = false;
   let hasApplicationArtifact = false;
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
@@ -22956,16 +22979,21 @@ function resolvePackageContracts(loaded) {
     if (lm.manifest.kind === "application" && application?.stateSchema !== void 0) {
       const schema = application.stateSchema;
       if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
-        if (schemaOwner === void 0) {
-          schemaOwner = lm.artifact.source;
-          schemaWinner = schema;
-          schemaStateSource = application.stateSource;
+        const stateSource = typeof application.stateSource === "string" && application.stateSource.trim() !== "" ? application.stateSource.trim() : void 0;
+        const entry = {
+          schema,
+          source: lm.artifact.source,
+          ...stateSource !== void 0 ? { stateSource } : {}
+        };
+        const other = schemaEntries.find((e) => !(e.stateSource !== void 0 && entry.stateSource !== void 0 && differentStateFiles(e.source, e.stateSource, entry.source, entry.stateSource)));
+        if (other === void 0) {
+          schemaEntries.push(entry);
         } else {
-          schemaWinner = void 0;
+          schemaCollided = true;
           ctxFor(lm).add(
             WcsDiagnosticCode.ManifestStateCollision,
             pointer("manifestExtensions", "wcstack.application", "stateSchema"),
-            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
+            `Multiple application artifacts declare a stateSchema (also in "${other.source}"); neither is used.`,
             "error",
             void 0,
             true
@@ -22979,12 +23007,14 @@ function resolvePackageContracts(loaded) {
     const kept = diags.filter((d) => !(d.code === WcsDiagnosticCode.ManifestOverride && d.tag !== void 0 && collided.has(d.tag)));
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
-  const stateSource = schemaWinner !== void 0 && typeof schemaStateSource === "string" && schemaStateSource.trim() !== "" ? schemaStateSource.trim() : void 0;
+  const schemas = schemaCollided ? [] : schemaEntries;
+  const single = schemas.length === 1 ? schemas[0] : void 0;
   return {
     tags: winners,
-    applicationSchema: schemaWinner,
-    ...schemaWinner !== void 0 ? { applicationSchemaSource: schemaOwner } : {},
-    ...stateSource !== void 0 ? { applicationStateSource: stateSource } : {},
+    applicationSchema: single?.schema,
+    ...single !== void 0 ? { applicationSchemaSource: single.source } : {},
+    ...single?.stateSource !== void 0 ? { applicationStateSource: single.stateSource } : {},
+    applicationSchemas: schemas,
     hasApplicationArtifact,
     diagnosticsBySource
   };
@@ -23026,17 +23056,6 @@ function applicationStateSourceOf(loaded) {
   const stateSource = manifest2.manifestExtensions?.["wcstack.application"]?.stateSource;
   return typeof stateSource === "string" && stateSource.trim() !== "" ? stateSource.trim() : void 0;
 }
-function segmentsOf(path) {
-  const norm = path.replace(/\\/g, "/");
-  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
-  const segments = [];
-  for (const segment of norm.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
-    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
-  }
-  return { absolute, segments };
-}
 function stateSourceFromPage(pageSource, manifestSource, stateSource) {
   const page = segmentsOf(pageSource);
   const manifest2 = segmentsOf(manifestSource);
@@ -23046,10 +23065,6 @@ function stateSourceFromPage(pageSource, manifestSource, stateSource) {
   let common = 0;
   while (common < dir.length && common < target.length && dir[common] === target[common] && dir[common] !== "..") common++;
   return [...dir.slice(common).map(() => ".."), ...target.slice(common)].join("/");
-}
-function sameStateFile(a, b) {
-  const canonical = (p) => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
-  return canonical(a) === canonical(b);
 }
 function schemaAppliesToPage(html, stateTagName, stateSource, fileReader) {
   const roots = parseWcsStateElements(html, stateTagName).filter((e) => e.mountPath === null && !e.bindComponent && e.srcAttr !== void 0);
@@ -23650,6 +23665,7 @@ function validateManifestSet(input) {
     resolvedSchema: resolved.applicationSchema,
     ...resolved.applicationSchemaSource !== void 0 ? { resolvedSchemaSource: resolved.applicationSchemaSource } : {},
     ...resolved.applicationStateSource !== void 0 ? { resolvedStateSource: resolved.applicationStateSource } : {},
+    resolvedSchemas: resolved.applicationSchemas,
     hasApplicationArtifact: resolved.hasApplicationArtifact
   };
 }
@@ -23666,12 +23682,27 @@ function hasAnythingToCheck(text3, bindAttribute, stateTagName) {
   return text3.includes(bindAttribute) || /<wcs-/i.test(text3) || text3.includes(`<${stateTagName}`) || /@wcstack\/|\bwcstack(?:@[\w.-]+)?\/auto\b/.test(text3);
 }
 var severityLabel = { error: "error", warning: "warning", info: "info" };
+function explicitSchemaFor(input, schemas, stateTagName) {
+  if (schemas.length === 1) {
+    const [only] = schemas;
+    return {
+      schema: only.schema,
+      stateSource: only.stateSource === void 0 ? void 0 : stateSourceFromPage(input.source, only.source, only.stateSource)
+    };
+  }
+  for (const entry of schemas) {
+    const stateSource = stateSourceFromPage(input.source, entry.source, entry.stateSource);
+    if (stateSource !== void 0 && schemaAppliesToPage(input.text, stateTagName, stateSource, input.fileReader)) {
+      return { schema: entry.schema, stateSource };
+    }
+  }
+  return void 0;
+}
 function runValidation(inputs, options = {}) {
   const diagnosticsBySource = /* @__PURE__ */ new Map();
   const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
-  let explicitSchema;
-  let explicitStateSource;
+  let explicitSchemas = [];
   let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
@@ -23683,10 +23714,7 @@ function runValidation(inputs, options = {}) {
     }
     if (result.hasApplicationArtifact) {
       haveExplicitApplication = true;
-      explicitSchema = result.resolvedSchema;
-      if (result.resolvedSchemaSource !== void 0 && result.resolvedStateSource !== void 0) {
-        explicitStateSource = { manifest: result.resolvedSchemaSource, stateSource: result.resolvedStateSource };
-      }
+      explicitSchemas = result.resolvedSchemas;
     }
   }
   const inFiles = /* @__PURE__ */ new Map();
@@ -23696,8 +23724,9 @@ function runValidation(inputs, options = {}) {
     if (!hasAnythingToCheck(input.text, options.bindAttribute ?? "data-wcs", options.stateTagName ?? "wcs-state")) {
       nothingToCheck.push(input.source);
     }
-    let applicationSchema = explicitSchema;
-    let applicationStateSource = explicitStateSource === void 0 ? void 0 : stateSourceFromPage(input.source, explicitStateSource.manifest, explicitStateSource.stateSource);
+    const explicit = explicitSchemaFor(input, explicitSchemas, options.stateTagName ?? "wcs-state");
+    let applicationSchema = explicit?.schema;
+    let applicationStateSource = explicit?.stateSource;
     if (!haveExplicitApplication && input.fileReader !== void 0) {
       const discovered = discoverApplicationManifest(input.fileReader);
       applicationSchema = discovered?.schema;

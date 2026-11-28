@@ -845,6 +845,23 @@ function parseJsonWithSpans(text3) {
   }
 }
 
+// src/core/sidecar/statePaths.ts
+function segmentsOf(path) {
+  const norm = path.replace(/\\/g, "/");
+  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
+  const segments = [];
+  for (const segment of norm.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
+    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
+  }
+  return { absolute, segments };
+}
+function sameStateFile(a, b) {
+  const canonical = (p) => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
+  return canonical(a) === canonical(b);
+}
+
 // src/core/sidecar/types.ts
 var SUPPORTED_SCHEMA_VERSION = 2;
 var SUPPORTED_NAMESPACE_VERSION = 2;
@@ -3002,7 +3019,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.31.0";
+var version = "4.32.0";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;
@@ -22790,17 +22807,6 @@ function applicationStateSourceOf(loaded) {
   const stateSource = manifest2.manifestExtensions?.["wcstack.application"]?.stateSource;
   return typeof stateSource === "string" && stateSource.trim() !== "" ? stateSource.trim() : void 0;
 }
-function segmentsOf(path) {
-  const norm = path.replace(/\\/g, "/");
-  const absolute = norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
-  const segments = [];
-  for (const segment of norm.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === ".." && segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
-    else segments.push(/^[A-Za-z]:$/.test(segment) ? segment.toUpperCase() : segment);
-  }
-  return { absolute, segments };
-}
 function stateSourceFromPage(pageSource, manifestSource, stateSource) {
   const page = segmentsOf(pageSource);
   const manifest2 = segmentsOf(manifestSource);
@@ -22810,10 +22816,6 @@ function stateSourceFromPage(pageSource, manifestSource, stateSource) {
   let common = 0;
   while (common < dir.length && common < target.length && dir[common] === target[common] && dir[common] !== "..") common++;
   return [...dir.slice(common).map(() => ".."), ...target.slice(common)].join("/");
-}
-function sameStateFile(a, b) {
-  const canonical = (p) => p.replace(/\.ts$/, ".js").replace(/\.mts$/, ".mjs");
-  return canonical(a) === canonical(b);
 }
 function schemaAppliesToPage(html, stateTagName, stateSource, fileReader) {
   const roots = parseWcsStateElements(html, stateTagName).filter((e) => e.mountPath === null && !e.bindComponent && e.srcAttr !== void 0);

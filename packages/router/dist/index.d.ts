@@ -255,6 +255,8 @@ interface IRouter extends IRouteChildContainer {
     navigate(path: string): Promise<void>;
     /** navigateUrl（push）の対になる replace 遷移（§4.2） */
     replace(path: string): Promise<void>;
+    /** guard のリダイレクト（replace）。すでに通したナビゲーションの続きなので、leaveHold は止めない */
+    guardRedirect(path: string): Promise<void>;
     /**
      * 初期化（最初のルート適用と navigate リスナの登録）が終わると決着する。guard のリダイレクトは
      * これを待つ — 初期化中の遷移はリスナに捕まらず、文書ごとの読み込みになるため
@@ -344,6 +346,14 @@ declare class Router extends HTMLElement implements IRouter {
     private _leaveConfirmed;
     /** ページを離れるナビゲーションが確認された: beforeunload で二度聞かない（次のタスクで戻す） */
     private _unloadConfirmed;
+    /** leaveHold が止めているナビゲーション（leaving はその path）。止めていなければ null */
+    private _held;
+    /** proceed() が始めたナビゲーション: 次の commit まで止めない（その遷移の guard のリダイレクトも） */
+    private _proceeding;
+    /** 取り消せなかった戻る / 進むを、止めた項目へ戻している: その項目の key（戻る遷移は描き直さない） */
+    private _revertingTo;
+    /** guardRedirect() が replace() を呼んでいる間（_performNavigation が同期の頭で読む） */
+    private _redirecting;
     private _listeningUnload;
     private _connectedCallbackPromise;
     private _resolveConnectedCallback;
@@ -387,6 +397,27 @@ declare class Router extends HTMLElement implements IRouter {
     set basename(value: string | null | undefined);
     get leaveConfirm(): string | null;
     set leaveConfirm(value: string | boolean | null | undefined);
+    get leaveHold(): boolean;
+    set leaveHold(value: boolean | null | undefined);
+    /** leaveHold が止めているナビゲーションの行き先（navigate() が受ける形）。止めていなければ null */
+    get leaving(): string | null;
+    private _setHeld;
+    /**
+     * 止めるか: leaveHold が真で、最初の表示の後、proceed() の遷移でなく、別のルートへ出るもの。今の URL と同じ
+     * パスへのもの（クエリだけ）は止めない — 前のナビゲーションの guard を待つ間は、URL は進み、ルートはまだ前の
+     * もの（全数テストの [link(/g), hold, query]）。
+     */
+    private _shouldHold;
+    /** leaving に出す形: basename の下のパス + クエリ + フラグメント（navigate() にそのまま渡せる） */
+    private _leavingPath;
+    /**
+     * 止めたナビゲーションを行う（leaving への「行く」）。同じ種類で: リンク・navigate() は push、replace() /
+     * replaceUrl は replace、戻る / 進むはその項目へ辿り直す。leaveHold のままでも止めない（その遷移の guard の
+     * リダイレクトも）。止めていなければ何もしない。
+     */
+    proceed(): Promise<void>;
+    /** 止めたナビゲーションを捨てる（leaving への「留まる」）。URL も画面も今のまま */
+    stay(): void;
     private _onBeforeUnload;
     /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
     private _syncBeforeUnload;
@@ -471,6 +502,12 @@ declare class Router extends HTMLElement implements IRouter {
      * フォールバックでは `history.replaceState` + applyRoute + 通知。
      */
     replace(path: string): Promise<void>;
+    /**
+     * guard のリダイレクト（showRouteContent）。replace() と同じだが、すでに通したナビゲーションの続きなので
+     * leaveHold は止めない — 止めると URL だけが guard のルートに進み、画面は前のまま残る。replace() を通すのは、
+     * それを差し替えたテストがそのまま効くように。
+     */
+    guardRedirect(path: string): Promise<void>;
     private _performNavigation;
     /**
      * basename 配下の URL かどうかを判定する。

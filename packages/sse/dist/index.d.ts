@@ -256,6 +256,7 @@ declare class WcsSse extends HTMLElement {
     private _internals;
     private _closedForUnload;
     private _reopenTimer;
+    private _closeTimer;
     private _reopenOnShow;
     private _unloadListening;
     constructor();
@@ -295,6 +296,8 @@ declare class WcsSse extends HTMLElement {
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     private _scheduleConnect;
     private _onBeforeUnload;
+    private _closeAfterBeforeUnload;
+    private _closeForUnload;
     private _syncUnloadListener;
     private _onSameDocumentNavigation;
     private _onNavigate;

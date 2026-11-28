@@ -215,11 +215,11 @@ export default {
 | `navigateUrl` | 書き込み面（null-idle transient） | ターゲットを書くと push 遷移。null は待機、文字列の書き込みで `navigate()` が起動し、完了後に自分で null へ戻る。null / `""` の書き込みは no-op。書くのは**ルートのパス** — basename は router が付ける: リンクの `href` ではなく `/products/3` を書く（basename `/ja` の下で `/ja/products/3` を書くと `/ja/ja/products/3` へ行く） |
 | `replaceUrl` | 書き込み面（null-idle transient） | `navigateUrl` と完全同型の契約。ただし現在の履歴エントリを**置き換える** |
 | `leaveConfirm` | input（属性 `leave-confirm`） | 空でない文字列の間、**別のルート**へのナビゲーション（リンク・戻る / 進む・`navigate()`）の前に `confirm(leaveConfirm)` を出し、断られたら留まる。**ページを離れる**ナビゲーションのうちページが取り消せるもの（router の `basename` の外へのリンク — 言語を basename に持つページの言語の切り替え — や別のサイトへのリンク、フォームの送信）も、Navigation API があれば同じく聞く（無ければブラウザの確認）。受け入れたらブラウザは聞き直さない。ページを閉じる・読み直すときはブラウザ自身の確認（`beforeunload`）。1 つの切り替えで両方を扱います。読み直しでは失われるがルートの移動では残るもの（ページ直下の要素で進行中のアップロード）だけを守るには、それには `leaveConfirm` を使わず、`$connectedCallback` で自分の `beforeunload` リスナーを足してください。未保存の変更に束ねる: `data-wcs="leaveConfirm: discardPrompt"` と `get discardPrompt() { return this.dirty ? "変更を破棄しますか？" : null; }`。クエリだけの遷移と、確認済みの遷移のリダイレクトでは聞かない。保存のハンドラが同じ更新でこれを外して `navigateUrl` を書いてもよい — router はその更新の後で確かめる。ブラウザがページに取り消させない戻る / 進むでは聞けない。`null` は属性を外す。4.9 から真偽値も受ける: `true` は英語の既定の文言（`Leave this page? Changes you made may not be saved.`。ページの言語で聞くなら文字列を束ねる）で聞き、`false` は聞かない — 以前は値を文言にしていたので、`leaveConfirm: dirty` は遷移のたびに `confirm("false")` を出していた |
-| `leaveHold` | input（属性 `leave-hold`） | 4.32（未リリース）から。`true` の間、**別のルート**へのナビゲーション（リンク・戻る / 進む・`navigate()` / `replace()`・`navigateUrl` / `replaceUrl`）を**止める**: 行わずに、行き先を `leaving` に出す。ページは自分のダイアログで尋ね、`proceed()` か `stay()` で答える（React の `useBlocker`）。未保存の変更に束ねる: `leaveHold: dirty`。これらのナビゲーションでは `leaveConfirm` より先。**ページを離れる**ナビゲーション（basename の外・読み直し・タブを閉じる）はページのダイアログを待てないので、`leaveConfirm` / ブラウザの確認のまま —— 両方を書く。止めないもの: クエリだけのナビゲーション、URL がすでに指すパスへのナビゲーション、最初のルート、`proceed()` が行うナビゲーションとその guard のリダイレクト。保存のハンドラは、同じ更新でこれを外して `navigateUrl` を書いてよい。ブラウザがページに取り消させない戻る / 進むは、ページがいた項目へ戻す（URL は一瞬変わる。画面は変わらない）。Navigation API の無いブラウザでは、戻る / 進むは止めない。[ページ自身の「離れますか」](#ページ自身の離れますかleavehold)。 |
-| `leaving` | output only | 4.32（未リリース）から。`leaveHold` が止めているナビゲーションの行き先。`navigate()` が受ける形（basename の下のパスとクエリとフラグメント）。止めていなければ `null`。次に止めたナビゲーションが置き換え、別のルートへ通ったナビゲーション（`leaveHold` を外した後のもの、Navigation API の無いブラウザの戻る / 進む）が捨てる。`wcs-router:leaving-changed` を発火。 |
+| `leaveHold` | input（属性 `leave-hold`） | 4.32 から。`true` の間、**別のルート**へのナビゲーション（リンク・戻る / 進む・`navigate()` / `replace()`・`navigateUrl` / `replaceUrl`）を**止める**: 行わずに、行き先を `leaving` に出す。ページは自分のダイアログで尋ね、`proceed()` か `stay()` で答える（React の `useBlocker`）。未保存の変更に束ねる: `leaveHold: dirty`。これらのナビゲーションでは `leaveConfirm` より先。**ページを離れる**ナビゲーション（basename の外・読み直し・タブを閉じる）はページのダイアログを待てないので、`leaveConfirm` / ブラウザの確認のまま —— 両方を書く。止めないもの: クエリだけのナビゲーション、URL がすでに指すパスへのナビゲーション、最初のルート、`proceed()` が行うナビゲーションとその guard のリダイレクト。保存のハンドラは、同じ更新でこれを外して `navigateUrl` を書いてよい。ブラウザがページに取り消させない戻る / 進むは、ページがいた項目へ戻す（URL は一瞬変わる。画面は変わらない）。Navigation API の無いブラウザでは、戻る / 進むは止めない。[ページ自身の「離れますか」](#ページ自身の離れますかleavehold)。 |
+| `leaving` | output only | 4.32 から。`leaveHold` が止めているナビゲーションの行き先。`navigate()` が受ける形（basename の下のパスとクエリとフラグメント）。止めていなければ `null`。次に止めたナビゲーションが置き換え、別のルートへ通ったナビゲーション（`leaveHold` を外した後のもの、Navigation API の無いブラウザの戻る / 進む）が捨てる。`wcs-router:leaving-changed` を発火。 |
 | `basename` | input | `basename` 属性に書く。Router はこの属性を初期化のときに一度だけ読むので、それより前に書く（後から書いてもルーティングの基準は変わらない。属性を書き換えたときと同じ）。読むと使われている basename を返す（初期化前は `""`）。`null` は属性を外し、`undefined` は最初の属性へ戻す |
 
-コマンド `navigate(path)` / `replace(path)`（いずれも async）も宣言され、command-token プロトコルから起動できる。4.32（未リリース）から、`leaving` への答えの `proceed()`（async）と `stay()` も: `proceed()` は止めたナビゲーションをそのまま行い（push・replace、または履歴のその項目へ辿る）、`stay()` は捨てる。止めていなければ、どちらも何もしない。
+コマンド `navigate(path)` / `replace(path)`（いずれも async）も宣言され、command-token プロトコルから起動できる。4.32 から、`leaving` への答えの `proceed()`（async）と `stay()` も: `proceed()` は止めたナビゲーションをそのまま行い（push・replace、または履歴のその項目へ辿る）、`stay()` は捨てる。止めていなければ、どちらも何もしない。
 
 output-only メンバーはバインド attach 時に**読まれ**、以後は変更イベントで流れる — 値は「読むもの」であり「待つもの」ではないので、router が最初のルートを解決した後に attach したバインドでも取りこぼしはない。
 
@@ -241,7 +241,7 @@ output-only メンバーはバインド attach 時に**読まれ**、以後は�
 
 #### ページ自身の「離れますか」（`leaveHold`）
 
-4.32（未リリース）から。`leaveConfirm` はブラウザの `confirm()` で尋ねる。`leaveHold` なら、ページ自身のダイアログで尋ねられる:
+4.32 から。`leaveConfirm` はブラウザの `confirm()` で尋ねる。`leaveHold` なら、ページ自身のダイアログで尋ねられる:
 
 ```html
 <wcs-router data-wcs="leaveHold: dirty; leaving: leaving; leaveConfirm: dirty;
