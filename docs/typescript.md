@@ -84,7 +84,7 @@ Pitfalls:
 
 - `--strict` also fails on warnings from `<wcs-state src>` files the validator cannot read — make every `src=` resolvable relative to its HTML first.
 - `--merge` replaces the slot being written wholesale — the whole `stateSchema`, or the subtree at `--mount=<path>` (a volume's type merges as a subtree of the single tree); a hand-written schema for that slot does not survive (the sidecar spec forbids implicit merging). Hand-written schemas belong to slots you do not generate.
-- Two application manifests both declaring a `stateSchema` are a `wcs/manifest-state-collision` error with no winner (v2: one state tree per page, one schema slot); keep the generated schema in exactly one manifest. Since 4.32 (not released yet), two that each name a different state file (`stateSource`, which `wcs-schema emit` writes) are not a collision when passed in one run: each page gets the schema of the file its root `<wcs-state src>` loads — two apps with a generated schema, checked by one lint run. Two that name the same file, or one that names none, still collide.
+- Two application manifests both declaring a `stateSchema` are a `wcs/manifest-state-collision` error with no winner (v2: one state tree per page, one schema slot); keep the generated schema in exactly one manifest. Since 4.32, two that each name a different state file (`stateSource`, which `wcs-schema emit` writes) are not a collision when passed in one run: each page gets the schema of the file its root `<wcs-state src>` loads — two apps with a generated schema, checked by one lint run. Two that name the same file, or one that names none, still collide.
 
 ## 3. Typed element lookups: `HTMLElementTagNameMap`
 

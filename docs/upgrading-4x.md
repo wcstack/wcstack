@@ -544,13 +544,22 @@ Workarounds became unnecessary: an `EventSource` of the page's own in place of `
 
 Workarounds became unnecessary: `<wcs-link>`s placed after the `<wcs-router>` only so that `mount()` could build them under happy-dom, and tests that find a link by `wcs-link[to="…"] + a` because its `<a>` had no text; a JSDoc type added to a list only so that a generated schema kept its rows checked (keep it: with it, a typo is an error, not a warning).
 
-## Still needed on 4.31.0
+### 4.32.0
+
+2026-11-28 — [CHANGELOG](../CHANGELOG.md#4320--2026-11-28)
+
+- `@wcstack/router`: **a page can ask in its own dialog before leaving.** `leaveHold: dirty` holds a navigation to another route — a link, Back / Forward, `navigateUrl` — `leaving` names where to, and the router's commands `proceed()` / `stay()` answer (router README, "A page's own "leave?" dialog"). A navigation that leaves the page still gets `leaveConfirm`; in a browser without the Navigation API, Back / Forward are not held.
+- `@wcstack/sse`: in WebKit the first `<wcs-link>` of a page load no longer reconnects the stream — no same-document navigation closes it now. A `beforeunload` with no `navigate` before it closes the stream a task later.
+- `@wcstack/lint` (and the VS Code extension 2.25.0): two apps with a generated schema are checked in one run — two `stateSchema`s that name different state files are each applied to the pages that load their file, where they were a `wcs/manifest-state-collision` error and neither was used. The pages of both may get findings they did not have.
+
+Workarounds became unnecessary: the same guard on every other route, nav links built by hand and Back undone with `history.go(1)` for an in-page "leave?" dialog; an `EventSource` of the page's own in WebKit where the first link's reconnect lost events; a generated manifest left uncommitted, or one lint run per app, where two apps are checked together.
+
+## Still needed on 4.32.0
 
 - Markup another library inserts (htmx's swaps, a Turbo frame) is handed to the binder by whoever inserts it, and released when it is thrown away; a history cache that restores a drawn page is turned off on pages with islands ([islands.md](./islands.md)).
 - Firefox has no scoped custom element registries: a widget on a page that runs its own wcstack decides what to do there ([islands.md](./islands.md)).
 - The lint reads a part only where it finds its file: a page that names its parts from `/` (`"@components/x-card": "/parts/x-card.js"`) is linted with `--root=<the site's directory>`, and the editor, which has no root, says nothing of those parts. A part whose state is not an object literal is not read, and neither is what a part's methods read (lint README, "What a page assembled from parts is told"): unit tests cover the rest.
 - A page's state outlives its route: the selection, the search text and the last record are still there when the user comes back, and nothing says so. Reset what the page should forget in a `$watch` on the router's `routeName` (router README, "The state outlives the route"; [coming-from-react.md](./coming-from-react.md)).
-- The router has no in-app "stay": `leaveConfirm` asks with the browser's `confirm()`. A page that asks in its own dialog holds its own links and guards the other routes itself ([seam-apps.md](./seam-apps.md), street-reports).
 - A write to one row's field (`this["todos.0.done"] = v`, a two-way `checked: .done` in a row) does not re-evaluate a getter that reads the field from the row object (`this.todos.filter((t) => !t.done)`): assign the list, or read the fields through `$getAll("todos.*.done", [])` (state README, "`$listKeys`"). The lint reports it (`wcs/getter-untracked-read`) when the field is written by path.
 - A volume does not read the root, and the root's `$connectedCallback` and `$watch` run before a volume that arrives later has its keys and methods: hand a volume what it needs, and wait for its `connectedCallbackPromise` (state README, "Mounting Additional State").
 - A DCC is given whole values through properties: a write to a field inside an object or array it shares with the page does not reach the other side's rows, and a `$watch` on an input does not run for the first value — read it in `$connectedCallback` as well (state README, "What a DCC Is Given").

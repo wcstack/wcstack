@@ -84,7 +84,7 @@ npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 
 - `--strict` は検証器が読めない `<wcs-state src>` 由来の warning でも落ちる — 先に全ての `src=` を HTML 相対で解決可能にしておく。
 - `--merge` は書き込むスロットだけを丸ごと置き換える —— `stateSchema` 全体、または `--mount=<path>` の部分木（ボリュームの型は単一ツリーの部分木として merge される）。同じスロットの手書き schema は残らない（sidecar 規範は暗黙 merge を禁じている）。手書きの schema は生成しないスロットのためのもの。
-- 2 つの application manifest が両方 `stateSchema` を宣言すると `wcs/manifest-state-collision`（error・勝者なし。v2 はページ 1 ツリー＝schema スロットは 1 つ）。生成 schema はちょうど 1 つの manifest に置く。4.32（未リリース）から、それぞれが違う state のファイル（`wcs-schema emit` が書く `stateSource`）を名指す 2 つは、1 回の実行に渡しても衝突しない: 各ページには、ルートの `<wcs-state src>` が読むファイルの schema が当たる —— 生成した schema を持つアプリ 2 つを、1 回の lint で検査できる。同じファイルを名指す 2 つ、名指さないものがあるときは、今までどおり衝突。
+- 2 つの application manifest が両方 `stateSchema` を宣言すると `wcs/manifest-state-collision`（error・勝者なし。v2 はページ 1 ツリー＝schema スロットは 1 つ）。生成 schema はちょうど 1 つの manifest に置く。4.32 から、それぞれが違う state のファイル（`wcs-schema emit` が書く `stateSource`）を名指す 2 つは、1 回の実行に渡しても衝突しない: 各ページには、ルートの `<wcs-state src>` が読むファイルの schema が当たる —— 生成した schema を持つアプリ 2 つを、1 回の lint で検査できる。同じファイルを名指す 2 つ、名指さないものがあるときは、今までどおり衝突。
 
 ## 3. 型付きの要素取得: `HTMLElementTagNameMap`
 
