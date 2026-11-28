@@ -877,6 +877,129 @@ function ioErrors(engine: Engine): void {
   }
 }
 
+// ---------------------------------------------------------------- an event before the binding
+
+/** The tags and outputs already told about an event that came before the binding. */
+const toldEvents = new Set<string>();
+/** What a fresh element of a class holds under an output before anything happened, by class and output. */
+const startValues = new WeakMap<object, Map<string, unknown>>();
+
+/** The output's value in a new element of `cls` (null when the class cannot be constructed here). */
+function startValue(cls: any, name: string): unknown {
+  let m = startValues.get(cls);
+  if (m === undefined) startValues.set(cls, (m = new Map()));
+  if (!m.has(name)) {
+    let v: unknown = null;
+    try {
+      v = new cls()[name];
+    } catch {
+      // (a scoped registry's class, a constructor that needs more: compared with null)
+    }
+    m.set(name, v);
+  }
+  return m.get(name);
+}
+
+/** Two values of an output alike: the same, or arrays of the same items (`<wcs-debounce>`'s `fired` starts as []). */
+function alike(a: unknown, b: unknown): boolean {
+  return Object.is(a, b) || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Object.is(x, b[i])));
+}
+
+/**
+ * An element whose `eventToken.<output>` names an occurrence (`semantics: "event"`) it already holds when its
+ * root is about to be bound: the event came before the binding, and the token never sees it. A `<wcs-sse>` whose
+ * `url` is in the markup connects before the state's file has loaded, and its first event — the snapshot of what
+ * is there — is lost (docs/seam-apps.md, counter-assist: 8 people waiting, 0 shown). A property binding of the
+ * output would have taken it (an output seeds state from the element). "Holds" is a value other than a new
+ * element's of the class (`<wcs-debounce>`'s `fired` starts as an empty list). Once per tag and output.
+ */
+function eventBeforeBinding(engine: Engine, phase: string): void {
+  const el = engine.element as Element | null;
+  if (phase !== "mounting" || !el) return;
+  const attr = config.bindAttributeName;
+  for (const x of (el.getRootNode() as ParentNode).querySelectorAll(`[${attr}*="eventToken."]`)) {
+    const cls = (((x as any).customElementRegistry ?? customElements) as CustomElementRegistry).get(x.localName) as any;
+    const outputs: unknown = cls?.wcBindable?.properties;
+    if (!Array.isArray(outputs)) continue;
+    let texts;
+    try {
+      texts = parseBindTextsForElement(x.getAttribute(attr)!);
+    } catch {
+      continue;
+    }
+    for (const b of texts) {
+      const name = b.propSegments[1];
+      const key = `${x.localName} ${name}`;
+      if (b.propSegments[0] !== "eventToken" || outputs.find((p) => p?.name === name)?.semantics !== "event"
+        || (x as any)[name] == null || alike((x as any)[name], startValue(cls, name)) || toldEvents.has(key)) continue;
+      toldEvents.add(key);
+      console.warn(`[@wcstack/state] [wcs/event-before-binding] <${x.localName}> dispatched ${name} before @wcstack/state bound the page, and eventToken.${name} never sees that event (the element holds it). Let the state start the element — give it what starts it from the state (url: path), so it starts once the page is bound — or bind the output too (${name}: path takes what the element holds). See docs/timing-and-firing-contract.md §31.`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- $stream
+
+/** The streams already told about: `<kind> <name>` (once per kind and name on the page). */
+const toldStreams = new Set<string>();
+/** The folds looked at, by stream name: the first FOLDS_LOOKED chunks only (a fold that changes its accumulator does it every time). */
+const foldsLooked = new Map<string, number>();
+const FOLDS_LOOKED = 50;
+
+function tellStream(kind: number, name: string, text: string): void {
+  const key = `${kind} ${name}`;
+  if (toldStreams.has(key)) return;
+  toldStreams.add(key);
+  console.warn(`[@wcstack/state] ${text}`);
+}
+
+/** A binding or a getter reads the stream's failure: `$streamError.<name>` or `$streamStatus.<name>`. */
+function readsStream(engine: Engine, name: string): boolean {
+  return ["$streamError.", "$streamStatus."].some((ns) => {
+    const p = engine.patterns.peek(ns + name);
+    return p !== undefined && (p.dependents.length > 0 || (engine.rootBindings.get(p)?.size ?? 0) > 0);
+  });
+}
+
+/** A shallow look at an accumulator: what changes when a fold changes it in place. */
+function shape(v: any): unknown[] {
+  return Array.isArray(v) ? [v.length] : v instanceof Map || v instanceof Set ? [v.size] : Object.entries(v).flat();
+}
+
+/**
+ * What the temporal add-on tells of a `$stream` run (hooks.streamed): a failure nothing reads — it reaches
+ * `$streamError` only, and the page goes on showing what was folded (docs/seam-apps.md, counter-assist); a
+ * source that returned no stream (said even when the failure is read: it is a mistake in the code, every run
+ * fails); a fold that changed its accumulator in place and returned it (an accumulator returned unchanged —
+ * a chunk the fold skips — is not told); the page writing the value of a running stream.
+ */
+function streamed(engine: Engine, name: string, kind: number, value?: unknown): ((next: unknown) => void) | void {
+  if (kind === 0) {
+    const error = value as any;
+    // (the shape of what the source returned was told: kind 3)
+    if (leaving || readsStream(engine, name) || (error instanceof TypeError && error.message.startsWith(`$stream "${name}": source must`))) return;
+    tellStream(0, name, `[wcs/stream-error-unobserved] $stream "${name}" failed: "${error?.message ?? error}" — and nothing reads it: no binding or getter reads $streamError.${name} or $streamStatus.${name}, so the page goes on showing what was folded. Bind $streamError.${name} (textContent: $streamError.${name}) and show it.`);
+  } else if (kind === 1) {
+    const n = foldsLooked.get(name) ?? 0;
+    if (value === null || typeof value !== "object" || n >= FOLDS_LOOKED) return;
+    foldsLooked.set(name, n + 1);
+    const before = shape(value);
+    return (next) => {
+      const now = next === value ? shape(next) : before;
+      if (now.length !== before.length || now.some((x, i) => !Object.is(x, before[i]))) {
+        foldsLooked.set(name, FOLDS_LOOKED);
+        tellStream(1, name, `[wcs/stream-fold-in-place] The fold of $stream "${name}" changed its accumulator in place and returned it: list diffing and $watch's prev compare it with itself. Return a new value ([...acc, chunk], { ...acc, key: chunk }).`);
+      }
+    };
+  } else if (kind === 2) {
+    tellStream(2, name, `[wcs/stream-value-written] "${name}" was written while $stream "${name}" runs: the stream goes on, and its next chunk folds on top of what was written. To stop it, make args return null (it keeps what it folded); to start over, change what args reads.`);
+  } else {
+    const v = value as any;
+    const type = v == null ? String(v) : v.constructor?.name ?? typeof v;
+    tellStream(3, name, `[wcs/stream-source-shape] The source of $stream "${name}" returned ${type}, neither an async iterable nor a ReadableStream: every run fails at once.${typeof v?.body?.getReader === "function" ? " Return its body (response.body)." : v === undefined ? " Return the stream (a missing return?)." : ""}`);
+  }
+}
+
 // ---------------------------------------------------------------- pages wcstack does not own
 
 /** The guide to a page wcstack does not own (htmx, Turbo, a widget on another site). */
@@ -1274,7 +1397,8 @@ export const diagnostics: Feature = {
       declaredKeys.set(engine, new Set(keysOf(target)));
     };
     hooks.handlerThrew = handlerThrew;
-    hooks.element = chain(chain(chain(chain(chain(hooks.element, secondRoot), bodyBinding), renderedCopy), lookLater), watchUnbound);
+    hooks.element = chain(chain(chain(chain(chain(chain(hooks.element, secondRoot), bodyBinding), renderedCopy), eventBeforeBinding), lookLater), watchUnbound);
+    hooks.streamed = streamed;
     hooks.written = chain(chain(chain(hooks.written, written), elementWrote), setterWrote);
     hooks.drained = chain(chain(hooks.drained, drained), setterDrained);
     hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeSetter);

@@ -274,3 +274,57 @@ describe("$stream", () => {
     error.mockRestore();
   });
 });
+
+describe("$stream — args が null なら何もしない（4.33、v4-direction §5.29、docs/seam-apps.md counter-assist）", () => {
+  it("最初から null なら source を呼ばず idle。null でなくなれば始まる", async () => {
+    const m = manual();
+    const { write, read } = await host("", {
+      request: null as string | null,
+      $stream: { s: { args: (st: any) => st.request, source: m.source, fold: (a: string, c: string) => a + c, initial: "" } },
+    });
+    expect(m.runs).toHaveLength(0);
+    expect(read("$streamStatus.s")).toBe("idle");
+    await write((st) => { st.request = "q1"; });
+    expect(m.runs.map((r) => r.args)).toEqual(["q1"]);
+    expect(read("$streamStatus.s")).toBe("active");
+  });
+
+  it("流れている途中で null になれば止めて、届いた分を残す（idle、値は initial に戻さない）。次の null でない args は initial から", async () => {
+    const m = manual();
+    const { write, read } = await host("", {
+      request: "q1" as string | null,
+      $stream: { s: { args: (st: any) => st.request, source: m.source, fold: (a: string, c: string) => a + c, initial: "" } },
+    });
+    m.runs[0].push("he");
+    m.runs[0].push("llo");
+    await flush();
+    await write((st) => { st.request = null; });
+    expect(m.runs[0].signal.aborted).toBe(true);
+    expect(read("$streamStatus.s")).toBe("idle");
+    expect(read("s")).toBe("hello");
+    // the stopped run's reader was cancelled: nothing more arrives
+    expect(() => m.runs[0].push("!")).toThrow();
+    await write((st) => { st.request = "q2"; });
+    expect(read("s")).toBe("");
+    expect(m.runs.map((r) => r.args)).toEqual(["q1", "q2"]);
+  });
+
+  it("失敗の後に null になれば $streamError を null に戻して idle（値は残す）", async () => {
+    const { write, read } = await host("", {
+      request: "q1" as string | null,
+      $stream: { s: { args: (st: any) => st.request, source: () => { throw new Error("down"); }, initial: "kept" } },
+    });
+    await flush();
+    expect(read("$streamStatus.s")).toBe("error");
+    await write((st) => { st.request = null; });
+    expect(read("$streamStatus.s")).toBe("idle");
+    expect(read("$streamError.s")).toBe(null);
+    expect(read("s")).toBe("kept");
+  });
+
+  it("args の無いエントリは今までどおり 1 回始まる（source には undefined）", async () => {
+    const m = manual();
+    await host("", { $stream: { s: { source: m.source } } });
+    expect(m.runs.map((r) => r.args)).toEqual([undefined]);
+  });
+});

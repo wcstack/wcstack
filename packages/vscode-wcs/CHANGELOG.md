@@ -2,6 +2,11 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- インラインの state の型（`defineState`）が `$stream` を知る（`@wcstack/state` の `defineState` と対。2026-11-28 の著者の決定、docs/v4-direction-2026-10.md §5.29）: `$streamStatus` / `$streamError` を `$stream` に書いた名前に絞る（オブジェクトの形も dotted の形 `this["$streamStatus.<name>"]` も。宣言していない名前は型エラー）。エントリの関数の引数に型が付く（`args` の state・`source` の `AbortSignal`。注釈なしで `noImplicitAny` を通る）。`source` は必須。
+- `$stream` を宣言した state で、`$on` のハンドラの state のどの名前も `any` になっていた（typo が型エラーにならなかった）のを直した。
+
 ## 2.25.0 — 2026-11-28
 
 `@wcstack/state` 4.32.0 から作った（npm の `@wcstack/lint` 4.32.0・`@wcstack/typescript` 4.32.0 と同じ判定）。2026-11-28 の著者の決定（docs/v4-direction-2026-10.md §5.28）から。

@@ -309,7 +309,9 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          set -uo pipefail
+          # observe: never fails. (GitHub runs this with `bash -e`, which ended the step at the failing
+          # command substitution below before anything was said — the first PR with a slack, #786)
+          set +e -uo pipefail
           base="$RUNNER_TEMP/base-gate"
           mkdir -p "$base/scripts" "$base/packages/state"
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
@@ -326,6 +328,7 @@ jobs:
             fi
             echo; echo '```'; echo "$out" | grep -E 'core.min.js|EXCEEDED|refus|missing'; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
       # Structure gate (requirement B13, wiring design §7-1): bundles src with esbuild in memory
       # and checks that each add-on carries only its own code beyond the core chunk, that the core
       # entries reach no add-on, that `/define` imports nothing, and that the core <-> add-on

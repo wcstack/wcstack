@@ -87,6 +87,10 @@ export const temporal: Feature = {
       if (!internalWrite && p.path.charCodeAt(0) === 36 && NAMESPACES.includes(p.path.split(".", 1)[0])) {
         raiseError(`"${p.path}" is read-only (the stream runtime owns it).`);
       }
+      // the page writes a running stream's value: its next fold folds on top of it (diagnostics tells it)
+      if (!internalWrite && hooks.streamed && live(engine)?.stream.entries.some((e) => e.name === p.path && e.controller !== null)) {
+        hooks.streamed(engine, p.path, 2);
+      }
       // an element writes an accessor pair: what its setter writes is the element's value too (WatchRuntime.early)
       if (element && p.setter !== null) live(engine)?.watch.setterStarts();
       return false;

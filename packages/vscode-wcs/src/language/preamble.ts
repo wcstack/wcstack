@@ -88,12 +88,15 @@ export const WCS_PREAMBLE = `// @ts-check
 /** @typedef {"idle" | "active" | "done" | "error"} _WcsStreamStatus */
 // WcsStateApi の索引（@wcstack/state の defineState と対）:
 // - $command: $commandTokens に書いた名前（N）の token。名前を推論できなければ Record<string, …>。
+// - $streamStatus / $streamError: $stream に書いた名前（SN、4.33）。dotted の形（\`this["$streamStatus.<name>"]\`）は
+//   SN から作る索引なので _WcsStreamPaths に分けた。名前を推論できなければ string。
 // - \`\${string}.**.\${string}\` / \`\${string}.**\`: $recursion 宣言済みの再帰パス（\`nodes.**.total\`・素の \`nodes.**\`）。
 //   深さの族なので _WcsPaths の有限展開には現れない。\`**\` を含むキーは読める（型は any）とだけ言う。
 // - \`.\${string}\`: 行からの相対パス（\`this[".name"]\`・\`this["."]\`、4.22）。基準は評価している行のリストで、
 //   型では表せない（型は any。パスが在るかは lint が検査する）。setter は書くので readonly ではない。
 /**
 @template {string} N
+@template {string} SN
 @typedef {{
   $getAll<V = any>(path: string, indexes?: number[]): V[];
   $setAll<V = any>(path: string, indexes: number[], value: V | ((current: V, ...indexes: number[]) => V | undefined)): number;
@@ -108,18 +111,18 @@ export const WCS_PREAMBLE = `// @ts-check
   $eqIndex(path: string, level?: number): boolean;
   readonly $stateElement: HTMLElement;
   readonly $command: Record<N, { emit(...args: any[]): any }>;
-  readonly $streamStatus: Record<string, _WcsStreamStatus>;
-  readonly $streamError: Record<string, unknown>;
-  readonly [key: \`$streamStatus.\${string}\`]: _WcsStreamStatus;
-  readonly [key: \`$streamError.\${string}\`]: unknown;
+  readonly $streamStatus: Record<SN, _WcsStreamStatus>;
+  readonly $streamError: Record<SN, unknown>;
   readonly $1: number; readonly $2: number; readonly $3: number;
   readonly $4: number; readonly $5: number; readonly $6: number;
   readonly $7: number; readonly $8: number; readonly $9: number;
   readonly [key: \`\${string}.**.\${string}\`]: any;
   readonly [key: \`\${string}.**\`]: any;
   [key: \`.\${string}\`]: any;
-}} WcsStateApi
+}} _WcsStateApiMembers
 */
+/** @template {string} SN @typedef {{ readonly [K in SN as \`$streamStatus.\${K}\`]: _WcsStreamStatus } & { readonly [K in SN as \`$streamError.\${K}\`]: unknown }} _WcsStreamPaths */
+/** @template {string} N @template {string} SN @typedef {_WcsStateApiMembers<N, SN> & _WcsStreamPaths<SN>} WcsStateApi */
 // 1 つのアクセサを複数のパスに宣言したキー（\`get "users.*.fullname,employees.*.fullname"()\`、4.22）の各パス。
 // T にはキーの文字列そのものしか現れないので、カンマで分けた各パスにそのアクセサの型を写す。
 /** @template {string} K @typedef {K extends \`\${infer Head},\${infer Rest}\` ? Head | _WcsListedPaths<Rest> : K} _WcsListedPaths */
@@ -128,8 +131,11 @@ export const WCS_PREAMBLE = `// @ts-check
 // 現れないので、getter やメソッドの this から読めるよう any で写す。initial の型は使わない — 空配列の
 // initial が never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。
 // T に同名のプロパティを明示的に事前宣言していれば写さない（交差でその型まで any に潰さないため）。
-/** @template T @typedef {(T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {})} _WcsDeclaredValues */
-/** @template T @template {string} N @typedef {T & WcsStateApi<N> & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>} _WcsThis */
+// $stream が any（$on の state は引数から部分的に推論した写しで、その $stream は any）なら写さず、名前も取らない —
+// 写すとどの名前も any の索引になり、state の typo が型エラーにならない。
+/** @template T @typedef {(T extends { $stream: infer S } ? (_IsAny<S> extends true ? {} : { [K in Exclude<keyof S & string, keyof T>]: any }) : {})} _WcsDeclaredValues */
+/** @template T @typedef {(T extends { $stream: infer S } ? (_IsAny<S> extends true ? string : keyof S & string) : string)} _WcsStreamNames */
+/** @template T @template {string} N @typedef {T & WcsStateApi<N, _WcsStreamNames<T>> & _WcsPathAccessor<T> & _WcsDeclaredValues<T> & _WcsListedAccessors<T>} _WcsThis */
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
 // キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
 /** @typedef {Record<string, string | ((row: any) => unknown)>} _WcsListKeys */
@@ -139,6 +145,9 @@ export const WCS_PREAMBLE = `// @ts-check
 // $recursion: { "<anchor>": "<repeat>" }（recursion/declaration.ts）。形の検証は
 // service/recursionValidator.ts（wcs/recursion-declaration-invalid）が担う。
 /** @typedef {Record<string, string>} _WcsRecursion */
+// $stream: { "<name>": { args?, source, fold?, initial? } }（temporal/stream.ts、4.33）。関数の引数に文脈型を与える宣言
+// （$listKeys と同じ理由）: args の state は $on と同じ形、signal は AbortSignal。source は必須。
+/** @template S @typedef {{ args?: (state: S) => unknown; source: (args: any, signal: AbortSignal) => unknown; fold?: (acc: any, chunk: any) => unknown; initial?: unknown }} _WcsStreamEntry */
 // $on: { "<event token>": (state, event, ...indexes) => … }（token.ts — handler(state, event, ...listIndexes) と呼ばれ、
 // this は undefined）。state の型は T ではなく S（引数から推論した T の写し）から作る: ハンドラの引数の型が T を
 // 参照すると、TypeScript は T を推論し終える前に（引数の無い制約 Record<string, any> で）確定させ、
@@ -159,7 +168,7 @@ export const WCS_PREAMBLE = `// @ts-check
 /**
 @type {<T extends Record<string, any>, N extends string = string, S = T>(def: T & { [K in keyof S]: S[K] } & {
   $commandTokens?: readonly N[]; $on?: Record<string, _WcsOnHandler<_WcsOnState<S, N>>>;
-  $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion;
+  $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion; $stream?: Record<string, _WcsStreamEntry<_WcsOnState<S, N>>>;
   $behavior?: _WcsBehavior; $features?: readonly _WcsFeatureName[];
 } & ThisType<_WcsThis<T, N>>) => T}
 */

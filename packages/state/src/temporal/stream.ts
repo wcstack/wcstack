@@ -8,6 +8,10 @@
  * dependencies are captured afresh on every run. `$streamStatus.<name>` / `$streamError.<name>` are
  * read-only companions kept on the state.
  *
+ * `args` returning `null` asks for no run: the stream is not started (`idle`), or a running one is
+ * stopped and keeps what it folded (`idle`, the value not reset). The next non-null `args` starts it
+ * from `initial` (v4-direction §5.29).
+ *
  * A restart's writes are reactions: they continue the render chain (MAX_RENDER_CHAIN), and the
  * `$watch` chain (watch.ts) one deeper than the write that reached `args` (#354). That depth is the
  * deepest such write's for a data path `args` reads, but the first one's since `args` was last
@@ -24,6 +28,7 @@
  * response, a message, a timer) they are new input, as a write from code: they start a chain afresh.
  */
 import type { Engine } from "../engine";
+import { hooks } from "../hooks";
 import { FAILED, UNSET, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
 import { MAX_CHAIN, thisTask, type WatchRuntime } from "./watch";
@@ -48,7 +53,7 @@ const STATUS = "$streamStatus";
 const ERROR = "$streamError";
 const PROTOTYPE_NAMES = new Set(Object.getOwnPropertyNames(Object.prototype));
 
-/** A read-only companion path is being written by the runtime itself. */
+/** The runtime itself writes: a read-only companion, a stream's value (the page's writes of it are told: hooks.streamed). */
 export let internalWrite = false;
 
 function hasAccessorOrMethod(target: object, name: string): boolean {
@@ -107,13 +112,17 @@ export class StreamRuntime {
     this.watch = watch;
   }
 
-  private set(ns: string, name: string, value: unknown): void {
+  private own(path: string, value: unknown): void {
     internalWrite = true;
     try {
-      this.engine.write(this.engine.pattern(`${ns}.${name}`), null, value);
+      this.engine.write(this.engine.pattern(path), null, value);
     } finally {
       internalWrite = false;
     }
+  }
+
+  private set(ns: string, name: string, value: unknown): void {
+    this.own(`${ns}.${name}`, value);
   }
 
   /** Eager start after `$connectedCallback`: an `args` failure is thrown as is. */
@@ -200,12 +209,19 @@ export class StreamRuntime {
         if (eager) throw error;
         this.set(ERROR, e.name, error);
         this.set(STATUS, e.name, "error");
+        hooks.streamed?.(engine, e.name, 0, error);
+        return;
+      }
+      if (args === null) {
+        // nothing to do now: not started, or stopped with what it folded kept (v4-direction §5.29)
+        this.set(ERROR, e.name, null);
+        this.set(STATUS, e.name, "idle");
         return;
       }
     }
     const ctrl = new AbortController();
     e.controller = ctrl;
-    engine.write(engine.pattern(e.name), null, e.initial);
+    this.own(e.name, e.initial);
     this.set(ERROR, e.name, null);
     this.set(STATUS, e.name, "active");
     void this.consume(e, ctrl, args);
@@ -215,7 +231,6 @@ export class StreamRuntime {
     const engine = this.engine;
     const signal = ctrl.signal;
     const live = (): boolean => !signal.aborted && e.controller === ctrl;
-    const p = engine.pattern(e.name);
     // the run's depth and task: what it writes in that task continues its chain
     const depth = this.watch.depth;
     const task = thisTask();
@@ -232,8 +247,13 @@ export class StreamRuntime {
       const producer: any = await e.source(args, signal);
       if (!live()) return;
       const chunk = (v: unknown): void => {
-        acc = e.fold !== undefined ? e.fold(acc, v) : v;
-        put(() => engine.write(p, null, acc));
+        if (e.fold === undefined) acc = v;
+        else {
+          const look = hooks.streamed?.(engine, e.name, 1, acc);
+          acc = e.fold(acc, v);
+          look?.(acc);
+        }
+        put(() => this.own(e.name, acc));
       };
       if (producer !== null && typeof producer?.getReader === "function") {
         // a ReadableStream: only reader.cancel() can unwind a parked read
@@ -255,6 +275,7 @@ export class StreamRuntime {
           chunk(r.value);
         }
       } else {
+        hooks.streamed?.(engine, e.name, 3, producer);
         throw new TypeError(`$stream "${e.name}": source must return an async iterable or a ReadableStream`);
       }
       if (!live()) return;
@@ -268,6 +289,7 @@ export class StreamRuntime {
         this.set(ERROR, e.name, error);
         this.set(STATUS, e.name, "error");
       });
+      hooks.streamed?.(engine, e.name, 0, error);
     }
   }
 }
