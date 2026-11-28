@@ -348,6 +348,10 @@ test("走者 7 人。3 人目を外し、5 人目を氏名にフォーカスを�
   await runnerRow(page, 2).locator(".remove-runner").click();
   await expect(page.locator("li.runner")).toHaveCount(6);
   await expect(page.locator("#fee-total")).toHaveText("¥13,000");
+  // (added) the app puts the focus on the row that took the removed one's place (四区　四郎), in a setTimeout(0)
+  // after the confirm(): wait for it before the focus goes to row 5. When it came between that focus and the keys,
+  // the keys moved 四区　四郎 to the top (a flaky test on CI; without the fee check above, 10 times in 20 here).
+  await expect(runnerRow(page, 2).locator("input").first()).toBeFocused();
   const name5 = runnerRow(page, 4).locator(".runner-name");
   await expect(name5).toHaveValue("補欠　六郎");
   await name5.focus();
