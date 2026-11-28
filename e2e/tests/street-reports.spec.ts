@@ -299,11 +299,23 @@ test.describe('report list', () => {
     const expected = await api.get(`/api/reports?${query({ q: finalText, per: 20 })}`);
     expect(expected.total).toBeGreaterThan(0);
 
+    // (added after landing) the page's clock stands still while the keys are typed, then moves past the debounce's
+    // 300 ms. The test meant "keys typed faster than the debounce make one request", and took the 60 ms between keys
+    // for granted — but the gaps are the test tool's: Playwright sends each character to the browser as its own
+    // command, and in Firefox the first gap ranged 62–177 ms on this machine with the page idle (a setTimeout(0)
+    // after each input ran within 3 ms). On a slower CI runner it passed 300 ms once, the debounce settled on 北, and
+    // the searches were ["北", "北町2丁目"] (#774's run, the first failure kept as an artifact). With 400 ms between
+    // keys the running clock gives ["北", "北町2", "北町2丁", "北町2丁目"] every time, in Chromium and Firefox; the
+    // paused one gives one search.
+    await page.clock.install();
     await page.goto('/reports?page=2');
     await expect(page.getByText(/^2 \/ \d+ ページ$/)).toBeVisible();
     const historyBefore = await page.evaluate(() => window.history.length);
 
+    await page.clock.pauseAt(Date.now() + 1000);
     await page.getByPlaceholder('件名・住所で検索').pressSequentially(finalText, { delay: 60 });
+    await page.clock.runFor(300);
+    await page.clock.resume();
     await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(finalText)}`));
     await expect(page).not.toHaveURL(/page=/);
     await expect(rowTitles(page)).toHaveText(titlesOf(expected));
