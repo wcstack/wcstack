@@ -910,7 +910,10 @@ function renderedCopy(engine: Engine, phase: string): void {
 
 /**
  * How long an element with bindings may be in a bound root without being bound: whoever inserts markup hands
- * it over right after (the router at once, htmx on htmx:load). Also the least time between two looks.
+ * it over right after (the router at once, htmx on htmx:load). Also the least time between two looks — and an
+ * element is said only when two looks in a row find it unbound: a look lands at any moment of a burst of changes,
+ * and one between htmx's swap and its htmx:load (about 20 ms later, when the page hands the cards over) reported
+ * cards that were bound right after (docs/seam-apps.md, community-hall: a flaky e2e test, once in about 40 runs).
  */
 const UNBOUND_AFTER = 1000;
 const watchedRoots = new WeakSet<Engine>();
@@ -927,8 +930,9 @@ const CONTENT = /(?:^|;)\s*(?:html|innerHTML|textContent|innerText|outerHTML|out
  * a word, and so does what is inserted into a container the page already had and handed over as that container
  * (walked once, it is left alone) (docs/seam-apps.md, community-hall). Once its bindings are built, a root is
  * looked at UNBOUND_AFTER after its content changes: an element with bindings that entered it since and that no
- * walk took is said once per root (one there when it was bound and not walked is not: the walk stopped at an
- * error, which was reported). Rows and branches carry no `data-wcs` (compilePlan takes it), so
+ * walk took is looked at again UNBOUND_AFTER later, and said once per root when it is still unbound then (one there
+ * when it was bound and not walked is not: the walk stopped at an error, which was reported). Rows and branches
+ * carry no `data-wcs` (compilePlan takes it), so
  * one query finds only page markup. Not looked at: what a binding put in an element as a value (`html:` and
  * the content bindings), a Light DOM component's content (its own state binds it), `data-wcs-ignore`.
  */
@@ -945,49 +949,62 @@ function watchUnbound(engine: Engine, phase: string): void {
   const r = new WeakRef(root);
   const c = new WeakRef(container);
   const present = new WeakSet(container.querySelectorAll(`[${config.bindAttributeName}]`));
+  // the elements a look found unbound: said when the next look finds them unbound still
+  const seen = new WeakSet<Element>();
   let due = false;
   ioErrors(engine);
-  const observer = new MutationObserver(() => {
+  const look = (): void => {
     if (due) return;
     due = true;
     setTimeout(() => {
       due = false;
       const now = e.deref();
       if (now !== undefined) ioErrors(now);
-      lookUnbound(e, r, c, present, observer);
+      // (an element found unbound for the first time is looked at again, changes or not)
+      if (lookUnbound(e, r, c, present, seen, observer)) look();
     }, UNBOUND_AFTER);
-  });
+  };
+  const observer = new MutationObserver(look);
   // (quoted: `childList` is a name the build shortens — mangle.mjs — the observer's option is not)
   observer.observe(container, { "childList": true, subtree: true });
 }
 
-function lookUnbound(e: WeakRef<Engine>, r: WeakRef<Node>, c: WeakRef<Node & ParentNode>, present: WeakSet<Element>, observer: MutationObserver): void {
+/** One look: says an element the last look found unbound too; true when it found one for the first time. */
+function lookUnbound(e: WeakRef<Engine>, r: WeakRef<Node>, c: WeakRef<Node & ParentNode>, present: WeakSet<Element>, seen: WeakSet<Element>, observer: MutationObserver): boolean {
   const root = r.deref();
   const container = c.deref();
   if (root === undefined || container === undefined || !(e.deref()?.element as Element | undefined)?.isConnected || toldUnbound.has(root)) {
     observer.disconnect();
-    return;
+    return false;
   }
-  const x = unboundIn(container, present);
-  if (x === null) return;
+  let x: Element | undefined;
+  let fresh = false;
+  for (const u of unboundIn(container, present)) {
+    if (seen.has(u)) { x = u; break; }
+    seen.add(u);
+    fresh = true;
+  }
+  if (x === undefined) return fresh;
   toldUnbound.add(root);
   observer.disconnect();
   const attr = config.bindAttributeName;
   const text = x.getAttribute(attr)!;
   console.warn(`[@wcstack/state] [wcs/inserted-unbound] <${x.localName} ${attr}="${text.length > 60 ? `${text.slice(0, 57)}...` : text}"> entered the page after it was bound, and nothing bound it: its bindings do nothing. The page is walked once; after that only markup handed over is bound: whoever inserts it (htmx, a Turbo frame, an innerHTML) calls globalThis[Symbol.for("wcstack.binder")].bind(node) for each new node — not for a container the page already had.${STRUCTURAL.test(x.localName === "template" ? text : "") ? " A for: / if: template at the top of what is handed over needs { range: true } (#204): put it inside an element." : ""} ${ISLANDS_GUIDE}`);
+  return false;
 }
 
-/** The first element under `container` with bindings, not `present` before, that no walk took (or null). */
-function unboundIn(container: ParentNode, present: WeakSet<Element>): Element | null {
+/** The elements under `container` with bindings, not `present` before, that no walk took, in document order. */
+function unboundIn(container: ParentNode, present: WeakSet<Element>): Element[] {
   const attr = config.bindAttributeName;
+  const out: Element[] = [];
   next: for (const x of container.querySelectorAll(`[${attr}]`)) {
     if (walked.has(x) || present.has(x) || x.closest(`[${attr}-ignore]`) !== null) continue;
     for (let p = x.parentElement; p !== null; p = p.parentElement) {
       if (hooks.componentScope?.(p) || CONTENT.test(p.getAttribute(attr) ?? "")) continue next;
     }
-    return x;
+    out.push(x);
   }
-  return null;
+  return out;
 }
 
 // ---------------------------------------------------------------- for: over a value that is not an array
