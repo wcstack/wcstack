@@ -122,6 +122,8 @@ export default {
   /** @type {{ tabId: string, user: string, open: number | null, claimed: number[], at: number }[]} */
   otherTabs: [],
   tabError: null,
+  // the channel's name, given from the state: the element starts once the page is bound, so no event comes before eventToken. (docs/timing-and-firing-contract.md §31)
+  tabChannel: "shift-desk",
   lastAnnounce: 0,
   prefs: { notifyUrgent: true, notifyMessages: true },
 

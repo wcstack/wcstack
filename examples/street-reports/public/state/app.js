@@ -641,6 +641,8 @@ export default defineState({
   get boardUrl() {
     return this.routeName === 'board' ? '/api/reports/board' : null;
   },
+  // the summary stream's URL, given from the state: the element starts once the page is bound, so no event comes before eventToken. (docs/timing-and-firing-contract.md §31)
+  summaryEventsUrl: '/api/events',
   get boardEventsUrl() {
     return this.routeName === 'board' ? '/api/events' : null;
   },

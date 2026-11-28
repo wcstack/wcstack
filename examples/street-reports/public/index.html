@@ -72,7 +72,7 @@
 <wcs-fetch manual data-wcs="command.fetch: $command.loadStats; command.abort: $command.abortStats; value: statsFetch.value; loading: statsFetch.loading; error: statsFetch.error"></wcs-fetch>
 <!-- useEventSource → <wcs-sse>: one stream for the whole session (the header's badge), and the board's own while
      the board is shown (its url is null elsewhere, which closes it). -->
-<wcs-sse url="/api/events" events="report" data-wcs="eventToken.message: summaryEvent"></wcs-sse>
+<wcs-sse events="report" data-wcs="url: summaryEventsUrl; eventToken.message: summaryEvent"></wcs-sse>
 <wcs-sse events="report" data-wcs="url: boardEventsUrl; eventToken.message: boardEvent"></wcs-sse>
 <!-- useDebouncedValue → <wcs-debounce> -->
 <wcs-debounce wait="300" data-wcs="source: listText; value: listTextSettled"></wcs-debounce>
