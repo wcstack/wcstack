@@ -266,6 +266,12 @@ test.describe("写真のページと、一覧へ戻る", () => {
     const card = page.locator(`.card[data-id="${id}"]`);
     // the walk stops at the end of what is loaded now: card n is above it (the list goes on loading below)
     const end = await page.evaluate(() => { scrollTo(0, 0); return document.documentElement.scrollHeight; });
+    // (added) the list draws the rows near the screen after the scroll event: right after the jump the rows near the
+    // bottom were still there — card n among them (180 loaded), 13 times in 20 on a desktop — and the walk stopped at
+    // step 0 for a card that left a frame later (a flaky test, twice on CI: "after 0 steps down: scrollY 0 … 40
+    // cards"). The top's first card is there once the list has drawn the top.
+    const first = (await (await request.get("/api/photos?offset=0&limit=1")).json()).items[0].id;
+    await expect(page.locator(`.card[data-id="${first}"]`), "the list drew the top after the jump").toBeAttached();
     let steps = 0;
     let atEnd = false;
     for (; steps < 400 && !atEnd && !(await card.count()); steps++) {

@@ -659,6 +659,9 @@ The spec (15 tests in Chromium, 2 of them in Firefox too) starts the example's s
 
 The app's own unit tests (24, with `@wcstack/testing` 4.23.0 from npm) pass, and the lint reports nothing on the page. No new defect was found while landing.
 
+**Found later (2026-11-28): the reorder test put its focus down before the app had moved it.** Removing a runner, the app moves the focus to the row that took its place, in a `setTimeout(0)` after the `confirm()`. The test then focused runner 5 and pressed Alt+↑ twice; when the app's focus came between the two, the keys moved 四区　四郎 (the row in the removed one's place) to the top — the failure on CI, once. Without the fee check between the removal and the focus it happens 10 times in 20; waiting for the app's focus first, 0. The test now waits for it. The app was right.
+
+
 ### town-archive (2026-11-15)
 
 The fourth app of the third round in [docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §3.2. The seam changed is a long list and scrolling.
@@ -724,6 +727,9 @@ The app's own unit tests (29, with `@wcstack/testing` 4.24.0 from npm) pass, and
 | Docs gap | **A spinner above the sentinel makes one scroll ask twice.** The example's spinner sat between the list and the sentinel. Shown when the request started, it pushed the sentinel out of its margin; the scroll that was under way brought it back, and that is the sentinel coming on screen again — a page that had failed at once in between was asked again (Firefox, traced frame by frame). The element's rule, but one press of End | The example's sentinel sits right after the list, above the spinner and the messages (asked once, 5 of 5 in three browsers); the fetch README and [long-lists.md](./long-lists.md) say where it goes |
 
 How the first was found: a check of the example's retry button failed in one browser, and the trace showed a request nobody had scrolled for. It did not show in a window 150 px tall, on a page with little in it, or on a machine busy with other tests — the element's own e2e fixture never showed it — so the check that holds it is a unit test with a fake observer.
+
+**Found later (2026-11-28): "the 150th photo" test walked a list that had not drawn the top yet.** Its helper loads 180 photos at the bottom — where the rows drawn include the 150th — jumps to the top and walks down until the card is there. It counted right after the jump, before the list drew the top: 13 times in 20 on a desktop the card was still in the DOM, and the walk stopped at step 0 for a card that left a frame later (twice on CI: "after 0 steps down: scrollY 0 … 40 cards"). The helper now waits for the top's first card after the jump. The app was right.
+
 
 ### stamp-rally (2026-11-17)
 
