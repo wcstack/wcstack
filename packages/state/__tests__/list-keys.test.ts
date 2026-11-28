@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFeatures, listKeys, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -116,5 +116,28 @@ describe("$listKeys", () => {
     const fresh = [{ id: 1 }];
     await write((s) => { s.other = fresh; });
     el.createState("readonly", (s: any) => expect(s.other).toBe(fresh));
+  });
+});
+
+describe("$listKeys が getter を名指す（wcs/list-keys-getter、4.33 — docs/seam-apps.md counter-assist）", () => {
+  it("getter（継承したものも）を名指す宣言は、宣言を受け取るたびに 1 回知らせる。データのパスには言わない", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      class Base { get "groups.*.items"() { return []; } }
+      const state = Object.create(Base.prototype, Object.getOwnPropertyDescriptors({
+        rows: [{ id: 1 }],
+        get visible() { return (this as any).rows; },
+        groups: [{ items: [] }],
+        $listKeys: { visible: "id", rows: "id", "groups.*.items": "id" },
+      }));
+      await host("", state);
+      const said = warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("[wcs/list-keys-getter]"));
+      expect(said).toEqual([
+        `[@wcstack/state] [wcs/list-keys-getter] $listKeys "visible" names a getter: rows are kept when an array is assigned to the path, and a getter's list is never assigned, so the declaration does nothing. Name the path the list is assigned to (the one the getter reads).`,
+        expect.stringContaining(`$listKeys "groups.*.items" names a getter`),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

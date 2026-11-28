@@ -107,6 +107,13 @@ export interface Hooks {
    * `hooks.noticed?.(engine, {…})`, the payload is built only while the slot is filled.
    */
   noticed?: ((engine: Engine, event: Record<string, unknown>) => void) | null;
+  /**
+   * A `$stream` run (temporal → diagnostics). `kind` 0: it failed (`value` is the error). 1: its fold is
+   * about to run on `value`, the accumulator — the function returned, if any, is called with what the fold
+   * returned. 2: the page wrote its value while it runs. 3: its source returned `value`, neither an async
+   * iterable nor a ReadableStream (the run then fails with a TypeError: kind 0 follows).
+   */
+  streamed?: ((engine: Engine, name: string, kind: number, value?: unknown) => ((next: unknown) => void) | void) | null;
 }
 
 /** Calls a native element's command method with what the token was emitted with. */

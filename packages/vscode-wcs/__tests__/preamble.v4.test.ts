@@ -74,6 +74,39 @@ defineState({
     expect(errors.some(message => message.includes("'number' is not assignable to type 'string'"))).toBe(true);
   });
 
+  it('4.33: $streamStatus / $streamError は $stream の名前に絞る（dotted の形も）。args の引数は注釈なしで通る', () => {
+    const errors = typecheck(`
+defineState({
+  question: "",
+  $stream: {
+    answer: {
+      args: (state) => state.question || null,
+      source: (q, signal) => fetch("/ask?q=" + q, { signal }).then((r) => r.body),
+      fold: (acc, chunk) => acc + chunk,
+      initial: "",
+    },
+  },
+  /** @returns {boolean} */ get running() { return this["$streamStatus.answer"] === "active"; },
+  m() { void [this.$streamStatus.answr, this["$streamError.answr"], this.$streamError.answer]; },
+});
+`);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("'answr'");
+    expect(errors[1]).toContain("'$streamError.answr'");
+  });
+
+  it('4.33: $stream を宣言しても $on の state の typo は型エラーのまま（部分的な推論の any から名前を取らない）', () => {
+    const errors = typecheck(`
+defineState({
+  n: 0,
+  $stream: { a: { source: () => null } },
+  $on: { p(state) { state.n++; state.nn++; } },
+});
+`);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("'nn'");
+  });
+
   it('$behavior の 3 キーは boolean、$features は後付けの名前の配列として型付けされる', () => {
     expect(typecheck(`
 defineState({

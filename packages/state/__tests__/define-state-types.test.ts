@@ -158,9 +158,74 @@ s.$commandTokens.push("a");
   it("WcsThis<T> / WcsStateApi は型引数 1 つでも使える（N は string）", () => {
     expect(check(`
 type S = { count: number };
-const f = (s: WcsThis<S>) => s.$command.x;
-const g = (a: WcsStateApi) => a.$command.y;
+const f = (s: WcsThis<S>) => [s.$command.x, s.$streamStatus.any, s["$streamError.any"]];
+const g = (a: WcsStateApi) => [a.$command.y, a["$streamStatus.z"]];
 void f, g;
 `)).toEqual([]);
+  });
+});
+
+describe("defineState — $stream の名前と値（4.33）", { timeout: TS_TIMEOUT }, () => {
+  it("$stream があっても $on の state の typo は型エラーのまま（部分的な推論の any から名前を取らない）", () => {
+    expect(check(`
+export default defineState({
+  n: 0,
+  $stream: { a: { source: () => null } },
+  $on: { p(state) { state.n++; state.nn++; } },
+});
+`)).toEqual([
+      "5: TS2339 Property 'nn' does not exist on type 'WcsOnState<{ n: number; $stream: { a: { source: () =",
+    ]);
+  });
+
+  it("値は this から読める（any）、$streamStatus / $streamError は宣言した名前に絞る（dotted の形も）", () => {
+    expect(check(`
+export default defineState({
+  question: "",
+  $stream: {
+    answer: {
+      args: (state) => state.question.length > 0 ? state.question : null,
+      source: (q, signal) => fetch("/ask?q=" + q, { signal }).then((r) => r.body),
+      fold: (acc, chunk) => acc + chunk,
+      initial: "",
+    },
+  },
+  get running() { return this["$streamStatus.answer"] === "active" && this.answer.length > 0; },
+  get failed() { return this["$streamError.answer"] !== null; },
+  stop() { const s: "idle" | "active" | "done" | "error" = this.$streamStatus.answer; void s; },
+  typo() { void [this.$streamStatus.answr, this["$streamError.answr"], this.$streamError.answer]; },
+});
+`, { noUncheckedIndexedAccess: true })).toEqual([
+      `15: TS2551 Property 'answr' does not exist on type 'Record<"answer", WcsStreamStatus>'. Did you mean `,
+      `15: TS2551 Property '$streamError.answr' does not exist on type '{ question: string; $stream: { answe`,
+    ]);
+  });
+
+  it("args の state は state の型、signal は AbortSignal。source の無いエントリは型エラー", () => {
+    expect(check(`
+export default defineState({
+  n: 0,
+  $stream: {
+    a: { args: (state) => state.nn, source: (_args, signal) => { const s: AbortSignal = signal; void s; return null; } },
+    b: { initial: 0 },
+  },
+});
+`)).toEqual([
+      "5: TS2339 Property 'nn' does not exist on type 'WcsOnState<{ n: number; $stream: unknown; }, string>",
+      "6: TS2741 Property 'source' is missing in type '{ initial: number; }' but required in type 'WcsStrea",
+    ]);
+  });
+
+  it("値を事前宣言すればその型（any に潰さない）。$stream が無ければ今までどおり string の名前", () => {
+    expect(check(`
+defineState({
+  answer: "" as string,
+  $stream: { answer: { source: () => null, fold: (a, c) => a + c, initial: "" } },
+  m() { const n: number = this.answer; void n; },
+});
+defineState({ m() { return [this.$streamStatus.anything, this["$streamError.anything"]]; } });
+`)).toEqual([
+      "5: TS2322 Type 'string' is not assignable to type 'number'.",
+    ]);
   });
 });

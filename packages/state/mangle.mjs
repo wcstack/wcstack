@@ -38,7 +38,7 @@ const NAMES = `
   invalidateUnder checkArity resolveInitialize claimed occurrence loadState onCreate unregister changed mark dropped
   dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor cutLoop chainCut cutTask reported fed carried unsettled held settled inApply
   listsByArray mirror shared landed loadTarget forListsUnder forAllLists api callAt rowOf refuseWrite
-  explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding hostOf
+  explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding hostOf streamed
   componentScope ssrMark adopt adoptScope nativeCommand declared tags mustache guard directional load noticed unfile epoch failAt trySync
   index component exports bindings arr sources drain register setAll fragment controller connected disconnected prop registered fold
   activate deactivate startAll abortAll stopAll consume watch stream hit expr pos started level headAt dispatch fail invoke

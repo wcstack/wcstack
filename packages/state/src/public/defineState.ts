@@ -155,11 +155,26 @@ type WcsPathAccessor<T> = {
 // State Proxy API — this 経由でアクセスできるAPI
 // ============================================================
 
+/** `$stream` の 1 エントリの状態。 */
+type WcsStreamStatus = "idle" | "active" | "done" | "error";
+
 /**
  * `<wcs-state>` の Proxy 経由で提供されるAPIメソッド。
  * state定義オブジェクト内のメソッド・getter で `this.` 経由で利用可能。
+ * `N` は `$commandTokens` の名前、`SN` は `$stream` の名前（4.33。推論できなければどちらも `string`）。
  */
-export interface WcsStateApi<N extends string = string> {
+export type WcsStateApi<N extends string = string, SN extends string = string> = WcsStateApiMembers<N, SN> & WcsStreamPaths<SN>;
+
+/**
+ * @internal `$stream` の状態の dotted パス（`this["$streamStatus.<name>"]` — computed getter 内での依存追跡付き読み取りの
+ * 正規形、docs/state-streams-design.md §4-3）。`SN` が `string` なら `$streamStatus.${string}` の索引になる。
+ */
+type WcsStreamPaths<SN extends string> =
+  & { readonly [K in SN as `$streamStatus.${K}`]: WcsStreamStatus }
+  & { readonly [K in SN as `$streamError.${K}`]: unknown };
+
+/** @internal {@link WcsStateApi} のメンバー（dotted パスの索引は型引数から作るので {@link WcsStreamPaths} に分けた）。 */
+interface WcsStateApiMembers<N extends string, SN extends string> {
   /**
    * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
    *
@@ -303,16 +318,14 @@ export interface WcsStateApi<N extends string = string> {
    */
   readonly $command: Record<N, { emit(...args: any[]): any }>;
 
-  /** `$stream` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間 */
-  readonly $streamStatus: Record<string, "idle" | "active" | "done" | "error">;
+  /**
+   * `$stream` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間。
+   * `SN` は `defineState` が `$stream` から推論した名前（4.33）: 宣言していない名前は型エラーになる。
+   */
+  readonly $streamStatus: Record<SN, WcsStreamStatus>;
 
-  /** `$stream` 各エントリの直近エラーを返す読み取り専用名前空間 */
-  readonly $streamError: Record<string, unknown>;
-
-  // computed getter 内での依存追跡付き読み取りの正規形は dotted パス
-  // （`this["$streamStatus.<name>"]` — docs/state-streams-design.md §4-3）
-  readonly [key: `$streamStatus.${string}`]: "idle" | "active" | "done" | "error";
-  readonly [key: `$streamError.${string}`]: unknown;
+  /** `$stream` 各エントリの直近エラーを返す読み取り専用名前空間（名前は `$streamStatus` と同じ） */
+  readonly $streamError: Record<SN, unknown>;
 
   // ループインデックス変数 ($1〜$9)
   // for テンプレート内のイベントハンドラで、ネストされたループの
@@ -383,7 +396,24 @@ type WcsListedAccessors<T> = {
   [K in keyof T & `${string},${string}` as WcsListedPaths<K>]: T[K];
 };
 
-export type WcsThis<T, N extends string = string> = T & WcsStateApi<N> & WcsPathAccessor<T> & WcsListedAccessors<T>;
+/**
+ * @internal `$stream` の名前（宣言が無ければ `string` — 今までどおり）。`$on` / `args` の state は引数から部分的に推論した
+ * 写しで、その `$stream` は any（{@link WcsOnValue}）: any からは名前を取らない。
+ */
+type WcsStreamNames<T> = T extends { $stream: infer D } ? (IsAny<D> extends true ? string : keyof D & string) : string;
+
+/**
+ * @internal `$stream` の値（4.33）: ランタイムが宣言キーの名前で実体化するプロパティ。T には宣言オブジェクトの中にしか
+ * 現れないので、getter やメソッドの this から読めるよう any で写す。initial の型は使わない — 空配列の initial が
+ * never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。T に同名のプロパティを事前宣言していれば
+ * 写さない（交差でその型まで any に潰さないため）。`$stream` が any（`$on` / `args` の state）なら写さない — 写すと
+ * どの名前も any の索引になり、state の typo が型エラーにならない。VS Code 拡張の preamble の _WcsDeclaredValues と対。
+ */
+type WcsDeclaredValues<T> = T extends { $stream: infer D }
+  ? (IsAny<D> extends true ? unknown : { [K in Exclude<keyof D & string, keyof T>]: any })
+  : unknown;
+
+export type WcsThis<T, N extends string = string> = T & WcsStateApi<N, WcsStreamNames<T>> & WcsPathAccessor<T> & WcsDeclaredValues<T> & WcsListedAccessors<T>;
 
 // ============================================================
 // $on — event token のハンドラ
@@ -419,10 +449,22 @@ type WcsOnHandler<S> = {
   bivarianceHack(this: void, state: S, event: CustomEvent, ...indexes: number[]): unknown;
 }["bivarianceHack"];
 
+/**
+ * @internal `$stream` の 1 エントリ（4.33）。関数の引数に文脈の型を与える（noImplicitAny 下の偽エラーを避ける）: `args` の
+ * state は `$on` と同じ形、`signal` は AbortSignal。`source` は必須（無ければランタイムも state の初期化に失敗する）。
+ */
+type WcsStreamEntry<S> = {
+  args?: (state: S) => unknown;
+  source: (args: any, signal: AbortSignal) => unknown;
+  fold?: (acc: any, chunk: any) => unknown;
+  initial?: unknown;
+};
+
 /** @internal 宣言のキーのうち、`defineState` が型を与えるもの。 */
 type WcsDeclarations<N extends string, S> = {
   $commandTokens?: readonly N[];
   $on?: Record<string, WcsOnHandler<WcsOnState<S, N>>>;
+  $stream?: Record<string, WcsStreamEntry<WcsOnState<S, N>>>;
 };
 
 // ============================================================

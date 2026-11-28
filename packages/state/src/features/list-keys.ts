@@ -21,6 +21,15 @@ const PROTO = "__proto__";
 /** A field name that is one path segment (no `.` / `*`, not an index, not a `$` name, not `prototype`: a path refuses it). */
 const SEGMENT = /^(?!prototype$)[^\d.*$][^.*]*$/;
 
+/** A getter of the state (own or inherited) under `name`. */
+function isGetter(target: object, name: string): boolean {
+  for (let o: object | null = target; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    const d = Object.getOwnPropertyDescriptor(o, name);
+    if (d !== undefined) return d.get !== undefined;
+  }
+  return false;
+}
+
 function declare(engine: Engine, target: Record<string, any>): void {
   const decl = target.$listKeys;
   const keys = new Map<Pattern, KeyOf>();
@@ -31,6 +40,8 @@ function declare(engine: Engine, target: Record<string, any>): void {
       if (typeof key === "string") keys.set(engine.pattern(path), (row) => row[key]);
       else if (typeof key === "function") keys.set(engine.pattern(path), key as KeyOf);
       else raiseError(`$listKeys "${path}" must be a field name or a function.`);
+      // a getter's list is never assigned: the declaration would do nothing (docs/seam-apps.md, counter-assist)
+      if (isGetter(target, path)) console.warn(`[@wcstack/state] [wcs/list-keys-getter] $listKeys "${path}" names a getter: rows are kept when an array is assigned to the path, and a getter's list is never assigned, so the declaration does nothing. Name the path the list is assigned to (the one the getter reads).`);
     }
   }
   keysByTarget.set(target, keys);
