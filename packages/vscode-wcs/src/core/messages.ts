@@ -229,6 +229,20 @@ export interface WcsMessageCatalog {
   inlineImport(specifier: string, guard: boolean): string;
   /** `key:` in a `data-wcs`. */
   keyBinding(): string;
+  /** A `$stream` entry with no `source` key. */
+  streamSourceMissing(name: string): string;
+  /** A `$stream` entry with a `fold` key and no `initial` key. */
+  streamFoldWithoutInitial(name: string): string;
+  /**
+   * An HTML sink binding (`binding`, as written: `html: .q`) on a path a form control (`control`: `textarea`) writes
+   * back through a two-way `value:`. `path`: the sink's path as written.
+   */
+  htmlSinkInput(binding: string, control: string, path: string): string;
+  /**
+   * `eventToken.<output>:` on an I/O node (`tag`) that starts on its own from the literal attribute `attribute`
+   * (`url`, `name`).
+   */
+  eventBeforeBinding(tag: string, output: string, attribute: string): string;
   /**
    * A two-way `value:` with no conversion on the way in, into a path the state holds as a number. `path` and `left`
    * (the binding's left side, `value#onchange`) as written; `asNumber`: the element has `valueAsNumber`.
@@ -434,10 +448,15 @@ export interface WcsMessageCatalog {
   routerOutletMisplaced(): string;
   /** `<wcs-link>` の `to` が付けるキー（`toKeys`）が、どれも `query-keys`（`named`）に無い。 */
   linkQueryKeyIgnored(toKeys: string, named: string): string;
-  signalsDualEntry(): string;
   /** import map が @wcstack/signals と /dom の両方を割り当てている（別ファイルの module が 2 つ目のコアを持つ）。 */
   signalsImportMapBoth(): string;
   // --- packageLoadValidator ---
+  /**
+   * Two loads of @wcstack/signals that each carry their own reactive core: `later` and `earlier` as written (a URL,
+   * or a name the import map gives). `versions`: the two versions when that is why (`[later's, earlier's]`); null when
+   * they are two entries through a CDN that bundles each one, or files of two builds.
+   */
+  signalsDualEntry(later: string, earlier: string, versions: readonly [string, string] | null): string;
   /** ページが `pkg`（`@wcstack/upload`）のタグ `tags` を書くのに、そのスクリプトを読み込んでいない。`url` は読み込む `/auto`。 */
   tagPackageMissing(tags: readonly string[], pkg: string, url: string): string;
   /**
@@ -739,6 +758,14 @@ const ja: WcsMessageCatalog = {
     `インラインの ${guard ? '<wcs-guard-handler>' : '<wcs-state>'} のスクリプトは blob: URL から評価されるので、"${specifier}" は解決しません（${guard ? 'ガードは' : 'state は'}読み込みに失敗します）。${guard ? '完全な URL か、ページの import map が与える名前を import してください' : '完全な URL か、ページの import map が与える名前を import するか、state をファイルに移してください（src="./state.js"）'}`,
   keyBinding: () =>
     `"key:" は "key" という名前のプロパティを書くだけで、ほかに何もしません。key は要りません — 行は行のオブジェクトで突き合わされ、取り直したデータで行を保つのは $listKeys です`,
+  streamSourceMissing: (name) =>
+    `$stream のエントリ "${name}" に source（関数）がありません。ランタイムは state を取り込むときに拒む（$stream entry "${name}" needs a source function.）ので、ページは初期化に失敗し、何も束ねられません。source: (args, signal) => … を書いてください（async iterable か ReadableStream を返す）`,
+  streamFoldWithoutInitial: (name) =>
+    `$stream のエントリ "${name}" は fold があって initial がありません。ランタイムは state を取り込むときに拒む（$stream entry "${name}": fold needs an initial value.）ので、ページは初期化に失敗し、何も束ねられません。最初のチャンクを畳み込む値を initial に書いてください（initial: "" / [] / {} / 0）`,
+  htmlSinkInput: (binding, control, path) =>
+    `"${binding}" は、利用者が <${control}> に打った文字（その value: が同じパスに書き戻します）をマークアップとしてページに入れます: <b> は太字になり、<img src=x onerror=…> はスクリプトを走らせ、打ったものとは違うものが表示されます — フィルタが消毒するのでなければ。テキストとして束ねてください（textContent: ${path}）`,
+  eventBeforeBinding: (tag, output, attribute) =>
+    `<${tag}> は ${attribute}="…" 属性から自分で始まるので、state のファイルが読み込まれて "eventToken.${output}:" を束ねるより前に接続します: 最初の ${output}${tag === 'wcs-sse' ? '（ストリームのスナップショットなど）' : ' '}はトークンが付く前に送られて失われ、何も知らせません。${attribute} を state から与えてください（${attribute}: <パス> — ページを束ねてから始まります）。または出力をプロパティとしても束ねてください（${output}: <パス> は要素の値を state に入れます）`,
   radioNameShared: (name, binding) =>
     `行ごとのラジオがすべて name="${name}" になるので、ブラウザは全部の行のラジオを 1 つのグループにします。ページ全体で 1 つしか選ばれた状態にならず、表示は最初の描画から行ごとの値と食い違います（何も知らせません）。${binding === 'radio'
       ? '行ごとに違う name を束ねる（attr.name: .<行ごとに違うフィールド>）か、name を外してください（radio: は name が無くても、同じパスに束ねたラジオを選択に合わせます）'
@@ -894,7 +921,7 @@ const ja: WcsMessageCatalog = {
   storagePairClobber: (path) =>
     `<wcs-storage> の value を #init=element なしでアクセサペア "${path}" に束ねています。state の側が先に書くので、読み込みのたびに getter の最初の値が保存値の上に保存され、setter は保存値を受け取れません — #init=element を付けてください（\`value#init=element: ${path}\`）`,
   inputNestedWrite: (tag, input, path, example) =>
-    `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されないので、下への書き込みは <${tag}> に届きません — フィールドをパスで読んで新しい値を返す getter（\`this["${example}"]\`・\`$getAll\`）を束ねてください: 要素の値も受け取るなら、setter を添えたアクセサペアを ${input}#init=element: <getter> で。要素の値を受け取らないなら、一方向に ${input}#ro: <getter> で（setter も #ro も無いと、要素が知らせる値の書き戻しが getter に拒まれます — wcs/path-readonly）。または、下へ書かずに "${path}" を差し替えてください`,
+    `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されないので、下への書き込みは <${tag}> に届きません — フィールドをパスで読んで新しい値を返す getter（\`this["${example}"]\`・\`$getAll\`）を束ねてください: 要素の値も受け取るなら、setter を添えたアクセサペアを ${input}#init=element: <getter> で。要素の値を受け取らないなら、一方向に ${input}#ro: <getter> で（setter も #ro も無いと、要素が知らせる値の書き戻しが getter に拒まれます — wcs/path-readonly）。または、下へ書かずに "${path}" を差し替えるか、<${tag}> には別のキーを束ねて、渡したいときにそのキーへコピーを代入してください（getter は "${path}" の下への書き込みのたびに読み直されるので、<wcs-storage> はそのたびに保存します）`,
   inputNestedWriteOneShot: (tag, input, path, example) =>
     `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されず、<${tag}> は要求のたびに "${input}" を null に戻すので、次の要求は "${input}" なしで送られます — 要求を始めるハンドラで新しいオブジェクトを作って代入し（\`this.submitBody = { … }\`）、それを束ねてください`,
   devtoolsAfterState: () =>
@@ -905,8 +932,10 @@ const ja: WcsMessageCatalog = {
     `この <wcs-outlet> は <wcs-router> の直後に無いので、どの router も使いません。router は自分の直後の要素だけを outlet として使い、そこに <wcs-outlet> が無ければ自前の outlet を作ります。ルートは router の直後に描かれ、この outlet は空のままです — <wcs-router> の直後へ移してください`,
   linkQueryKeyIgnored: (toKeys, named) =>
     `この <wcs-link> の to が付けるキー（${toKeys}）は、どれも query-keys（${named}）にありません。query-keys のあるリンクは名指したキーだけを比べるので、リンク自身のクエリは判定に効かず、${named} が合えば ${toKeys} が何でも現在のリンクになります — こう書いたタブは同時にすべて現在になります。リンクが表すキーを名指してください（query-keys="${toKeys}"）`,
-  signalsDualEntry: () =>
-    `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
+  signalsDualEntry: (later, earlier, versions) =>
+    versions !== null
+      ? `"${later}" と "${earlier}" は @wcstack/signals の 2 つの版（${versions[0]} と ${versions[1]}）を読み込み、それぞれがリアクティブなコアを持ちます。片方の signal をもう片方の effect は追わないので、その間で画面が更新されなくなり、何も知らせません。1 つの版を読み込み、すべての名前を 1 つのエントリから import してください — @wcstack/signals/dom がすべてを持ちます`
+      : `"${later}" と "${earlier}" は @wcstack/signals の 2 つのエントリで、ここではそれぞれがリアクティブなコアを持ちます（エントリごとに束ねる CDN — esm.run・jsDelivr の +esm・esm.sh — か、ビルドの違うファイル）。片方の signal をもう片方の effect は追わないので、その間で画面が更新されなくなり、何も知らせません。すべての名前を 1 つのエントリから import してください — @wcstack/signals/dom がすべてを持ちます`,
   signalsImportMapBoth: () =>
     `この import map は @wcstack/signals と @wcstack/signals/dom の両方を割り当てています。CDN では各エントリがリアクティブコアを持つので、@wcstack/signals を import するモジュール（このページのものでも、読み込む .js でも）が 2 つ目のコアを持ち、境界で反応が壊れます。@wcstack/signals/dom だけを割り当ててください（コアの全部を export します）`,
   tagPackageMissing: (tags, pkg, url) =>
@@ -1194,6 +1223,14 @@ const en: WcsMessageCatalog = {
     `An inline ${guard ? '<wcs-guard-handler>' : '<wcs-state>'} script is evaluated from a blob: URL, against which "${specifier}" does not resolve: the ${guard ? 'guard' : 'state'} fails to load. Import a full URL or a name the page's import map gives${guard ? '' : ', or move the state into a file (src="./state.js")'}`,
   keyBinding: () =>
     `"key:" sets a property named "key" and does nothing else. No key is needed: rows are matched by the row object, and $listKeys keeps rows across refetched data`,
+  streamSourceMissing: (name) =>
+    `$stream entry "${name}" has no source function: the runtime refuses the state when it takes it in ($stream entry "${name}" needs a source function.), so the page fails to initialize and nothing on it is bound. Write source: (args, signal) => …, returning an async iterable or a ReadableStream`,
+  streamFoldWithoutInitial: (name) =>
+    `$stream entry "${name}" has a fold and no initial: the runtime refuses the state when it takes it in ($stream entry "${name}": fold needs an initial value.), so the page fails to initialize and nothing on it is bound. Give the value the first chunk is folded onto: initial: "" (or [], {}, 0)`,
+  htmlSinkInput: (binding, control, path) =>
+    `"${binding}" puts what the user types into a <${control}> (its value: writes back to the same path) onto the page as markup: <b> turns bold, <img src=x onerror=…> runs script, and what is shown is not what was typed — unless a filter sanitizes it. Bind it as text: textContent: ${path}`,
+  eventBeforeBinding: (tag, output, attribute) =>
+    `<${tag}> starts on its own from its ${attribute}="…" attribute, before the state's file has loaded and bound "eventToken.${output}:": the first ${output} events${tag === 'wcs-sse' ? " (the stream's snapshot)" : ''} are dispatched before the token is attached and are lost, without a word. Give it the ${attribute} from the state (${attribute}: <path>) so it starts once the page is bound, or bind the output as a property too (${output}: <path> seeds the state from the element)`,
   radioNameShared: (name, binding) =>
     `Every row's radios get name="${name}", so the browser makes one group of all the rows: only one radio on the whole page stays checked, and the page disagrees with the rows' values from the first render — nothing says so. ${binding === 'radio'
       ? 'Bind a name that differs per row (attr.name: .<a row field>), or drop the name: radio: keeps the radios bound to one path in step without it'
@@ -1349,7 +1386,7 @@ const en: WcsMessageCatalog = {
   storagePairClobber: (path) =>
     `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it — add #init=element (\`value#init=element: ${path}\`)`,
   inputNestedWrite: (tag, input, path, example) =>
-    `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> — bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value: with a setter beside it to take the element's value in as well (the accessor pair, ${input}#init=element: <getter>), or one way when the element's value is not taken in (${input}#ro: <getter> — with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "${path}" instead of writing below it`,
+    `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> — bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value: with a setter beside it to take the element's value in as well (the accessor pair, ${input}#init=element: <getter>), or one way when the element's value is not taken in (${input}#ro: <getter> — with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "${path}" instead of writing below it, or bind a separate key to <${tag}> and assign it a copy when the value should be passed on (a getter is re-read on every write below "${path}": <wcs-storage> would store each one)`,
   inputNestedWriteOneShot: (tag, input, path, example) =>
     `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it — build a new object in the handler that starts the request (\`this.submitBody = { … }\`) and bind that`,
   devtoolsAfterState: () =>
@@ -1360,8 +1397,10 @@ const en: WcsMessageCatalog = {
     `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty — move it right after the <wcs-router>`,
   linkQueryKeyIgnored: (toKeys, named) =>
     `None of the keys this <wcs-link>'s to sets (${toKeys}) is named in query-keys (${named}). A link with query-keys compares only the keys it names, so its own query plays no part: it is current wherever ${named} match, whatever ${toKeys} is — tabs written this way are all current at once. Name the keys the link is for (query-keys="${toKeys}")`,
-  signalsDualEntry: () =>
-    `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
+  signalsDualEntry: (later, earlier, versions) =>
+    versions !== null
+      ? `"${later}" and "${earlier}" load two versions of @wcstack/signals (${versions[0]} and ${versions[1]}), and each has its own reactive core: a signal of one is not seen by an effect of the other, so the page stops updating across them, without a word. Load one version, and import every name from one entry — @wcstack/signals/dom has all of them`
+      : `"${later}" and "${earlier}" are two entries of @wcstack/signals that each carry their own reactive core here (a CDN that bundles each entry on its own — esm.run, jsDelivr's +esm, esm.sh — or files of two builds): a signal of one is not seen by an effect of the other, so the page stops updating across them, without a word. Import every name from one entry — @wcstack/signals/dom has all of them`,
   signalsImportMapBoth: () =>
     `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals — this page's, or a .js file it loads — gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
   tagPackageMissing: (tags, pkg, url) =>

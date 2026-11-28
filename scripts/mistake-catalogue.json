@@ -630,8 +630,8 @@
       "id": "signals-dual-entry",
       "lint": [{ "code": "wcs/signals-dual-entry", "severity": "varies" }],
       "runtime": "silent", "harm": "stale",
-      "mistake": { "en": "Loads `@wcstack/signals` and `@wcstack/signals/dom` from a CDN that bundles each one (esm.run).", "ja": "`@wcstack/signals` と `@wcstack/signals/dom` を、それぞれを束ねる CDN（esm.run）から読み込む。" },
-      "effect": { "en": "The page gets two reactive cores: an effect in one does not track a signal of the other, and the UI stops updating across them.", "ja": "ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる。" },
+      "mistake": { "en": "Loads `@wcstack/signals` and `@wcstack/signals/dom` from a CDN that bundles each one (esm.run, jsDelivr's `+esm`, esm.sh), or one of them so and the other as a file, or two versions of the package.", "ja": "`@wcstack/signals` と `@wcstack/signals/dom` を、それぞれを束ねる CDN（esm.run・jsDelivr の `+esm`・esm.sh）から読み込む。片方をそうしてもう片方をファイルで、またはパッケージの 2 つの版を読み込む。" },
+      "effect": { "en": "The page gets two reactive cores: an effect in one does not track a signal of the other, and the UI stops updating across them — a call display's clock never moved. Since 4.33 the lint reads the local modules the page runs too (it listed such a page under `nothing to check:`).", "ja": "ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる — 呼び出し表示の時計が動かなかった。4.33 から lint はページが走らせるローカルの module も読む（そうしたページを `nothing to check:` に挙げていた）。" },
       "disposition": "runtime-report",
       "note": { "en": "Each core can mark itself on a global symbol when it makes its first signal; a second copy warns in dev mode.", "ja": "各コアが最初の signal を作るときにグローバルなシンボルに印を付け、2 つ目のコピーが開発モードで警告する。" }
     },
@@ -2137,6 +2137,33 @@
       "effect": { "en": "It sets a property named `key` and does nothing else; nothing says so. No key is needed: rows are matched by the row object, and `$listKeys` keeps rows across refetched data. Not reported on a custom element, whose `key` may be an input (`<wcs-storage>`).", "ja": "`key` という名前のプロパティを書くだけで、ほかに何もせず、何も言わない。key は要らない: 行は行のオブジェクトで突き合わされ、取り直したデータで行を保つのは `$listKeys`。カスタム要素の `key` は入力のことがある（`<wcs-storage>`）ので言わない。" },
       "disposition": "static-only",
       "note": { "en": "Found by the street-reports seam app (a React app ported by a first-time author, docs/seam-apps.md). The author decided on 2026-11-25 to give the lint a rule for each such habit: an error where the runtime refuses or drops it, a warning otherwise.", "ja": "継ぎ目アプリ street-reports（初めての作者が React のアプリを移した — docs/seam-apps.ja.md）が見つけた。2026-11-25 に著者が、こうした癖ごとに lint の規則を置くと決めた: ランタイムが拒むか落とすものは error、ほかは warning。" }
+    },
+    {
+      "id": "stream-fold-without-initial",
+      "lint": [{ "code": "wcs/stream-declaration", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Writes a `$stream` entry with a `fold` and no `initial` (`answer: { args, source, fold: foldAnswer }`), or with no `source`.", "ja": "`$stream` のエントリを、`fold` があって `initial` の無い形（`answer: { args, source, fold: foldAnswer }`）か、`source` の無い形で書く。" },
+      "effect": { "en": "The runtime refuses the state when it takes it in (`$stream entry \"answer\": fold needs an initial value.`): the page fails to initialize and nothing on it is bound — every route of an answer console was dead. Up to 4.32 the lint did not read `$stream`; it reports an entry written in full as an object literal (not one with a spread, a computed key, or a later spread that may replace it).", "ja": "ランタイムは state を取り込むときに拒む（`$stream entry \"answer\": fold needs an initial value.`）: ページは初期化に失敗し、何も束ねられない — 回答のコンソールのすべてのルートが死んだ。4.32 までの lint は `$stream` を読まなかった。オブジェクトリテラルで書き切ったエントリ（spread・計算されたキー・後で置き換えうる spread の無いもの）を報告する。" },
+      "evidence": [{ "file": "packages/state/src/temporal/stream.ts", "text": "fold needs an initial value." }, { "file": "packages/state/src/temporal/stream.ts", "text": "needs a source function." }],
+      "note": { "en": "Found by the counter-assist seam app (an LLM-answer console on `$stream`, docs/seam-apps.md); the author decided on 2026-11-28 to give the lint the rule (docs/v4-direction-2026-10.md §5.29).", "ja": "継ぎ目アプリ counter-assist（`$stream` の上の LLM の回答のコンソール — docs/seam-apps.ja.md）が見つけた。2026-11-28 に著者が lint の規則を置くと決めた（docs/v4-direction-2026-10.md §5.29）。" }
+    },
+    {
+      "id": "html-sink-input",
+      "lint": [{ "code": "wcs/html-sink-input", "severity": "warning" }],
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Binds what a form control writes back to an HTML sink: `<textarea data-wcs=\"value: question\">` and `<p data-wcs=\"html: question\">` (or `innerHTML:` / `outerHTML:` / `srcdoc:`).", "ja": "フォームの部品が書き戻すものを HTML の書き込み先に束ねる: `<textarea data-wcs=\"value: question\">` と `<p data-wcs=\"html: question\">`（`innerHTML:` / `outerHTML:` / `srcdoc:` も）。" },
+      "effect": { "en": "What the user types goes onto the page as markup: `<b>` turns bold and `<img src=x onerror=…>` runs, unless a policy or a filter sanitizes it — and then the page shows something other than what was typed. Nothing says so. The lint compares the two paths as state paths (`.q` in a `for:` row is `list.*.q`); text that reaches the sink through another path (a method that copies it) is not followed.", "ja": "利用者が打った文字がマークアップとしてページに入る: `<b>` は太字になり、`<img src=x onerror=…>` は走る — ポリシーかフィルタが消毒するのでなければ。消毒すれば、打ったものと違うものが表示される。何も言わない。lint は 2 つのパスを state のパスとして比べる（`for:` の行の `.q` は `list.*.q`）。別のパスを通って届く文字（メソッドが写す）は辿らない。" },
+      "disposition": "static-only",
+      "note": { "en": "Found by the counter-assist seam app (a citizen's question shown with `html:`; its Trusted Types policy sanitized it — without one it would have run, docs/seam-apps.md); the author decided on 2026-11-28 to give the lint the rule (docs/v4-direction-2026-10.md §5.29). The fix: bind user text with `textContent:`.", "ja": "継ぎ目アプリ counter-assist（市民の質問を `html:` で表示した。Trusted Types のポリシーが消毒した — 無ければ走っていた。docs/seam-apps.ja.md）が見つけた。2026-11-28 に著者が lint の規則を置くと決めた（docs/v4-direction-2026-10.md §5.29）。直し方: 利用者の文字は `textContent:` で束ねる。" }
+    },
+    {
+      "id": "event-before-binding",
+      "lint": [{ "code": "wcs/event-before-binding", "severity": "warning" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Gives an I/O node that starts on its own its starting input as a literal attribute and listens with `eventToken.`: `<wcs-sse url=\"/api/queue/stream\" data-wcs=\"eventToken.message: queueEvent\">` (also `<wcs-ws url>`, `<wcs-broadcast name>`).", "ja": "自分で始まる I/O ノードに、始める入力をリテラルの属性で与え、`eventToken.` で聞く: `<wcs-sse url=\"/api/queue/stream\" data-wcs=\"eventToken.message: queueEvent\">`（`<wcs-ws url>`・`<wcs-broadcast name>` も）。" },
+      "effect": { "en": "The element connects as soon as its package defines it, before the state's file has loaded and bound the token: its first events — an SSE stream's snapshot — are dispatched to nobody. A call display showed 0 waiting with 8 waiting (Chromium, Firefox), and nothing said so. Give the input from the state (`url: streamUrl`), or bind the output as a property too (`message: lastEvent`).", "ja": "要素はパッケージが定義した時点で接続し、state のファイルが読み込まれてトークンを束ねるより前: 最初のイベント — SSE のスナップショット — は誰にも届かない。呼び出し表示は 8 人待ちで 0 人と出た（Chromium・Firefox）。何も言わない。入力を state から与える（`url: streamUrl`）か、出力をプロパティとしても束ねる（`message: lastEvent`）。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Found by the counter-assist seam app (docs/seam-apps.md); the author decided on 2026-11-28 on a runtime warning (the diagnostics add-on: an event an element dispatched before its `eventToken.` binding was attached) and its static twin under the same code (docs/v4-direction-2026-10.md §5.29). The runtime twin lands in #786.", "ja": "継ぎ目アプリ counter-assist（docs/seam-apps.ja.md）が見つけた。2026-11-28 に著者が、ランタイムの警告（diagnostics の後付け: 要素が `eventToken.` の束縛が付く前に送ったイベント）と、同じ code の静的な対を決めた（docs/v4-direction-2026-10.md §5.29）。ランタイムの対は #786 で入る。" }
     }
   ],
   "uncounted": [

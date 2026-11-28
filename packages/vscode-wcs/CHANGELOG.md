@@ -2,6 +2,17 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+継ぎ目アプリ counter-assist（LLM の回答を `$stream` で流すコンソール・ワーカーでの CSV の取り込み・1 本の SSE を読む呼び出し表示 — 片方のページは `@wcstack/signals`、片方は state）から。作者がわざとした 25 の誤りに lint は何も言わなかった（2026-11-28 の著者の決定 — docs/v4-direction-2026-10.md §5.29）。
+
+- `wcs/stream-declaration`（新規、error）: オブジェクトリテラルで書いた `$stream` のエントリに、`fold` があって `initial` が無い、または `source` が無い。ランタイムは state を取り込むときに拒み（`$stream entry "answer": fold needs an initial value.`）、ページは初期化に失敗する。`initial: undefined` は初期値（ランタイムの `"initial" in def`）。spread・計算されたキーのあるエントリ、名前や呼び出しのエントリ、後に書いた spread が置き換えうるエントリ、ボリューム・`bind-component` の state は見ない。`src=` のファイルの state はそのファイルに報告する。
+- `wcs/html-sink-input`（新規、warning）: HTML の書き込み先（`html:`・`innerHTML:`・`outerHTML:`・`srcdoc:`）に、ページのフォームの部品（文字を打つ `<input>`・`<textarea>`・`<select>`）が双方向の `value:` で書き戻すパスを束ねた。`for:` の中の `.x` は `list.*.x` に読み替えて比べる。書き込み先のフィルタでは黙らない（「フィルタが消毒するのでなければ」と言う）。書き込み先の束縛ごとに 1 回。
+- `wcs/signals-dual-entry`: ページが走らせるローカルの module（とその import 先）の import も数え、URL が運ぶもので判断する — 2 つのエントリ（`.` と `./dom`）で片方がエントリごとに束ねる CDN（esm.run・jsDelivr の `+esm`・esm.sh）から来るか、両方がビルドの違う `dist` のファイル（`.esm.js` と `.esm.min.js`）、または 2 つの版（error）。1 つのビルドのファイルとして配る 2 つのエントリと、import map の与えない裸の名前（バンドラ）は通す。module の中の所見はその module に報告する（CLI はそのファイルの行、IDE はページの読み込みの上）。ページの所見の検査は `packageLoadValidator.ts` に移った。
+- `wcs/lint-version-behind`: ページが走らせるローカルの module の固定も読む。そうした module が `@wcstack/signals` を読み込むか版を固定するページは、CLI の `nothing to check:` に載せない（signals のページが載っていた）。
+- `wcs/event-before-binding`（新規、warning）: リテラルの `url` の `<wcs-sse>` / `<wcs-ws>`、リテラルの `name` の `<wcs-broadcast>` の、`semantics: "event"` の出力への `eventToken.<出力>:`。要素は state を束ねる前に接続し、最初のイベントは失われる。始める属性を束ねる（`url:` / `attr.url:`）・出力をプロパティとしても束ねる（`message:` / spread）・`manual`・`<template>` の中・`<wcs-state>` の無いファイルでは黙る。生成カタログ（`builtinTags.generated.ts`）に `events`（`semantics: "event"` の出力）を足した。
+- `wcs/input-nested-write`: 直し方に 2 つ目を足した — 要素には別のキーを束ねて、保存したいときにそのキーへコピーを代入する（勧めていた getter は下への書き込みのたびに読み直され、`<wcs-storage>` はそのたびに保存する — counter-assist ではトークンごと）。
+
 ## 2.25.0 — 2026-11-28
 
 `@wcstack/state` 4.32.0 から作った（npm の `@wcstack/lint` 4.32.0・`@wcstack/typescript` 4.32.0 と同じ判定）。2026-11-28 の著者の決定（docs/v4-direction-2026-10.md §5.28）から。

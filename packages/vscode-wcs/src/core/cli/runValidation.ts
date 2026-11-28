@@ -16,6 +16,7 @@ import { discoverApplicationManifest, joinRelativeSource, schemaAppliesToPage, s
 import type { ApplicationSchemaEntry } from "../sidecar/loader.js";
 import { JsonSchemaNode, LiveBindableDeclaration } from "../sidecar/types.js";
 import type { FileReader } from "../../service/statePathResolver.js";
+import { loadRulesApply } from "../../service/packageLoadValidator.js";
 
 /** `other`: a framework's component or a script file — not read (see `inputKindOf`). */
 export type InputKind = "html" | "manifest" | "other";
@@ -173,7 +174,13 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   const nothingToCheck: string[] = [];
   for (const input of inputs) {
     if (input.kind !== "html") continue;
-    if (!hasAnythingToCheck(input.text, options.bindAttribute ?? "data-wcs", options.stateTagName ?? "wcs-state")) {
+    // (a page whose local scripts load @wcstack/signals or pin a wcstack version is read by the rules about what a page
+    // loads — wcs/signals-dual-entry, wcs/lint-version-behind: a signals page was listed here, and had a dead clock —
+    // docs/seam-apps.md, counter-assist)
+    if (
+      !hasAnythingToCheck(input.text, options.bindAttribute ?? "data-wcs", options.stateTagName ?? "wcs-state")
+      && !loadRulesApply(input.text, input.fileReader)
+    ) {
       nothingToCheck.push(input.source);
     }
     const explicit = explicitSchemaFor(input, explicitSchemas, options.stateTagName ?? "wcs-state");
