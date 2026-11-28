@@ -56,6 +56,8 @@ schema を再生成し、`--manifest=<path>`（既定 `wcstack.manifest.json`）
 
 exit code: `0` 最新 · `1` 乖離あり（変更は JSON pointer で列挙: `+` 型にだけある / `-` manifest にだけある / `~` 違う） · `2` usage エラー / manifest が無い / その state の `stateSchema` がまだ無い。
 
+`check` が出す行はすべて **stderr** に出ます。結果も同じです: 成功なら `wcstack.manifest.json: state tree is up to date`、乖離なら変更の一覧。stdout には何も出ないので、stdout だけを受け取るスクリプトには、どちらでも何も見えません —— stderr か exit code を読んでください。
+
 4.26 から、`check` は `stateSource` も state ファイル（または `--state-source`）と比べます: 別のファイルを指す manifest は乖離です（`~ stateSource`・exit `1`）。検証器はその schema を、このファイルのページではなく、そのファイルのページに当てるからです — state ファイルを動かしたか名前を変えて、作り直していない。`stateSource` の無い manifest は最新のままで、`check` は注記を添えます。
 
 推奨する CI ゲート:
@@ -95,6 +97,16 @@ npx wcs-tsc --noEmit
 | それ以外 | tsc にそのまま渡す（`-p`・`--noEmit` …） |
 
 tsconfig に要るのは、ページに届くことと ES2015 以降を target にすることだけです。4.26 から、HTML のために `noImplicitThis`・`allowJs`・`checkJs` は要りません（JavaScript ではオブジェクトリテラルの `this` に `noImplicitThis` 無しで型が付き、検査はプラグインが有効にします）。監査もそれらを求めません。インラインの `<wcs-state>` を持つページが tsconfig のディレクトリの下にあり、そのどれも program に無いとき — `include: ["src"]` で、ページが tsconfig の隣にある — 警告はページを名指しします: `wcs-tsc: warning: …/tsconfig.json is missing include: "**/*.html" (no page with an inline <wcs-state> is in the program: counter.html is not) — HTML may not be checked; …`（`warning:` は 4.26 から。CI のログを `error|warning` で絞っても残ります）。警告は exit code を変えません。CI では `--wcs-defaults` を付ければ、それでもページを検査します。完全な検査には `strict`（少なくとも `noImplicitAny`）を有効にしてください: 無いと JavaScript のオブジェクトリテラルは開いた型になり、配列の中のオブジェクトのプロパティの綴りの誤り（`this.items[0].nmae`）は報告されません — `this.coutn` は報告されます。
+
+**自分のファイルに置いた状態**（`<wcs-state src="./state.js">`）はインラインスクリプトではありません: tsc は program の中のほかの JavaScript ファイルと同じに検査し（`allowJs` / `checkJs` で）、`defineState` が無ければオブジェクトリテラルは開いた型です —— `question` を宣言していても `this.questoin = ""` が通ります。`defineState` で包んでください。ビルドの無いページでは URL から import し（`https://cdn.jsdelivr.net/npm/@wcstack/state@<version>/dist/define.js`。ランタイムは持ちません）、tsconfig でその URL をインストールしたパッケージの型に写します —— `paths` は `--url-imports=any` より先に解決されます:
+
+```json
+"paths": {
+  "https://cdn.jsdelivr.net/npm/@wcstack/state@4.32.0/dist/define.js": ["./node_modules/@wcstack/state/dist/define.d.ts"]
+}
+```
+
+これで `this.questoin` は `TS2551: Property 'questoin' does not exist … Did you mean 'question'?` になります（[define-state.ja.md](../state/docs/define-state.ja.md#ビルドの無いページの-state-ファイル)）。
 
 exit code は tsc のもの（`0` クリーン・診断があれば非ゼロ）。`typescript` / `@volar/typescript` が解決できないときと不正なオプションは `2`。1 ページに複数の `<wcs-state>` があれば 1 本の仮想モジュールに合成（import は巻き上げ・各ブロックは自分のスコープ）し、インライン state の無いページは空のモジュールになります。仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当てます。
 

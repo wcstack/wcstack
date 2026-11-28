@@ -6,7 +6,10 @@
 
 ```javascript
 export default {
-  prompt: "",
+  draft: "",     // 入力中の文（入力欄が持つ）
+  prompt: null,  // 尋ねた文 —— stream が読むキー（null: まだ何も尋ねていない）
+
+  ask() { this.prompt = this.draft; },
 
   $stream: {
     tokens: {
@@ -20,12 +23,16 @@ export default {
 ```
 
 ```html
+<input data-wcs="value: draft">
+<button data-wcs="onclick: ask">Ask</button>
 <p data-wcs="textContent: tokens"></p>
 <p data-wcs="textContent: $streamStatus.tokens"></p>
 <p data-wcs="textContent: $streamError.tokens"></p>
 ```
 
 `$stream` は状態オブジェクト上の宣言マップです — `$commandTokens`・`$eventTokens`・`$on` と同じ系統に属します。各エントリは**非同期プロデューサー**（async iterable / async generator / `ReadableStream`）を単一の**リアクティブプロパティ**に接続します。プロデューサーが産出する各チャンクは `fold` を通り、畳み込み結果が `state.tokens` の新しい値になります — 通常の更新サイクルを流れるため、バインディング・computed getter・`$watch`・`$renderedCallback` のすべてが他のプロパティと同じように反応します。
+
+入力欄が書くのは `draft` で、`ask` がそれを `args` の読むキー `prompt` に写します: stream は `args` の読むものが変わるたびに restart するので、入力欄を `prompt` そのものに束ねると、1 文字打つたびに応答が abort され、新しいリクエストが送られます。4.33（未リリース）から、`prompt: null` は何かを尋ねるまで stream を起動させません（[起動と停止](#起動と停止)）。4.32 までは、読み込み時に `source` が `null` で呼ばれます。
 
 `$stream` は `$watch` とともに `temporal` アドオンに属します。`@wcstack/state` と `/auto` には含まれています。`/core` のページは `@wcstack/state/features/temporal` を入れてください。入れずに `$stream` を宣言した状態は `[wcs/feature-not-installed]` で失敗します。概要は README の [Stream](../README.ja.md#streamstream) 節、`$stream`・`$watch`・パス getter の使い分けは [時間を扱う機構の選び方](../README.ja.md#時間を扱う機構の選び方) を参照してください。
 
@@ -66,10 +73,10 @@ export default {
 
 | フィールド | 型 | 必須 | 契約 |
 |---|---|---|---|
-| `source` | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<同>` | ✔ | **`AbortSignal` を必ず尊重すること**（協調キャンセル契約）。restart・破棄はこの signal で駆動されます — signal を無視する source は確実にキャンセルできません。`ReadableStream` はこの契約を自動的に満たします: getReader を持つものは（native に async-iterable でも）常に `getReader()` 経路で消費され（仕様上 `iterator.return()` は pending `next()` の後ろに直列化されるため、parked read を強制解放できるのは `reader.cancel()` のみ）、abort 時に runtime が reader を cancel してストリームの `cancel()` コールバックまで届けます。それ以外の async iterable では、abort 時に runtime が iterator の `return()` を呼びます。signal を無視して `await` で止まっている generator は外から解放できません。プロデューサーの `Promise` を返しても構いません。それ以外の戻り値は `TypeError` となり error 状態に現れます。 |
-| `args` | `(state) => any` | — | **同期・純粋関数**。読み取り専用の state ビューを受け取り、ここで読んだパスすべてが依存として捕捉されます（[依存駆動 restart](#依存駆動-restart) 参照）。省略時は依存なし — 一度起動したら restart しません。戻り値はそのまま `source` の第 1 引数になります（複数値はオブジェクト/配列で束ねる）。`Promise` を返すとエラーです。 |
+| `source` | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<同>` | ✔ | **`AbortSignal` を必ず尊重すること**（協調キャンセル契約）。restart・破棄はこの signal で駆動されます — signal を無視する source は確実にキャンセルできません。`ReadableStream` はこの契約を自動的に満たします: getReader を持つものは（native に async-iterable でも）常に `getReader()` 経路で消費され（仕様上 `iterator.return()` は pending `next()` の後ろに直列化されるため、parked read を強制解放できるのは `reader.cancel()` のみ）、abort 時に runtime が reader を cancel してストリームの `cancel()` コールバックまで届けます。これが効くのは `source` がストリームを返した後です。その前に `source` が待つもの —— 応答がまだ来ていない `fetch` —— を止めるには、`source` が `signal` を渡す必要があります（`fetch(url, { signal })`）。渡さないと、restart や停止の後もそのリクエストは走り続け、サーバーは誰も読まない応答を返します。それ以外の async iterable では、abort 時に runtime が iterator の `return()` を呼びます。signal を無視して `await` で止まっている generator は外から解放できません。プロデューサーの `Promise` を返しても構いません。それ以外の戻り値は `TypeError` となり error 状態に現れます。 |
+| `args` | `(state) => any` | — | **同期・純粋関数**。読み取り専用の state ビューを受け取り、ここで読んだパスすべてが依存として捕捉されます（[依存駆動 restart](#依存駆動-restart) 参照）。省略時は依存なし — 一度起動したら restart しません。戻り値はそのまま `source` の第 1 引数になります（複数値はオブジェクト/配列で束ねる）。`Promise` を返すとエラーです。4.33（未リリース）から、`null` は「実行しない」の意味です: stream は起動せず、実行中なら止まって、畳み込んだ値を保ちます（[起動と停止](#起動と停止)）。`undefined` は他の値と同じく渡されます。`args` が状態から読んだオブジェクト（`state.request`）は、状態自身のオブジェクトのまま `source` に届きます —— proxy でも写しでもありません: 読む・シリアライズする・ワーカーに post する（状態の値は素のデータで、structured clone が写せます）のは構いませんが、その場で書き換えないでください —— 束ねたものに何も知らせずに状態を変えることになります。 |
 | `fold` | `(acc, chunk) => next` | — | **同期関数**。省略時は latest（チャンクで値を置換）。**新しい値を返すこと** — `acc` の in-place 変異は非サポートです（[新しい値を返す](#新しい値を返すin-place-変異の禁止) 参照）。fold が throw すると stream は error 状態になり、プロデューサーは abort されます。 |
-| `initial` | any | fold 指定時 ✔ | 初期値。起動・restart のたびにプロパティの値はこれにリセットされます。 |
+| `initial` | any | fold 指定時 ✔ | 初期値。起動・restart のたびにプロパティの値はこれにリセットされます（`args` が `null` を返して止めたときは値を保ちます —— 4.33（未リリース）から）。 |
 
 ### バリデーション
 
@@ -100,7 +107,7 @@ export default {
 
 宣言を読む時点で、`state[name]` が未定義なら `initial`（fold 無しの場合は `undefined`）を持つ通常のデータプロパティとして実体化されます。これにより、stream が起動する前の初期レンダ — そして SSR 出力 — に `initial` が表示されます。
 
-同名プロパティをユーザー側で先に宣言しても構いません（`defineState` での型付けに有用）が、**stream の起動時に値は `initial` で上書きされます**。起動後のプロパティは stream ランタイムの所有物です: ユーザーコードからの代入は禁止されませんが、動作は未定義です — 次の fold は代入後の値の上に畳みます。
+同名プロパティをユーザー側で先に宣言しても構いません（`defineState` での型付けに有用）が、**stream の起動時に値は `initial` で上書きされます**。起動後のプロパティは stream ランタイムの所有物です: ユーザーコードからの代入は禁止されませんが、動作は未定義です — 次の fold は代入後の値の上に畳みます。4.33（未リリース）から、diagnostics アドオンが stream ごとに 1 回それを言います（`[wcs/stream-value-written]`）。書き込みでは stream も、その裏のリクエストも止まりません: 止めるには `args` が `null` を返すようにしてください。畳み込んだ値は保たれます（[起動と停止](#起動と停止)）。
 
 起動・restart のたびの `initial` へのリセットは通常の書き込みです: 値が変わるとき（`initial` がオブジェクトや配列なら常に）バインディングと値への `$watch` に届きます。
 
@@ -117,7 +124,7 @@ restart を跨いで累積したい場合は、累積値を普通のキーとし
 
 | status | 意味 |
 |---|---|
-| `idle` | 宣言済みだが動いていない（接続前、または切断後） |
+| `idle` | 宣言済みだが動いていない（接続前、または切断後。4.33（未リリース）からは `args` が `null` を返している間も） |
 | `active` | 現在の run がチャンクを消費中 |
 | `done` | プロデューサーが正常終端した |
 | `error` | run が失敗した（source の throw / reject、fold の throw、iterable でない戻り値、または restart 時の `args` の失敗） |
@@ -125,7 +132,7 @@ restart を跨いで累積したい場合は、累積値を普通のキーとし
 セマンティクス:
 
 - **読み取り専用**。どちらの名前空間への代入（two-way binding 経由を含む）も `"$streamStatus.<name>" is read-only (the stream runtime owns it).` を送出します — 代入する値が現在値と同じでも送出します（読み取り専用の検査は same-value ガードより先に行われます）。
-- `$streamError.<name>` は起動・restart のたびに `null` にリセットされます。
+- `$streamError.<name>` は起動・restart のたびに `null` にリセットされます。`args` が `null` になったときも同じです（4.33（未リリース）から）。
 - error 時、**値プロパティは直前の fold 結果を保持**します — リセットされません。`initial` へのリセットは次の（再）起動時です。
 - `$stream` に未宣言の名前の読みは `undefined` です（throw しない。`$command` 名前空間と同じ寛容規約）。
 
@@ -190,6 +197,52 @@ $stream: {
 
 ---
 
+## 起動と停止
+
+4.33（未リリース）から、`args` が `null` を返すことは「実行しない」の意味です:
+
+- `args` が `null` を返している間、stream は起動しません: `$streamStatus.<name>` は `idle` のまま、`source` は呼ばれず、値は `initial` のままです。
+- 後から `args` が `null` になると、実行中の run は abort され、値は**畳み込んだものを保ちます** —— `initial` にはリセットされません。`$streamStatus.<name>` は（`active`・`done`・`error` のどれからでも）`idle` に、`$streamError.<name>` は `null` に戻ります。
+- 次に `null` でない値が返ると、restart と同じく run が始まります: `initial` から、その値で `source` を呼びます。
+- これは `null` だけです: `undefined` は他の値と同じで、`source(undefined, signal)` が呼ばれます。`args` の無いエントリは、これまでどおり一度だけ起動します。
+
+4.32 までは `source` が `null` でも呼ばれます: まだ尋ねることの無い stream は空のストリームを返し（何も尋ねないうちから `done` を読みます）、応答を残したまま止めるには、値を自分のキーに写す `$watch` が要ります。
+
+ですから、利用者が送り、止めることもできるリクエストは、キー 1 つで表せます:
+
+```javascript
+export default {
+  draft: "",
+  request: null,                                   // null: 尋ねることが無い —— stream は idle
+
+  send() { this.request = { question: this.draft }; },
+  stop() { this.request = null; },                 // run を abort する。届いた分の応答は残る
+
+  $stream: {
+    answer: {
+      args:    (state) => state.request,
+      source:  async (request, signal) => {
+        const res = await fetch("/api/answer", { method: "POST", body: JSON.stringify(request), signal });
+        return res.body.pipeThrough(new TextDecoderStream());
+      },
+      fold:    (acc, text) => acc + text,
+      initial: "",
+    },
+  },
+};
+```
+
+```html
+<textarea data-wcs="value: draft"></textarea>
+<button data-wcs="onclick: send">Send</button>
+<button data-wcs="onclick: stop; disabled: $streamStatus.answer|ne(active)">Stop</button>
+<pre data-wcs="textContent: answer"></pre>
+```
+
+`send` は毎回新しいオブジェクトを書くので、同じ質問をもう一度送っても新しい run が始まります（同じ文字列なら same-value ガードで捨てられます）。`stop` の後の `$streamStatus.answer` は `idle` で、止めた応答と終わった応答（`done`）を見分けられます。
+
+---
+
 ## 規範と footgun
 
 ### 有界 fold（MUST）
@@ -223,12 +276,28 @@ fold: (acc, chunk) => { acc.push(chunk); return acc; },
 fold: (acc, chunk) => [...acc.slice(-99), chunk],
 ```
 
+4.33（未リリース）から、fold が累積値を変えたまま返すと —— 長さの変わった配列、size の変わった `Map` / `Set`、エントリの変わったオブジェクト —— diagnostics アドオンが stream ごとに 1 回それを言います（`[wcs/stream-fold-in-place]`）。見るのは最初の 50 チャンクです。チャンクを読み飛ばして累積値を変えずに返すのは言いません。
+
 ### チャンク反映の粒度
 
 - `fold` は**各チャンクに正確に 1 回**適用されます — 取りこぼしも重複もありません。
 - DOM 反映は updater の microtask バッチに従います。async iterator 経由のチャンクは各々別の microtask で届くため、実際には**チャンクごとに 1 drain**（DOM flush 1 回・`$renderedCallback` 1 回）になります。flush レートはチャンク到着レートに有界です。
 - 畳み込んだ値が現在値と同値の primitive のとき — latest fold なら同値の primitive チャンクが続いたとき — は same-value ガードで**丸ごとスキップ**されます: バインディング更新も `$watch` も `$renderedCallback` エントリもありません。
 - **組み込みの間引き機構はありません**。プロデューサーが DOM に対して饒舌すぎる場合は、プロデューサー側・fold 内・または下流の `wcs-debounce` / `wcs-throttle` で間引いてください。
+
+### stream を一覧の行に描く
+
+`for:` は行を参照で見分けます（[ループ](../README.ja.md#ループ-for)）。stream の値から一覧を組み立てる getter —— `get turns() { return [...this.saved, { ...this.live, text: this.answer }]; }` —— は、チャンクのたびに流れている行の新しいオブジェクトを返すので、その行の要素は中身ごと、トークンのたびに壊されて作り直されます（継ぎ目アプリ counter-assist: 91 トークンで 94 行を作り、コンソールには何も出ません）。行は状態の一覧に持ち、stream の値への `$watch` から、その行へパスで書いてください:
+
+```javascript
+$watch: {
+  answer(text) {
+    this[`turns.${this.turns.length - 1}.tail`] = text;   // パスで書く: 行は要素を保つ
+  },
+},
+```
+
+getter には `$listKeys` も効きません: `$listKeys` が行を保つのはそのパスに配列が代入されたときで、getter の一覧は代入されないからです（4.33（未リリース）から、list-keys アドオンがそれを言います: `[wcs/list-keys-getter]`）。
 
 ---
 
@@ -242,7 +311,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
                                            └──依存変化──▶ (abort → リセット → 再起動) active
 ```
 
-- **eager 起動** — stream は `<wcs-state>` 要素の接続時、`$connectedCallback` の**完了後**に起動します（`args` がそこで仕込んだ初期値を読めるように）。lazy モードはありません。
+- **eager 起動** — stream は `<wcs-state>` 要素の接続時、`$connectedCallback` の**完了後**に起動します（`args` がそこで仕込んだ初期値を読めるように）。まだすることの無い stream は起動しません: 4.33（未リリース）から、`args` が `null` を返すエントリは、別の値を返すまで `idle` のままで、もう一度 `null` にすると畳み込んだ値を保って止まります（[起動と停止](#起動と停止)）。
 - **切断** — 全 stream が abort され、status は `idle` に戻ります。宣言は保持されます。
 - **再接続** — `$connectedCallback` が再び実行された後、stream は **`initial` から**再起動します。「切断前の続きから」はありません。
 - **状態オブジェクトの再セット**（初期化済みの要素への `setInitialState()`）— 旧 run は abort され、新しい状態には何も書き込まずに止まります。新しい宣言が読まれ、すべてのバインディングが新しい状態に適用し直され（新しい宣言に無くなった stream へのバインディングは `undefined` を読みます）、その後（接続中なら）新しい stream が起動します。二重起動はありません。
@@ -257,6 +326,19 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 
 ---
 
+## コンソールが言うこと
+
+stream の失敗が届くのは `$streamError.<name>` だけで、それも `$streamStatus.<name>` も見せないページは、何も言わずに失敗していました。4.33（未リリース）から、`diagnostics` アドオン（`@wcstack/state` と `/auto` に含まれる）が stream ごとに 1 回警告します:
+
+- `[wcs/stream-error-unobserved]` — stream が失敗し、`$streamError.<name>` も `$streamStatus.<name>` も、どのバインディングも getter も読んでいない。ページを離れる間は言いません。
+- `[wcs/stream-source-shape]` — `source` が async iterable も `ReadableStream` も返さなかった: `Response`（その `body` を返す）、`undefined`（`return` の書き忘れ）。失敗を読んでいても言います: どの run もすぐに失敗するからです。
+- `[wcs/stream-fold-in-place]` — fold が累積値をその場で変えて返した（[新しい値を返す](#新しい値を返すin-place-変異の禁止)）。
+- `[wcs/stream-value-written]` — ページが実行中の stream の値を書いた（[値プロパティ](#値プロパティ)）。
+
+README の [Stream](../README.ja.md#streamstream) 節に、ほかの規範と並べて載せています。
+
+---
+
 ## スコープ外（第 1 段）
 
 以下は明示的に非サポートです:
@@ -265,7 +347,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 2. async な `fold`。
 3. Observable（`subscribe` 型）source — async iterable への変換はユーザー責務。
 4. 自動再接続 — 再試行 = 依存の叩き直し。
-5. lazy 起動（将来の `lazy: true` オプションの余地のみ予約。未実装）。
+5. `lazy` オプション。まだすることの無い stream は、代わりに `args` から `null` を返します（4.33（未リリース）から。[起動と停止](#起動と停止)）。
 6. バインディング / 構造ブロック単位の stream 生存期間 — stream は `<wcs-state>` 要素の接続状態とともに生き、死にます。
 7. backpressure の保持（第 1 段の欠落ではなく恒久的な非目標）。
 
@@ -275,11 +357,14 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 
 ### LLM トークンの累積
 
-有限のトークンストリームを文字列に累積します。プロンプトを編集すると進行中の応答が abort され、新しい応答が始まります。
+有限のトークンストリームを文字列に累積します。入力欄が書くのは `draft` で、**Ask** がそれを `args` の読むキー `prompt` に写すので、次の質問を打っても応答には触りません —— 入力欄を `prompt` そのものに束ねると、1 文字ごとに応答を abort してリクエストを送ります。
 
 ```javascript
 export default {
-  prompt: "",
+  draft: "",
+  prompt: null,   // null: まだ何も尋ねていない。実行しない（4.33（未リリース）から）
+
+  ask() { this.prompt = this.draft; },
 
   $stream: {
     answer: {
@@ -297,8 +382,8 @@ export default {
 ```
 
 ```html
-<input type="text" data-wcs="value: prompt">
-<button data-wcs="disabled: isStreaming">Ask</button>
+<input type="text" data-wcs="value: draft">
+<button data-wcs="onclick: ask; disabled: isStreaming">Ask</button>
 <pre data-wcs="textContent: answer"></pre>
 <p data-wcs="textContent: $streamError.answer"></p>
 ```
@@ -324,7 +409,7 @@ export default {
 
 ### fetch レスポンスボディのストリーミング
 
-`response.body` は `ReadableStream` です。`TextDecoderStream` を通すとテキストチャンクになります。`signal` を `fetch` に渡すことでキャンセルが協調的になります — `url` を変更するとボディ受信中でもリクエストが abort され、新しいリクエストが始まります。
+`response.body` は `ReadableStream` です。`TextDecoderStream` を通すとテキストチャンクになります。`signal` を `fetch` に渡すことでキャンセルが協調的になります — `url` を変更するとボディ受信中でもリクエストが abort され、新しいリクエストが始まります。渡さなくても、読み始めたボディは cancel されますが、応答が届く前の restart では古いリクエストが走り続けます。
 
 ```javascript
 export default {
@@ -359,11 +444,11 @@ export default {
 |---|---|
 | `$stream` | 宣言マップ: 非同期プロデューサー → fold → リアクティブプロパティ（`temporal` アドオン） |
 | `source(args, signal)` | プロデューサーを返す。`AbortSignal` の尊重は MUST |
-| `args(state)` | 同期の依存捕捉。ここでの読みが restart を駆動する |
+| `args(state)` | 同期の依存捕捉。ここでの読みが restart を駆動する。`null` = 実行しない（4.33（未リリース）から） |
 | `fold(acc, chunk)` | 同期・新しい値を返す。既定は latest |
 | `initial` | シード値。（再）起動のたびに値はこれにリセット |
 | `$streamStatus.<name>` | `idle` / `active` / `done` / `error` — 読み取り専用 |
 | `$streamError.<name>` | 直近のエラーまたは `null`。（再）起動で `null` にリセット |
 | restart | 依存変化 → abort → `initial` リセット → 新 run（switchMap）。abort された run のチャンク・終端・エラーは捨てられる |
 | 有界 fold | 無限ストリームでは MUST — backpressure は保持されない |
-| ライフサイクル | `$connectedCallback` 後に eager 起動 / 切断で abort / 再接続は `initial` から / SSR では起動しない / ルートの状態でだけ動く |
+| ライフサイクル | `$connectedCallback` 後に eager 起動（`args` が `null` を返す間は起動しない） / 切断で abort / 再接続は `initial` から / SSR では起動しない / ルートの状態でだけ動く |

@@ -95,6 +95,8 @@ post は DOM クリック（autoTrigger）または command-token から起動�
 <p data-wcs="textContent: count"></p>
 ```
 
+リテラルの `name="counter"` は、要素が接続したときにチャンネルに入ります —— `@wcstack/state` がページを束縛する前、たとえば `<wcs-state src>` のファイルが読み込まれる前です。その間に別のタブが post したメッセージは `eventToken.message` が付く前に出され、`onMessage` には届きません。それが困るときは、名前を状態から渡すか（`data-wcs="name: channelName; …"`。チャンネルはページが束縛されてから開きます）、`message:` をプロパティとしても束ねてください（要素が持っている最後のメッセージは受け取れますが、それより前のものは失われたままです）。4.33（未リリース）から、`@wcstack/state` の diagnostics アドオンが、ページを束縛した時点でそういうメッセージを持っていた要素を名指しし（`[wcs/event-before-binding]`）、`@wcstack/lint` が `eventToken.message` と並ぶリテラルの `name` を同じ code で警告します（`manual` があるとき、`message` もプロパティとして束ねているときは言いません）。[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §31 を参照してください。
+
 ### 3. 受信した値を state にミラーする
 
 最新のメッセージを*読む*だけなら event-token は不要です — `message` を直接バインドしてください。

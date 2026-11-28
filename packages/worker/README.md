@@ -34,7 +34,7 @@ A Worker is, like `fetch` or `WebSocket`, an asynchronous source of values — b
 
 > **Bus-style, not RPC.** `post` is fire-and-forget and results arrive on `message`; there is no built-in request/response correlation. If you need to match a reply to a specific request, include a correlation id in your payload and have the worker echo it back (or await `message` for the next value when only one request is in flight).
 
-> **Structured clone, no JSON round-trip.** Payloads ride the browser's structured clone (symmetrical with `@wcstack/broadcast`, deliberately unlike `<wcs-ws>` which sends over a text wire). Post objects directly; the worker receives a copy. A non-cloneable payload (a function, a DOM node, a framework's reactive proxy) surfaces a `DataCloneError` through the `error` property rather than throwing, and since 4.6 the element warns once (`[wcs/post-uncloneable]`). Vue's `toRaw()` unwraps one level only — a list of rows built with `filter` or a spread still holds proxies — so post a deep plain copy (`JSON.parse(JSON.stringify(value))`).
+> **Structured clone, no JSON round-trip.** Payloads ride the browser's structured clone (symmetrical with `@wcstack/broadcast`, deliberately unlike `<wcs-ws>` which sends over a text wire). Post objects directly; the worker receives a copy. A non-cloneable payload (a function, a DOM node, a framework's reactive proxy) surfaces a `DataCloneError` through the `error` property rather than throwing, and since 4.6 the element warns once (`[wcs/post-uncloneable]`). Vue's `toRaw()` unwraps one level only — a list of rows built with `filter` or a spread still holds proxies — so post a deep plain copy (`JSON.parse(JSON.stringify(value))`). `@wcstack/state`'s values are plain data, not proxies: post them as they are (`this.$command.run.emit(this.items)`), and the worker gets a copy.
 
 > **ESM by default.** The worker is created with `{ type: "module" }` unless you set `type="classic"`.
 
@@ -100,6 +100,30 @@ The duality in one element: `post` is wired from a command-token, and an incomin
 
 <button data-wcs="onclick: compute">Compute</button>
 <p data-wcs="textContent: output"></p>
+```
+
+### 3. A large file: post the `File`, get a summary back
+
+Hand the worker the work, not the data the work makes (the counter-assist seam app's CSV import, 300,000 rows):
+
+- **Post the `File` itself.** A `File` (or `Blob`) is structured-cloned as a handle to the same bytes: nothing is read on the page. Reading it there first (`file.text()`) decodes it as UTF-8 on the main thread — a Shift_JIS CSV no longer matched its header — and copies the whole text into the message: a 245 ms long task for 30 MB, and typing lagged meanwhile. The worker reads it with `file.stream()` and the decoder it chooses (`new TextDecoderStream("shift_jis")`).
+- **Report progress in steps, not per row.** Each message is a task on the page. One per row flooded its queue: the read took 2.9 s instead of 1.1 s, and a cancel posted meanwhile was not handled within a minute. Post every few thousand rows, or every 100 ms.
+- **Return a summary and a bounded sample, not every parsed row.** Rows posted back are copied into the page's heap and kept by the state: all of them took the page from 3.6 MB to 102.6 MB, with a 124 ms long task when the message arrived. Return counts, the first errors and the rows the page shows; send the rest where it goes from the worker (a batch `fetch` there).
+
+```javascript
+// in the state ($commandTokens: ["parse"], $eventTokens: ["onWorker"])
+pick(event) {
+  this.jobId += 1;
+  this.$command.parse.emit({ id: this.jobId, file: event.target.files[0] });   // the File, not its text
+},
+$on: {
+  onWorker(state, event) {
+    const m = event.detail;
+    if (m.id !== state.jobId) return;                      // a reply about an earlier file
+    if (m.type === "progress") state.progress = m.rows;    // every 5,000 rows
+    else state.summary = m;                                // { rows, errors: the first 100, … }
+  },
+},
 ```
 
 ## Attributes / Inputs

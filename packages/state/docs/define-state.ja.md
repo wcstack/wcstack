@@ -47,6 +47,42 @@ export default defineState({
 });
 ```
 
+bare specifier `@wcstack/state/define` を解決するのはバンドラか import map です。どちらも無いページは、下の URL の形を使います。
+
+### ビルドの無いページの state ファイル
+
+ビルドの無いページの `<wcs-state src="./state.js">` のファイルでは、`@wcstack/state/define` を解決できるのは import map だけで、厳しい CSP のページではインラインの import map にハッシュか nonce が要ります。代わりに `defineState` をファイルの URL から import し —— `define.js` はランタイムを持ちません —— tsconfig の `paths` で同じ URL をインストールしたパッケージの型に写します:
+
+```javascript
+// public/state.js
+import { defineState } from "https://cdn.jsdelivr.net/npm/@wcstack/state@4.32.0/dist/define.js";
+
+export default defineState({
+  question: "",
+  clear() {
+    this.questoin = "";   // TS2551: Property 'questoin' does not exist … Did you mean 'question'?
+  },
+});
+```
+
+```json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "paths": {
+      "https://cdn.jsdelivr.net/npm/@wcstack/state@4.32.0/dist/define.js": ["./node_modules/@wcstack/state/dist/define.d.ts"]
+    }
+  },
+  "include": ["public/**/*.js"]
+}
+```
+
+インストールするのは URL に固定したのと同じ版です（`npm install -D @wcstack/state@4.32.0 typescript`）。これで `tsc --noEmit` —— または [`wcs-tsc`](../../typescript/README.ja.md)。ページのインラインスクリプトも検査し、この URL は `paths` で解決したままです —— がファイルの `this` に型を付けます。import が無ければ、コンパイラにとってファイルはただの JavaScript です: オブジェクトリテラルは開いていて、`this.questoin = ""` が通ります。
+
 ### HTML インラインスクリプト
 
 ```html
@@ -278,15 +314,16 @@ import { defineState } from '@wcstack/state/define';
 declare function llmStream(prompt: string, signal: AbortSignal): AsyncIterable<string>;
 
 export default defineState({
-  prompt: "",
-  answer: "",  // ランタイムでは stream の所有物。先に宣言しておくと `this.answer` に型が付く
+  draft: "",
+  prompt: null as string | null,  // null: まだ何も尋ねていない —— 実行しない（4.33（未リリース）から）
+  answer: "",  // ランタイムでは stream の所有物。先に宣言しておくと `this.answer` が string 型になる
+
+  ask() { this.prompt = this.draft; },
 
   $stream: {
     answer: {
-      // `$stream` のコールバックにはまだ文脈型が付かない（宣言マップの型付けは
-      // 後続課題）ため、引数の型は明示的に注釈する。
-      args:    (state: { prompt: string }) => state.prompt,  // ここで読んだパスが restart を駆動する
-      source:  (prompt: string, signal: AbortSignal) => llmStream(prompt, signal),
+      args:    (state) => state.prompt,                          // ここで読んだパスが restart を駆動する
+      source:  (prompt: string, signal) => llmStream(prompt, signal),
       fold:    (acc: string, token: string) => acc + token,
       initial: "",
     },
@@ -295,6 +332,14 @@ export default defineState({
 ```
 
 stream は `$connectedCallback` の後に起動し、各チャンクを `this.answer` に畳み込み、`args` 内で読んだパスが変化するたびに restart（abort → `initial` リセット → 新 run）します。ランタイム状態は読み取り専用のコンパニオンパス `$streamStatus.answer` / `$streamError.answer` として公開されます。
+
+4.33（未リリース）から、`defineState` は宣言に型を付けます:
+
+- **エントリの関数。** `args` は state を受け取り、その型は `$on` ハンドラの `state` と同じです。`source` は第 2 引数に `AbortSignal` を受け取り、第 1 引数 —— `args` の戻り値 —— は `any`、`fold` の引数も `any` です: 狭めるには注釈してください。`strict` の下でも、注釈の要る引数はありません。`source` は必須です。
+- **`this` の上の値。** stream の値はその名前で `this` から読めます。型は `any`、または状態が同じ名前で宣言したプロパティの型です（上の `answer: ""`）。宣言した値は、stream の起動時に `initial` で上書きされます。
+- **コンパニオン。** `this.$streamStatus` / `this.$streamError` と、ドット形の `this["$streamStatus.answer"]` / `this["$streamError.answer"]` は、`$stream` に宣言した名前だけを取ります: 宣言していない名前は型エラーです。status は `"idle" | "active" | "done" | "error"`、error は `unknown` です。`WcsStateApi` は stream の名前を第 2 型引数（既定は `string`）に取る型エイリアスになり、`interface` の宣言とは併合できません。
+
+4.32 までは、エントリの関数に文脈型が無く（`strict` の下ではどの引数にも注釈が要りました）、状態が `answer` を宣言していなければ `this.answer` は型エラーで、コンパニオンはどんな名前でも取りました。
 
 完全な契約 — 協調キャンセル・有界 fold 規範・バリデーション・ライフサイクル — は [Streams](./streams.ja.md) を参照してください。
 

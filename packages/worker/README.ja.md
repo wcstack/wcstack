@@ -34,7 +34,7 @@ Worker は `fetch` や `WebSocket` と同様、値を非同期に生み出すソ
 
 > **バス型であって RPC ではない。** `post` は fire-and-forget で、結果は `message` に届きます。リクエスト/レスポンスの組み込みの相関付けはありません。返信を特定のリクエストに対応付けたい場合は、ペイロードに相関 id を含めて worker にエコーバックさせてください（あるいは、リクエストが 1 つだけ進行中なら次の値を `message` で待ってください）。
 
-> **structured clone、JSON の往復は無い。** ペイロードはブラウザの structured clone に乗ります（`@wcstack/broadcast` と対称であり、テキストワイヤで送る `<wcs-ws>` とは意図的に異なります）。オブジェクトを直接 post すると、worker はコピーを受け取ります。クローン不可能なペイロード（関数、DOM ノード、フレームワークのリアクティブなプロキシ）は throw せず `error` プロパティを通じて `DataCloneError` を表面化し、4.6 から要素が 1 回警告します（`[wcs/post-uncloneable]`）。Vue の `toRaw()` は 1 段しか剥がさない — `filter` やスプレッドで作った行の一覧はまだプロキシを持つ — ので、深い素の写し（`JSON.parse(JSON.stringify(value))`）を post してください。
+> **structured clone、JSON の往復は無い。** ペイロードはブラウザの structured clone に乗ります（`@wcstack/broadcast` と対称であり、テキストワイヤで送る `<wcs-ws>` とは意図的に異なります）。オブジェクトを直接 post すると、worker はコピーを受け取ります。クローン不可能なペイロード（関数、DOM ノード、フレームワークのリアクティブなプロキシ）は throw せず `error` プロパティを通じて `DataCloneError` を表面化し、4.6 から要素が 1 回警告します（`[wcs/post-uncloneable]`）。Vue の `toRaw()` は 1 段しか剥がさない — `filter` やスプレッドで作った行の一覧はまだプロキシを持つ — ので、深い素の写し（`JSON.parse(JSON.stringify(value))`）を post してください。`@wcstack/state` の値はプロキシではなく素のデータです: そのまま post すれば（`this.$command.run.emit(this.items)`）、worker はコピーを受け取ります。
 
 > **既定で ESM。** worker は `type="classic"` を設定しない限り `{ type: "module" }` で作成されます。
 
@@ -100,6 +100,30 @@ npm install @wcstack/worker
 
 <button data-wcs="onclick: compute">Compute</button>
 <p data-wcs="textContent: output"></p>
+```
+
+### 3. 大きなファイル: `File` を post し、要約を受け取る
+
+worker に渡すのは仕事で、仕事が作るデータではありません（継ぎ目アプリ counter-assist の CSV 取り込み、30 万行）:
+
+- **`File` そのものを post する。** `File`（や `Blob`）は、同じバイト列への参照として structured clone されます: ページでは何も読みません。先にページで読むと（`file.text()`）、メインスレッドで UTF-8 として復号され —— Shift_JIS の CSV は見出し行が合わなくなりました —— テキスト全体がメッセージに写されます: 30 MB で 245 ms のロングタスクになり、その間は入力が遅れました。worker は `file.stream()` と、自分で選んだデコーダ（`new TextDecoderStream("shift_jis")`）で読みます。
+- **進み具合は行ごとではなく区切って知らせる。** メッセージ 1 つがページのタスク 1 つです。行ごとに送るとページのキューがあふれました: 読み込みは 1.1 秒ではなく 2.9 秒かかり、その間に送った中止は 1 分たっても処理されませんでした。数千行ごとか、100 ms ごとに送ってください。
+- **返すのは要約と上限のある見本で、解析した行すべてではない。** 送り返した行はページのヒープに写され、状態が持ち続けます: 全行で、ページは 3.6 MB から 102.6 MB になり、メッセージが届いたときに 124 ms のロングタスクがありました。返すのは件数、最初のいくつかのエラー、ページが見せる行です。残りは worker から行き先へ送ってください（worker の中でまとめて `fetch`）。
+
+```javascript
+// 状態の中（$commandTokens: ["parse"], $eventTokens: ["onWorker"]）
+pick(event) {
+  this.jobId += 1;
+  this.$command.parse.emit({ id: this.jobId, file: event.target.files[0] });   // File そのもの。テキストではない
+},
+$on: {
+  onWorker(state, event) {
+    const m = event.detail;
+    if (m.id !== state.jobId) return;                      // 前のファイルについての返信
+    if (m.type === "progress") state.progress = m.rows;    // 5,000 行ごと
+    else state.summary = m;                                // { rows, errors: 最初の 100 件, … }
+  },
+},
 ```
 
 ## 属性 / 入力（Attributes / Inputs）

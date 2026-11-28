@@ -47,6 +47,42 @@ export default defineState({
 });
 ```
 
+The bare specifier `@wcstack/state/define` resolves under a bundler or an import map; a page without either uses the URL form below.
+
+### A state file on a buildless page
+
+A `<wcs-state src="./state.js">` file on a page with no build has nothing to resolve `@wcstack/state/define` but an import map, and an inline import map needs a CSP hash or nonce on a strict page. Import `defineState` from its file URL instead — `define.js` has no runtime — and map the same URL to the installed package's types with a tsconfig `paths` entry:
+
+```javascript
+// public/state.js
+import { defineState } from "https://cdn.jsdelivr.net/npm/@wcstack/state@4.32.0/dist/define.js";
+
+export default defineState({
+  question: "",
+  clear() {
+    this.questoin = "";   // TS2551: Property 'questoin' does not exist … Did you mean 'question'?
+  },
+});
+```
+
+```json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "paths": {
+      "https://cdn.jsdelivr.net/npm/@wcstack/state@4.32.0/dist/define.js": ["./node_modules/@wcstack/state/dist/define.d.ts"]
+    }
+  },
+  "include": ["public/**/*.js"]
+}
+```
+
+Install the same version you pin in the URL (`npm install -D @wcstack/state@4.32.0 typescript`). `tsc --noEmit` — or [`wcs-tsc`](../../typescript/README.md), which checks the pages' inline scripts too and still resolves this URL through `paths` — then types `this` in the file. Without the import the file is plain JavaScript to the compiler: its object literal is open, and `this.questoin = ""` passes.
+
 ### HTML Inline Script
 
 ```html
@@ -279,15 +315,16 @@ import { defineState } from '@wcstack/state/define';
 declare function llmStream(prompt: string, signal: AbortSignal): AsyncIterable<string>;
 
 export default defineState({
-  prompt: "",
-  answer: "",  // owned by the stream at runtime; pre-declaring it types `this.answer`
+  draft: "",
+  prompt: null as string | null,  // null: nothing asked yet — no run (since 4.33 (not released yet))
+  answer: "",  // owned by the stream at runtime; pre-declaring it types `this.answer` as a string
+
+  ask() { this.prompt = this.draft; },
 
   $stream: {
     answer: {
-      // `$stream` callbacks get no contextual type yet (typing the declaration
-      // map is a planned follow-up), so annotate the parameters explicitly.
-      args:    (state: { prompt: string }) => state.prompt,  // paths read here drive restart
-      source:  (prompt: string, signal: AbortSignal) => llmStream(prompt, signal),
+      args:    (state) => state.prompt,                          // paths read here drive restart
+      source:  (prompt: string, signal) => llmStream(prompt, signal),
       fold:    (acc: string, token: string) => acc + token,
       initial: "",
     },
@@ -296,6 +333,14 @@ export default defineState({
 ```
 
 The stream starts after `$connectedCallback`, folds each chunk into `this.answer`, and restarts (abort → reset to `initial` → new run) whenever a path read in `args` changes. Runtime state is exposed through the read-only companion paths `$streamStatus.answer` / `$streamError.answer`.
+
+Since 4.33 (not released yet), `defineState` types the declaration:
+
+- **The entry's functions.** `args` gets the state, typed like a `$on` handler's `state`; `source` gets an `AbortSignal` as its second argument, and its first — what `args` returned — is `any`, as are `fold`'s: annotate them to narrow. No parameter needs an annotation under `strict`. `source` is required.
+- **The value on `this`.** A stream's value is read from `this` under its name, typed `any`, or the type of a property the state declares under the same name (`answer: ""` above). The declared value is overwritten with `initial` when the stream starts.
+- **The companions.** `this.$streamStatus` / `this.$streamError`, and the dotted forms `this["$streamStatus.answer"]` / `this["$streamError.answer"]`, take only the names declared in `$stream`: an undeclared name is a type error. A status is `"idle" | "active" | "done" | "error"`, an error `unknown`. `WcsStateApi` takes the stream names as its second type argument (default `string`) and is a type alias, so it cannot be merged with an `interface` declaration.
+
+Up to 4.32 the entry's functions had no contextual type (every parameter needed an annotation under `strict`), `this.answer` was a type error unless the state declared `answer`, and the companions took any name.
 
 See [Streams](./streams.md) for the full contract — cooperative cancellation, the bounded-fold rule, validation, and lifecycle.
 

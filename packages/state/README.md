@@ -928,6 +928,7 @@ Notes:
 - **Fields dropped from a row are cleared with `null`**, which is this package's vocabulary for an explicit clear (`undefined` means "the state has no opinion" and skips the write).
 - A field whose name is not one path segment (`@odata.etag`, `2fa`, `a.b`), or that has the name of a row getter, is copied into the kept row as it is, and the row is updated as a whole. A `__proto__` key from JSON is not copied.
 - The stored array is rebuilt from matched row objects, so `this.items !== theArrayYouAssigned` afterwards.
+- **Name the path the list is assigned to, not a getter.** Rows are kept when an array is assigned to the path, and a getter's list is never assigned, so `$listKeys` on a getter does nothing — a getter that returns a new object for a row on every change rebuilds that row's element every time, keys or not. Since 4.33 (not released yet), the list-keys add-on says so when the declaration is received (`[wcs/list-keys-getter]`); up to 4.32 nothing did. Name the list the getter reads, or keep the rows in a list of the state and write a changing field by path (`this["turns.3.tail"] = text`).
 - `$listKeys` is the `list-keys` add-on: the full entries include it; a `/core` page installs `@wcstack/state/features/list-keys`. A mounted component's `$listKeys` keys its own lists; a volume may not declare one.
 
 #### Dot Shorthand
@@ -2617,6 +2618,8 @@ Validation rules:
 - `<tokenName>` must be declared in `$eventTokens` — checked at **fire time**: the token is looked up when the event fires, so a re-set state's `$on` handlers receive it. An undeclared name is reported with `console.error` (`[wcs/token-undeclared]`, with a did-you-mean).
 - Modifiers `#prevent` / `#stop` work as on any event binding: `eventToken.error#prevent: createFailed`.
 
+**An event dispatched before the binding is lost.** The listener is attached when `@wcstack/state` binds the page, and the I/O nodes are usually defined first. An element that starts from a literal attribute — `<wcs-sse url="/events">`, `<wcs-ws url="…">`, `<wcs-broadcast name="…">` in the markup — connects before a `<wcs-state src>` file has loaded, and the events it dispatches in that window (the snapshot an SSE stream sends first) never reach `$on` (the counter-assist seam app showed 0 people waiting with 8 waiting). Give the element what starts it from the state (`data-wcs="url: streamUrl; eventToken.message: queueEvent"`), so it starts once the page is bound, or bind the output as a property too (`message: lastEvent` — an output seeds the state from what the element holds). Since 4.33 (not released yet), the `diagnostics` add-on names such an element once per tag and output (`[wcs/event-before-binding]`): one whose `eventToken.<output>` names an occurrence (`semantics: "event"`) it already holds when its root is about to be bound. `@wcstack/lint` reports the markup under the same code. See [the timing contract](../../docs/timing-and-firing-contract.md) §31.
+
 ### Inside a Loop
 
 When the emitter sits inside a `for` block, the enclosing loop indexes are appended after the event, exactly like an `on*` handler:
@@ -2671,7 +2674,7 @@ Two rules cut most of the confusion:
 
 ## Streams (`$stream`)
 
-Command tokens and event tokens carry discrete interactions. **`$stream`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$renderedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects. `$stream` is the `temporal` add-on (in the full entries). The 3.x name `$streams` throws `[wcs/declaration-alias] $streams was removed: write $stream.` (`#1601`) where the `diagnostics` add-on is installed (`@wcstack/state`, `/auto`); without it the declaration is ignored.
+Command tokens and event tokens carry discrete interactions. **`$stream`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$renderedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects. Since 4.33 (not released yet), `args` returning `null` asks for no run: the stream waits `idle` and `source` is not called, and a running one stops and keeps what it folded — the next value that is not `null` starts it from `initial` ([Starting and Stopping](docs/streams.md#starting-and-stopping)). `$stream` is the `temporal` add-on (in the full entries). The 3.x name `$streams` throws `[wcs/declaration-alias] $streams was removed: write $stream.` (`#1601`) where the `diagnostics` add-on is installed (`@wcstack/state`, `/auto`); without it the declaration is ignored.
 
 `$renderedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
 
@@ -2703,7 +2706,7 @@ Command tokens and event tokens carry discrete interactions. **`$stream`** cover
 | Field | Required | Contract |
 |---|---|---|
 | `source` | ✔ | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<same>`. **Must honor the `AbortSignal`** — restart and disposal are driven by it |
-| `args` | — | Synchronous pure function over a readonly state proxy. Paths read here are captured as dependencies; omitted = start once, never restart |
+| `args` | — | Synchronous pure function over a readonly state proxy. Paths read here are captured as dependencies; omitted = start once, never restart. Since 4.33 (not released yet), `null` = no run. Bind an input to a draft key, not to what `args` reads: every change restarts the stream |
 | `fold` | — | Synchronous `(acc, chunk) => next`. Omitted = latest (replace with the chunk). Must return a new value — no in-place mutation of `acc` |
 | `initial` | with `fold` ✔ | Seed value. The property resets to it on every (re)start |
 
@@ -2742,12 +2745,13 @@ Hand-rolled async generators remain fully supported when you need producer-side 
 
 Key rules:
 
-- **Cooperative cancellation (MUST)** — `source` must observe the passed `AbortSignal` and stop producing when it fires. A `ReadableStream` source satisfies this automatically through its `cancel()` callback (the runtime cancels the reader on abort); only hand-rolled async iterables need to observe `signal` themselves.
+- **Cooperative cancellation (MUST)** — `source` must observe the passed `AbortSignal` and stop producing when it fires. A `ReadableStream` source satisfies this automatically through its `cancel()` callback (the runtime cancels the reader on abort); only hand-rolled async iterables need to observe `signal` themselves. That covers the stream once returned: a `fetch` the source awaits before it is stopped only when the source passes `signal` to it (`fetch(url, { signal })`).
 - **Bounded fold** — demand never flows back to the producer (backpressure is deliberately abandoned). For infinite / long-lived streams use a bounded fold — latest, count, last-N (`(acc, chunk) => [...acc.slice(-99), chunk]`), windowed aggregates. Raw accumulation of every chunk is for finite streams only.
 - **`args` is synchronous** — returning a Promise is an error, and wildcard reads inside `args` are rejected.
 - **No self-dependency, no mutual cycles** — `args` reading the stream's own value or status raises an error. Mutual cycles between two streams (A's `args` reads B's value and vice versa) are not refused at declaration: when the sources yield in the task their run started in, the chain limit cuts the cycle (see [Watch](#watch-watch)); when the values arrive in later tasks (a network response, a message), each lap starts afresh and the cycle restarts forever — do not build them. One-way chains (A's value feeding B's `args`) are legitimate.
 - **The runtime owns the property** — an entry name that collides with a getter, a setter or a method declared on the state raises at declaration. (Without that check the method would be silently overwritten by the start-time reset to `initial`.)
 - **SSR does not start streams** — on the server the declaration is parsed and the property is materialized with `initial`, but no source runs; the client starts streams as usual.
+- **What a stream did that nothing showed is reported.** A failure reaches `$streamError.<name>` only, and up to 4.32 the console said nothing. Since 4.33 (not released yet), the `diagnostics` add-on warns once per stream: `[wcs/stream-error-unobserved]` — it failed, and no binding or getter reads `$streamError.<name>` or `$streamStatus.<name>` (not while the page is going away; bind `textContent: $streamError.<name>` and show it); `[wcs/stream-source-shape]` — `source` returned neither an async iterable nor a `ReadableStream` (a `Response`: return its `body`; `undefined`: a missing `return`), said even when the failure is read, since every run fails at once; `[wcs/stream-fold-in-place]` — the fold changed its accumulator in place and returned it (an array whose length changed, a `Map` / `Set` whose size changed, an object whose entries changed; looked at over the first 50 chunks); `[wcs/stream-value-written]` — the page wrote a running stream's value: the stream goes on, its next chunk folds on top, and the request behind it keeps running — to stop it, make `args` return `null`.
 
 See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.
 
@@ -3761,6 +3765,10 @@ export default defineState({
 ```
 
 `@wcstack/state` and `/core` export `defineState` too, but a bundler cannot drop the engine from those entries: a state file that imports `defineState` from `@wcstack/state` keeps the whole engine (about 21 KB gzip) in its bundle. That is harmless where the bundle runs the engine anyway, and wasteful where the state file is bundled on its own (the runtime loaded from a CDN, a type-check or test build) — so prefer `/define`.
+
+Since 4.33 (not released yet), `defineState` knows `$stream`: a stream's value is read from `this` (typed `any`, or the type of a property the state declares under the same name), `$streamStatus` / `$streamError` take only the declared names (`this["$streamStatus.answer"]` too), and an entry's functions get their arguments' types (`args`' state, `source`'s `AbortSignal`); `source` is required. Up to 4.32, `this.answer` was a type error.
+
+A state in a file of its own on a buildless page imports `defineState` from its URL (`https://cdn.jsdelivr.net/npm/@wcstack/state@<version>/dist/define.js`, no runtime); a tsconfig `paths` entry maps that URL to the installed package's types — see [define-state.md](docs/define-state.md#a-state-file-on-a-buildless-page).
 
 Utility types `WcsPaths<T>` and `WcsPathValue<T, P>` are also exported for advanced use cases. See [docs/define-state.md](docs/define-state.md) for full documentation.
 

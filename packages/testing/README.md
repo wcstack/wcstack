@@ -113,6 +113,19 @@ const app = await mount(`
 
 `(url) => join(publicDir, url.pathname)` works as well. Write the URL as a concatenation, as above: Vite (and so vitest) rewrites `new URL("…", import.meta.url)` written with a string or template literal into an asset URL that is not the file. The state may `import` its helpers (`./lib.js`) — they resolve next to the file. An inline `<script type="module">` state cannot `import` a relative module under Node: it is evaluated from a `data:` URL, which has no base for `./lib.js` (the error then points at the CSP guide, which does not apply to a test). Put such a state in its own file and use `resolveModule`.
 
+**A state that imports from a CDN URL.** The state file is imported by Node's own module loader, where Vitest's `resolve.alias` does not apply: a state that imports `https://cdn.jsdelivr.net/npm/…` (a buildless page's `defineState`, a Markdown parser) fails to initialize with `Only URLs with a scheme in: file and data are supported by the default ESM loader. Received protocol 'https:'`, though the config maps that URL to `node_modules`. Inline the packages that do the import, so Vitest loads the state through its own pipeline and the aliases apply (the counter-assist seam app, Vitest 5):
+
+```js
+// vitest.config.js
+export default defineConfig({
+  resolve: { alias: [{ find: "https://cdn.jsdelivr.net/npm/marked@18.3.0/lib/marked.esm.js", replacement: "…/node_modules/marked/lib/marked.esm.js" }] },
+  test: {
+    environment: "happy-dom",
+    server: { deps: { inline: ["@wcstack/testing", "@wcstack/state", "@wcstack/server"] } },
+  },
+});
+```
+
 ### `settle() → Promise<void>`
 
 Two microtask turns and one macrotask — enough for a write to reach the DOM. Use it after `write()`, `fire()`, or any DOM event.
@@ -147,6 +160,8 @@ Two things happy-dom cannot reproduce; keep one browser e2e (Playwright) for the
 - Event timing differs from real browsers.
 
 A `<template>` in a table is handled since 4.26: `mount()` puts it where browsers do (above). HTML a test inserts with `innerHTML` itself is not — insert it with `setInnerHTML(element, html)` from `@wcstack/server`.
+
+**jsdom is not supported.** `mount()` finds the page's custom elements with the selector `*-*` (in `@wcstack/server`'s `waitForReady`), which happy-dom accepts and jsdom refuses: under `environment: 'jsdom'` it fails with `SyntaxError: Invalid selector *-*`. Run the page's tests under happy-dom. A library that behaves differently under happy-dom (a sanitizer whose output you assert) can be tested in a file of its own with `// @vitest-environment jsdom`.
 
 ## Example
 

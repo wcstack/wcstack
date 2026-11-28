@@ -31,16 +31,17 @@
 npm install @wcstack/signals
 ```
 
-または import map で buildless 利用(両エントリは 1 つのリアクティブコア chunk を共有 — [Buildless](#buildlessimport-map)参照):
+または import map で buildless 利用。マップするのは**単一**の `/dom` エントリで、すべてをそこから import します —— DOM ヘルパーの上にヘッドレスコア全体を再エクスポートしているので、ページのリアクティブインスタンスはちょうど 1 つになります。`.` と `./dom` のエントリを同じページで 2 つの esm.run の URL にマップするとコアが二重になり、その継ぎ目を越えるとリアクティビティが壊れます —— [Buildless](#buildlessimport-map)参照:
 
 ```html
 <script type="importmap">
 { "imports": {
-    "@wcstack/signals": "https://esm.run/@wcstack/signals",
     "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom"
 } }
 </script>
 ```
+
+そういうページでは、下のクイックスタートの `@wcstack/signals` を `@wcstack/signals/dom` と読み替えてください —— コアのエクスポートは同じです。
 
 ## クイックスタート
 
@@ -252,6 +253,8 @@ const user = resource(
 id.set(2); // 進行中のリクエストを abort して新しく開始。
 ```
 
+再起動を決めるのは `args` だけです: 入力はすべてそこで読み、`source` に渡してください。4.33（未リリース）から、`source` が読む signal は追われません。4.32 までは、最初の `await` より前に読んだ signal が変わると、意図せずリクエストが再起動していました。
+
 ### 5. ストリームリソース(フローを fold)
 
 ```typescript
@@ -305,7 +308,14 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `resource<T, A>(source, options?)` | `{ value, loading, error, dispose }` — `source(args, signal) => Promise<T> \| T` |
 | `streamResource<T, C, A>(source, options?)` | `{ value, status, error, dispose }` — `source(args, signal) => AsyncIterable<C> \| ReadableStream<C> \| Promise<…>` |
 
-両者共通: `options.args` はリアクティブな getter(そこで signal を読むと「変化したら再起動」が switchMap 方式で配線され、前のリクエストは `source` に渡される `AbortSignal` 経由で abort される)。`options.initial` は `value` の初期値。古いリクエストの遅延レスポンスは破棄される(`signal.aborted` で判定)。オーナー内で生成すれば、破棄時にリソースも自動 dispose される。
+両者共通: `options.args` はリアクティブな getter(そこで signal を読むと「変化したら再起動」が switchMap 方式で配線され、前のリクエストは `source` に渡される `AbortSignal` 経由で abort される)。`options.initial` は `value` の初期値。古いリクエストの遅延レスポンスは破棄される(`signal.aborted` で判定)。オーナー内で生成すれば、破棄時にリソースも自動 dispose される。追われるのは `args` だけ: 4.33（未リリース）から、`source` は observer 無しで走るので、そこで読む signal は依存にならない。
+
+再起動の最中:
+
+- `resource` —— `value` は、新しいリクエストが解決するまで最後に解決した値を保つ。`loading` は `true`、`error` は `null` に戻る。失敗したリクエストでも値は保たれる（`error` が入り、`loading` は `false`）。
+- `streamResource` —— `value` はすぐに `initial`（無ければ `undefined`）にリセットされ、`status` は `active`、`error` は `null`。以降のチャンクはそこから畳まれる。失敗した run は最後に畳んだ値を保つ（`status` は `error`）。
+
+新しいストリームが開く間も最後の一覧を見せ続けたい表示は、自分で写しを持つ（`initial` でない値を signal に書き写す effect）。
 
 ### wc-bindable アダプタ(`@wcstack/signals`)
 
@@ -449,7 +459,13 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 
 ## Buildless(import map)
 
-両エントリは**1 つの共有リアクティブコア chunk** を import する production の code-split バンドルとして出荷されます。よって buildless ページでも、ヘッドレスコアを `@wcstack/signals` から、DOM レイヤを `@wcstack/signals/dom` から import して**単一**のリアクティブインスタンス(1 つの追跡コンテキスト)を得られます。両 specifier をマップしてください。共有 `core-*.esm.js` chunk は相対パスで解決されるので `dist/` 全体を配信(または対応 CDN を使用)してください。バンドラ利用者はモジュールグラフで重複排除されるためどちらのエントリでも構いません。
+両エントリは**1 つの共有リアクティブコア chunk** を import する production の code-split バンドルとして出荷されます —— ただしその chunk は**相対パス**（`./core-*.esm.js`）で import されるので、buildless ページのリアクティブインスタンスが 1 つになるかは、ファイルの配信のされ方で決まります。
+
+- **単一の `/dom` エントリをマップする（推奨する CDN の形）。** `@wcstack/signals/dom` はヘッドレスコア全体（`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `selector` / `resource` / `streamResource` / `bindNode` / `nodeSource`）を DOM ヘルパーと並べて再エクスポートするので、1 つの specifier ですべてをまかなえ、インスタンスが 1 つなのは構造上の保証です —— chunk の共有には頼りません。このリポジトリの signals のデモはすべてこの 1 つのエントリから import します。
+- **両 specifier をマップしてよいのは、パスを保つ配信元からだけ。** `.` と `./dom` がコアを共有し続けるのは、両者の相対 import `./core-*.esm.js` が**同じ URL** に解決されるとき —— つまり `dist/` 全体がファイルとして配信されるとき（自前の配信、または同じ版に固定したパスの URL。たとえば `https://cdn.jsdelivr.net/npm/@wcstack/signals@4.32.0/dist/index.esm.js` と `…/dist/dom.esm.js`）だけです。`https://esm.run/@wcstack/signals` のような*変換する* ESM エンドポイントは各エントリを自己完結した 1 ファイルに束ねるので、両方の esm.run エントリをマップすると**2 つ**のリアクティブコアが載ります: 一方で作った signal は、もう一方の effect からは見えません。
+- **2 つ目のコアはそう言います。** 4.33（未リリース）から、リアクティブコアの 2 つ目の写しは、読み込まれたときに 1 回警告します。本番でも同じです: `[wcs/signals-second-core] A second copy of the reactive core was loaded …`。原因は、別々に束ねられた 2 つのエントリ（esm.run、jsDelivr の `+esm`）か、1 ページの 2 つの版です。4.32 までは何も言わず、継ぎ目アプリ counter-assist の表示の時計は動きませんでした。すべての名前を 1 つの URL の 1 つのエントリから import してください —— `@wcstack/signals/dom` が全部を持っています。`@wcstack/lint` はそういう import をエラーとして報告し（`wcs/signals-dual-entry`）、4.33（未リリース）からはページが動かすローカルのモジュールの中も見ます。
+
+バンドラ利用者はモジュールグラフで重複排除されるためどちらのエントリでも構いません。
 
 ## 安定性(Stability)
 

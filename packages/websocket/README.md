@@ -83,6 +83,8 @@ This is the default mode:
 - receive `message`
 - optionally bind `connected`, `loading`, `error`, and `readyState`
 
+**Every message in a handler — give `url` from the state.** A `message:` binding reads the latest message, and a literal `url` is fine for it: the output seeds the state from what the element holds. A `$on` handler that sees every message (`eventToken.message: onMessage`) is another matter. An element started from a literal `url="wss://…"` connects before a `<wcs-state src>` file has loaded, and the messages it dispatches before `eventToken.` is attached — a server's greeting or snapshot — never reach the handler. Give the starting input from the state (`data-wcs="url: socketUrl; eventToken.message: onMessage"`), so the socket opens once the page is bound. Binding `message:` as a property too takes the last message the element holds; the ones before it are still lost. Since 4.33 (not released yet), `@wcstack/state`'s diagnostics add-on names an element that held such a message when the page was bound (`[wcs/event-before-binding]`), and `@wcstack/lint` warns under the same code about a literal `url` beside `eventToken.message` (not with `manual`, nor when `message` is bound as a property too). See [the timing contract](../../docs/timing-and-firing-contract.md) §31.
+
 ### 2. Sending messages from state
 
 Use the `send` property to push data to the server. Setting `send` transmits the value immediately; objects are automatically JSON-stringified.

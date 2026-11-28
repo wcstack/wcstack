@@ -919,6 +919,7 @@ this.items = await (await fetch("/api/items")).json();
 - **行から消えたフィールドは `null` でクリア**されます。`null` はこのパッケージにおける明示的なクリアの語彙です（`undefined` は「状態が値を持たない」を意味し、書き込み自体がスキップされます）。
 - 名前が 1 つのパスセグメントにならないフィールド（`@odata.etag`・`2fa`・`a.b`）や、行 getter と同じ名前のフィールドは、据え置かれる行へそのままコピーされ、行は全体として更新されます。JSON から来た `__proto__` キーはコピーされません。
 - 格納される配列は照合済みの行オブジェクトから組み直されるため、代入後は `this.items !== 代入した配列` になります。
+- **getter ではなく、一覧が代入されるパスを挙げてください。** 行が保たれるのはそのパスに配列が代入されたときで、getter の一覧は代入されないので、getter に付けた `$listKeys` は何もしません —— 変化のたびに行の新しいオブジェクトを返す getter は、キーがあってもなくても、その行の要素を毎回作り直します。4.33（未リリース）から、list-keys アドオンが宣言を受け取ったときにそれを言います（`[wcs/list-keys-getter]`）。4.32 までは何も言いませんでした。getter が読む一覧を挙げるか、行を状態の一覧に持ち、変わるフィールドをパスで書いてください（`this["turns.3.tail"] = text`）。
 - `$listKeys` は `list-keys` アドオンです: 全部入りのエントリには含まれており、`/core` のページは `@wcstack/state/features/list-keys` を入れます。マウントされたコンポーネントの `$listKeys` はそのコンポーネント自身のリストにキーを付けます。ボリュームは宣言できません。
 
 #### ドット省略記法
@@ -2604,6 +2605,8 @@ class MyTarget extends HTMLElement {
 - `<tokenName>` は `$eventTokens` で宣言されていること —— **発火時** に検証。token はイベント発火時に引かれるので、再設定した state の `$on` ハンドラにも届く。未宣言の名前は `console.error` で報告される（`[wcs/token-undeclared]`、did-you-mean 付き）。
 - 修飾子 `#prevent` / `#stop` は通常のイベントバインディングと同様に機能する: `eventToken.error#prevent: createFailed`。
 
+**束縛より前に出たイベントは失われます。** リスナーが付くのは `@wcstack/state` がページを束縛したときで、I/O ノードはたいてい先に定義されます。マークアップのリテラル属性で動き出す要素 —— `<wcs-sse url="/events">`、`<wcs-ws url="…">`、`<wcs-broadcast name="…">` —— は `<wcs-state src>` のファイルが読み込まれる前に接続し、その間に出したイベント（SSE のストリームが最初に送るスナップショット）は `$on` に届きません（継ぎ目アプリ counter-assist では、8 人待っているのに 0 人と表示されました）。要素を動かすものを状態から渡すか（`data-wcs="url: streamUrl; eventToken.message: queueEvent"`。ページが束縛されてから動き出します）、出力をプロパティとしても束ねてください（`message: lastEvent` —— 出力は要素が持っている値から状態を初期化します）。4.33（未リリース）から、`diagnostics` アドオンがそういう要素をタグと出力ごとに 1 回名指しします（`[wcs/event-before-binding]`）: ルートを束縛しようとする時点で、`eventToken.<output>` が指す出来事（`semantics: "event"`）をすでに持っている要素です。`@wcstack/lint` も同じ code でマークアップを報告します。[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §31 を参照してください。
+
 ### ループ内での使用
 
 emitter が `for` ブロック内にある場合、`on*` ハンドラと同じく、内包するループインデックスがイベントの後ろに付与されます：
@@ -2658,7 +2661,7 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 
 ## Stream（`$stream`）
 
-command token / event token が運ぶのは離散的なやり取りです。**`$stream`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$renderedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。`$stream` は `temporal` アドオンです（全部入りのエントリに含まれる）。3.x の名前 `$streams` は、`diagnostics` アドオンが入っていれば（`@wcstack/state`・`/auto`）`[wcs/declaration-alias] $streams was removed: write $stream.`（`#1601`）を throw します。入っていなければ、その宣言は無視されます。
+command token / event token が運ぶのは離散的なやり取りです。**`$stream`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$renderedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。4.33（未リリース）から、`args` が `null` を返すことは「実行しない」の意味です: stream は `source` を呼ばずに `idle` で待ち、実行中なら畳み込んだ値を保って止まります —— 次に `null` でない値が返ると `initial` から起動します（[起動と停止](docs/streams.ja.md#起動と停止)）。`$stream` は `temporal` アドオンです（全部入りのエントリに含まれる）。3.x の名前 `$streams` は、`diagnostics` アドオンが入っていれば（`@wcstack/state`・`/auto`）`[wcs/declaration-alias] $streams was removed: write $stream.`（`#1601`）を throw します。入っていなければ、その宣言は無視されます。
 
 `$renderedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watchwatch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
 
@@ -2690,7 +2693,7 @@ command token / event token が運ぶのは離散的なやり取りです。**`$
 | フィールド | 必須 | 契約 |
 |---|---|---|
 | `source` | ✔ | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<同>`。**`AbortSignal` を必ず尊重すること** —— restart / 破棄はこの signal で駆動される |
-| `args` | — | readonly な state proxy を受ける同期・純粋関数。ここで読んだパスが依存として捕捉される。省略時は一度だけ起動し restart しない |
+| `args` | — | readonly な state proxy を受ける同期・純粋関数。ここで読んだパスが依存として捕捉される。省略時は一度だけ起動し restart しない。4.33（未リリース）から、`null` = 実行しない。入力欄は `args` が読むキーではなく下書きのキーに束ねること —— 変わるたびに stream が restart する |
 | `fold` | — | 同期関数 `(acc, chunk) => next`。省略時は latest（チャンクで置換）。毎回新しい値を返すこと —— `acc` の in-place 変異は非サポート |
 | `initial` | `fold` 指定時 ✔ | 初期値。起動・restart のたびにプロパティはこの値にリセットされる |
 
@@ -2729,12 +2732,13 @@ $stream: {
 
 重要な規範：
 
-- **協調キャンセル（MUST）** —— `source` は渡された `AbortSignal` を必ず監視し、発火したら生産を停止すること。`ReadableStream` の source はこの契約を `cancel()` コールバック経由で自動的に満たします（abort 時に runtime が reader を cancel します）。自前の async iterable だけが `signal` を自分で監視する必要があります。
+- **協調キャンセル（MUST）** —— `source` は渡された `AbortSignal` を必ず監視し、発火したら生産を停止すること。`ReadableStream` の source はこの契約を `cancel()` コールバック経由で自動的に満たします（abort 時に runtime が reader を cancel します）。自前の async iterable だけが `signal` を自分で監視する必要があります。これが効くのは返されたストリームです: source がその前に待つ `fetch` は、source が `signal` を渡したとき（`fetch(url, { signal })`）にだけ止まります。
 - **有界 fold** —— 需要は producer に逆流しません（backpressure は明示的に放棄）。無限 / 長寿命ストリームでは latest・count・last-N（`(acc, chunk) => [...acc.slice(-99), chunk]`）・ウィンドウ集計など有界な fold を使うこと。生の全チャンク累積は有限ストリーム限定。
 - **`args` は同期** —— Promise を返すとエラー。`args` 内での wildcard 読みも拒否されます。
 - **自己依存・相互サイクルの禁止** —— `args` が自 stream の値や status を読むとエラーになります。2 つの stream の相互サイクル（A の `args` が B の値を読み、B の `args` が A の値を読む）は宣言時には拒否されません: source が実行開始と同じタスクの中で値を出す場合は連鎖の上限がサイクルを断ち切りますが（[Watch](#watchwatch) 参照）、値が後のタスクで届く場合（ネットワークの応答、メッセージ）は周回ごとに数え直しになり、サイクルは無限に restart します —— 組まないでください。一方向のチェイン（A の値を B の `args` が読む）は正当です。
 - **プロパティは runtime の所有物** —— エントリ名が state の getter / setter / メソッドと衝突すると、宣言時にエラーになります（検査が無いと、そのメソッドは起動時の `initial` リセットで無言に上書きされます）。
 - **SSR では起動しない** —— サーバーでは宣言のパースとプロパティの実体化（`initial`）のみ行い、source は実行されません。クライアント側は通常どおり起動します。
+- **誰も見せなかった stream の出来事は報告されます。** 失敗が届くのは `$streamError.<name>` だけで、4.32 まではコンソールに何も出ませんでした。4.33（未リリース）から、`diagnostics` アドオンが stream ごとに 1 回警告します: `[wcs/stream-error-unobserved]` —— 失敗し、`$streamError.<name>` も `$streamStatus.<name>` も、どのバインディングも getter も読んでいない（ページを離れる間は言いません。`textContent: $streamError.<name>` を束ねて見せてください）。`[wcs/stream-source-shape]` —— `source` が async iterable も `ReadableStream` も返さなかった（`Response` ならその `body` を返す。`undefined` なら `return` の書き忘れ）。どの run もすぐに失敗するので、失敗を読んでいても言います。`[wcs/stream-fold-in-place]` —— fold が累積値をその場で変えて返した（長さの変わった配列、size の変わった `Map` / `Set`、エントリの変わったオブジェクト。最初の 50 チャンクを見ます）。`[wcs/stream-value-written]` —— ページが実行中の stream の値を書いた: stream は続き、次のチャンクは書いた値の上に畳まれ、裏のリクエストも走り続けます —— 止めるには `args` が `null` を返すようにしてください。
 
 完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。
 
@@ -3744,6 +3748,10 @@ export default defineState({
 ```
 
 `@wcstack/state` と `/core` も `defineState` を export しますが、バンドラはそれらの入口からエンジンを落とせません: `defineState` を `@wcstack/state` から import した state ファイルは、バンドルにエンジン全体（gzip で約 21 KB）を残します。どのみちエンジンを動かすバンドルでは害はありませんが、state ファイルだけを束ねるところ（ランタイムを CDN から読む、型検査やテストのビルド）では無駄になるので、`/define` を使ってください。
+
+4.33（未リリース）から、`defineState` は `$stream` を知っています: stream の値は `this` から読め（型は `any`、または状態が同じ名前で宣言したプロパティの型）、`$streamStatus` / `$streamError` は宣言した名前だけを取り（`this["$streamStatus.answer"]` も）、エントリの関数は引数の型を受け取ります（`args` の state、`source` の `AbortSignal`）。`source` は必須です。4.32 までは `this.answer` が型エラーでした。
+
+ビルドの無いページで、自分のファイルに置いた state は `defineState` を URL から import します（`https://cdn.jsdelivr.net/npm/@wcstack/state@<version>/dist/define.js`。ランタイムは持ちません）。tsconfig の `paths` でその URL をインストールしたパッケージの型に写します —— [define-state.ja.md](docs/define-state.ja.md#ビルドの無いページの-state-ファイル) を参照してください。
 
 ユーティリティ型 `WcsPaths<T>` と `WcsPathValue<T, P>` もエクスポートされます。詳細は [docs/define-state.ja.md](docs/define-state.ja.md) を参照してください。
 
