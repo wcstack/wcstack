@@ -60,6 +60,23 @@ interface Computation extends Observable {
   _update(): void;
 }
 
+// --- one core per page --------------------------------------------------------
+// A second copy of this module has a tracking context of its own: a signal of one copy is not seen by an effect, a
+// computed or a binding of the other. A page gets one by importing `@wcstack/signals` and `@wcstack/signals/dom` from
+// a CDN that bundles each entry on its own (esm.run, jsDelivr's `+esm`) or two versions; the counter-assist seam
+// app's display clock never ticked, with no message (docs/seam-apps.md). The package's own two entries share one
+// core chunk. The second copy says so when it is evaluated, once.
+const CORE = Symbol.for("wcstack.signals.core");
+if ((globalThis as any)[CORE]) {
+  console.warn(
+    "[@wcstack/signals] [wcs/signals-second-core] A second copy of the reactive core was loaded: a signal of one copy " +
+      "is not seen by an effect, a computed or a binding of the other (a clock that never ticks). Import every name " +
+      "from one entry at one URL — @wcstack/signals/dom has all of them.",
+  );
+} else {
+  (globalThis as any)[CORE] = true;
+}
+
 // --- tracking context -------------------------------------------------------
 
 let currentObserver: Computation | null = null;
@@ -68,6 +85,22 @@ function track(source: Observable): void {
   if (currentObserver !== null) {
     currentObserver._sources.add(source);
     source._observers.add(currentObserver);
+  }
+}
+
+/**
+ * Internal (the resource adapters): run `fn` with no observer, so the signals it reads are not dependencies of the
+ * effect calling it. `resource` / `streamResource` call `source` synchronously inside the effect that reads `args`:
+ * a signal `source` read before its first `await` restarted the request when it changed, by accident — the
+ * documented contract is that `args` alone decides (docs/seam-apps.md, counter-assist). Not public API.
+ */
+export function withoutObserver<T>(fn: () => T): T {
+  const prevObserver = currentObserver;
+  currentObserver = null;
+  try {
+    return fn();
+  } finally {
+    currentObserver = prevObserver;
   }
 }
 

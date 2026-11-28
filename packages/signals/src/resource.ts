@@ -10,7 +10,7 @@
 // response from a superseded request never lands on the new state — is handled
 // here by checking `signal.aborted` before committing any result.
 
-import { signal, innerEffect as effect, onCleanup, ReadSignal } from "./reactive.js";
+import { signal, innerEffect as effect, onCleanup, withoutObserver, ReadSignal } from "./reactive.js";
 
 export interface ResourceState<T> {
   value: ReadSignal<T | undefined>;
@@ -28,7 +28,7 @@ export interface ResourceState<T> {
 }
 
 export interface ResourceOptions<T, A> {
-  /** Reactive inputs. Reading signals here wires restart-on-change. */
+  /** Reactive inputs. Reading signals here wires restart-on-change — and only here: a signal `source` reads is not a dependency (4.33). */
   args?: () => A;
   /** Seed value before the first resolution. */
   initial?: T;
@@ -72,10 +72,11 @@ export function resource<T, A = void>(
     // a synchronous throw is normalized into the same error/loading state as a
     // rejected promise. Without the guard a sync throw would escape the effect body
     // (and, on the initial run, the resource() call itself), leaving loading stuck
-    // true and error unset.
+    // true and error unset. Called with no observer: only `args` decides a restart (a signal the source reads
+    // is not a dependency of this effect).
     let produced: Promise<T> | T;
     try {
-      produced = source(a, ac.signal);
+      produced = withoutObserver(() => source(a, ac.signal));
     } catch (err) {
       error.set(err);
       loading.set(false);

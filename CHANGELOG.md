@@ -8,7 +8,17 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Upgrading
+
+- `@wcstack/signals`: **`resource` / `streamResource` restart on `args` only.** A signal `source` reads (before its first `await`) no longer restarts the request when it changes: read it in `args` and pass it on.
+
+### Added
+
+- `@wcstack/signals`: **`[wcs/signals-second-core]` — a second copy of the reactive core says so when it loads.** Two copies on one page — `@wcstack/signals` and `@wcstack/signals/dom` imported from a CDN that bundles each entry on its own (esm.run, jsDelivr's `+esm`), or two versions — each keep their own tracking context: a signal of one is not seen by an effect, a computed or a binding of the other. The counter-assist seam app's display clock never ticked, with no message (docs/seam-apps.md, counter-assist; docs/v4-direction-2026-10.md §5.29). Said once, by the second copy, in production too. The package's own two entries share one core chunk and stay silent.
+
 ### Fixed
+
+- `@wcstack/signals`: **`resource` / `streamResource` followed the signals `source` read.** `source` is called synchronously inside the effect that reads `args`, so a signal it read before its first `await` became a dependency by accident and restarted the request whenever it changed — the documents say `args` decides. `source` now runs with no observer (counter-assist; §5.29).
 
 - `@wcstack/state` (the diagnostics add-on): **`[wcs/inserted-unbound]` reported markup that was bound a moment after it was inserted.** The add-on looks at a root a second after its content changed — once per burst of changes, so the look lands at any moment of it. One between htmx's swap and its `htmx:load`, about 20 ms later, when a page hands the new cards to the binder, found them unbound and said that nothing bound them. Now an element is reported only when a second look, a second later, finds it unbound still: one nothing binds is reported a second later than before. Found as a flaky e2e test of the community-hall seam app (once in about 40 runs); with htmx's settle delay set to 1.5 s the warning came every time (docs/seam-apps.md, community-hall).
 

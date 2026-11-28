@@ -42,7 +42,7 @@
 // The `if (signal.aborted) return` check only runs after a chunk arrives, not while
 // parked — it drops stale chunks but is not, by itself, a cancellation mechanism.
 
-import { signal, innerEffect as effect, onCleanup, ReadSignal, WriteSignal } from "./reactive.js";
+import { signal, innerEffect as effect, onCleanup, withoutObserver, ReadSignal, WriteSignal } from "./reactive.js";
 
 export type StreamStatus = "idle" | "active" | "done" | "error";
 
@@ -60,7 +60,7 @@ export interface StreamResourceState<T> {
 }
 
 export interface StreamResourceOptions<T, C, A> {
-  /** Reactive inputs. Reading signals here wires restart-on-change. */
+  /** Reactive inputs. Reading signals here wires restart-on-change — and only here: a signal `source` reads is not a dependency (4.33). */
   args?: () => A;
   /** Combine the running value with each chunk. Default: latest (replace). */
   fold?: (acc: T | undefined, chunk: C) => T;
@@ -168,7 +168,8 @@ async function consume<T, C, A>(
   };
   signal.addEventListener("abort", onAbort, { once: true });
   try {
-    const produced = await source(args, signal);
+    // (called with no observer: only `args` decides a restart — a signal the source reads is not a dependency)
+    const produced = await withoutObserver(() => source(args, signal));
     iterator = iterate(produced, signal)[Symbol.asyncIterator]();
     if (signal.aborted) {
       // Aborted while awaiting the source: the abort listener already ran (iterator
