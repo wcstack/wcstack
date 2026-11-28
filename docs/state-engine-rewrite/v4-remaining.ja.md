@@ -2162,3 +2162,29 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 連載の 3-2（公開先が決まったら、19 日目の「404 になる」の説明を確かめる）。
   - 未解明の flaky 3 件（上）と、§5.26 の未決 4 件（router の「留まる」の API、flaky の最初の失敗の残し方、`<wcs-sse>` の WebKit での最初の 1 回、生成した schema を持つアプリ 2 つの lint）。
   - core の残りは 4 B。
+
+### 4.32.0 の公開（2026-11-28）
+
+- **中身**: minor。§5.26 に残した未決のうち、4.31.0 で決めた getter の lint を除く 4 件。著者の「未決の4件を解消しよう」に、測れるものを測ってから問いを 4 つ出し、著者はすべて推奨のとおりに決めた（2026-11-28、v4-direction §5.28）。
+  - #773（merge commit 5802092c6）sse: 順がまだ分からない文書で、直前に `navigate` の無い `beforeunload` は閉じるのを 1 タスク待つ。決める前に 3 ブラウザで測った: WebKit の street-reports「3 往復でストリームが漏れない」は 4.31 で 3 回中 3 回落ち（5 本のはずが 6 本）、案で 3 回中 3 回通る。Firefox は待つ道（`page.goto()`）を通ってもメッセージ 6 回中 0 回で、次のタスクは 3 ブラウザとも `pagehide` より先。
+  - #774（b5cf5459a）e2e: flaky なテストの最初の失敗を残す。調べると、最初の失敗の `error-context.md` は今の設定でも書かれていて、ワークフローがジョブの落ちたときしか上げなかった。reporter が `flaky.json` を書き、ワークフローは失敗か flaky のある実行で `e2e/test-results/` を上げる（14 日）。`screenshot: "only-on-failure"`。**この PR 自身の e2e で flaky 1 件（street-reports の間引きの検索、Firefox）を捕まえ、最初の失敗を読めた**: 要求が `["北", "北町2丁目"]`（60 ms おきの打鍵に 300 ms の間引き。CI で打鍵の間が空いた）。原因はまだ直していない。
+  - #775（13acbc88f）lint: 違う状態ファイル（`stateSource`）を名指す schema どうしは衝突にせず、ページごとに当てる。street-reports が生成した manifest をコミットした。
+  - #776（04f373648）router: `leaveHold` / `leaving` / `proceed()` / `stay()`。ガードのリダイレクトを止めないため `guardRedirect()` を足した。全数テストに `hold` / `proceed` / `stay` を足し、作る途中で 1 件見つけた（ガードを待つ間のクエリだけのナビゲーションが止まった）。深さ 5 まで通過。Chromium と Firefox は同じ文書の「戻る」をページに取り消させると測った。
+  - #777（962630317）文書: v4-direction §5.28、verification-practices-study §4.1（日英）。
+- **マージ**: #773 → #775（main を取り込み、CHANGELOG を見出しごとに合わせた）→ #774 → #776（2 回取り込んだ）→ #777。e2e はマージの前に PR のすべての実行で数えた: #773 は 2 回とも 835 件、#775 は 2 回とも 835 件、#776 は 3 回とも 841 件、いずれも flaky 0。#774 は 1 回で flaky 1（上）。
+- **準備**: PR #778（merge commit a79066516）。CHANGELOG を `[4.32.0] — 2026-11-28` として締め（前書きと Upgrading の節）、docs/upgrading-4x.md（日英）に 4.32.0 の節、「まだ要るもの」から「router にページの中の『留まる』が無い」を外し、固定版 18 か所、release.yml が外さない「未リリース」の印（docs/typescript・docs/coming-from-react・誤りの目録・拡張の README・street-reports の README）を外した。途中で昔の印の外し忘れを 2 つ見つけて外した（誤りの目録の 4.9、docs/wcstack-manifest-schema.md の 4.26 が 2 か所）。manifest の仕様書 §5 に 2 つの schema の規則を足した。heavy の検証（media-query・signals・state・wcstack・devtools・router）、CI の e2e 841 件。
+- **main で `minor`（run 46086834226）**: 成功した。版を上げたコミット f9530259d、タグ `v4.32.0`、GitHub Release（`sri.json` 付き。本文の先頭に CHANGELOG の節を足した）。
+  - 検証: 1 回目は npm 48/49（`@wcstack/sse` — 実行のログには `+ @wcstack/sse@4.32.0` があった）・SRI 43/44・固定 URL 7/8（jsDelivr の signals が 502）、2 回目で npm 49/49・`latest` 49/49・来歴証明 49/49・SRI 44/44・分割エントリのダイジェスト 24/24・固定 URL 8/8。
+- **公開後の作業**:
+  - PR #779（merge commit 874319e27）: サイズの基準値を 4.32.0 の dist で取り直した。動いたのは版の文字列の分だけ（分割の core 24,785 → 24,786 B、devtools 2,515 → 2,514 B、ssr 5,779 → 5,780 B）。`core.min.js` は 20,476 B のまま（残り 4 B）。slack は無い。結合の基準値は変わらない。CLAUDE.md・AGENTS.md は数と版を置き換えた。拡張の版を 2.25.0 にし、CHANGELOG の節に日付を入れた。**拡張の CHANGELOG に「router の新しいメンバーを補完と検査が知る」と一度書き、誤りだったので外した**: 組み込みのタグの一覧（`builtinTags.generated.ts`）には `<wcs-router>` がもともと無く、lint は `<wcs-router>` のメンバー名を検査しない（`leaveHodl: dirty` も通る — npm の lint 4.31.0・4.32.0 とも）。
+  - 拡張 2.25.0: 874319e27 の main で `npm run package`（その後 vscode-wcs のテスト 1,877 件）。890 ファイル、5,059,771 B、SHA-256 `f373affe5c5247c21ab6e55950f431d8da640476eb614efa6b0cc3d840c33e11`。公開は著者（公開後に Marketplace の vsix と SHA を比べ、注釈付きタグ `vscode-wcs-v2.25.0` を 874319e27 に）。
+  - wcstack-skill: PR #82（merge commit 78fc5a9）と注釈付きタグ `v4.32.0`。router-and-scaffold（`leaveHold` / `leaving` の行とコマンド、ダイアログのハンドラ）、coming-from-react（`useBlocker` の行）、io-node-catalog（WebKit の最初のリンク）、verification（2 つの生成 manifest を 1 回の lint で）、versions（4.31 以下に固定したページの 2 行）、刻印 24 か所。刻印した URL 9 つが 200 を返した。
+  - LP（wcstack.github.io 9d99bd3）: リリースの表示、v4.32.0 の一文（日英）、固定版、ステップ 16 の integrity（`sha384-EmPSGnqq…`。約 87 KB — 86.6 KB を四捨五入。手元の dist・`sri.json`・jsDelivr のファイルの 3 つで一致）、llms。ローカル 7/7、本番 8/9（いつもの `/tutorial/16-publish/app/` の API の 404）。本番に v4.32.0 が出ているのを確かめた。
+  - 例: PR #780（merge commit f1ec17084）。street-reports の離脱のダイアログを `leaveHold: formBlocking` に移した（ガード 5 つ・`window` の関数・ナビのクリックの保留・`history.go(1)` を外した。76 行減、18 行増）。生成した manifest を作り直し（`check` は最新）、例の lint は 0/0/0。React のテスト群は変えずに、離脱のダイアログのテストが Chromium と Firefox で 8/8、例の単体テスト 29 件が npm の 4.32.0 で通った。手元で spec 全体を 3 回ずつ走らせて 168 件中 1 件落ちたのは、board のテスト自身の API の取得の `ECONNRESET`（8 ワーカー。単独で 4/4）。
+- **`failOnFlakyTests`**: #774 の flaky で数え直し。その後 #776・#778 が flaky 0、#780 も flaky 0（841 件）— 3 回。
+- **残り**:
+  - 拡張 2.25.0 の公開（著者）→ SHA の比較とタグ。
+  - street-reports の間引きの検索のテスト（Firefox）の flaky の原因（#774 の成果物で最初の失敗は読めた）。ほかの未解明の flaky 3 件（4.31.0 の節）。
+  - この機械のプラグイン（wcstack-app）は 4.31.0。4.32.0 に上げるかは著者に問う。
+  - 連載の 3-2（公開先が決まったら）。
+  - core の残りは 4 B。§5.26 の未決は残っていない。次は 4 巡目の 3 本目（流れてくるデータ）。
