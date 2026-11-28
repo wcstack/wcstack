@@ -61,7 +61,7 @@ Some keys hold values the lint cannot read on its own (lists built with `.map()`
 `public/wcstack.manifest.json`, which the lint finds by itself; `npx wcs-schema check state/app.js` says whether it is
 out of date. Without it, the lint names those keys in ten infos and checks nothing under them.
 
-The manifest is committed since 4.32 (not released yet), and the repository's CI checks it. Before, it was not: the
+The manifest is committed since 4.32, and the repository's CI checks it. Before, it was not: the
 repository checks all its examples in one run of the lint, and two applications' schemas (`examples/lending-desk` has
 one) were a collision, `wcs/manifest-state-collision`. Two schemas that each name the state file they were generated
 from (`stateSource`) are no longer one: each page gets the one its `<wcs-state src>` loads (docs/v4-direction-2026-10.md

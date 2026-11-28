@@ -6,7 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.32.0] — 2026-11-28
+
+The four questions the street-reports seam app left open (docs/v4-direction-2026-10.md §5.26), decided on 2026-11-28, all as recommended (§5.28): an in-page "leave?" dialog for the router, `<wcs-sse>` and the first link in WebKit, two apps with a generated schema in one lint run — and, in the repository, the first failure of a flaky e2e test kept as an artifact. `@wcstack/state` does not change (`core.min.js` stays 20,476 B).
+
+### Upgrading
+
+- `@wcstack/sse`: **a `beforeunload` with no `navigate` event just before it closes the stream a task later** — the address bar, closing the tab, and the first `<wcs-link>` of a page load in WebKit, where it does not close at all: WebKit's `navigate` comes within that task. `connected` turns `false` then. A `beforeunload` right after a `navigate` (a link out of the page) still closes at once.
+- `@wcstack/lint` (and the VS Code extension 2.25.0): two application manifests passed on the command line whose `stateSchema`s name different state files are no longer a `wcs/manifest-state-collision` error: each page is checked against its own app's schema, and may get findings it did not have.
+- `@wcstack/router`: a guard's redirect goes through the router's new `guardRedirect()`, which calls `replace()` — a test that stubs `replace()` still sees it.
 
 ### Added
 

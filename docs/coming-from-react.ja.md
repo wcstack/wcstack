@@ -58,7 +58,7 @@ English: [coming-from-react.md](./coming-from-react.md)
 | ルート、`useParams`・`useLocation`・`useSearchParams`・`useNavigate` | `<wcs-router>` の `params:`・`path:`・`searchParams:` を state に束ねる。書くのは `navigateUrl`（push）か `replaceUrl`（replace） | そのまま |
 | `<Link>`・`<NavLink>` | `<wcs-link to="…">`。区画には `match="prefix"`、それを読み上げにも言うなら `current="page"`（4.30 から） | そのまま |
 | `<Navigate replace>` | パスを返すガード | 形が違う |
-| `useBlocker` と自前のダイアログ | 4.32（未リリース）から、`<wcs-router>` の `leaveHold: dirty`: ナビゲーションを止め、`leaving` が行き先を言い、自前のダイアログが router の `proceed()` / `stay()` で答えます（router の README「ページ自身の「離れますか」」）。4.31 までは、`leaveConfirm` のブラウザの `confirm()` だけでした | 無い |
+| `useBlocker` と自前のダイアログ | 4.32 から、`<wcs-router>` の `leaveHold: dirty`: ナビゲーションを止め、`leaving` が行き先を言い、自前のダイアログが router の `proceed()` / `stay()` で答えます（router の README「ページ自身の「離れますか」」）。4.31 までは、`leaveConfirm` のブラウザの `confirm()` だけでした | 無い |
 | `React.lazy` | 部品は、そのタグが最初に現れたときに autoloader が読み込む。コードはメソッドの中で `import()` し、読む側を state のフラグで止める | 形が違う |
 | error boundary | state の `$errorCallback(error, info)`: 失敗した束縛を聞き、ページが自分の代わりの表示を出す（`if: pageOk`）。state ごと —— 部品には部品のものがあります | 形が違う |
 | portal | ダイアログとトーストを `<body>` の終わり、router の外に書く: 動かすものがありません。束ねるマークアップは `<body>` の中に | 形が違う |
