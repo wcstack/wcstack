@@ -563,6 +563,9 @@ The spec (9 tests, Chromium) starts the example's server with `WCS_LOCAL=1` on p
 |---|---|---|
 | Docs defect (4.20.0) | The htmx example in the state README, docs/islands.md and the skill released only what it had handed over (a `WeakSet` of `htmx:load` elements). The cards the server rendered first were bound by the page walk, not handed over, so the first search threw them away still bound — the spec's release check caught it | Fixed: the example knows the regions htmx swaps into, hands over what `htmx:load` brings into them, and releases a region's own children on `htmx:beforeCleanupElement` — what was handed over and what the page walk bound; the README says `release` takes whatever is bound under the node |
 
+**Found later (2026-11-28): `[wcs/inserted-unbound]` named cards the page bound 20 ms later.** The e2e test "4.20: cards a search threw away are let go" failed once in about 40 runs on that warning. htmx hands new content over on `htmx:load`, about 20 ms after the swap (the settle phase), and the diagnostics add-on looked a second after the first change of a burst — at any moment of it. A look between a swap and its `htmx:load` found the cards unbound. With htmx's settle delay at 1.5 s the warning came every time, and the cards were bound. The add-on now says it only when a second look, a second later, finds the element unbound still (4.33). The page was right.
+
+
 ### ledger-repair (2026-11-10)
 
 The second app of the third round in [docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §3.2. The axis changed is the author: they fix an app instead of building one.

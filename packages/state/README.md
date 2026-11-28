@@ -995,7 +995,7 @@ The binder never throws for markup reasons: an error in a handed-over subtree is
 
 ### Inserting markup yourself
 
-Markup another library puts into a bound page — htmx's swaps, a Turbo frame, your own `innerHTML` — is bound when it is handed over to the binder, as `@wcstack/router` hands over what it inserts. A `<wcs-state>` walks its root once ([What the page walk binds](#what-the-page-walk-binds)); markup nobody hands over keeps its `data-wcs` and does nothing. Since 4.20 the `diagnostics` add-on says so: an element with bindings that entered a bound root and that nothing bound is reported a second after the root's content changed, once per root (`[wcs/inserted-unbound]`).
+Markup another library puts into a bound page — htmx's swaps, a Turbo frame, your own `innerHTML` — is bound when it is handed over to the binder, as `@wcstack/router` hands over what it inserts. A `<wcs-state>` walks its root once ([What the page walk binds](#what-the-page-walk-binds)); markup nobody hands over keeps its `data-wcs` and does nothing. Since 4.20 the `diagnostics` add-on says so: an element with bindings that entered a bound root and that nothing bound is reported a second after the root's content changed, once per root (`[wcs/inserted-unbound]`). Since 4.33 (not released yet) it is reported only when a second look, a second later, finds it unbound still: a look could land between htmx's swap and its `htmx:load` (about 20 ms later, when the page hands the cards over), and reported cards that were bound right after.
 
 ```js
 // htmx: htmx:load fires for each element a swap inserted; htmx:beforeCleanupElement for each it removes

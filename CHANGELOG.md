@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/state` (the diagnostics add-on): **`[wcs/inserted-unbound]` reported markup that was bound a moment after it was inserted.** The add-on looks at a root a second after its content changed — once per burst of changes, so the look lands at any moment of it. One between htmx's swap and its `htmx:load`, about 20 ms later, when a page hands the new cards to the binder, found them unbound and said that nothing bound them. Now an element is reported only when a second look, a second later, finds it unbound still: one nothing binds is reported a second later than before. Found as a flaky e2e test of the community-hall seam app (once in about 40 runs); with htmx's settle delay set to 1.5 s the warning came every time (docs/seam-apps.md, community-hall).
+
 ## [4.32.0] — 2026-11-28
 
 The four questions the street-reports seam app left open (docs/v4-direction-2026-10.md §5.26), decided on 2026-11-28, all as recommended (§5.28): an in-page "leave?" dialog for the router, `<wcs-sse>` and the first link in WebKit, two apps with a generated schema in one lint run — and, in the repository, the first failure of a flaky e2e test kept as an artifact. `@wcstack/state` does not change (`core.min.js` stays 20,476 B).

@@ -858,10 +858,11 @@ describe("後から入って束縛されない要素（wcs/inserted-unbound）�
     warn.mockRestore();
   });
 
-  it("束縛の後に入り、誰も渡さなかった data-wcs の要素を、入ってから 1 秒後にルートごとに 1 回知らせる", async () => {
+  it("束縛の後に入り、誰も渡さなかった data-wcs の要素を、1 秒おきの 2 回の見回りで続けて見つけたら（入ってから 2 秒後に）ルートごとに 1 回知らせる", async () => {
     const { root } = await bound(`<main id="slot"></main><p>{{ n }}</p>`, { n: 1 });
     root.querySelector("#slot")!.innerHTML = `<span data-wcs="textContent: n"></span><i data-wcs="textContent: n"></i>`;
-    await vi.advanceTimersByTimeAsync(999);
+    // (the first look, a second after the change, finds them; the second one, a second later, says so)
+    await vi.advanceTimersByTimeAsync(1999);
     expect(said("inserted-unbound")).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(said("inserted-unbound")).toEqual([
@@ -886,8 +887,25 @@ describe("後から入って束縛されない要素（wcs/inserted-unbound）�
     box.innerHTML = `<span data-wcs="textContent: n"></span>`;
     (globalThis as any)[BIND].bind(box);
     expect(box.querySelector("span")!.textContent).toBe("");
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(said("inserted-unbound")).toHaveLength(1);
+  });
+
+  it("見回りが、入れてから渡すまでの間（htmx は入れ替えの約 20 ms 後の htmx:load で渡す）に当たっても、次の見回りまでに束縛されていれば言わない（community-hall の e2e が 40 回に 1 回落ちた）", async () => {
+    const { root } = await bound(`<main id="slot"></main><p id="other"></p>`, { n: 1 });
+    const slot = root.querySelector("#slot")!;
+    // an earlier change starts the look's second
+    root.querySelector("#other")!.textContent = "searching";
+    await vi.advanceTimersByTimeAsync(990);
+    // htmx swaps the results in…
+    slot.innerHTML = `<span data-wcs="textContent: n"></span>`;
+    // …the look comes (the span is not bound yet)…
+    await vi.advanceTimersByTimeAsync(20);
+    // …and htmx:load hands it over, 20 ms after the swap
+    for (const x of [...slot.children]) (globalThis as any)[BIND].bind(x);
+    expect(slot.querySelector("span")!.textContent).toBe("1");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(said("inserted-unbound")).toEqual([]);
   });
 
   it("束縛が値として入れた中身（html:）・data-wcs-ignore の中・長い属性は、それぞれのとおりに扱う", async () => {
@@ -899,7 +917,7 @@ describe("後から入って束縛されない要素（wcs/inserted-unbound）�
     await vi.advanceTimersByTimeAsync(1000);
     expect(said("inserted-unbound")).toEqual([]);
     root.querySelector("#slot")!.insertAdjacentHTML("beforeend", `<input data-wcs="value: n; attr.aria-label: n; class.on: n; style.color: n; title: n">`);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(said("inserted-unbound")).toEqual([expect.stringContaining(`<input data-wcs="value: n; attr.aria-label: n; class.on: n; style.color: n..."> entered the page`)]);
   });
 
@@ -953,7 +971,7 @@ describe("後から入った構造のテンプレート（wcs/inserted-unbound �
       const main = root.querySelector("main")!;
       main.innerHTML = `<template data-wcs="if: on"><b>on</b></template>`;
       (globalThis as any)[Symbol.for("wcstack.binder")].bind(main.firstElementChild);
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(2000);
       const said = warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("inserted-unbound"));
       expect(said).toEqual([expect.stringContaining(`<template data-wcs="if: on"> entered the page after it was bound`)]);
       expect(said[0]).toContain(`not for a container the page already had. A for: / if: template at the top of what is handed over needs { range: true } (#204): put it inside an element. See https://github.com/wcstack/wcstack/blob/main/docs/islands.md`);
