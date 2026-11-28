@@ -83,6 +83,8 @@ npm install @wcstack/websocket
 - `message` を受け取る
 - 任意で `connected`、`loading`、`error`、`readyState` もバインド
 
+**すべてのメッセージをハンドラーで受けるなら、`url` は状態から渡す。** `message:` のバインディングが読むのは最新のメッセージで、それならリテラルの `url` で構いません: 出力は要素が持っている値から状態を初期化します。すべてのメッセージを見る `$on` ハンドラー（`eventToken.message: onMessage`）は別です。リテラルの `url="wss://…"` で動き出す要素は `<wcs-state src>` のファイルが読み込まれる前に接続し、`eventToken.` が付く前に出したメッセージ —— サーバーの挨拶やスナップショット —— はハンドラーに届きません。動き出すための入力を状態から渡せば（`data-wcs="url: socketUrl; eventToken.message: onMessage"`）、ソケットはページが束縛されてから開きます。`message:` をプロパティとしても束ねると、要素が持っている最後のメッセージは受け取れますが、それより前のものは失われたままです。4.33（未リリース）から、`@wcstack/state` の diagnostics アドオンが、ページを束縛した時点でそういうメッセージを持っていた要素を名指しし（`[wcs/event-before-binding]`）、`@wcstack/lint` が `eventToken.message` と並ぶリテラルの `url` を同じ code で警告します（`manual` があるとき、`message` もプロパティとして束ねているときは言いません）。[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §31 を参照してください。
+
 ### 2. 状態からのメッセージ送信
 
 `send` プロパティでサーバーにデータを送信します。`send` に値を設定すると即時送信され、オブジェクトは自動的に JSON 文字列化されます。

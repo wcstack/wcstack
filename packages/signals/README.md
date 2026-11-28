@@ -253,6 +253,8 @@ const user = resource(
 id.set(2); // aborts the in-flight request and starts a fresh one.
 ```
 
+`args` alone decides a restart: read every input there and pass it to `source`. Since 4.33 (not released yet), a signal `source` reads is not followed; up to 4.32, one read before its first `await` restarted the request when it changed, by accident.
+
 ### 5. Stream resource (fold a flow)
 
 ```typescript
@@ -306,7 +308,14 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `resource<T, A>(source, options?)` | `{ value, loading, error, dispose }` — `source(args, signal) => Promise<T> \| T` |
 | `streamResource<T, C, A>(source, options?)` | `{ value, status, error, dispose }` — `source(args, signal) => AsyncIterable<C> \| ReadableStream<C> \| Promise<…>` |
 
-Both: `options.args` is a reactive getter (reading signals there wires restart-on-change, switchMap-style — the previous request is aborted via the `AbortSignal` passed to `source`); `options.initial` seeds `value`. A stale response from a superseded request is dropped (checked against `signal.aborted`). Created inside an owner, a resource auto-disposes on teardown.
+Both: `options.args` is a reactive getter (reading signals there wires restart-on-change, switchMap-style — the previous request is aborted via the `AbortSignal` passed to `source`); `options.initial` seeds `value`. A stale response from a superseded request is dropped (checked against `signal.aborted`). Created inside an owner, a resource auto-disposes on teardown. Only `args` is followed: since 4.33 (not released yet), `source` runs with no observer, so a signal it reads is not a dependency.
+
+While a restart is in flight:
+
+- `resource` — `value` keeps the last resolved value until the new request resolves; `loading` is `true` and `error` is back to `null`. A failed request keeps it too (`error` set, `loading` `false`).
+- `streamResource` — `value` is reset to `initial` at once (`undefined` without one), `status` is `active` and `error` `null`; each chunk then folds from there. A failed run keeps the last folded value (`status` `error`).
+
+A display that should go on showing the last list while a new stream opens keeps a copy of its own (an effect that writes each value that is not `initial` into a signal).
 
 ### wc-bindable adapter (`@wcstack/signals`)
 
@@ -456,6 +465,7 @@ Both entries ship as production code-split bundles that import **one shared reac
 
 - **Map the single `/dom` entry (the recommended CDN form).** `@wcstack/signals/dom` re-exports the entire headless core (`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `selector` / `resource` / `streamResource` / `bindNode` / `nodeSource`) alongside the DOM helpers, so one specifier covers everything and the single instance is structural — nothing depends on chunk sharing. The signals demos in this repo all import from this one entry.
 - **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@4.32.0/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
+- **A second core says so.** Since 4.33 (not released yet), a second copy of the reactive core warns once when it loads, in production too: `[wcs/signals-second-core] A second copy of the reactive core was loaded …`. It comes from two entries bundled apart (esm.run, jsDelivr's `+esm`) or two versions on one page; up to 4.32 nothing was said, and the counter-assist seam app's display clock never moved. Import every name from one entry at one URL — `@wcstack/signals/dom` has all of them. `@wcstack/lint` reports such imports as an error (`wcs/signals-dual-entry`), since 4.33 (not released yet) in the local modules the page runs too.
 
 Bundler users dedupe via the module graph and may use either entry.
 

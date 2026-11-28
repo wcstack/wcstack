@@ -82,6 +82,14 @@ This is the default mode:
 - receive `message`
 - optionally bind `connected`, `loading`, `error`, and `readyState`
 
+**Every event in a handler — give `url` from the state.** A `message:` binding reads the latest event, and a literal `url` is fine for it: the output seeds the state from what the element holds. A `$on` handler that sees every event (`eventToken.message: queueEvent`) is another matter. An element started from a literal `url="/events"` connects before a `<wcs-state src>` file has loaded, and the events it dispatches before `eventToken.` is attached — the snapshot a stream sends first — never reach the handler (the counter-assist seam app showed 0 people waiting with 8 waiting). Give the starting input from the state, so the stream opens once the page is bound:
+
+```html
+<wcs-sse data-wcs="url: streamUrl; eventToken.message: queueEvent"></wcs-sse>
+```
+
+Binding `message:` as a property too takes the last event the element holds; the ones before it are still lost. Since 4.33 (not released yet), `@wcstack/state`'s diagnostics add-on names an element that held such an event when the page was bound (`[wcs/event-before-binding]`), and `@wcstack/lint` warns under the same code about a literal `url` beside `eventToken.message` (not with `manual`, nor when `message` is bound as a property too). See [the timing contract](../../docs/timing-and-firing-contract.md) §31.
+
 ### 2. The `message` shape
 
 Every received event — the unnamed `message` plus any named events you subscribe to — is delivered as a single object:

@@ -113,6 +113,19 @@ const app = await mount(`
 
 `(url) => join(publicDir, url.pathname)` でも構いません。URL は上のように連結で書いてください: Vite（したがって vitest）は文字列リテラルやテンプレートリテラルで書いた `new URL("…", import.meta.url)` を、そのファイルではない資産の URL に書き換えます。状態は自分の補助モジュール（`./lib.js`）を `import` してよく、それはファイルの隣で解決されます。インライン `<script type="module">` の状態は、Node の下では相対モジュールを `import` できません: `data:` URL から評価されるので、`./lib.js` を解決する基底がありません（そのときのエラーは CSP の文書を指しますが、テストには当てはまりません）。そうした状態は自分のファイルに置き、`resolveModule` を使ってください。
 
+**CDN の URL から import する状態。** 状態のファイルは Node 自身のモジュールローダーで import され、そこには Vitest の `resolve.alias` が効きません: `https://cdn.jsdelivr.net/npm/…` を import する状態（ビルドの無いページの `defineState`、Markdown のパーサ）は、設定でその URL を `node_modules` に写していても、`Only URLs with a scheme in: file and data are supported by the default ESM loader. Received protocol 'https:'` で初期化に失敗します。import をするパッケージを inline にすれば、Vitest は状態を自分のパイプラインで読み込み、alias が効きます（継ぎ目アプリ counter-assist、Vitest 5）:
+
+```js
+// vitest.config.js
+export default defineConfig({
+  resolve: { alias: [{ find: "https://cdn.jsdelivr.net/npm/marked@18.3.0/lib/marked.esm.js", replacement: "…/node_modules/marked/lib/marked.esm.js" }] },
+  test: {
+    environment: "happy-dom",
+    server: { deps: { inline: ["@wcstack/testing", "@wcstack/state", "@wcstack/server"] } },
+  },
+});
+```
+
 ### `settle() → Promise<void>`
 
 マイクロタスク 2 段とマクロタスク 1 段 — 書き込みが DOM に届くのに十分な待ち。`write()`・`fire()`・任意の DOM イベントの後に使います。
@@ -147,6 +160,8 @@ happy-dom が再現できない 2 点。実ブラウザの e2e（Playwright）�
 - イベントのタイミングが実ブラウザと違う。
 
 表の中の `<template>` は 4.26 から扱えます: `mount()` がブラウザと同じ所に置きます（上記）。テストが自分で `innerHTML` で挿入する HTML は対象外です — `@wcstack/server` の `setInnerHTML(element, html)` で挿入してください。
+
+**jsdom は対象外です。** `mount()` はページのカスタム要素をセレクタ `*-*` で探し（`@wcstack/server` の `waitForReady`）、happy-dom はこれを受け付けますが jsdom は拒みます: `environment: 'jsdom'` の下では `SyntaxError: Invalid selector *-*` で失敗します。ページのテストは happy-dom で走らせてください。happy-dom の下で振る舞いの違うライブラリ（出力を検査したいサニタイザ）は、自分のファイルに分けて `// @vitest-environment jsdom` で試せます。
 
 ## 実例
 

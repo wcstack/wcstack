@@ -95,6 +95,8 @@ The duality in one element: `post` is wired from a command-token, and an incomin
 <p data-wcs="textContent: count"></p>
 ```
 
+The literal `name="counter"` joins the channel when the element connects, before `@wcstack/state` has bound the page — before a `<wcs-state src>` file has loaded, for one. A message another tab posts in that window is dispatched before `eventToken.message` is attached, and `onMessage` never sees it. When that matters, give the name from the state (`data-wcs="name: channelName; …"`), so the channel opens once the page is bound, or bind `message:` as a property too (it takes the last message the element holds; earlier ones are still lost). Since 4.33 (not released yet), `@wcstack/state`'s diagnostics add-on names an element that held such a message when the page was bound (`[wcs/event-before-binding]`), and `@wcstack/lint` warns under the same code about a literal `name` beside `eventToken.message` (not with `manual`, nor when `message` is bound as a property too). See [the timing contract](../../docs/timing-and-firing-contract.md) §31.
+
 ### 3. Mirror a received value into state
 
 You do not need the event-token to *read* the latest message — bind `message` directly.

@@ -629,11 +629,11 @@
     {
       "id": "signals-dual-entry",
       "lint": [{ "code": "wcs/signals-dual-entry", "severity": "varies" }],
-      "runtime": "silent", "harm": "stale",
+      "runtime": "loud", "harm": "stale",
       "mistake": { "en": "Loads `@wcstack/signals` and `@wcstack/signals/dom` from a CDN that bundles each one (esm.run).", "ja": "`@wcstack/signals` と `@wcstack/signals/dom` を、それぞれを束ねる CDN（esm.run）から読み込む。" },
-      "effect": { "en": "The page gets two reactive cores: an effect in one does not track a signal of the other, and the UI stops updating across them.", "ja": "ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる。" },
-      "disposition": "runtime-report",
-      "note": { "en": "Each core can mark itself on a global symbol when it makes its first signal; a second copy warns in dev mode.", "ja": "各コアが最初の signal を作るときにグローバルなシンボルに印を付け、2 つ目のコピーが開発モードで警告する。" }
+      "effect": { "en": "The page gets two reactive cores: an effect in one does not track a signal of the other, and the UI stops updating across them (the counter-assist display's clock never ticked). Since 4.33 the second copy says so once when it loads, in production too (`[wcs/signals-second-core]`).", "ja": "ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる（counter-assist の表示の時計は進まなかった）。4.33 から、2 つ目のコピーが読み込まれたときに一度言う。本番でも言う（`[wcs/signals-second-core]`）。" },
+      "evidence": [{ "file": "packages/signals/src/reactive.ts", "text": "[wcs/signals-second-core]" }],
+      "note": { "en": "Each core marks the page on a global symbol when it is evaluated; a second copy warns. Import every name from one entry at one URL — `@wcstack/signals/dom` has all of them.", "ja": "各コアは評価されるときにグローバルなシンボルに印を付け、2 つ目のコピーが警告する。どの名前も 1 つの入口から、1 つの URL で import する —— `@wcstack/signals/dom` が全部を持つ。" }
     },
     {
       "id": "feature-foreign",
@@ -2137,6 +2137,51 @@
       "effect": { "en": "It sets a property named `key` and does nothing else; nothing says so. No key is needed: rows are matched by the row object, and `$listKeys` keeps rows across refetched data. Not reported on a custom element, whose `key` may be an input (`<wcs-storage>`).", "ja": "`key` という名前のプロパティを書くだけで、ほかに何もせず、何も言わない。key は要らない: 行は行のオブジェクトで突き合わされ、取り直したデータで行を保つのは `$listKeys`。カスタム要素の `key` は入力のことがある（`<wcs-storage>`）ので言わない。" },
       "disposition": "static-only",
       "note": { "en": "Found by the street-reports seam app (a React app ported by a first-time author, docs/seam-apps.md). The author decided on 2026-11-25 to give the lint a rule for each such habit: an error where the runtime refuses or drops it, a warning otherwise.", "ja": "継ぎ目アプリ street-reports（初めての作者が React のアプリを移した — docs/seam-apps.ja.md）が見つけた。2026-11-25 に著者が、こうした癖ごとに lint の規則を置くと決めた: ランタイムが拒むか落とすものは error、ほかは warning。" }
+    },
+    {
+      "id": "stream-error-unobserved",
+      "lint": [],
+      "runtime": "loud", "harm": "stale",
+      "mistake": { "en": "Declares a `$stream` and binds its value only — nothing reads `$streamError.<name>` or `$streamStatus.<name>`.", "ja": "`$stream` を宣言してその値だけを束ね、`$streamError.<名前>` も `$streamStatus.<名前>` も何も読まない。" },
+      "effect": { "en": "A failure — the source threw at the 25th token, the network cut — ends in `$streamError` only: the page goes on showing what was folded as if the answer were complete. Since 4.33 the diagnostics add-on says so once per stream when no binding or getter reads either companion (`[wcs/stream-error-unobserved]`), not while the page is going away; up to 4.32 nothing did.", "ja": "失敗 —— 25 トークン目で source が投げた、通信が切れた —— は `$streamError` に入るだけ: ページは畳み込んだ分を、答えが終わったかのように出し続ける。4.33 から、どちらの付属のパスも束縛と getter が読まないとき、diagnostics の後付けが流れごとに 1 回言う（`[wcs/stream-error-unobserved]`。ページを離れる間は言わない）。4.32 までは何も言わなかった。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/stream-error-unobserved]" }],
+      "note": { "en": "Found by the counter-assist seam app (docs/seam-apps.md; v4-direction §5.29). Bind `$streamError.<name>` and show it, or read it in a getter.", "ja": "継ぎ目アプリ counter-assist が見つけた（docs/seam-apps.ja.md、v4-direction §5.29）。 `$streamError.<名前>` を束ねて見せるか、getter で読む。" }
+    },
+    {
+      "id": "stream-source-shape",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Returns from a `$stream` source something that is not a stream: the `Response` instead of its `body`, or nothing (a missing `return`).", "ja": "`$stream` の source から流れでないものを返す: `body` ではなく `Response`、または何も返さない（`return` 忘れ）。" },
+      "effect": { "en": "Every run fails at once with a TypeError that reaches `$streamError` only. Since 4.33 the diagnostics add-on names what the source returned and the fix, once per stream, even when the page reads the failure (`[wcs/stream-source-shape]`).", "ja": "毎回の実行がすぐ TypeError で失敗し、それは `$streamError` にしか届かない。4.33 から diagnostics の後付けが、source が返したものと直し方を流れごとに 1 回言う。ページが失敗を読んでいても言う（`[wcs/stream-source-shape]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/stream-source-shape]" }],
+      "note": { "en": "Found by the counter-assist seam app (docs/seam-apps.md; v4-direction §5.29). Return `response.body`, an async generator, or a ReadableStream.", "ja": "継ぎ目アプリ counter-assist が見つけた（docs/seam-apps.ja.md、v4-direction §5.29）。 `response.body`・async generator・ReadableStream を返す。" }
+    },
+    {
+      "id": "stream-fold-in-place",
+      "lint": [],
+      "runtime": "loud", "harm": "stale",
+      "mistake": { "en": "Writes a `$stream` fold that changes its accumulator and returns it (`acc.push(c); return acc`, `Object.assign(acc, …)`).", "ja": "受け取った値を変えて返す `$stream` の fold を書く（`acc.push(c); return acc`、`Object.assign(acc, …)`）。" },
+      "effect": { "en": "The value is the same object before and after: a list bound to it diffs it against itself, and a `$watch`'s `prev` is the new value. Since 4.33 the diagnostics add-on says so once per stream when the accumulator came back changed — an array's length, a Map's or Set's size, an object's entries — over the first 50 chunks (`[wcs/stream-fold-in-place]`); one returned unchanged, for a chunk the fold skips, is not told.", "ja": "値は前も後も同じオブジェクト: それを束ねた一覧は自分と比べ、`$watch` の `prev` は新しい値になる。4.33 から、受け取った値が変わって返ってきたとき —— 配列の長さ、Map / Set の大きさ、オブジェクトの中身 —— diagnostics の後付けが最初の 50 塊について流れごとに 1 回言う（`[wcs/stream-fold-in-place]`）。塊を飛ばして変えずに返すのは言わない。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/stream-fold-in-place]" }],
+      "note": { "en": "Found by the counter-assist seam app (docs/seam-apps.md; v4-direction §5.29). Return a new value: `[...acc, chunk]`, `{ ...acc, key: chunk }`.", "ja": "継ぎ目アプリ counter-assist が見つけた（docs/seam-apps.ja.md、v4-direction §5.29）。 新しい値を返す: `[...acc, chunk]`・`{ ...acc, key: chunk }`。" }
+    },
+    {
+      "id": "stream-value-written",
+      "lint": [],
+      "runtime": "loud", "harm": "degraded",
+      "mistake": { "en": "Stops a `$stream` by writing its value (`this.answer = EMPTY`) while it runs.", "ja": "流れている `$stream` を、その値を書いて止めようとする（`this.answer = EMPTY`）。" },
+      "effect": { "en": "The stream goes on — the server keeps generating for nobody — and its next chunk folds on top of what was written. Since 4.33 the diagnostics add-on says so once per stream (`[wcs/stream-value-written]`), and `args` returning `null` stops a stream and keeps what it folded.", "ja": "流れは続き —— サーバーは誰も読まない生成を続け —— 次の塊は書いた値の上に畳み込まれる。4.33 から diagnostics の後付けが流れごとに 1 回言い（`[wcs/stream-value-written]`）、`args` が `null` を返せば流れを止めて畳み込んだ分を残せる。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/stream-value-written]" }],
+      "note": { "en": "Found by the counter-assist seam app (docs/seam-apps.md; v4-direction §5.29). Make `args` return `null` to stop it.", "ja": "継ぎ目アプリ counter-assist が見つけた（docs/seam-apps.ja.md、v4-direction §5.29）。 止めるなら `args` が `null` を返すようにする。" }
+    },
+    {
+      "id": "list-keys-getter",
+      "lint": [],
+      "runtime": "loud", "harm": "degraded",
+      "mistake": { "en": "Names a getter in `$listKeys` (`$listKeys: { visibleTurns: \"id\" }` where `visibleTurns` is a getter).", "ja": "`$listKeys` に getter を名指す（`visibleTurns` が getter なのに `$listKeys: { visibleTurns: \"id\" }`）。" },
+      "effect": { "en": "Rows are kept when an array is assigned to the declared path, and a getter's list is never assigned: the declaration does nothing, and the rows are rebuilt on every refresh. Since 4.33 the list-keys add-on says so when it receives the declaration (`[wcs/list-keys-getter]`); up to 4.32 nothing did.", "ja": "行を保つのは宣言したパスに配列を代入したときで、getter の一覧は代入されない: 宣言は何もせず、取り直しのたびに行を作り直す。4.33 から list-keys の後付けが宣言を受け取るときに言う（`[wcs/list-keys-getter]`）。4.32 までは何も言わなかった。" },
+      "evidence": [{ "file": "packages/state/src/features/list-keys.ts", "text": "[wcs/list-keys-getter]" }],
+      "note": { "en": "Found by the counter-assist seam app (docs/seam-apps.md; v4-direction §5.29). Name the path the list is assigned to — the one the getter reads.", "ja": "継ぎ目アプリ counter-assist が見つけた（docs/seam-apps.ja.md、v4-direction §5.29）。 一覧を代入するパス —— getter が読むもの —— を名指す。" }
     }
   ],
   "uncounted": [

@@ -82,6 +82,14 @@ npm install @wcstack/sse
 - `message` を受け取る
 - 任意で `connected`、`loading`、`error`、`readyState` もバインド
 
+**すべてのイベントをハンドラーで受けるなら、`url` は状態から渡す。** `message:` のバインディングが読むのは最新のイベントで、それならリテラルの `url` で構いません: 出力は要素が持っている値から状態を初期化します。すべてのイベントを見る `$on` ハンドラー（`eventToken.message: queueEvent`）は別です。リテラルの `url="/events"` で動き出す要素は `<wcs-state src>` のファイルが読み込まれる前に接続し、`eventToken.` が付く前に出したイベント —— ストリームが最初に送るスナップショット —— はハンドラーに届きません（継ぎ目アプリ counter-assist では、8 人待っているのに 0 人と表示されました）。動き出すための入力を状態から渡せば、ストリームはページが束縛されてから開きます:
+
+```html
+<wcs-sse data-wcs="url: streamUrl; eventToken.message: queueEvent"></wcs-sse>
+```
+
+`message:` をプロパティとしても束ねると、要素が持っている最後のイベントは受け取れますが、それより前のものは失われたままです。4.33（未リリース）から、`@wcstack/state` の diagnostics アドオンが、ページを束縛した時点でそういうイベントを持っていた要素を名指しし（`[wcs/event-before-binding]`）、`@wcstack/lint` が `eventToken.message` と並ぶリテラルの `url` を同じ code で警告します（`manual` があるとき、`message` もプロパティとして束ねているときは言いません）。[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §31 を参照してください。
+
 ### 2. `message` の形
 
 受信したすべてのイベント — 名前なしの `message` に加えて、サブスクライブした名前付きイベント — は単一のオブジェクトとして届きます:

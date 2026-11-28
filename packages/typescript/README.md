@@ -56,6 +56,8 @@ Regenerates the schema and compares it with `--manifest=<path>` (default `wcstac
 
 Exit codes: `0` up to date · `1` drift (each change is listed as a JSON pointer: `+` only in the type, `-` only in the manifest, `~` different) · `2` usage error, missing manifest, or the state has no `stateSchema` yet.
 
+Every line `check` prints goes to **stderr**, the result too: `wcstack.manifest.json: state tree is up to date` on success, the changes on drift. Nothing goes to stdout, so a script that captures stdout only sees nothing either way — read stderr, or the exit code.
+
 Since 4.26, `check` also compares `stateSource` with the state file (or `--state-source`): a manifest that names another file is drift (`~ stateSource`, exit `1`), because the validator would apply the schema to that file's pages and not to this one's — a state file moved or renamed without regenerating. A manifest without `stateSource` is still up to date; `check` adds a note.
 
 The recommended CI gate is
@@ -95,6 +97,16 @@ The script is checked as JavaScript, which is what the browser runs (Since 4.26;
 | anything else | passed to tsc verbatim (`-p`, `--noEmit`, …) |
 
 The tsconfig needs only to reach the pages and to target ES2015 or later. Since 4.26, `noImplicitThis`, `allowJs` and `checkJs` are not needed for the HTML (JavaScript types an object literal's `this` without `noImplicitThis`; the plugin turns the check on), and the audit no longer asks for them. When pages with an inline `<wcs-state>` lie under the tsconfig's directory and none of them is in the program — `include: ["src"]` and a page beside the tsconfig — the warning names them: `wcs-tsc: warning: …/tsconfig.json is missing include: "**/*.html" (no page with an inline <wcs-state> is in the program: counter.html is not) — HTML may not be checked; …` (the `warning:` prefix since 4.26, so a CI log filter on `error|warning` keeps it). The warning does not change the exit code; pass `--wcs-defaults` in CI to check the pages anyway. Turn on `strict` (at least `noImplicitAny`) for the full check: without it, JavaScript's object literals are open, so a misspelt property of an object inside an array (`this.items[0].nmae`) is not reported — `this.coutn` still is.
+
+**A state in a file of its own** (`<wcs-state src="./state.js">`) is not an inline script: tsc checks it as any JavaScript file in the program (with `allowJs` / `checkJs`), and without `defineState` its object literal is open — `this.questoin = ""` passes where `question` is declared. Wrap it in `defineState`. On a buildless page, import it from its URL (`https://cdn.jsdelivr.net/npm/@wcstack/state@<version>/dist/define.js`, no runtime) and map that URL to the installed package's types in the tsconfig — `paths` resolves it ahead of `--url-imports=any`:
+
+```json
+"paths": {
+  "https://cdn.jsdelivr.net/npm/@wcstack/state@4.32.0/dist/define.js": ["./node_modules/@wcstack/state/dist/define.d.ts"]
+}
+```
+
+Then `this.questoin` is `TS2551: Property 'questoin' does not exist … Did you mean 'question'?` ([define-state.md](../state/docs/define-state.md#a-state-file-on-a-buildless-page)).
 
 Exit codes are tsc's (`0` clean, non-zero with diagnostics); `2` when `typescript` / `@volar/typescript` cannot be resolved or an option is invalid. A page with several `<wcs-state>` blocks is combined into one virtual module (imports hoisted, each block in its own scope); a page without inline state is an empty module. The mechanism is vue-tsc's: `@volar/typescript`'s `runTsc` patches the project's own `typescript/lib/tsc.js`.
 

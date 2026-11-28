@@ -6,7 +6,10 @@ Take a look at the following state definition.
 
 ```javascript
 export default {
-  prompt: "",
+  draft: "",     // what the input holds while the user types
+  prompt: null,  // what was asked — the key the stream reads (null: nothing asked yet)
+
+  ask() { this.prompt = this.draft; },
 
   $stream: {
     tokens: {
@@ -20,12 +23,16 @@ export default {
 ```
 
 ```html
+<input data-wcs="value: draft">
+<button data-wcs="onclick: ask">Ask</button>
 <p data-wcs="textContent: tokens"></p>
 <p data-wcs="textContent: $streamStatus.tokens"></p>
 <p data-wcs="textContent: $streamError.tokens"></p>
 ```
 
 `$stream` is a declaration map on the state object — the same family as `$commandTokens`, `$eventTokens`, and `$on`. Each entry connects an **async producer** (an async iterable, an async generator, or a `ReadableStream`) to a single **reactive property**. Every chunk the producer yields is passed through `fold`, and the folded result becomes the new value of `state.tokens` — flowing through the ordinary update cycle, so bindings, computed getters, `$watch` and `$renderedCallback` all react to it like any other property.
+
+The input writes `draft`, and `ask` copies it to `prompt`, the key `args` reads: a stream restarts whenever what `args` reads changes, so an input bound to `prompt` itself would abort the answer and send a new request on every keystroke. Since 4.33 (not released yet), `prompt: null` keeps the stream from starting until something is asked ([Starting and Stopping](#starting-and-stopping)); up to 4.32, `source` is called with `null` on load.
 
 `$stream` is part of the `temporal` add-on, together with `$watch`. `@wcstack/state` and `/auto` include it; a page on `/core` installs `@wcstack/state/features/temporal`, and a state that declares `$stream` without it fails with `[wcs/feature-not-installed]`. See the README's [Streams](../README.md#streams-stream) section for the overview and [Choosing a Time Mechanism](../README.md#choosing-a-time-mechanism) for when to use `$stream`, `$watch` or a path getter.
 
@@ -66,10 +73,10 @@ export default {
 
 | Field | Type | Required | Contract |
 |---|---|---|---|
-| `source` | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<same>` | ✔ | **MUST honor the `AbortSignal`** (cooperative cancellation). Restart and disposal are driven through this signal — a source that ignores it cannot be reliably cancelled. A `ReadableStream` satisfies this automatically: anything getReader-bearing is consumed via `getReader()` (even when natively async-iterable — the spec serializes `iterator.return()` behind a pending `next()`, so only `reader.cancel()` can force-unwind a parked read), and on abort the runtime cancels the reader, which runs the stream's `cancel()` callback. For any other async iterable the runtime calls the iterator's `return()` on abort; a generator parked in an `await` that ignores `signal` cannot be unwound from outside. May return a `Promise` of the producer. Any other return value is a `TypeError`, surfaced through the error state. |
-| `args` | `(state) => any` | — | **Synchronous, pure function.** Receives a read-only view of the state; every path read here is captured as a dependency (see [Dependency-Driven Restart](#dependency-driven-restart)). Omitted = no dependencies — the stream starts once and never restarts. The return value is passed verbatim as `source`'s first argument (bundle multiple values in an object or array). Returning a `Promise` is an error. |
+| `source` | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<same>` | ✔ | **MUST honor the `AbortSignal`** (cooperative cancellation). Restart and disposal are driven through this signal — a source that ignores it cannot be reliably cancelled. A `ReadableStream` satisfies this automatically: anything getReader-bearing is consumed via `getReader()` (even when natively async-iterable — the spec serializes `iterator.return()` behind a pending `next()`, so only `reader.cancel()` can force-unwind a parked read), and on abort the runtime cancels the reader, which runs the stream's `cancel()` callback. That covers the stream once `source` has returned it; what `source` awaits before that — a `fetch` whose response has not arrived — is stopped only if `source` passes `signal` on (`fetch(url, { signal })`): without it, a restart or a stop leaves that request running, and the server answers nobody. For any other async iterable the runtime calls the iterator's `return()` on abort; a generator parked in an `await` that ignores `signal` cannot be unwound from outside. May return a `Promise` of the producer. Any other return value is a `TypeError`, surfaced through the error state. |
+| `args` | `(state) => any` | — | **Synchronous, pure function.** Receives a read-only view of the state; every path read here is captured as a dependency (see [Dependency-Driven Restart](#dependency-driven-restart)). Omitted = no dependencies — the stream starts once and never restarts. The return value is passed verbatim as `source`'s first argument (bundle multiple values in an object or array). Returning a `Promise` is an error. Since 4.33 (not released yet), `null` asks for no run: the stream is not started, or a running one is stopped and keeps what it folded ([Starting and Stopping](#starting-and-stopping)); `undefined` is passed on like any other value. An object `args` reads from the state (`state.request`) reaches `source` as the state's own object — not a proxy, not a copy: read it, serialize it, post it to a worker (state values are plain data, which structured clone copies), but do not change it in place — that changes the state without telling anything bound to it. |
 | `fold` | `(acc, chunk) => next` | — | **Synchronous function.** Omitted = latest (each chunk replaces the value). **Must return a new value** — in-place mutation of `acc` is unsupported (see [Return a New Value](#return-a-new-value-no-in-place-mutation)). A throwing fold puts the stream into the error state and aborts the producer. |
-| `initial` | any | ✔ when `fold` is given | Seed value. The property is reset to `initial` on every start and restart. |
+| `initial` | any | ✔ when `fold` is given | Seed value. The property is reset to `initial` on every start and restart (a stop by `args` returning `null` keeps the value — since 4.33 (not released yet)). |
 
 ### Validation
 
@@ -100,7 +107,7 @@ How a violation (or any exception `args` throws) surfaces depends on the path:
 
 When the declaration is read, if `state[name]` is undefined it is materialized as an ordinary data property holding `initial` (or `undefined` when there is no fold). This means the initial render — and SSR output — shows `initial` even before the stream starts.
 
-You may pre-declare the property yourself (useful for typing with `defineState`), but the value is **overwritten with `initial` when the stream starts**. Once started, the property is owned by the stream runtime: assigning to it from user code is not blocked, but the behavior is undefined — the next fold simply folds on top of whatever you wrote.
+You may pre-declare the property yourself (useful for typing with `defineState`), but the value is **overwritten with `initial` when the stream starts**. Once started, the property is owned by the stream runtime: assigning to it from user code is not blocked, but the behavior is undefined — the next fold simply folds on top of whatever you wrote. Since 4.33 (not released yet), the diagnostics add-on says so once per stream (`[wcs/stream-value-written]`). A write does not stop the stream, nor the request behind it: to stop it, make `args` return `null`, which keeps what it folded ([Starting and Stopping](#starting-and-stopping)).
 
 The reset to `initial` on every start and restart is an ordinary write: bindings and a `$watch` on the value see it when it changes the value (always, when `initial` is an object or array).
 
@@ -117,7 +124,7 @@ Every stream exposes two read-only companion paths:
 
 | Status | Meaning |
 |---|---|
-| `idle` | Declared but not running (before connect, or after disconnect) |
+| `idle` | Declared but not running (before connect, or after disconnect; since 4.33 (not released yet), also while `args` returns `null`) |
 | `active` | The current run is consuming chunks |
 | `done` | The producer ended normally |
 | `error` | The run failed (source threw or rejected, fold threw, the producer was not iterable, or `args` failed on a restart) |
@@ -125,7 +132,7 @@ Every stream exposes two read-only companion paths:
 Semantics:
 
 - **Read-only.** Assigning to either namespace (including via two-way binding) throws `"$streamStatus.<name>" is read-only (the stream runtime owns it).` — also when the assigned value equals the current one: the read-only check runs before the same-value guard.
-- `$streamError.<name>` is reset to `null` on every start and restart.
+- `$streamError.<name>` is reset to `null` on every start and restart, and when `args` turns `null` (since 4.33 (not released yet)).
 - On error, the **value property keeps the last folded value** — it is not reset. The reset to `initial` happens on the next (re)start.
 - Names not declared in `$stream` read as `undefined` (no throw), same as the `$command` namespace convention.
 
@@ -190,6 +197,52 @@ Details:
 
 ---
 
+## Starting and Stopping
+
+Since 4.33 (not released yet), `args` returning `null` asks for no run:
+
+- While `args` returns `null`, the stream is not started: `$streamStatus.<name>` stays `idle`, `source` is not called, and the value stays `initial`.
+- When `args` turns `null` later, a running run is aborted and the value **keeps what it folded** — it is not reset to `initial`. `$streamStatus.<name>` goes back to `idle` (from `active`, `done` or `error`) and `$streamError.<name>` to `null`.
+- The next value that is not `null` starts a run as a restart does: from `initial`, with `source` called with that value.
+- Only `null` does this: `undefined` is a value like any other, and `source(undefined, signal)` is called. An entry without `args` starts once, as before.
+
+Up to 4.32, `source` is called with `null` too: a stream with nothing to ask yet returns an empty stream (and reads `done` before anything was asked), and a stop that keeps the answer takes a `$watch` copying the value into a key of its own.
+
+So a request the user sends, and may stop, is one key:
+
+```javascript
+export default {
+  draft: "",
+  request: null,                                   // null: nothing to ask — the stream is idle
+
+  send() { this.request = { question: this.draft }; },
+  stop() { this.request = null; },                 // aborts the run; the answer so far stays
+
+  $stream: {
+    answer: {
+      args:    (state) => state.request,
+      source:  async (request, signal) => {
+        const res = await fetch("/api/answer", { method: "POST", body: JSON.stringify(request), signal });
+        return res.body.pipeThrough(new TextDecoderStream());
+      },
+      fold:    (acc, text) => acc + text,
+      initial: "",
+    },
+  },
+};
+```
+
+```html
+<textarea data-wcs="value: draft"></textarea>
+<button data-wcs="onclick: send">Send</button>
+<button data-wcs="onclick: stop; disabled: $streamStatus.answer|ne(active)">Stop</button>
+<pre data-wcs="textContent: answer"></pre>
+```
+
+`send` writes a new object every time, so the same question sent again starts a new run (an equal string would be dropped by the same-value guard). After `stop`, `$streamStatus.answer` is `idle`, which tells a stopped answer from a finished one (`done`).
+
+---
+
 ## Rules and Footguns
 
 ### Bounded Fold (MUST)
@@ -223,12 +276,28 @@ fold: (acc, chunk) => { acc.push(chunk); return acc; },
 fold: (acc, chunk) => [...acc.slice(-99), chunk],
 ```
 
+Since 4.33 (not released yet), the diagnostics add-on says so once per stream (`[wcs/stream-fold-in-place]`) when a fold returns its accumulator changed — an array whose length changed, a `Map` / `Set` whose size changed, an object whose entries changed — looking at the first 50 chunks. An accumulator returned unchanged, for a chunk the fold skips, is not told.
+
 ### Chunk Reflection Granularity
 
 - `fold` is applied to **every chunk, exactly once** — no chunk is skipped or duplicated.
 - DOM reflection follows the updater's microtask batching. Chunks from an async iterator each arrive in their own microtask, so in practice **each chunk causes one drain** (one DOM flush, one `$renderedCallback`). The flush rate is bounded by the chunk arrival rate.
 - A folded value that is a primitive equal to the current value — with the latest fold, a repeated primitive chunk — is **skipped entirely** by the same-value guard: no binding update, no `$watch`, no `$renderedCallback` entry.
 - There is **no built-in throttling**. If your producer is too chatty for the DOM, thin it out at the producer, in the fold, or downstream with `wcs-debounce` / `wcs-throttle`.
+
+### Drawing a Stream into a List's Rows
+
+A `for:` identifies its rows by reference ([Loop](../README.md#loop-for)). A getter that builds the list from the stream's value — `get turns() { return [...this.saved, { ...this.live, text: this.answer }]; }` — returns a new object for the streamed row on every chunk, so that row's element, and everything in it, is torn down and rebuilt per token (the counter-assist seam app: 94 rows built for 91 tokens, nothing on the console). Keep the rows in a list of the state and write the text into its row by path, from a `$watch` on the stream's value:
+
+```javascript
+$watch: {
+  answer(text) {
+    this[`turns.${this.turns.length - 1}.tail`] = text;   // by path: the row keeps its element
+  },
+},
+```
+
+`$listKeys` does not help with the getter: it keeps rows when an array is assigned to its path, and a getter's list is never assigned (since 4.33 (not released yet), the list-keys add-on says so: `[wcs/list-keys-getter]`).
 
 ---
 
@@ -242,7 +311,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
                                                └──dependency change──▶ (abort → reset → restart) active
 ```
 
-- **Eager start** — streams start when the `<wcs-state>` element connects, **after** `$connectedCallback` completes (so `args` can read values you initialized there). There is no lazy mode.
+- **Eager start** — streams start when the `<wcs-state>` element connects, **after** `$connectedCallback` completes (so `args` can read values you initialized there). A stream with nothing to do yet is not started: since 4.33 (not released yet), an entry whose `args` returns `null` stays `idle` until it returns something else, and turning it `null` again stops the stream with what it folded kept ([Starting and Stopping](#starting-and-stopping)).
 - **Disconnect** — all streams are aborted; status returns to `idle`. The declaration is kept.
 - **Reconnect** — streams restart **from `initial`**, after `$connectedCallback` runs again. There is no "resume where it left off".
 - **Re-setting the state object** (`setInitialState()` on an initialized element) — old runs are aborted and stop without writing to the new state. The new declaration is read, every binding is re-applied to the new state (bindings to a stream the new declaration no longer has read `undefined`), and then, if connected, the new streams start. No double-starts.
@@ -257,6 +326,19 @@ Where a `$stream` declaration runs:
 
 ---
 
+## What the Console Says
+
+A stream's failure reaches `$streamError.<name>` only, and a page that shows neither it nor `$streamStatus.<name>` used to fail without a word. Since 4.33 (not released yet), the `diagnostics` add-on (in `@wcstack/state` and `/auto`) warns once per stream:
+
+- `[wcs/stream-error-unobserved]` — the stream failed and no binding or getter reads `$streamError.<name>` or `$streamStatus.<name>`. Not while the page is going away.
+- `[wcs/stream-source-shape]` — `source` returned neither an async iterable nor a `ReadableStream`: a `Response` (return its `body`), `undefined` (a missing `return`). Said even when the failure is read: every run fails at once.
+- `[wcs/stream-fold-in-place]` — the fold changed its accumulator in place and returned it ([Return a New Value](#return-a-new-value-no-in-place-mutation)).
+- `[wcs/stream-value-written]` — the page wrote a running stream's value ([The Value Property](#the-value-property)).
+
+The README's [Streams](../README.md#streams-stream) section lists them with the other rules.
+
+---
+
 ## Out of Scope (First Stage)
 
 The following are explicitly not supported:
@@ -265,7 +347,7 @@ The following are explicitly not supported:
 2. Async `fold`.
 3. Observable (`subscribe`-style) sources — converting to an async iterable is up to you.
 4. Automatic reconnection — retrying = re-touching a dependency.
-5. Lazy start (a future `lazy: true` option is reserved, not implemented).
+5. A `lazy` option. A stream with nothing to do yet returns `null` from `args` instead (since 4.33 (not released yet); [Starting and Stopping](#starting-and-stopping)).
 6. Per-binding / per-structural-block stream lifetimes — streams live and die with the `<wcs-state>` element's connection.
 7. Backpressure preservation (a permanent non-goal, not a first-stage gap).
 
@@ -275,11 +357,14 @@ The following are explicitly not supported:
 
 ### Accumulating LLM Tokens
 
-A finite token stream, accumulated into a string. Editing the prompt aborts the in-flight response and starts a new one.
+A finite token stream, accumulated into a string. The input writes `draft`, and **Ask** copies it to `prompt`, the key `args` reads, so typing the next question does not touch the answer — an input bound to `prompt` itself would abort it and send a request per keystroke.
 
 ```javascript
 export default {
-  prompt: "",
+  draft: "",
+  prompt: null,   // null: nothing asked yet, no run (since 4.33 (not released yet))
+
+  ask() { this.prompt = this.draft; },
 
   $stream: {
     answer: {
@@ -297,8 +382,8 @@ export default {
 ```
 
 ```html
-<input type="text" data-wcs="value: prompt">
-<button data-wcs="disabled: isStreaming">Ask</button>
+<input type="text" data-wcs="value: draft">
+<button data-wcs="onclick: ask; disabled: isStreaming">Ask</button>
 <pre data-wcs="textContent: answer"></pre>
 <p data-wcs="textContent: $streamError.answer"></p>
 ```
@@ -324,7 +409,7 @@ export default {
 
 ### Streaming a Fetch Response Body
 
-`response.body` is a `ReadableStream`; piping it through `TextDecoderStream` yields text chunks. Passing the `signal` to `fetch` makes cancellation cooperative — changing `url` aborts the request mid-body and starts a new one.
+`response.body` is a `ReadableStream`; piping it through `TextDecoderStream` yields text chunks. Passing the `signal` to `fetch` makes cancellation cooperative — changing `url` aborts the request mid-body and starts a new one. Without it the body is still cancelled once it is being read, but a restart before the response arrives leaves the old request running.
 
 ```javascript
 export default {
@@ -359,11 +444,11 @@ For an event API (`EventSource`, `WebSocket`, DOM events), wrap it in a `Readabl
 |---|---|
 | `$stream` | Declaration map: async producer → fold → reactive property (`temporal` add-on) |
 | `source(args, signal)` | Returns the producer. MUST honor the `AbortSignal` |
-| `args(state)` | Synchronous dependency capture; its reads drive restart |
+| `args(state)` | Synchronous dependency capture; its reads drive restart. `null` = no run (since 4.33 (not released yet)) |
 | `fold(acc, chunk)` | Synchronous, returns a new value. Default: latest |
 | `initial` | Seed; the value resets to it on every (re)start |
 | `$streamStatus.<name>` | `idle` / `active` / `done` / `error` — read-only |
 | `$streamError.<name>` | Last error or `null`; reset to `null` on (re)start |
 | Restart | Dependency change → abort → reset to `initial` → new run (switchMap); an aborted run's chunks, end and error are dropped |
 | Bounded fold | MUST on infinite streams — backpressure is not preserved |
-| Lifecycle | Eager start after `$connectedCallback`; abort on disconnect; `initial` on reconnect; no start in SSR; root states only |
+| Lifecycle | Eager start after `$connectedCallback` (not while `args` returns `null`); abort on disconnect; `initial` on reconnect; no start in SSR; root states only |

@@ -526,6 +526,24 @@ music-room を examples/ に取り込んだとき（[seam-apps.ja.md](./seam-app
 
 どれも core に触れない（router・sse・lint・e2e と CI）。§5.26 の未決は、これで残っていない。
 
+### 5.29 counter-assist から決めたこと（2026-11-28、著者）
+
+4 巡目の 3 本目「流れてくるデータ」の継ぎ目アプリ counter-assist（[seam-apps.ja.md](./seam-apps.ja.md)）の分類から、問いを 11 出した。著者は「すべて推奨で、決定して進んで」と、すべて推奨のとおりに決めた。
+
+1. **`$stream` の失敗を誰も読まないときは diagnostics が言う** — `$streamError.<名前>` / `$streamStatus.<名前>` を束縛も getter も読まない流れの失敗を、名前ごとに 1 回（`[wcs/stream-error-unobserved]`。ページを離れる間は言わない）。I/O ノードの `[wcs/io-error-unobserved]`（§5.24）と同じ形。source が流れを返さない形（`Response`・`undefined`）は書き間違いなので、読んでいても言う（`[wcs/stream-source-shape]`）。比べた案: 失敗をすべて `console.error` に出す（`$streamError` を読むページにも二重になる）、今のまま。PR #786。
+2. **束縛より先に出たイベントは diagnostics と lint が言い、文書に書く** — ルートを束ねる直前に、`eventToken.<出力>` が名指す出力（`semantics: "event"`）を要素がすでに持っていれば、タグと出力ごとに 1 回（`[wcs/event-before-binding]`）。lint は同じ code で、開始の入力を属性に書いた `<wcs-sse url>` / `<wcs-ws url>` / `<wcs-broadcast>` と `eventToken.` の組を warning にする。sse / ws / broadcast の README と skill に「開始の入力は state から渡す」。契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md) §31。比べた案: event token を付けるとき、要素が持っている値をイベントとして渡す（イベントでないものをイベントにする — 同じ値が 2 回届きうる）、文書だけ。PR #786 と lint の PR。
+3. **`args` が `null` を返したら流れを走らせない** — 最初から `null` なら始めない（`idle`、source を呼ばない）、流れている途中で `null` になったら止めて、届いた分を残す（`idle`、値は `initial` に戻さず、`$streamError` は `null`）。次の `null` でない値で `initial` から始める。作者が書いた形（`request = null` → 空の `ReadableStream`、値は `$watch` で別のキーへ写す）そのもの。予約していた `lazy: true` は作らない。比べた案: `lazy: true` と `stop()` を別に足す（2 つの新しい語）、今のまま（文書に回避策）。source を `null` で呼んでいたページは変わる（upgrading に書く）。PR #786。
+4. **`$listKeys` が getter を名指したら宣言のときに言う** — list-keys の後付けが `[wcs/list-keys-getter]`。行を保つのは配列を代入したときで、getter の一覧は代入されないので、宣言は何もしなかった。比べた案: 投げる（今そう書いて動いているページを壊す）、getter にも効かせる（getter の返す配列は毎回新しく、突き合わせる元が無い）。PR #786。
+5. **fold のその場の変更と、流れている値への書き込みは diagnostics が言う** — fold が受け取った値をその場で変えて返したら（配列の長さ・Map / Set の大きさ・オブジェクトの中身が変わった。変えずに返すのは塊を飛ばす正しい書き方なので言わない）`[wcs/stream-fold-in-place]`、最初の 50 塊を見る。流れている値へのページの書き込みは `[wcs/stream-value-written]`（止めるなら `args` を `null` に）。比べた案: fold の前に値を凍らせる（fold が投げてページの挙動が変わる）、文書だけ（もう書いてあった）。PR #786。
+6. **signals の resource / streamResource は source の中の読みを追わない** — source は `args` を読む effect の中で同期に呼ばれ、最初の `await` より前の読みが偶然 effect の依存になっていた（R5）。文書どおり `args` だけが再開を決める。反応の核の 2 つ目の写しは、読み込まれたときに一度言う（`[wcs/signals-second-core]`。入口 2 つを別々に束ねる CDN・2 つの版 — 作者の表示の時計が止まった）。比べた案: 追うことを文書にする（偶然を契約にする）。PR #787。
+7. **lint に 4 つ足す** — `$stream` の宣言（`fold` に `initial` が無い・`source` が無い — ランタイムはページごと初期化に失敗する。error）、`innerHTML:` などの HTML のシンクに、入力欄が双方向に書くパスを束ねる（warning）、signals のページ（入口 2 つを別々に束ねる CDN・2 つの版 — `wcs/signals-dual-entry`、error。今まで signals だけのページは「nothing to check」だった）、静的な `url` と `eventToken.` の組（2 の lint）。`wcs/input-nested-write` の文面に「保存用のキーを分ける」直し方を足す（F12）。lint の PR。
+8. **`defineState` の型が `$stream` を知る** — 値を `this` から読める（`any`。同じ名前のプロパティを宣言していればその型）、`$streamStatus` / `$streamError` は宣言した名前に絞る（オブジェクトの形も dotted の形も）、エントリの関数の引数に型。拡張の preamble も対で直し、そこで見つけた欠陥 — `$stream` を宣言した state で `$on` のハンドラの state のどの名前も `any` になる — も直した。`WcsStateApi` は型の別名になる（interface と合わせられなくなる）。PR #786。
+9. **文書と skill を直す** — streams.md の最初の例（打鍵ごとに要求を出し直す — 送った質問を state に置く形に）、abort 信号の書き方（「ReadableStream なら自動」は本文だけ。要求そのものは fetch に `signal` を渡さないと止まらない）、`args` が返すのは state のオブジェクトそのもの・state の値は Worker にそのまま渡せる、worker の README（File を渡す・進みは段で・全行を返さない）、`@wcstack/testing`（CDN を import する `src=` の state は `server.deps.inline`・jsdom では動かない）、`@wcstack/typescript`（`src=` の JS の state は `defineState` を URL から import する形・`wcs-schema check` の結果の行は stderr）、signals の `resource.value` の再開中の値。skill: 例の版の固定（F1）、`null` で始める storage の値と `for:`（F9）、束ねる前の操作（ファイル入力は束ねる前に選ばれると失われる。フォームは forms の後付けが守る — F11）、上の 2・3・6。`wcs-schema check` が成功で何も出さない（F13）は、出していた（stderr）ので文書だけにした。
+10. **ページを離れるときの `$stream`（F22）は記録だけ** — 読み直しで切れた fetch はエラーになる（3 ブラウザ）。作者は `beforeunload` の印で回避した。`[wcs/stream-error-unobserved]` は離れる間は言わない。状態の語（`aborted` など）を足すかは、次に同じ形が出たら決める。
+11. **4.33.0 の minor で出す** — #784（diagnostics の `[wcs/inserted-unbound]` を 2 回見てから言う）と一緒に。
+
+core.min.js は 20,476 B のまま（新しいフックの枠は型だけ）。diagnostics は 15,964 B、list-keys は 1,159 B で、リリースが基準を記録し直すまで slack（768 B・192 B）を置いた（§5.22 の forms と同じ）。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。

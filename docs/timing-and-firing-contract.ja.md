@@ -791,3 +791,20 @@ getter は読まれるたびにブラウザを調べ、何も保存しない。�
 
 ### 30.4 テスト
 `packages/sse/__tests__/sse.test.ts`（偽の `navigation` と偽のタイマー: close、`currententrychange` とタイマーによる開き直し、開き直しで読む `url`、2 回の `beforeunload`、`pagehide`、`pageshow`、間の `close()` / `connect()` / クリアした `url` / 取り外し、`manual` の要素、そのままにする待っている `auto-reconnect`、閉じるか開き直すものがある間だけの `beforeunload` のリスナ、Navigation API が無い場合。クリアした `url` のそれぞれの形、1 つのタスクでのまとまり）と `sseCore.test.ts`（`suspend()`）。`packages/websocket/__tests__/webSocket.test.ts`（開いている・接続中のソケットでのクリアした `url`、まとまり、切れたソケット、その前の `close()`、待っている `auto-reconnect`、`manual`）。実ブラウザでは `e2e/tests/sse-unload.spec.ts`: router の遷移と戻るのたびにイベントが届くこと（Chromium、Firefox。WebKit は `webkit` のプロジェクトを足して手元で走らせた —— リポジトリの e2e には無い —— そこでは閉じて開き直すことを確かめる）、全体の遷移でコンソールが静かなこと（Firefox の文言は `console.error` として捕まる）、「留まる」と答えた確認（Chromium、Firefox）、back/forward cache からの復元（完全な Chromium。fixture の文書は `no-store` なしで返す）。
+
+## 31. 横断の契約: 束縛より先の出来事は、event token には届かない（2026-11-28）
+
+継ぎ目アプリ `counter-assist` から（[seam-apps.ja.md](./seam-apps.ja.md)）。その操作のページは `<wcs-sse url="/api/queue/stream" data-wcs="eventToken.message: onQueue">` と書いた: 要素は定義されるとすぐ接続し、サーバーは最初のイベント —— 待っている人のスナップショット —— を送り、ページの state のファイルはまだ読み込み中だった。8 人待っているのにページは 0 人と出し（Chromium と Firefox）、何も言われなかった。要素はスナップショットを `message` に持っていた。出したとき、誰も聞いていなかった。`url` を state から渡す（`url: streamUrl`）と、同じページは 8 人と出した。
+
+### 31.1 失われるもの、失われないもの
+`semantics: "event"` と宣言した出力（`<wcs-sse>`・`<wcs-ws>`・`<wcs-broadcast>`・`<wcs-midi>` のメッセージ、`<wcs-clipboard>` の結果、`<wcs-debounce>` の `fired`）は出来事: `eventToken.<出力>` と `$on` が知るのは、`@wcstack/state` が要素を束ねてリスナを付けた時からの出来事で、その前のものは知らない。出力の**プロパティ**の束縛（`message: lastMessage`）は失わない: 出力だけのメンバーは、束ねるときに要素から state を満たす（§4）ので、要素が持つ値を取る。束縛より先に出た出力は、要素がその値を持っている —— 要素は最後の出来事を持つ —— ので、ランタイムは見分けられる。
+
+### 31.2 要素を始めるものは state から渡す
+要素は、要るもの（`url` の属性、チャンネルの名前）がマークアップにあれば自分で始まる。出来事を読むページは、その入力を state から渡す —— `<wcs-sse data-wcs="url: streamUrl; eventToken.message: onQueue">` —— ので、要素はページが束ねられてから始まる（入力はその束縛を当てるとき、リスナと同じ回に書かれる）。`data-wcs` で束縛をほかの後に書く必要はない: 1 つの要素の束縛はまとめて当てる。I/O ノードの一般の規則 —— state は最後に読み込まれ、それを待たない要素は先に動きうる —— のとおり（§26.3 が `<wcs-fetch>` と `<wcs-infinite-scroll>` について言うのと同じ）。
+
+### 31.3 知らせるもの
+- diagnostics の後付け（`@wcstack/state`・`/auto`）: `[wcs/event-before-binding]`。`eventToken.<出力>` が `semantics: "event"` の出力を名指す要素が、ルートを束ねる直前にその値をもう持っていれば、タグと出力ごとに 1 回（4.33 から）。そのときのルートのマークアップの要素を見る。後で描く行や枝の要素は見ない。
+- lint: `wcs/event-before-binding`（warning）。リテラルの `url` 属性を持つ `<wcs-sse>` / `<wcs-ws>` と、リテラルのチャンネルの属性を持つ `<wcs-broadcast>` に、`eventToken.<出来事の出力>` が付いているとき（4.33 から）。
+
+### 31.4 テスト
+`packages/state/__tests__/diagnostics-streams.test.ts`（ルートを束ねる前に出来事を受けた要素・後で受けた要素・出来事でない出力・プロパティの束縛・定義されていない要素・読めない束縛の文字列）。lint の規則は `packages/vscode-wcs/__tests__/`。

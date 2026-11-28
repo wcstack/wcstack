@@ -101,6 +101,7 @@
 | `lending-desk` — 市の地区センターの備品の貸出（UI は日本語）。TypeScript のチームが `strict` で書く: 期間の空き数の付いた URL に残る検索、月のカレンダー、チーム自前の TypeScript のステッパーの付いた 2 つのタブで同じ申込かごと行ごとの `422`、ライブで届く決定、職員のページ、状態をページに書いた受付の画面。API の型を Node のサーバーとページが共に使い、本番のビルドがあり、`npm run check` は 1 つ。3 巡目の予備の 1 本目: 型と道具 | 作者 × 道具: `tsc` × `defineState` のパス・`$on`・`$command`、`wcs-tsc` × ページに書いた状態、`wcs-schema` × lint × 1 つのマニフェストの下の 2 つのページ、`.ts` の状態 × Vite のビルド、`@wcstack/testing` × 型の付いた状態と表、`<wcs-sse>` × router × WebKit の `beforeunload` とサインアウト、`<wcs-debounce>` × `null` の枠 | サーバーの応答の形が変わる。チームの誰かが状態の型を変え、確かめの一部だけを回す。まっさらな clone。別の時間帯、月末と年末、23:59 と 00:01。すべてのルートの再読み込み、戻ると進む。2 つのタブ。受け付けられなくなったトークン。遅い・失敗する・オフラインのサーバー、再起動。わざと 20 の誤り | `examples/lending-desk`（2026-11-19）。4.26.0 で要らなくなった回避策は外した。発見は下 |
 | `garden-plots` — 市の市民農園の区画管理（UI は日本語）を、市の共通部品で組み立てる: HTML だけのデザイナーの部品 6 つ（DCC）、ページのデータを 1 つ丸ごと渡されるクラスの開発者の部品 5 つ（`bind-component`、3 段、298 タイル）、wcstack を知らない県の部品。3 つのページがビルドなしで同じ部品を使う。state はルートと 5 つのボリュームに分ける。SSE のライブ更新。4 巡目の 1 本目: 部品 | ページ × その部品: 入れ子の部品をまたぐ `state:` / `state.key:` / `#ro`、DCC × ページが最初に渡す値・属性・ページと共有する値、DCC × 自分のファイル × autoloader、ボリューム × ファイルの届く順 × 束ねた時点で書く要素、diagnostics × マウントしたスコープ、`@wcstack/server` × 部品の行、`@wcstack/testing` × DCC、`wcs-schema` × ボリューム | 部品のファイルが遅れる・届かない・投げる。開いた部品の下で行が変わる。同じものを 2 か所に出す。離れて戻る。隠して出す。ダイアログが開いている間。キーボードだけ。遅い CPU での 300 タイル。遅い・失敗する・再起動するサーバー。2 つのタブ。3 つのブラウザ。わざとする間違い 20 個（45 通り）。実験としての SSR | `examples/garden-plots`（2026-11-24）。4.28.0 で要らなくなった回避策は外した。発見は下 |
 | `street-reports` — 市民からの不具合通報を扱う市の台帳（UI は日本語）: URL で絞り込む一覧、コメントと写真のライトボックスのある通報、下書きと「離れますか」のダイアログのあるフォーム、ライブで動くボード、統計。4 巡目の 2 本目で、作者の習慣を変える回: **動いている React 19 のアプリとその e2e を渡し、e2e を変えずに移す** | 作者 × React の習慣: 式・effect・制御された入力・context・`key`・ref・portal・遅延ルート・error boundary・`useBlocker` × `data-wcs`・`$watch`・I/O の要素・router・部品 | 30 回の行き来、遅い CPU と IME での入力、2 つのタブ、オフライン、サーバの再起動、時計の 1 時間、最初の読み込み —— どれも React のアプリと並べて | 下の記録。2026-11-25 に決定（[v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.26） |
+| `counter-assist` — 市の窓口のコンソール（UI は日本語）: 答えがトークンごとに Markdown で流れてくるアシスタント（停止・再生成・新しい質問で前を打ち切る・15 秒の沈黙はエラー）と、サニタイザを通す生の HTML。最大 50 万行の CSV（UTF-8／Shift_JIS）を Worker で読んで検証し、まとめて登録。呼び出しの表示（signals）と操作（state）は 1 本の SSE で一日中。4 巡目の 3 本目: 流れてくるデータ | `$stream` × `args`・fold・再開・停止、流れ × router × 離脱、`<wcs-worker>` × `File`・進み・中止、HTML のシンク × サニタイザ、`<wcs-sse>` × state が束ねる時、signals の `resource` / `streamResource` × effect、CDN からの signals の入口 2 つ | 1 万トークンの答え、30 回の行き来、答えの途中の読み直し、2 つのタブ、オフライン、500 と切れた流れ、15 秒の沈黙。50 万行の Shift_JIS、半分での中止、2 つ目のファイル、読む間の設定の変更。8 時間の表示、2 分止めたサーバー。わざとする間違い 25 | 下の記録。2026-11-28 に決定（[v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.29） |
 
 ### router-auth（2026-10-13）
 
@@ -1001,3 +1002,30 @@ spec（Chromium で 50 件、うち 6 件は Firefox でも）は、例のサー
 
 **後から見つかった（2026-11-28）: 間引きの検索のテストは、テストの道具の打鍵の速さを当てにしていた。** 北町2丁目 を 60 ms おきに打ち、アプリの間引きは 300 ms で、検索が 1 回であることを求める。40 回に 1 回、Firefox で検索が `["北", "北町2丁目"]` になった（#774 の実行が最初の失敗を残した）。ページは空いていて —— 入力のたびの `setTimeout(0)` は 3 ms 以内に走った —— 間は Playwright のもの: 1 文字ずつを別の命令として送り、Firefox では最初の間が手元で 62〜177 ms とばらつき、CI では 300 ms を超えた。打鍵の間を 400 ms にすると毎回落ちる（`["北", "北町2", "北町2丁", "北町2丁目"]`、Chromium と Firefox）。テストは打つ間ページの時計を止め、打った後で 300 ms 進めるようにした（`page.clock`）。求めることは同じ。アプリと `<wcs-debounce>` は正しかった。
 
+
+### counter-assist（2026-11-28）
+
+4 巡目の 3 本目（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §3.2）: **流れてくるデータ**。市の窓口のコンソール（UI は日本語）: 職員がアシスタントに尋ね、答えはトークンごとに Markdown で届く（停止・再生成・新しい質問で前を打ち切る・15 秒の沈黙はエラー・出典の引用 —— 答えには敵対的な形を含む生の HTML も入り、サニタイザを通す）。5 万〜50 万行・最大 120 MB の CSV（UTF-8／Shift_JIS）を Worker で読んで検証し（進み・中止・読み直さずに設定を変える・2 つ目のファイル）、1,000 行ずつ登録する。呼び出しの表示（signals）と操作（state）は 1 本の SSE、一日中開いたまま。作者（これまでの巡と同じモデルの系統、4.32.0 の公開文書と skill に固定）は、依頼の契約どおりにサーバーも書いた。
+
+- **結果。** 140 分。e2e 24 件 × 3 ブラウザ（72/72）、単体 93、lint は `--strict` で 0 / 0 / 0、`wcs-schema` と `wcs-tsc`（`defineState` を URL から import）。記録 24 件、間違いの写し 25 —— **lint は 25 件すべてで何も言わなかった** —— と、実際の使い方: 1 万トークンの答え（毎秒 64 トークンに追いつき、トークンあたりのスクリプトは横ばい）、答えの間に 30 回の行き来、答えの途中の読み直し、50 万行の Shift_JIS を 2.3 秒（ページのヒープは 3.7 MB）、時計で 8 時間の表示、2 分止めたサーバー。
+
+どの主張も分類の前に再現した（分類の横の `repro/`: 作者のサーバーを別のポートで、Chromium と Firefox）。
+
+| 種類 | 見つけたこと | 結果 |
+|---|---|---|
+| 実行時の沈黙 | **`<wcs-sse url="…">` と `eventToken.message` は最初のイベントを落とした。** 操作のページの要素は state のファイルが読み込まれる前に接続し、スナップショット —— 待っている人 —— は誰にも届かなかった: 8 人待って 0 人と表示（Chromium と Firefox）。要素は `message` に持っていた。`url` を state から渡すと 8 人 | 決定（§5.29 の 2）: diagnostics が言う（`[wcs/event-before-binding]`）、lint はリテラルの `url` / チャンネルと event token の組を言う、sse / ws / broadcast の README と skill に「始めるものは state から」—— 契約は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §31 |
+| 実行時の沈黙 | **`$stream` の失敗は `$streamError` にしか届かなかった。** 25 トークン目で投げる source、body ではなく `Response` を返す source: コンソールは何も言わず、アプリ自身の表示は欠陥を「通信が切断」と呼んだ | 決定（§5.29 の 1）: 誰も読まない失敗に `[wcs/stream-error-unobserved]`、`[wcs/stream-source-shape]` は常に |
+| 実行時の沈黙 | **getter を名指す `$listKeys` は何もしない。** 後付けは宣言したパスへの代入に割り込む。getter には代入が無い | 決定（§5.29 の 4）: `[wcs/list-keys-getter]` |
+| 実行時の沈黙 | 受け取った値をその場で変えて返す fold、流れている値への書き込み（流れは止まらず上に重ねる —— 作者の「停止」はサーバーに誰も読まない生成を続けさせた）。文書はどちらも書いていた。実行時は無言 | 決定（§5.29 の 5）: `[wcs/stream-fold-in-place]`・`[wcs/stream-value-written]` |
+| 実行時の沈黙 | **signals: 反応の核の 2 つの写し。** esm.run の `@wcstack/signals` と `@wcstack/signals/dom` は別々に束ねられる: 表示の時計が進まなかった。effect の中で作って dispose しない resource も無言 | 決定（§5.29 の 6）: 2 つ目の写しが読み込まれたら `[wcs/signals-second-core]`。lint の `wcs/signals-dual-entry` |
+| 設計の問い | **`$stream` を止めて届いた分を残す方法も、遅延開始も無い。** 再開は必ず `initial` に戻す。尋ねることが無くても source を呼び `done` になる。作者は「何も無い」に空の `ReadableStream` を返し、答えは `$watch` で自分のキーに写した | 決定（§5.29 の 3）: `args` が `null` を返す —— 始めない、または止めて値を残す |
+| 設計の問い | **signals の `resource` / `streamResource` は、source が最初の `await` の前に読んだ signal を偶然追っていた**（effect が同期に呼ぶ）。文書は `args` が決めると言う | 決定（§5.29 の 6）: source は observer なしで走る |
+| 設計の問い | 読み直しで切れた fetch は `$stream` をエラーで終える（3 ブラウザ）。作者は `beforeunload` に印を付けて「ページを離れた」と呼んだ | 記録（§5.29 の 10） |
+| 設計どおり | トークンごとに新しいオブジェクトを返す getter の `for:` の行は、トークンごとに作り直される（行は参照で見分ける）。作者は末尾をパスで書いた | streams.md に書く（流れを行に描くならパスで） |
+| 欠陥ではなかった | 「束ねる前にも操作できる」—— 束ねる前に打った文字は残り、束ねる前の送信は束ねた後に一度行われる（forms の後付け、4.27）。作者がマークアップに書いた `disabled` は要らなかった。残るもの: `onchange:` を束ねる前に選んだファイルは失われる | skill に書く（束ねる前の時間） |
+| lint の穴 | 25 の写しすべてが通った: lint は `$stream` を読まない（`initial` の無い `fold` はページを殺す）、入力欄が書くパスを HTML のシンクに束ねても言わない（サニタイザを抜いた写し）、signals だけのページを読まない（「nothing to check」）、リテラルの `url` と event token の規則が無い | 決定（§5.29 の 7）: `wcs/stream-declaration`・`wcs/html-sink-input`・`wcs/signals-dual-entry`・`wcs/event-before-binding`。`wcs/input-nested-write` の文面に 2 つ目の直し方（保存用に別のキー） |
+| 型 | `defineState` に `$stream` の名前が無かった: `this.answer` が型の誤り（それで間違い 8 を偶然捕まえた） | 決定（§5.29 の 8）。エディタの型も同じものを得て、欠陥を 1 つ失った: `$stream` のある state では `$on` のハンドラの state のどの名前も `any` になっていた |
+| 文書の穴 | streams.md の最初の例は打鍵ごとに要求を出し直す。「ReadableStream なら abort の契約を満たす」は本文について正しく、要求については違う。`args` の値は state のオブジェクトそのものか、state の値を Worker に渡せるか。worker の README（`File` を渡す・進みは段で・全行を返さない）。`@wcstack/testing`（CDN を import する `src=` の state、jsdom）。`wcs-tsc` と `src=` の JavaScript の state（`defineState` を URL から）。`wcs-schema check` の結果の行（stderr）。skill の版を固定しない例、`null` で始める保存のキーと `for:` | 決定（§5.29 の 9） |
+| wcstack ではない | DOMPurify と Trusted Types / CSP（WebKit は解析用の文書にもページの CSP を当てる）、作者の CSP と `blob:`、Playwright の `setOffline` は開いた流れを切らない、headless で背景のタブを作れない、Windows のタイマーの粒度 | 記録 |
+
+止める目安には当たっていない: 沈黙する誤りが複数、新しい種類の発見 —— 流れと束縛の順序、流れの止め方、signals の追跡の偶然、JavaScript の宣言を読まない lint。
