@@ -251,6 +251,45 @@ describe("束縛より先に出たイベント（wcs/event-before-binding）", (
     expect(got).toEqual([]);
   });
 
+  it("新しい要素が最初から持つ値（<wcs-debounce> の fired の []）は、先に出た出来事と数えない", async () => {
+    customElements.define("evt-list", class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "fired", event: "evt-list:fired", semantics: "event" }] };
+      fired: unknown[] = [];
+    });
+    customElements.define("evt-odd", class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "fired", event: "evt-odd:fired", semantics: "event" }] };
+      fired: unknown = 1;
+      constructor(...args: unknown[]) {
+        super();
+        // a class that cannot be constructed a second time here: its start value is taken as null
+        if ((globalThis as any).__evtOddMade) throw new Error("once");
+        (globalThis as any).__evtOddMade = true;
+        void args;
+      }
+    });
+    const got = await warnings("event-before-binding", async () => {
+      await page(`<evt-list data-wcs="eventToken.fired: due"></evt-list>`, { $eventTokens: ["due"], $on: { due() {} } });
+      await page(`<evt-list data-wcs="eventToken.fired: due2"></evt-list>`, { $eventTokens: ["due2"], $on: { due2() {} } },
+        (r) => { (r.querySelector("evt-list") as any).fired = []; });
+      await page(`<evt-odd data-wcs="eventToken.fired: odd"></evt-odd>`, { $eventTokens: ["odd"], $on: { odd() {} } });
+    });
+    expect(got).toEqual([expect.stringContaining("<evt-odd> dispatched fired before")]);
+  });
+
+  it("配列の出力は項目ごとに比べる: 初期値と同じ項目なら言わず、違う項目なら言う", async () => {
+    customElements.define("evt-pair", class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "fired", event: "evt-pair:fired", semantics: "event" }] };
+      fired: unknown[] = [0];
+    });
+    const got = await warnings("event-before-binding", async () => {
+      await page(`<evt-pair data-wcs="eventToken.fired: p1"></evt-pair>`, { $eventTokens: ["p1"], $on: { p1() {} } },
+        (r) => { (r.querySelector("evt-pair") as any).fired = [0]; });
+      await page(`<evt-pair data-wcs="eventToken.fired: p2"></evt-pair>`, { $eventTokens: ["p2"], $on: { p2() {} } },
+        (r) => { (r.querySelector("evt-pair") as any).fired = [1]; });
+    });
+    expect(got).toEqual([expect.stringContaining("<evt-pair> dispatched fired before")]);
+  });
+
   it("定義されていない要素は飛ばす", async () => {
     const got = await warnings("event-before-binding", async () => {
       await page(`<later-src data-wcs="eventToken.message: snap5"></later-src>`, { $eventTokens: ["snap5"] });

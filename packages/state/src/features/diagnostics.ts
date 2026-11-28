@@ -881,20 +881,45 @@ function ioErrors(engine: Engine): void {
 
 /** The tags and outputs already told about an event that came before the binding. */
 const toldEvents = new Set<string>();
+/** What a fresh element of a class holds under an output before anything happened, by class and output. */
+const startValues = new WeakMap<object, Map<string, unknown>>();
+
+/** The output's value in a new element of `cls` (null when the class cannot be constructed here). */
+function startValue(cls: any, name: string): unknown {
+  let m = startValues.get(cls);
+  if (m === undefined) startValues.set(cls, (m = new Map()));
+  if (!m.has(name)) {
+    let v: unknown = null;
+    try {
+      v = new cls()[name];
+    } catch {
+      // (a scoped registry's class, a constructor that needs more: compared with null)
+    }
+    m.set(name, v);
+  }
+  return m.get(name);
+}
+
+/** Two values of an output alike: the same, or arrays of the same items (`<wcs-debounce>`'s `fired` starts as []). */
+function alike(a: unknown, b: unknown): boolean {
+  return Object.is(a, b) || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Object.is(x, b[i])));
+}
 
 /**
  * An element whose `eventToken.<output>` names an occurrence (`semantics: "event"`) it already holds when its
  * root is about to be bound: the event came before the binding, and the token never sees it. A `<wcs-sse>` whose
  * `url` is in the markup connects before the state's file has loaded, and its first event — the snapshot of what
  * is there — is lost (docs/seam-apps.md, counter-assist: 8 people waiting, 0 shown). A property binding of the
- * output would have taken it (an output seeds state from the element). Once per tag and output.
+ * output would have taken it (an output seeds state from the element). "Holds" is a value other than a new
+ * element's of the class (`<wcs-debounce>`'s `fired` starts as an empty list). Once per tag and output.
  */
 function eventBeforeBinding(engine: Engine, phase: string): void {
   const el = engine.element as Element | null;
   if (phase !== "mounting" || !el) return;
   const attr = config.bindAttributeName;
   for (const x of (el.getRootNode() as ParentNode).querySelectorAll(`[${attr}*="eventToken."]`)) {
-    const outputs: unknown = ((((x as any).customElementRegistry ?? customElements) as CustomElementRegistry).get(x.localName) as any)?.wcBindable?.properties;
+    const cls = (((x as any).customElementRegistry ?? customElements) as CustomElementRegistry).get(x.localName) as any;
+    const outputs: unknown = cls?.wcBindable?.properties;
     if (!Array.isArray(outputs)) continue;
     let texts;
     try {
@@ -906,7 +931,7 @@ function eventBeforeBinding(engine: Engine, phase: string): void {
       const name = b.propSegments[1];
       const key = `${x.localName} ${name}`;
       if (b.propSegments[0] !== "eventToken" || outputs.find((p) => p?.name === name)?.semantics !== "event"
-        || (x as any)[name] == null || toldEvents.has(key)) continue;
+        || (x as any)[name] == null || alike((x as any)[name], startValue(cls, name)) || toldEvents.has(key)) continue;
       toldEvents.add(key);
       console.warn(`[@wcstack/state] [wcs/event-before-binding] <${x.localName}> dispatched ${name} before @wcstack/state bound the page, and eventToken.${name} never sees that event (the element holds it). Let the state start the element — give it what starts it from the state (url: path), so it starts once the page is bound — or bind the output too (${name}: path takes what the element holds). See docs/timing-and-firing-contract.md §31.`);
     }

@@ -24,7 +24,7 @@
     "files": 1,
     "bytes": 38980,
     "gzip": 14794,
-    "slack": 704
+    "slack": 768
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
