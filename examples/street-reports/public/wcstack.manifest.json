@@ -1042,8 +1042,8 @@
           "formSnapshotSettled": {
             "type": "null"
           },
-          "leaveDialogOpen": {
-            "type": "boolean"
+          "leaving": {
+            "type": "string"
           },
           "formValues": {
             "type": "object",
@@ -1253,6 +1253,9 @@
           "formBlocking": {
             "type": "boolean"
           },
+          "leaveDialogOpen": {
+            "type": "boolean"
+          },
           "formBeforeUnloadActive": {
             "type": "boolean"
           }
@@ -1392,7 +1395,7 @@
           "formSubmitting",
           "formLeaving",
           "formSnapshotSettled",
-          "leaveDialogOpen",
+          "leaving",
           "formValues",
           "formSnapshot",
           "formValidation",
@@ -1407,6 +1410,7 @@
           "formSubmitLabel",
           "formCategoryInput",
           "formBlocking",
+          "leaveDialogOpen",
           "formBeforeUnloadActive"
         ]
       },

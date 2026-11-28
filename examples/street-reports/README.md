@@ -101,13 +101,16 @@ with the hand-made stream and the packages from the CDN; this example differs th
 
 ## What stays the app's own
 
-- **Leaving the form with unsaved input asks in the app's own dialog** — and the router has no in-app "stay"
-  (`leaveConfirm` asks with the browser's `confirm()`). So: the same guard on every other route, calling a function
-  the state puts on `window`; the navigation's links are plain `<a>`s whose click handler holds the navigation until
-  the dialog is answered; and a Back that the user cancels is undone with `history.go(1)` — it assumes the traversal
-  was a Back. An API for this is proposed and not agreed (docs/v4-direction-2026-10.md §5.26).
-- Because the navigation's links are the app's own, `<wcs-link current="page">` (4.30) is not used here; the app sets
-  `aria-current` itself.
+- **Leaving the form with unsaved input asks in the app's own dialog.** Since 4.32 the router holds the navigation:
+  `leaveHold: formBlocking` on `<wcs-router>`, the dialog is open while `leaving` is set, and its buttons call the
+  router's `stay()` / `proceed()` through command tokens (router README, "A page's own "leave?" dialog"). A reload or
+  closing the tab still gets the browser's prompt, from the app's own `beforeunload` listener. Up to 4.31 the app did
+  it all itself — the same guard on every other route, calling a function the state put on `window`; nav links whose
+  click handler held the navigation until the dialog was answered; a cancelled Back undone with `history.go(1)`
+  (docs/v4-direction-2026-10.md §5.26, decided in §5.28). The suite's "the leave guard asks on a nav link and on Back"
+  test, unchanged, passes on both.
+- The navigation's links are still the port's plain `<a>`s with a click handler (it now only writes `navigateUrl`), so
+  `<wcs-link current="page">` (4.30) is not used here; the app sets `aria-current` itself.
 - **Every page resets its own state** on entering and leaving (`enterRoute` / `leaveRoute`): the state outlives the
   route (router README, "The state outlives the route").
 - **The state is one file of about 1,250 lines.** A state assembled from page modules with `...spread` is not read by
