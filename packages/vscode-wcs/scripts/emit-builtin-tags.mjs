@@ -66,7 +66,7 @@ const SKIP = new Set([
   "wcstack",
 ]);
 
-/** @type {Record<string, {package: string, hasWcBindable: boolean, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[], handles?: string[], commandArity?: Record<string, number>}>} */
+/** @type {Record<string, {package: string, hasWcBindable: boolean, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[], handles?: string[], events?: string[], commandArity?: Record<string, number>}>} */
 const tags = {};
 const failed = [];
 const skippedNoDist = [];
@@ -112,6 +112,10 @@ for (const dir of readdirSync(packagesRoot).sort()) {
       // semantics: "handle" の出力（生きたリソース）。あるタグにだけ書く
       const handles = (wb.properties ?? []).filter((p) => p.semantics === "handle").map((p) => p.name);
       if (handles.length > 0) tags[tagName].handles = handles;
+      // semantics: "event" の出力（出来事 — 1 回ごとに送られ、取り逃した回は戻らない）。あるタグにだけ書く
+      // （wcs/event-before-binding: 束ねる前に送られた最初の回は eventToken. に届かない）
+      const events = (wb.properties ?? []).filter((p) => p.semantics === "event").map((p) => p.name);
+      if (events.length > 0) tags[tagName].events = events;
       // 各 command のメソッドが宣言する引数の数（`Class.prototype[name].length` — 既定値・rest より前の引数）。
       // `on*: $command.x` を直結するとイベントが第 1 引数になる: 引数を取る command を見分ける（wcs/command-event-argument）。
       // command のあるタグにだけ書く。メソッドの無い command（宣言だけ）は載せない
@@ -165,6 +169,8 @@ export interface BuiltinTagContract {
   readonly commands: readonly string[];
   /** semantics: "handle" の出力（生きたリソース — 値として束ねない）。あるタグにだけある。 */
   readonly handles?: readonly string[];
+  /** semantics: "event" の出力（出来事 — 束ねる前に送られた回は届かない）。あるタグにだけある。 */
+  readonly events?: readonly string[];
   /**
    * command 名 → そのメソッドが宣言する引数の数（\`Class.prototype[name].length\` — 既定値・rest より前の引数）。
    * command のあるタグにだけある。

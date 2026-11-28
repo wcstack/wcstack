@@ -42,6 +42,9 @@ import {
   validateAttributeMustaches, validateBindingExpressions, validateInlineImports, validateMarkupHabits,
 } from "../service/frameworkHabitsValidator.js";
 import { validateCollectionMutations } from "../service/collectionMutationValidator.js";
+import { validateStreamDeclarations } from "../service/streamDeclarationValidator.js";
+import { validateHtmlSinkInputs } from "../service/htmlSinkInputValidator.js";
+import { validateEventsBeforeBinding } from "../service/eventBeforeBindingValidator.js";
 import { validateModuleTopReads } from "../service/moduleTopReadValidator.js";
 import { validateStateAbsent, validateStateSchemaDrift, validateStateSources } from "../service/stateSourceValidator.js";
 import { isMustacheDisabled } from "../service/stateBehavior.js";
@@ -234,9 +237,14 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateIoAttributes(text, bindAttribute, locale));
   // `on*: $command.x` wired straight to a command that takes data: the event lands in the data's place
   out.push(...validateCommandArguments(text, bindAttribute, locale));
+  // what the user types, bound to an HTML sink (`html: question` with `value: question` on a <textarea>)
+  out.push(...validateHtmlSinkInputs(text, bindAttribute, locale));
+  // `eventToken.message:` on a <wcs-sse url="…"> that connects before the state binds it: its first events are lost
+  out.push(...validateEventsBeforeBinding(text, bindAttribute, stateTagName, locale));
   if (env !== null) {
     out.push(...validateDocumentEnv(env, locale));
-    // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
+    // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules; two reactive
+    // cores of @wcstack/signals (the page's scripts and the local modules they run)
     out.push(...validatePackageLoads(env, locale, fileReader));
     // the state of each class part the page mounts, under the script rules of a page's state (once for the page)
     out.push(...validateClassPartScripts(env, locale, fileReader));
@@ -267,6 +275,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateModuleTopReads(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
   out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader, bindAttribute, applicationSchema));
+  // `$stream` entries the runtime refuses when it takes the state in (no `source`, a `fold` without `initial`)
+  out.push(...validateStreamDeclarations(text, stateTagName, locale));
   // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）
   out.push(...validateScanDeclarations(text, stateTagName, locale));
   // `$recursion` 宣言と `**` の使い方（runtime の recursion/ と同じ診断 code）。

@@ -335,6 +335,24 @@ export const WcsDiagnosticCode = {
   InlineImport: "wcs/inline-import",
   // `key:`（React の key）。`key` という名前のプロパティを書くだけ。warning。
   KeyBinding: "wcs/key-binding",
+  // --- streams, user text and a stream's first event (継ぎ目アプリ counter-assist: LLM の回答のコンソール・CSV の
+  // 取り込み・SSE の呼び出し表示。わざとした 25 の誤りに lint は何も言わなかった） ---
+  // `$stream` のエントリ（オブジェクトリテラル）に `source` が無い、または `fold` があって `initial` が無い。ランタイムは
+  // state を取り込むときに拒む（`$stream entry "answer": fold needs an initial value.`）ので、ページは初期化に失敗し、
+  // 何も束ねられない（service/streamDeclarationValidator.ts）。spread・計算されたキーのあるエントリ、オブジェクトリテラルで
+  // ないエントリは読まない。ボリュームと bind-component の state は見ない（`$watch` と同じ）。error。
+  StreamDeclaration: "wcs/stream-declaration",
+  // HTML の書き込み先（`html:` / `innerHTML:` / `outerHTML:` / `srcdoc:`）に束ねたパスへ、同じページのフォームの部品
+  // （`<input>` / `<textarea>` / `<select>`）が双方向の `value:` で書き戻す。利用者が打った文字がマークアップとして
+  // ページに入る（service/htmlSinkInputValidator.ts）。`for:` の中の `.x` は `list.*.x` に読み替えて比べる。書き込み先の
+  // フィルタでは黙らない（消毒するかは見えない）。書き込み先の束縛ごとに 1 回。warning。
+  HtmlSinkInput: "wcs/html-sink-input",
+  // 自分で接続を始める I/O ノード（`<wcs-sse>` / `<wcs-ws>` の `url`、`<wcs-broadcast>` の `name` をリテラルの属性で書いた
+  // もの。`manual` は除く）の、`semantics: "event"` の出力への `eventToken.<出力>`。要素は state のファイルが読み込まれる
+  // より前に接続し、`eventToken.` が付く前に送った最初の回（SSE のスナップショット）は失われる（service/
+  // eventBeforeBindingValidator.ts。ランタイムの同じ code の警告の静的な対）。始める属性を束ねる（`url:` / `attr.url:`）か、
+  // 出力をプロパティとしても束ねる（`message:` / spread）と黙る。`<template>` の中（束ねてから接続される）も黙る。warning。
+  EventBeforeBinding: "wcs/event-before-binding",
   // 書き戻すときに変換しない双方向の `value:` が、state が数値で持つパス（種・JSDoc の `@type`・stateSchema）を指す。
   // 要素の `value` は文字列なので、5 と入力した後の state は `"5"` で、`count + 1` は `"51"` になる。ランタイムは何も
   // 言わない（ekiden-entry — 弁当 1 個と 2 個が 12 個になった）。数値にする入力フィルタ（`value|number:`）・
@@ -403,7 +421,12 @@ export const WcsDiagnosticCode = {
   // 現在）。`to` のキーの一部だけを比べない形（`to="?cat=a&page=1" query-keys="cat"`）は意図どおりなので黙る
   // （docs/formal-methods-study.md §4.2）。warning。
   LinkQueryKeyIgnored: "wcs/link-query-key-ignored",
-  // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
+  // `@wcstack/signals` のリアクティブコアがページに 2 つできる読み込み（service/packageLoadValidator.ts）: 2 つのエントリ
+  // （`.` と `./dom`）を、エントリごとに束ねる CDN（esm.run・jsDelivr の `+esm`・esm.sh）から、またはビルドの違うファイル
+  // （`.esm.js` と `.esm.min.js` はコアのチャンクが別）から読む。または 2 つの版を読む。片方の signal をもう片方の effect は
+  // 追わず、その間で画面が更新されなくなる（継ぎ目アプリ counter-assist — 呼び出し表示の時計が止まった）。ページ・インラインの
+  // module・ページが読むローカルの module（その中の import 先）の import を数える。error。両方のエントリを CDN に割り当てた
+  // import map は、ページが片方しか import しなくても warning（ほかのファイルの module が 2 つ目のコアを持つ — signals-shop）。
   SignalsDualEntry: "wcs/signals-dual-entry",
   // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その
   // パッケージのスクリプトを読み込んでいない。要素は定義されず、束縛は待ち続け、コンソールにも何も出ない（継ぎ目アプリ

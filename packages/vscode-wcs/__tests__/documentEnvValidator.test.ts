@@ -1,5 +1,5 @@
 /**
- * documentEnvValidator のテスト — 読み込み構成（script 順・base href・signals 混在）。
+ * documentEnvValidator のテスト — 読み込み構成（script 順・base href・outlet・link・route の {{ }}・レイアウトの slot）。signals の混在は counterAssistLint.test.ts。
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -168,52 +168,6 @@ describe('validateDocumentEnv: 版を付けた URL の script-order', () => {
   });
 });
 
-describe('validateDocumentEnv: signals-dual-entry', () => {
-  it('本体と /dom の両方を import しているページをエラーにする', () => {
-    const html = `<script type="module">
-import { signal } from "@wcstack/signals";
-import { h } from "@wcstack/signals/dom";
-</script>`;
-    const diags = validateDocumentEnv(html);
-    expect(diags).toHaveLength(1);
-    expect(diags[0].code).toBe(WcsDiagnosticCode.SignalsDualEntry);
-    expect(diags[0].severity).toBe('error');
-  });
-
-  it('script src と inline import の混在参照も検出する', () => {
-    const html = `<script type="module" src="https://esm.run/@wcstack/signals"></script>
-<script type="module">import { h } from "@wcstack/signals/dom";</script>`;
-    const diags = validateDocumentEnv(html);
-    expect(diags).toHaveLength(1);
-    expect(diags[0].code).toBe(WcsDiagnosticCode.SignalsDualEntry);
-  });
-
-  it('/dom のみなら error にしない（importmap のキー宣言は参照に数えない — 両方を割り当てた map は warning、下の describe）', () => {
-    const html = `<script type="importmap">
-{ "imports": {
-  "@wcstack/signals": "https://esm.run/@wcstack/signals",
-  "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom"
-} }
-</script>
-<script type="module">import { signal } from "@wcstack/signals/dom";</script>`;
-    expect(validateDocumentEnv(html).map(d => d.severity)).toEqual(['warning']);
-  });
-
-  it('本体のみ（バンドラ前提ページ）なら警告しない', () => {
-    const html = `<script type="module">import { signal } from "@wcstack/signals";</script>`;
-    expect(validateDocumentEnv(html)).toHaveLength(0);
-  });
-
-  it('HTML コメント・JS コメント内の言及には反応しない', () => {
-    const html = `<!-- Importing \`@wcstack/signals\` AND \`@wcstack/signals/dom\` would break -->
-<script type="module">
-// do NOT import from "@wcstack/signals" here
-import { signal, h } from "@wcstack/signals/dom";
-</script>`;
-    expect(validateDocumentEnv(html)).toHaveLength(0);
-  });
-});
-
 describe('validateDocumentEnv: router-outlet-misplaced（docs/router-outlet-placement.md）', () => {
   const codes = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.RouterOutletMisplaced);
 
@@ -301,31 +255,6 @@ describe('validateDocumentEnv: link-query-key-ignored（docs/formal-methods-stud
     const html = `<script type="module">el.innerHTML = '<wcs-link to="/n?cat=a" query-keys="page"></wcs-link>';</script>
 <!-- <wcs-link to="/n?cat=a" query-keys="page"></wcs-link> -->`;
     expect(codes(html)).toHaveLength(0);
-  });
-});
-
-describe('validateDocumentEnv: signals-dual-entry（両方を割り当てた import map — docs/seam-apps.md、signals-shop）', () => {
-  const of = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.SignalsDualEntry);
-  const map = (imports: Record<string, string>) => `<script type="importmap">${JSON.stringify({ imports })}</script>`;
-
-  it('両方のエントリを CDN に割り当てた import map は、このページが /dom だけを import しても warning', () => {
-    const html = `${map({ '@wcstack/signals': 'https://esm.run/@wcstack/signals', '@wcstack/signals/dom': 'https://esm.run/@wcstack/signals/dom' })}
-<script type="module" src="./cart-model.js"></script>
-<script type="module">import { h } from "@wcstack/signals/dom";</script>`;
-    const d = of(html);
-    expect(d).toHaveLength(1);
-    expect(d[0].severity).toBe('warning');
-    expect(html.slice(d[0].start, d[0].end)).toBe('@wcstack/signals');
-  });
-
-  it('/dom だけの import map、dist のファイル同士（チャンクを共有する）、両方を import するページ（error が出る）では出さない', () => {
-    expect(of(map({ '@wcstack/signals/dom': 'https://esm.run/@wcstack/signals/dom' }))).toEqual([]);
-    expect(of(map({ '@wcstack/signals': '/packages/signals/dist/index.esm.js', '@wcstack/signals/dom': '/packages/signals/dist/dom.esm.js' }))).toEqual([]);
-    const both = `${map({ '@wcstack/signals': 'https://esm.run/@wcstack/signals', '@wcstack/signals/dom': 'https://esm.run/@wcstack/signals/dom' })}
-<script type="module">import { signal } from "@wcstack/signals";
-import { h } from "@wcstack/signals/dom";</script>`;
-    expect(of(both).map(d => d.severity)).toEqual(['error']);
-    expect(of(`<script type="importmap">{ not json</script>`)).toEqual([]);
   });
 });
 

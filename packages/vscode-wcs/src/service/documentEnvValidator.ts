@@ -15,12 +15,7 @@
  *   outlet は空のまま — docs/router-outlet-placement.md。ランタイムも同じ code で警告する）
  * - LinkQueryKeyIgnored: `query-keys` を持つ `<wcs-link>` の `to` が付けるキーが、どれも `query-keys` に無い
  *   （リンク自身のクエリが判定に効かず、名指したキーが合えばどこでも現在 — docs/formal-methods-study.md §4.2）
- * - SignalsDualEntry: `@wcstack/signals` と `@wcstack/signals/dom` の実参照が同一ページに
- *   混在（CDN では各エントリがコア同梱の自己完結バンドルのため、リアクティブコアが
- *   二重化して境界で反応が壊れる）。コメント内の言及に誤反応しないよう、
- *   script src と inline module の import 指定子だけを参照として数える。import map が両方の
- *   エントリを割り当てているだけでも warning（別ファイルの module がコアを import すると二重化する —
- *   docs/seam-apps.md、signals-shop）。
+ * （SignalsDualEntry は packageLoadValidator.ts にある — ページが読むローカルの module の import も数えるため。）
  * - RouteBareMustache: `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`
  *   （最初に着いたルートでしか束ねられない）
  * - LayoutSlotMissing: 既定の `<slot>` の無いレイアウトのテンプレートに、名前付きスロットの外の中身を
@@ -41,13 +36,6 @@ interface ScriptSrcOccurrence {
   /** src 属性値の開始オフセット。 */
   start: number;
   /** src 属性値の終了オフセット。 */
-  end: number;
-}
-
-interface SignalsRef {
-  /** 参照エントリ: '/dom' か、それ以外（コア直 import）。 */
-  kind: 'dom' | 'bare';
-  start: number;
   end: number;
 }
 
@@ -115,30 +103,6 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
     });
   }
 
-  // --- SignalsDualEntry: /dom とコア直参照の混在 ---
-  const refs = collectSignalsRefs(scanText);
-  const dom = refs.find(r => r.kind === 'dom');
-  const bare = refs.find(r => r.kind === 'bare');
-  if (dom && bare) {
-    const later = bare.start > dom.start ? bare : dom;
-    diagnostics.push({
-      code: WcsDiagnosticCode.SignalsDualEntry,
-      start: later.start, end: later.end, severity: 'error',
-      message: msgs.signalsDualEntry(),
-    });
-  } else {
-    // 両方を割り当てた import map: このページの import が /dom だけでも、読み込む別ファイルの module が
-    // `@wcstack/signals` を import すると 2 つ目のコアになる（lint はそのファイルを読まない）
-    const both = findSignalsImportMapBoth(scanText);
-    if (both) {
-      diagnostics.push({
-        code: WcsDiagnosticCode.SignalsDualEntry,
-        start: both.start, end: both.end, severity: 'warning',
-        message: msgs.signalsImportMapBoth(),
-      });
-    }
-  }
-
   // --- RouteBareMustache / LayoutSlotMissing: タグとテキストの並びから ---
   const structure = scanStructure(scanText);
   for (const at of structure.bareMustaches) {
@@ -157,36 +121,6 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
   }
 
   return diagnostics;
-}
-
-/**
- * `<script type="importmap">` が `@wcstack/signals` と `@wcstack/signals/dom`（または接頭辞の
- * `@wcstack/signals/`）の両方を割り当てていれば、前者のキーの範囲。どちらも `dist/` のファイル
- * （チャンクを共有する）なら null。
- */
-function findSignalsImportMapBoth(html: string): { start: number; end: number } | null {
-  const mapRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = mapRegex.exec(html)) !== null) {
-    if (!/\btype\s*=\s*(["'])importmap\1/i.test(match[1])) continue;
-    let imports: Record<string, unknown> | undefined;
-    try {
-      imports = (JSON.parse(match[2]) as { imports?: Record<string, unknown> }).imports;
-    } catch {
-      continue;
-    }
-    if (imports === null || typeof imports !== 'object') continue;
-    const core = imports['@wcstack/signals'];
-    const dom = imports['@wcstack/signals/dom'] ?? imports['@wcstack/signals/'];
-    if (typeof core !== 'string' || typeof dom !== 'string') continue;
-    if (core.includes('/dist/') && dom.includes('/dist/')) continue;
-    const key = '"@wcstack/signals"';
-    const at = match[2].indexOf(key);
-    const bodyStart = match.index + match[0].indexOf('>') + 1;
-    const start = bodyStart + (at === -1 ? 0 : at + 1);
-    return { start, end: start + key.length - 2 };
-  }
-  return null;
 }
 
 /**
@@ -225,32 +159,6 @@ function findWcstackAutoScripts(html: string): ScriptSrcOccurrence[] {
   return out;
 }
 
-/**
- * `@wcstack/signals` 系の実参照（script src / inline module の import 指定子）を集める。
- * importmap のキー宣言だけでは何も読み込まれないため、参照として数えない。
- */
-function collectSignalsRefs(html: string): SignalsRef[] {
-  const refs: SignalsRef[] = [];
-  const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = scriptRegex.exec(html)) !== null) {
-    const src = extractSrc(match[0]);
-    const kind = src ? classifySignalsSpecifier(src.value) : null;
-    if (src && kind) {
-      refs.push({
-        kind,
-        start: match.index + src.offsetInTag,
-        end: match.index + src.offsetInTag + src.value.length,
-      });
-    }
-  }
-  for (const im of collectInlineImports(html)) {
-    const kind = classifySignalsSpecifier(im.spec);
-    if (kind) refs.push({ kind, start: im.start, end: im.end });
-  }
-  return refs.sort((a, b) => a.start - b.start);
-}
-
 /** インラインの module script の import 指定子 1 つ。 */
 interface InlineImport {
   spec: string;
@@ -279,12 +187,6 @@ function collectInlineImports(html: string): InlineImport[] {
     }
   }
   return out;
-}
-
-/** signals 指定子の分類（signals 以外は null）。 */
-function classifySignalsSpecifier(spec: string): 'dom' | 'bare' | null {
-  if (!spec.includes('@wcstack/signals')) return null;
-  return /@wcstack\/signals\/dom\b/.test(spec) ? 'dom' : 'bare';
 }
 
 /** 開きタグ文字列から src 属性値と（タグ内）オフセットを取り出す。 */

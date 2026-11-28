@@ -223,6 +223,19 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 新しい warning は `--strict` で落ち、新しい error は `--errors-only` でも出ます。
 
+## ストリームと呼び出し表示のページに言うこと
+
+4.33（未リリース）から。継ぎ目アプリ counter-assist — LLM の回答を `$stream` で流すコンソール・ワーカーでの CSV の取り込み・1 本の SSE を読む呼び出し表示（片方のページは `@wcstack/signals`、片方は state で書いた）から。作者がわざとした 25 の誤りのどれにも、この lint は何も言いませんでした。signals のページは「検査するものが無い」と挙げていました。いま言うこと:
+
+- **`wcs/stream-declaration`**（error） — オブジェクトリテラルで書いた `$stream` のエントリに、`fold` があって `initial` が無い（`answer: { args, source, fold: foldAnswer }`）か、`source` が無い。ランタイムは state を取り込むときに拒みます（`$stream entry "answer": fold needs an initial value.`）: ページは初期化に失敗し、コンソールのすべてのルートが死んでいました。`initial: undefined` も、ランタイムと同じく初期値です。確かなものだけ: 名前や呼び出しのエントリ・spread か計算されたキーのあるエントリ・後に書いた spread が置き換えうるエントリには言いません。ボリューム（`wcs/volume-declaration` が言う）と `bind-component` の state も見ません。`src=` のファイルの state はそのファイルに報告します。
+- **`wcs/html-sink-input`**（warning） — HTML の書き込み先（`html:`・`innerHTML:`・`outerHTML:`・`srcdoc:`）に、ページのフォームの部品が双方向の `value:` で書き戻すパスを束ねた — `<textarea data-wcs="value: question">` と `<p data-wcs="html: question">`。利用者が打った文字がマークアップとしてページに入ります: `<b>` は太字になり、`<img src=x onerror=…>` は走ります — フィルタが消毒するのでなければ。なので書き込み先のフィルタでは黙りません。テキストとして束ねてください（`textContent:`）。パスは state のパスとして比べます: `for: turns` の行の `.q` は `turns.*.q`。別のパスを通って届く文字（打った質問をメソッドが表示する一覧へ写す — 継ぎ目アプリ自身の形）は辿りません。書き込み先の束縛ごとに 1 回。
+- **`wcs/signals-dual-entry`**（error）は、ページが走らせるローカルの module を読み、それぞれの URL が何を運ぶかで判断するようになりました: それぞれがリアクティブなコアを持つ `@wcstack/signals` の 2 つの読み込み — 2 つのエントリ（`.` と `./dom`）で、片方がエントリごとに束ねる CDN（`esm.run`・jsDelivr の `…/+esm`・`esm.sh`）から来るか、両方がビルドの違う `dist` のファイル（`.esm.js` と `.esm.min.js` はコアのチャンクが別）。または、どこからでも 2 つの版。呼び出し表示は、ページが読む module で `signal` を `…/@wcstack/signals@4.32.0/+esm` から、残りを `…/dist/dom.esm.min.js` から import していました: 時計を描く effect はその signal を追わず、時計は動きませんでした。1 つのビルドのファイルとして配る 2 つのエントリは 1 つのコアを共有するので通ります。裸の名前は import map を通して読みます（どのエントリも与えない名前はバンドラのもので、通ります）。module の中の所見は、その module のその行に報告します。すべての名前を `@wcstack/signals/dom` から import してください。
+- **ローカルの module が `@wcstack/signals` を読み込むか wcstack の版を固定するページは検査され**、`nothing to check:` には載りません — `wcs/signals-dual-entry` と `wcs/lint-version-behind` が読みます。`wcs/lint-version-behind` は、それらの module の固定も読みます。`/` から始まる module は `--root=<dir>` があるときだけ読みます。
+- **`wcs/event-before-binding`**（warning） — リテラルの `url` を持つ `<wcs-sse>` / `<wcs-ws>`、リテラルの `name` を持つ `<wcs-broadcast>` の `eventToken.message:`（要素の契約が `semantics: "event"` と宣言する出力）。要素はパッケージが定義した時点で接続し、state のファイルが読み込まれてトークンを束ねるより前です: ストリームの最初のイベント — 待ち行列のスナップショット — は誰にも届かず、8 人待ちで 0 人と出ていました。`url` を state から与える（`url: streamUrl`）とページを束ねてから始まります。または出力をプロパティとしても束ねてください（`message: lastEvent`、または spread）。要素の値で state に種を入れます。`manual`・`<template>` の中（挿入と同時に束ねる）・`<wcs-state>` の無いファイルでは言いません。ランタイムの同じ code の警告の静的な対です。
+- **`wcs/input-nested-write`** は 2 つ目の直し方も言います: 要素には別のキーを束ねて、保存したいときにそのキーへコピーを代入する。これまで勧めていた getter は、パスの下への書き込みのたびに読み直され、`<wcs-storage>` はそのたびに保存します — コンソールでは、流れてくるトークンごとに。
+
+新しい error は `--errors-only` でも出て、新しい warning は `--strict` で落ちます。
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。

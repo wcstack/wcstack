@@ -25,6 +25,8 @@ export interface BuiltinTagContract {
   readonly commands: readonly string[];
   /** semantics: "handle" の出力（生きたリソース — 値として束ねない）。あるタグにだけある。 */
   readonly handles?: readonly string[];
+  /** semantics: "event" の出力（出来事 — 束ねる前に送られた回は届かない）。あるタグにだけある。 */
+  readonly events?: readonly string[];
   /**
    * command 名 → そのメソッドが宣言する引数の数（`Class.prototype[name].length` — 既定値・rest より前の引数）。
    * command のあるタグにだけある。
@@ -113,6 +115,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "noteOn",
       "noteOff",
       "allNotesOff"
+    ],
+    "events": [
+      "noteOn",
+      "noteOff"
     ],
     "commandArity": {
       "resume": 0,
@@ -328,6 +334,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "sample"
     ],
+    "events": [
+      "frame"
+    ],
     "commandArity": {
       "sample": 0
     }
@@ -351,6 +360,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "open",
       "post",
       "close"
+    ],
+    "events": [
+      "message"
     ],
     "commandArity": {
       "open": 0,
@@ -396,6 +408,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "handles": [
       "streamReady"
     ],
+    "events": [
+      "ended"
+    ],
     "commandArity": {
       "start": 0,
       "stop": 0,
@@ -430,6 +445,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "stop",
       "pause",
       "resume"
+    ],
+    "events": [
+      "recorded",
+      "dataavailable"
     ],
     "commandArity": {
       "attachStream": 1,
@@ -466,6 +485,13 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "read",
       "startMonitor",
       "stopMonitor"
+    ],
+    "events": [
+      "text",
+      "items",
+      "copied",
+      "cut",
+      "pasted"
     ],
     "commandArity": {
       "writeText": 1,
@@ -541,6 +567,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "cancel",
       "flush"
     ],
+    "events": [
+      "fired"
+    ],
     "commandArity": {
       "trigger": 0,
       "cancel": 0,
@@ -567,6 +596,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "trigger",
       "cancel",
       "flush"
+    ],
+    "events": [
+      "fired"
     ],
     "commandArity": {
       "trigger": 0,
@@ -913,6 +945,15 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "close",
       "send"
     ],
+    "events": [
+      "message",
+      "type",
+      "channel",
+      "note",
+      "velocity",
+      "control",
+      "value"
+    ],
     "commandArity": {
       "request": 0,
       "close": 0,
@@ -969,6 +1010,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "notify",
       "close",
       "closeAll"
+    ],
+    "events": [
+      "clicked",
+      "closed",
+      "shown"
     ],
     "commandArity": {
       "request": 0,
@@ -1187,6 +1233,10 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "pause",
       "resume"
     ],
+    "events": [
+      "charIndex",
+      "spokenWord"
+    ],
     "commandArity": {
       "speak": 1,
       "cancel": 0,
@@ -1221,6 +1271,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "start",
       "stop",
       "abort"
+    ],
+    "events": [
+      "result"
     ],
     "commandArity": {
       "start": 0,
@@ -1258,6 +1311,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "commands": [
       "connect",
       "close"
+    ],
+    "events": [
+      "message"
     ],
     "commandArity": {
       "connect": 0,
@@ -1495,6 +1551,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "sendMessage",
       "close"
     ],
+    "events": [
+      "message"
+    ],
     "commandArity": {
       "connect": 0,
       "sendMessage": 1,
@@ -1527,6 +1586,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "start",
       "post",
       "terminate"
+    ],
+    "events": [
+      "message"
     ],
     "commandArity": {
       "start": 0,

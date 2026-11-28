@@ -108,6 +108,8 @@ import {
 // トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
 /** `$stream` が正式名。`$streams` は 3.x の旧名（4.0 は読み込み時に throw — wcs/declaration-alias）だが、値の実体化は続ける（束縛側に binding-path-missing を重ねない） */
 const RESERVED_STREAMS_KEYS: ReadonlySet<string> = new Set(['$stream', '$streams']);
+// 宣言そのものの検証（エントリの source / fold / initial）は analyzeStreamEntries が担う（旧名は wcs/declaration-alias）。
+const RESERVED_STREAM_KEY = '$stream';
 const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
 const RESERVED_EVENT_TOKENS_KEY = '$eventTokens';
 const RESERVED_LIST_KEYS_KEY = '$listKeys';
@@ -514,6 +516,114 @@ export interface ListKeyEntryInfo {
 export function analyzeListKeyEntries(scriptContent: string): ListKeyEntryInfo[] {
   return analyzeObjectEntries(scriptContent, RESERVED_LIST_KEYS_KEY)
     .map(entry => ({ key: entry.key, start: entry.start, end: entry.end }));
+}
+
+/** `$stream` の 1 エントリ（名前 ＝ 値プロパティの名前）と、原文での位置・書かれたキー。 */
+export interface StreamEntryInfo {
+  /** エントリの名前（引用符は含まない）。 */
+  readonly name: string;
+  /** scriptContent 内での名前の範囲。 */
+  readonly start: number;
+  readonly end: number;
+  /** エントリがすべて書かれたオブジェクトリテラルのとき、そのキー（`source` / `fold` / `initial` / `args` …）。ほかは null。 */
+  readonly keys: readonly string[] | null;
+}
+
+/**
+ * `$stream: { <name>: { source, fold, initial, args } }` のエントリを、書かれたキーとともに位置付きで抽出する
+ * （wcs/stream-declaration）。キーが分かるのは、オブジェクトリテラルで spread も計算されたキーも無いエントリだけ
+ * （`literalKeyNames`）。後に書いた spread が置き換えうるエントリ — `$stream` のオブジェクトの中の spread、state の
+ * トップレベルで `$stream` より後の spread — と、後に同じ名前がもう一度あるエントリは返さない: ランタイムが読むものが
+ * 分からない。`$stream` を 2 回書いたときは後のもの（JavaScript のとおり）。
+ */
+export function analyzeStreamEntries(scriptContent: string): StreamEntryInfo[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const declaration = parseTopLevelProperties(root.content).filter(p => p.name === RESERVED_STREAM_KEY).at(-1);
+  if (
+    !declaration || declaration.kind !== 'data' || !declaration.value || !isObjectLiteral(declaration.value)
+    || declaration.valueStart === undefined || declaration.nameStart === undefined
+  ) {
+    return [];
+  }
+  if (spreadStarts(root.content).some(at => at > declaration.nameStart!)) return [];
+  const inner = extractObjectContent(declaration.value);
+  const innerStart = root.start + declaration.valueStart + 1;
+  const spreads = spreadStarts(inner);
+  const entries = parseTopLevelProperties(inner);
+  const out: StreamEntryInfo[] = [];
+  entries.forEach((entry, i) => {
+    if (entry.kind !== 'data' || entry.nameStart === undefined || entry.nameEnd === undefined || entry.value === undefined) return;
+    if (spreads.some(at => at > entry.nameStart!)) return;
+    if (entries.slice(i + 1).some(later => later.name === entry.name)) return;
+    out.push({
+      name: entry.name,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      keys: literalKeyNames(entry.value),
+    });
+  });
+  return out;
+}
+
+/**
+ * The keys of an object literal written in full — `{ source, fold(acc, c) { … }, initial: "" }`: its data keys,
+ * shorthands, methods and accessors — or null when what it holds cannot be known: it is not an object literal (a name,
+ * a call, `{ … }.x`, `{ … } || other`), or it has a spread (`...base`) or a computed key (`[name]: …`). A TypeScript
+ * `as const` / `satisfies T` after it is read as the literal.
+ */
+export function literalKeyNames(value: string): string[] | null {
+  const text = value.trim();
+  if (!text.startsWith('{')) return null;
+  const scan = maskCommentsAndStrings(text);
+  const close = matchingBrace(scan, 0);
+  if (close < 0) return null;
+  const rest = blankCommentMarks(scan.slice(close + 1)).trim();
+  if (rest !== '' && !/^(?:as|satisfies)\b/.test(rest)) return null;
+  const content = text.slice(1, close);
+  for (const segment of topLevelSegments(blankCommentMarks(scan.slice(1, close)))) {
+    if (/^\s*\.\.\./.test(segment) || /^\s*(?:(?:get|set|async|static)\s+)?\*?\s*\[/.test(segment)) return null;
+  }
+  return withShorthands(content, parseTopLevelProperties(content)).map(p => p.name);
+}
+
+/** The masked mirror's comment marks (`/*` … `*\/`, `//`) as spaces too (the mirror blanks only what is inside). */
+function blankCommentMarks(scan: string): string {
+  return scan.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => ' '.repeat(c.length));
+}
+
+/** The depth-0 comma-separated segments of a masked object content. */
+function topLevelSegments(scan: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') depth++;
+    else if (ch === '}' || ch === ']' || ch === ')') depth--;
+    else if ((ch === ',' && depth === 0) || i === scan.length) {
+      out.push(scan.slice(start, i));
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
+/** Where the depth-0 spreads (`...expr`) of an object literal's content start (offsets into the content). */
+function spreadStarts(content: string): number[] {
+  const scan = blankCommentMarks(maskCommentsAndStrings(content));
+  const out: number[] = [];
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth === 0 && ch === '.' && scan.startsWith('...', i)) {
+      out.push(i);
+      i += 2;
+    }
+  }
+  return out;
 }
 
 /**

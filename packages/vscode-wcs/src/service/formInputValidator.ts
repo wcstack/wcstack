@@ -59,9 +59,9 @@ import { getStatePathIndex, type FileReader } from './statePathResolver.js';
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map((f) => [f.name, f]));
 
 /** The `<input>` types whose `value` the user does not enter (a choice, a button, a file): not read by the `value:` rules. */
-const NOT_ENTERED: ReadonlySet<string> = new Set(['checkbox', 'radio', 'hidden', 'button', 'submit', 'reset', 'image', 'file']);
+export const NOT_ENTERED: ReadonlySet<string> = new Set(['checkbox', 'radio', 'hidden', 'button', 'submit', 'reset', 'image', 'file']);
 /** The `<input>` types that are not typed in (a slider, a picker): no caret, no IME. */
-const NOT_TYPED: ReadonlySet<string> = new Set(['range', 'color', 'date', 'datetime-local', 'month', 'week', 'time']);
+export const NOT_TYPED: ReadonlySet<string> = new Set(['range', 'color', 'date', 'datetime-local', 'month', 'week', 'time']);
 /** The `<input>` types that have `valueAsNumber`. */
 const AS_NUMBER: ReadonlySet<string> = new Set(['number', 'range', 'date', 'datetime-local', 'month', 'week', 'time']);
 
@@ -227,7 +227,7 @@ function groupBindingBeforeValue(
 }
 
 /** The property a binding's left side names: without modifiers, and without the dot of the explicit property form. */
-function propertyName(property: string): string {
+export function propertyName(property: string): string {
   const name = property.replace(/#.*$/, '').trim();
   return name.startsWith('.') ? name.slice(1) : name;
 }
@@ -300,7 +300,7 @@ function givesBackWhatWasWritten(filter: ParsedBinding['filters'][number], p: Pa
  * The state path a binding's path names: a path relative to the row (`.qty`) under the list its `for:` renders
  * (`rows.*.qty`). null where it cannot be told: outside a `for:`, or under one the parser refuses.
  */
-function expandRowPath(path: string, html: string, offset: number, bindAttribute: string): string | null {
+export function expandRowPath(path: string, html: string, offset: number, bindAttribute: string): string | null {
   if (!path.startsWith('.')) return path;
   if (getRowShorthandForPath(html, offset, bindAttribute) === null) return null;
   const list = getResolvedForListPath(html, offset, bindAttribute);
@@ -309,7 +309,7 @@ function expandRowPath(path: string, html: string, offset: number, bindAttribute
 }
 
 /** One attribute of a start tag as written: its name (lower case), its value, and where the whole attribute is. */
-interface WrittenAttribute {
+export interface WrittenAttribute {
   readonly name: string;
   readonly value: string | null;
   readonly start: number;
@@ -317,7 +317,7 @@ interface WrittenAttribute {
 }
 
 /** The attributes of a start tag's attribute region, in order (a value is skipped as a value, never read as a name). */
-function writtenAttributes(html: string, from: number, to: number): WrittenAttribute[] {
+export function writtenAttributes(html: string, from: number, to: number): WrittenAttribute[] {
   const out: WrittenAttribute[] = [];
   const attribute = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+)))?/g;
   const text = html.slice(from, to);

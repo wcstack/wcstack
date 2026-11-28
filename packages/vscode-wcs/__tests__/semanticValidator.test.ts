@@ -1060,7 +1060,10 @@ describe("wcs/input-nested-write — 入力を束ねたパスの下への書き�
     expect(diags[0].message).toContain("要素の値も受け取るなら、setter を添えたアクセサペアを value#init=element: <getter> で");
     expect(diags[0].message).toContain("一方向に value#ro: <getter> で（setter も #ro も無いと、要素が知らせる値の書き戻しが getter に拒まれます — wcs/path-readonly）");
     const en = validateSemantics(html, "wcs-state", "en").filter((d) => d.code === WcsDiagnosticCode.InputNestedWrite);
-    expect(en[0].message).toBe('"cart" is bound to the input "value" of <wcs-storage>, but the page writes below it ("cart.*.quantity"). A binding is re-applied only when "cart" itself is assigned, so those writes never reach <wcs-storage> — bind a getter that reads the fields by path (`this["cart.*.quantity"]`, `$getAll`) and returns a new value: with a setter beside it to take the element\'s value in as well (the accessor pair, value#init=element: <getter>), or one way when the element\'s value is not taken in (value#ro: <getter> — with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "cart" instead of writing below it');
+    expect(en[0].message).toBe('"cart" is bound to the input "value" of <wcs-storage>, but the page writes below it ("cart.*.quantity"). A binding is re-applied only when "cart" itself is assigned, so those writes never reach <wcs-storage> — bind a getter that reads the fields by path (`this["cart.*.quantity"]`, `$getAll`) and returns a new value: with a setter beside it to take the element\'s value in as well (the accessor pair, value#init=element: <getter>), or one way when the element\'s value is not taken in (value#ro: <getter> — with neither a setter nor #ro, what the element reports is written back to the getter and refused: wcs/path-readonly). Or replace "cart" instead of writing below it, or bind a separate key to <wcs-storage> and assign it a copy when the value should be passed on (a getter is re-read on every write below "cart": <wcs-storage> would store each one)');
+    // 2 つ目の直し方: 別のキーを束ねて、保存したいときにコピーを代入する（getter は 1 回の書き込みごとに保存する —
+    // 継ぎ目アプリ counter-assist の F12: ストリームのトークンごと）
+    expect(diags[0].message).toContain('<wcs-storage> には別のキーを束ねて、渡したいときにそのキーへコピーを代入してください');
     // 範囲は束縛のパス（`cart`）
     expect(html.slice(diags[0].start, diags[0].end)).toBe("cart");
   });
