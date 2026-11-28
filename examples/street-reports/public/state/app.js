@@ -34,8 +34,6 @@ let nextToastId = 1; // ToastContext nextId ref
 const loadingTimers = {}; // useDelayedFlag's timeouts, per page
 let nowTimer = null; // useNow's interval
 let lightboxOpener = null; // Lightbox returnFocusTo
-let leaveResolver = null; // the pending leave-guard promise (useBlocker's blocker.proceed / reset)
-let leavePendingHref = null; // a nav link click held back by the leave dialog
 let beforeUnloadOn = false; // useBeforeUnloadGuard
 /** workaround: the stats page's code is imported when its route is first entered (React.lazy). A getter may not
  *  read a module variable (it would never recompute), so `statsReady` (state) gates every read of it. */
@@ -207,15 +205,8 @@ export default defineState({
     // left to the browser (new tab).
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    const href = event.target.closest('a').getAttribute('href');
-    if (this.formBlocking && href !== '/reports/new') {
-      // useBlocker for a link: hold the navigation until the dialog is answered (a guard would push first and
-      // could only redirect back, leaving a duplicate history entry — friction-log F-14)
-      leavePendingHref = href;
-      this.leaveDialogOpen = true;
-      return;
-    }
-    this.navigateUrl = href;
+    // (away from the form with unsaved input, the router holds it: leaveHold, below)
+    this.navigateUrl = event.target.closest('a').getAttribute('href');
   },
 
   // Shared option lists (the `.map(s => <option …>)` of every select)
@@ -866,7 +857,8 @@ export default defineState({
   formSubmitting: false,
   formLeaving: false, // leavingRef: set once we navigate away on purpose
   formSnapshotSettled: null, // useDebouncedValue(values, 400) — <wcs-debounce> writes it
-  leaveDialogOpen: false,
+  /** @type {string | null} <wcs-router>'s leaving: where the navigation leaveHold holds was going (useBlocker's blocker.location) */
+  leaving: null,
 
   /** Every field read by its path, so this re-evaluates on each keystroke (this.form.title would not). */
   get formValues() {
@@ -945,6 +937,10 @@ export default defineState({
   get formBlocking() {
     return this.routeName === 'new' && this.formDirty && !this.formLeaving;
   },
+  /** ConfirmDialog is open while the router holds a navigation */
+  get leaveDialogOpen() {
+    return this.leaving !== null;
+  },
   get formBeforeUnloadActive() {
     return this.routeName === 'new' && this.formDirty && !this.formSubmitting;
   },
@@ -999,40 +995,17 @@ export default defineState({
     }
   },
 
-  // ---- the leave guard (useBlocker + ConfirmDialog) ----
-  /** Called by the route guards in index.html (workaround: a guard cannot see state, so the page publishes this
-   *  function on window). Resolves true to let the navigation go on, or redirects back to the form. */
-  leaveGuard(to, from) {
-    if (from !== '/reports/new' || to === from || !this.formBlocking) return true;
-    this.leaveDialogOpen = true;
-    return new Promise((resolve) => {
-      leaveResolver = resolve;
-    });
-  },
+  // ---- the leave dialog (useBlocker + ConfirmDialog) ----
+  // Since 4.32 the router holds the navigation (leaveHold: formBlocking) and names it in `leaving`: a nav link, Back,
+  // any navigateUrl. Up to 4.31 the page guarded every other route, held its own nav links, and stepped Back forward
+  // again with history.go(1).
   cancelLeave() {
-    this.leaveDialogOpen = false;
-    leavePendingHref = null;
-    if (leaveResolver) {
-      // workaround: a guard can only let a navigation in or redirect it (a redirect replaces the history entry,
-      // so the next Back would land on a duplicate of this page). To stay, step history forward again — that
-      // navigation overtakes the one waiting for this guard, which the router then drops — and leave the guard's
-      // promise unsettled until then (settling it first would commit or redirect the old navigation).
-      const resolve = leaveResolver;
-      leaveResolver = null;
-      window.history.go(1);
-      setTimeout(() => resolve(false), 1000);
-    }
+    this.$command.leaveStay.emit();
   },
   confirmLeave() {
     this.formLeaving = true;
     clearDraft();
-    this.leaveDialogOpen = false;
-    const href = leavePendingHref;
-    leavePendingHref = null;
-    if (href) this.navigateUrl = href;
-    const resolve = leaveResolver;
-    leaveResolver = null;
-    if (resolve) resolve(true);
+    this.$command.leaveProceed.emit();
   },
   leaveDialogKeydown(event) {
     if (event.key === 'Escape') {
@@ -1083,14 +1056,12 @@ export default defineState({
       clearInterval(nowTimer);
       nowTimer = null;
       this.lightbox = null;
-    } else if (name === 'new') {
-      if (leaveResolver) this.cancelLeave();
     }
   },
 
   $commandTokens: [
     'loadSummary', 'loadList', 'abortList', 'loadDetail', 'abortDetail', 'loadComments', 'abortComments',
-    'loadBoard', 'abortBoard', 'loadStats', 'abortStats', 'commentSent', 'commentFailed',
+    'loadBoard', 'abortBoard', 'loadStats', 'abortStats', 'commentSent', 'commentFailed', 'leaveProceed', 'leaveStay',
   ],
   $eventTokens: ['commentRequested', 'pageChosen', 'summaryEvent', 'boardEvent'],
   $on: {
@@ -1116,7 +1087,6 @@ export default defineState({
     this.systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.dataset.theme = this.theme;
     this.refreshSummary();
-    /** @type {any} */ (window).streetReportsLeaveGuard = (to, from) => this.leaveGuard(to, from);
   },
 
 

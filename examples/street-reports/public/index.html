@@ -118,7 +118,9 @@
   </template>
 
   <!-- ===== router.jsx ===== -->
-  <wcs-router data-wcs="path: path; routeName: routeName; params: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+  <!-- useBlocker: leaveHold holds a navigation away from the new-report form while it has unsaved input, and the
+       ConfirmDialog below answers through proceed() / stay() (router README, "A page's own "leave?" dialog", 4.32) -->
+  <wcs-router data-wcs="path: path; routeName: routeName; params: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl; leaveHold: formBlocking; leaving: leaving; command.proceed: $command.leaveProceed; command.stay: $command.leaveStay">
     <template>
       <!-- { index: true, element: <Navigate to="/reports" replace /> } -->
       <wcs-route path="/" name="root">
@@ -131,12 +133,6 @@
 
       <!-- ===== pages/ReportListPage.jsx ===== -->
       <wcs-route path="/reports" name="list">
-        <wcs-guard-handler>
-          <script type="module">
-            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
-            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
-          </script>
-        </wcs-guard-handler>
         <wcs-head><title>通報一覧 | みどり市 不具合受付</title></wcs-head>
         <template data-wcs="if: pageOk">
           <section class="page">
@@ -369,12 +365,6 @@
 
       <!-- ===== pages/ReportDetailPage.jsx ===== -->
       <wcs-route path="/reports/:id" name="detail">
-        <wcs-guard-handler>
-          <script type="module">
-            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
-            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
-          </script>
-        </wcs-guard-handler>
         <wcs-head><title data-wcs="textContent: detailTitle"></title></wcs-head>
         <template data-wcs="if: pageOk">
           <div class="detail-page">
@@ -525,12 +515,6 @@
 
       <!-- ===== pages/BoardPage.jsx ===== -->
       <wcs-route path="/board" name="board">
-        <wcs-guard-handler>
-          <script type="module">
-            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
-            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
-          </script>
-        </wcs-guard-handler>
         <wcs-head><title>ボード | みどり市 不具合受付</title></wcs-head>
         <template data-wcs="if: pageOk">
           <section class="page">
@@ -589,12 +573,6 @@
 
       <!-- ===== pages/StatsPage.jsx (its code is loaded when the route is entered: see state/app.js) ===== -->
       <wcs-route path="/stats" name="stats">
-        <wcs-guard-handler>
-          <script type="module">
-            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
-            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
-          </script>
-        </wcs-guard-handler>
         <wcs-head><title>統計 | みどり市 不具合受付</title></wcs-head>
         <template data-wcs="if: pageOk">
           <template data-wcs="if: statsReady">
@@ -703,12 +681,6 @@
 
       <!-- ===== pages/NotFoundPage.jsx ===== -->
       <wcs-route fallback name="notfound">
-        <wcs-guard-handler>
-          <script type="module">
-            // workaround: the leave guard of the new-report form (useBlocker) — see state/app.js "leave guard".
-            export default function (to, from) { return window.streetReportsLeaveGuard ? window.streetReportsLeaveGuard(to, from) : true; }
-          </script>
-        </wcs-guard-handler>
         <wcs-head><title>ページが見つかりません | みどり市 不具合受付</title></wcs-head>
         <template data-wcs="if: pageOk">
           <section class="page">
