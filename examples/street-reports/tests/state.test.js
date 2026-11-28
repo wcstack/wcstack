@@ -40,7 +40,7 @@ const SHELL = `
   <wcs-state src="state/app.js"></wcs-state>
   <wcs-storage key="street-reports:theme" data-wcs="value#init=element: themeStored"></wcs-storage>
   <wcs-storage key="street-reports:staffId" data-wcs="value#init=element: staffIdStored"></wcs-storage>
-  <wcs-sse url="/api/events" events="report" data-wcs="eventToken.message: summaryEvent"></wcs-sse>
+  <wcs-sse events="report" data-wcs="url: summaryEventsUrl; eventToken.message: summaryEvent"></wcs-sse>
   <button id="theme" type="button" data-wcs="onclick: toggleTheme; textContent: themeLabel"></button>
   <div class="toasts" role="status">
     <template data-wcs="for: visibleToasts">

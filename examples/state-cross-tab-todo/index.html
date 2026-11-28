@@ -129,6 +129,8 @@
       liveCount: 0,
       // <wcs-broadcast> surfaces "BroadcastChannel unavailable" here.
       bcError: null,
+      // the channel's name, given from the state: the element starts once the page is bound, so no event comes before eventToken. (docs/timing-and-firing-contract.md §31)
+      bcChannel: "wcs-cross-tab-todos",
 
       // command-token: fires <wcs-broadcast>.post(payload) from state.
       $commandTokens: ["announce"],
@@ -259,8 +261,8 @@
      post to $on.liveSignal. The spread surface is properties + inputs only, so
      neither commands nor event tokens are covered — the pub/sub boundary is
      wired explicitly. -->
-<wcs-broadcast name="wcs-cross-tab-todos"
-  data-wcs="error: bcError; command.post: $command.announce; eventToken.message: liveSignal"></wcs-broadcast>
+<wcs-broadcast
+  data-wcs="name: bcChannel; error: bcError; command.post: $command.announce; eventToken.message: liveSignal"></wcs-broadcast>
 
 <!-- ============================================================
      UI

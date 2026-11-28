@@ -42,6 +42,8 @@
       /** @type {Error | null} */
       counterError: null,
       sseConnected: false,
+      // the event stream's URL, given from the state: the element starts once the page is bound, so no event comes before eventToken. (docs/timing-and-firing-contract.md §31)
+      sseUrl: "/api/events",
       nowMs: Date.now(),
       clockTick: 0,
       lastUpdate: "",
@@ -122,7 +124,7 @@
 
 <wcs-timer interval="10000" data-wcs="tick: clockTick"></wcs-timer>
 <wcs-fetch data-wcs="url: counterUrl; value: counterResult; error: counterError; command.fetch: $command.reload"></wcs-fetch>
-<wcs-sse url="/api/events" events="counter" auto-reconnect data-wcs="connected: sseConnected; eventToken.message: sseMessage"></wcs-sse>
+<wcs-sse events="counter" auto-reconnect data-wcs="url: sseUrl; connected: sseConnected; eventToken.message: sseMessage"></wcs-sse>
 
 <header>
   <h1 data-testid="counter-title" data-wcs="textContent: title"></h1>

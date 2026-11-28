@@ -226,7 +226,7 @@
 <wcs-notify data-wcs="command.notify: $command.notify; command.request: $command.requestNotify; permission: notifyPermission; eventToken.clicked: notificationClicked"></wcs-notify>
 
 <!-- several tabs: which tickets this operator has open and claimed; the preferences -->
-<wcs-broadcast name="shift-desk" data-wcs="command.post: $command.tabPost; eventToken.message: tabMessage; error: tabError"></wcs-broadcast>
+<wcs-broadcast data-wcs="name: tabChannel; command.post: $command.tabPost; eventToken.message: tabMessage; error: tabError"></wcs-broadcast>
 <wcs-storage key="shift-desk.prefs" data-wcs="value#init=element: prefsSnapshot"></wcs-storage>
 
 <!-- presence, the network, the outbox -->

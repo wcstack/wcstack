@@ -24,6 +24,8 @@ export default {
 
   // ── the live connection (<wcs-sse>) ──
   liveConnected: false,
+  // the event stream's URL, given from the state: the element starts once the page is bound, so no event comes before eventToken. (docs/timing-and-firing-contract.md §31)
+  liveUrl: "/api/events",
   liveEverConnected: false,
   /** "<plot id>:<version>" of the changes this tab made itself — their live echo is not announced */
   ownChanges: [],

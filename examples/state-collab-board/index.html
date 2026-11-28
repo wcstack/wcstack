@@ -70,6 +70,8 @@
 
       // ---- <wcs-sse> ----
       sseConnected: false,
+      // the event stream's URL, given from the state: the element starts once the page is bound, so no event comes before eventToken. (docs/timing-and-firing-contract.md §31)
+      sseUrl: "/api/events",
       sseReadyState: 0,
       everConnected: false,
 
@@ -343,8 +345,8 @@
 <wcs-fetch url="/api/cards" manual
   data-wcs="trigger: snapshotRequest; value: snapshot; error: snapshotError"></wcs-fetch>
 <wcs-network data-wcs="offline: offline"></wcs-network>
-<wcs-sse url="/api/events" events="card,resync"
-  data-wcs="eventToken.message: cardEvent; connected: sseConnected; readyState: sseReadyState;
+<wcs-sse events="card,resync"
+  data-wcs="url: sseUrl; eventToken.message: cardEvent; connected: sseConnected; readyState: sseReadyState;
             command.close: $command.closeStream; command.connect: $command.openStream"></wcs-sse>
 
 <header>

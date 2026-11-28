@@ -60,8 +60,8 @@
 <!-- What is saved goes straight to the settings volume: the value the element holds when it is bound is kept until
      the volume has grafted, whichever file arrives first. -->
 <wcs-storage key="midori.settings" data-wcs="value#init=element: settings.stored"></wcs-storage>
-<wcs-sse url="/api/events" events="plot,waiting" auto-reconnect reconnect-interval="1000"
-  data-wcs="eventToken.message: serverEvent; connected: liveConnected"></wcs-sse>
+<wcs-sse events="plot,waiting" auto-reconnect reconnect-interval="1000"
+  data-wcs="url: liveUrl; eventToken.message: serverEvent; connected: liveConnected"></wcs-sse>
 <wcs-defined timeout="8000"
   tags="garden-card,area-block,plot-tile,tenant-editor,faq-node,midori-badge,midori-toggle,midori-pager,midori-tabs,midori-dialog,midori-toast"
   data-wcs="pending: partsPending; missing: partsMissing"></wcs-defined>
